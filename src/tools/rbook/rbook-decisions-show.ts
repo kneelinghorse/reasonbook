@@ -12,6 +12,7 @@ import { frameForeignText } from '../../intelligence/provenance-frame';
 import { withClientAsync, type RbookDatabaseClient } from './client';
 import { createError, createSuccess, RbookErrors, RBOOK_ERROR_CODES } from './errors';
 import { appendWarnings } from './format-warnings';
+import { authorNamesSince, authorReading } from './author-name';
 import { getProjectId, tableHasColumn } from './genesis-columns';
 import type { RbookToolResult } from './types';
 
@@ -33,6 +34,8 @@ export interface RbookDecisionsShowResult extends SpinOutDetails {
   createdAt: string;
   evidence: string | null;
   authorSessionId: string | null;
+  /** s96-m02 (ADR s96 §10): who wrote it, or the reading for a NULL author. */
+  author: string;
   /** The row's genesis project; a pull-merged row carries its origin's id. */
   projectId: string | null;
   localProjectId: string | null;
@@ -65,6 +68,8 @@ interface DecisionRow {
   approval_mode: string | null;
   approval_draft: string | null;
   approval_words: string | null;
+  author_name: string | null;
+  occurred_at: number | null;
 }
 
 /** A column that older stores may lack reads as NULL there instead of failing the read. */
@@ -91,6 +96,8 @@ export async function rbookDecisionsShow(
           'approval_mode',
           'approval_draft',
           'approval_words',
+          'author_name',
+          'occurred_at',
         ])
         .map((column) => columnOrNull(client, column))
         .join(', ');
@@ -144,6 +151,7 @@ export async function rbookDecisionsShow(
           createdAt: d.created_at,
           evidence: d.evidence,
           authorSessionId: d.author_session_id,
+          author: authorReading(d.author_name, d.occurred_at, authorNamesSince(client)),
           projectId: d.project_id,
           localProjectId: getProjectId(client),
           context: d.context_text,
@@ -180,6 +188,7 @@ export function formatDecisionsShowForLLM(
     d.missionId ? `mission ${d.missionId}` : null,
     d.category ? `category ${d.category}` : null,
     `recorded ${d.createdAt}`,
+    `by ${d.author}`,
   ].filter((part): part is string => part !== null);
   const lines = [`⚖️ **Decision #${d.id}** (${d.status})`, meta.join(' | ')];
   if (d.supersededBy !== null) lines.push(`Superseded by #${d.supersededBy}`);

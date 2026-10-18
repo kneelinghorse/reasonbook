@@ -13,6 +13,7 @@ import { createError, createSuccess, RBOOK_ERROR_CODES } from './errors';
 import { appendWarnings } from './format-warnings';
 import { checkWrite } from './write-guard';
 import { MISSION_DEPENDENCY_DISCLOSURE } from './rbook-mission-depends';
+import { recordedExecute } from './record-changes';
 
 /**
  * Result type for dependency removal.
@@ -85,7 +86,8 @@ export async function rbookMissionUndepends(
       }
 
       // Delete the dependency
-      const deleteResult = client.execute(
+      const deleteResult = recordedExecute(
+        client,
         'DELETE FROM mission_dependencies WHERE from_id = ? AND to_id = ?',
         [fromId.trim(), toId.trim()]
       );

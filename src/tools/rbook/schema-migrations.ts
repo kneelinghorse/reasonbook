@@ -2599,12 +2599,67 @@ function migrateFirehoseTable(client: RbookDatabaseClient, table: FirehoseTable)
  * On completion it also bumps `metadata.schema_version` (NOT `PRAGMA user_version`,
  * which Reasonbook does not use).
  */
-export function ensureFirehoseEventColumns(client: RbookDatabaseClient): MigrationResult {
+export function ensureFirehoseEventColumns(
+  client: RbookDatabaseClient,
+  options: EveryTableOption = {}
+): MigrationResult {
+  const marked = markerIs(client, FIREHOSE_MARKER_KEY, FIREHOSE_SCHEMA_VERSION);
   return underMigrationLock(
     client,
     FIREHOSE_MARKER_KEY,
-    markerIs(client, FIREHOSE_MARKER_KEY, FIREHOSE_SCHEMA_VERSION),
+    options.everyTable ? () => marked() && !firehoseTableBehind(client) : marked,
     () => applyFirehoseEventColumns(client)
+  );
+}
+
+/**
+ * s96-m01: the marker says only that every firehose table present at the time was migrated. A
+ * table made later by its own ensure (constraints, next steps) has none of the columns; the fleet
+ * holds four such stores (rbook/research/2026-10-s96-probes/fleet-schema/README.md). Sharing asks
+ * for every table, so it checks each one rather than the marker alone.
+ */
+export interface EveryTableOption {
+  readonly everyTable?: boolean;
+}
+
+function firehoseTableBehind(client: RbookDatabaseClient): boolean {
+  return FIREHOSE_TABLES.some(
+    (table) =>
+      getTableColumns(client, table).size > 0 && !columnIsNotNull(client, table, 'event_type')
+  );
+}
+
+/**
+ * s96-m01: why a store is not ready to share, or null. A create on a shared store runs under the
+ * write lock, where these lazy migrations' table rebuilds cannot run, so they must be current on
+ * every table first (prepareForSharing makes them so).
+ */
+export function sharingSchemaBehind(client: RbookDatabaseClient): string | null {
+  if (
+    !markerIs(client, FIREHOSE_MARKER_KEY, FIREHOSE_SCHEMA_VERSION)() ||
+    firehoseTableBehind(client)
+  )
+    return 'the firehose columns are not current on every logged table';
+  if (
+    !markerIs(client, AUTHOR_NAMESPACE_MARKER_KEY, AUTHOR_NAMESPACE_SCHEMA_VERSION)() ||
+    authorColumnsBehind(client)
+  )
+    return 'the author columns are not current on every logged table';
+  if (
+    !markerIs(client, AUTHOR_NAME_MARKER_KEY, AUTHOR_NAME_SCHEMA_VERSION)() ||
+    authorNameBehind(client)
+  )
+    return 'the author name column is not on every logged table';
+  return null;
+}
+
+function authorColumnsBehind(client: RbookDatabaseClient): boolean {
+  const lacks = (table: string, column: string) => {
+    const columns = getTableColumns(client, table);
+    return columns.size > 0 && !columns.has(column);
+  };
+  return (
+    FIREHOSE_TABLES.some((table) => lacks(table, 'author_user_id')) || lacks('sessions', 'user_id')
   );
 }
 
@@ -2700,11 +2755,15 @@ const AUTHOR_SESSION_RENAME_TABLES = ['strategic_decisions', 'learnings'] as con
  * applied; clearing the marker re-runs it as a fast no-op on an already-migrated
  * store. Returns `alreadyCurrent: true` only when nothing changed.
  */
-export function ensureAuthorNamespaceColumns(client: RbookDatabaseClient): MigrationResult {
+export function ensureAuthorNamespaceColumns(
+  client: RbookDatabaseClient,
+  options: EveryTableOption = {}
+): MigrationResult {
+  const marked = markerIs(client, AUTHOR_NAMESPACE_MARKER_KEY, AUTHOR_NAMESPACE_SCHEMA_VERSION);
   return underMigrationLock(
     client,
     AUTHOR_NAMESPACE_MARKER_KEY,
-    markerIs(client, AUTHOR_NAMESPACE_MARKER_KEY, AUTHOR_NAMESPACE_SCHEMA_VERSION),
+    options.everyTable ? () => marked() && !authorColumnsBehind(client) : marked,
     () => applyAuthorNamespaceColumns(client)
   );
 }
@@ -2800,6 +2859,80 @@ function applyAuthorNamespaceColumns(client: RbookDatabaseClient): MigrationResu
   checkWrite(markerResult, warnings, `metadata.${AUTHOR_NAMESPACE_MARKER_KEY} marker`);
 
   return { columnsAdded, indexesCreated, rowsUpdated: 0, alreadyCurrent: !anyWork, warnings };
+}
+
+// ── s96-m02 — who wrote it: author_name ─────────────────────────────────────
+
+/** Schema version stamped in `metadata` once author_name is on the logged tables. */
+export const AUTHOR_NAME_SCHEMA_VERSION = '1.0';
+/** Its own marker: the author-namespace marker was already at 1.0 (design §s96-m02). */
+const AUTHOR_NAME_MARKER_KEY = 'author_name_columns';
+/** When this store first recorded authors, in ms; rows older than it read "before authors were recorded". */
+export const AUTHOR_NAMES_SINCE_KEY = 'author_names_since';
+
+/**
+ * s96-m02 (ADR s96 §10): `author_name TEXT`, nullable, on every logged table present. Plain ALTERs, so
+ * it runs at the point of use even inside the write lock, as the author namespace does. A table made
+ * after the marker was set takes the column when sharing checks every table (learning #446), or
+ * when a genesis write finds that its target table is missing the columns.
+ */
+export function ensureAuthorNameColumns(
+  client: RbookDatabaseClient,
+  options: EveryTableOption = {}
+): MigrationResult {
+  const marked = markerIs(client, AUTHOR_NAME_MARKER_KEY, AUTHOR_NAME_SCHEMA_VERSION);
+  return underMigrationLock(
+    client,
+    AUTHOR_NAME_MARKER_KEY,
+    options.everyTable ? () => marked() && !authorNameBehind(client) : marked,
+    () => applyAuthorNameColumns(client)
+  );
+}
+
+function authorNameBehind(client: RbookDatabaseClient): boolean {
+  return FIREHOSE_TABLES.some((table) => {
+    const columns = getTableColumns(client, table);
+    return columns.size > 0 && !columns.has('author_name');
+  });
+}
+
+function applyAuthorNameColumns(client: RbookDatabaseClient): MigrationResult {
+  const columnsAdded: string[] = [];
+  const warnings: string[] = [];
+  for (const table of FIREHOSE_TABLES) {
+    const columns = getTableColumns(client, table);
+    if (columns.size === 0 || columns.has('author_name')) continue;
+    const added = client.execute(`ALTER TABLE ${table} ADD COLUMN author_name TEXT`, []);
+    if (!added.success)
+      throw new SchemaMigrationError(
+        `ensureAuthorNameColumns: ADD COLUMN author_name on "${table}" failed: ${added.error?.message ?? 'unknown'}`
+      );
+    columnsAdded.push(`${table}.author_name`);
+  }
+  // The first run's time stays: a table that takes the column later does not move it.
+  checkWrite(
+    client.execute(
+      `INSERT OR IGNORE INTO metadata (key, value) VALUES ('${AUTHOR_NAMES_SINCE_KEY}', ?)`,
+      [String(Date.now())]
+    ),
+    warnings,
+    `metadata.${AUTHOR_NAMES_SINCE_KEY}`
+  );
+  checkWrite(
+    client.execute(
+      `INSERT OR REPLACE INTO metadata (key, value) VALUES ('${AUTHOR_NAME_MARKER_KEY}', '${AUTHOR_NAME_SCHEMA_VERSION}')`,
+      []
+    ),
+    warnings,
+    `metadata.${AUTHOR_NAME_MARKER_KEY} marker`
+  );
+  return {
+    columnsAdded,
+    indexesCreated: [],
+    rowsUpdated: 0,
+    alreadyCurrent: columnsAdded.length === 0,
+    warnings,
+  };
 }
 
 // ── Sprint 92 m03 — implicit sessions ──────────────────────────────────────

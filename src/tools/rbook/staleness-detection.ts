@@ -21,6 +21,7 @@ import { SPRINT_OPEN_STATUSES, statusInSql } from './terminal-status';
 import { previewText } from './text-preview';
 import { checkWrite } from './write-guard';
 import { storedTimeMs } from './stored-time';
+import { isSharedStore } from './replica-identity';
 
 /** A sprint's length on the wall clock (~14 days), used where a row carries no sprint tag. */
 const MS_PER_SPRINT = 14 * 24 * 60 * 60 * 1000;
@@ -562,6 +563,8 @@ export function repairFlaggerStaleness(
     warnings,
   };
 
+  // s96-m03 (ADR s96 §6): a shared record skips the restore; its status changes are recorded.
+  if (isSharedStore(client)) return empty;
   const decisionColumns = getTableColumns(client, 'strategic_decisions');
   const learningColumns = getTableColumns(client, 'learnings');
   if (!decisionColumns.has('status') && !learningColumns.has('status')) return empty;

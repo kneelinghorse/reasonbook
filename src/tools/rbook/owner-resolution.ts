@@ -5,6 +5,7 @@
 import { LEGACY, normalizeAddressScheme, storedAddress } from '../../intelligence/legacy-compat';
 import type { RbookDatabaseClient } from './client';
 import { DashboardClient } from './dashboard-client';
+import { isMembersCopy } from './record-membership';
 import { checkWrite, type WriteSink } from './write-guard';
 
 export interface OwnerResolutionResult {
@@ -201,6 +202,10 @@ export async function resolveAndPersistOwner(
   dashClientOverride?: DashboardClient
 ): Promise<OwnerResolutionResult> {
   const existing = readMetadata(client, 'owner');
+  // s96-m13 (design §s96-m13 item 3): a member's copy of a shared record keeps the owner and the
+  // dashboard project its owner's copy named; it never overwrites them with whoever is signed in.
+  if (isMembersCopy(client))
+    return { owner: existing, source: 'metadata', incumbentConfirmed: false };
   const currentAddress = readProjectIdentityAddress(client);
   const needsProjectIdentityRepair =
     currentAddress !== null &&
@@ -233,6 +238,9 @@ export async function resolveAndPersistOwner(
       ? { owner: existing, source: 'metadata', incumbentConfirmed: false }
       : { owner: null, source: 'unresolved', incumbentConfirmed: false };
   }
+  // s96-m02: this is a write path (a checkpoint, a message send), so the sign-in's identity is kept
+  // here for author names; reads never keep it.
+  if (probe.data?.user) dashClient.rememberIdentity(probe.data.user);
 
   const identity = dashClient.userIdentity;
   let username = identity?.username ?? null;

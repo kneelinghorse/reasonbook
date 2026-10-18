@@ -1,3 +1,5 @@
+// ABOUTME: Migrate legacy context blobs on writes and report partial persistence through warnings.
+// ABOUTME: Snapshot preparation failures follow the same disclosure contract as snapshot INSERT failures.
 /**
  * Versioned blob migration system for master_context.
  *
@@ -265,8 +267,15 @@ export function applyPendingBlobMigrations(
     return { migrated: true, migrationsApplied: applied, blob: result, warnings, rewritten: false };
   }
 
-  // Snapshot before any writes (using the highest pending version as the label)
-  takePreMigrationSnapshot(client, contextId, rawContent, targetVersion, warnings);
+  // Snapshot failures are advisory, including schema preparation before the checked INSERT.
+  try {
+    takePreMigrationSnapshot(client, contextId, rawContent, targetVersion, warnings);
+  } catch (error) {
+    warnings.push(
+      `context_snapshots pre-migration snapshot (blob-schema-v${targetVersion}) failed: ` +
+        (error instanceof Error ? error.message : String(error))
+    );
+  }
 
   // Write pruned blob back to contexts table
   const newContent = JSON.stringify(result);

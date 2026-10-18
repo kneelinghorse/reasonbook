@@ -15,6 +15,7 @@ import type { RbookToolResult } from './types';
 import { createError, createSuccess, RbookErrors, RBOOK_ERROR_CODES } from './errors';
 import { appendWarnings, attachWarnings } from './format-warnings';
 import { ensureReviewTimestamps } from './schema-migrations';
+import { recordedExecute, recordedTransaction } from './record-changes';
 
 export interface RbookDecisionsUpdateResult {
   /** ID of the updated decision */
@@ -150,10 +151,11 @@ export async function rbookDecisionsUpdate(
       const ready = prepareRecordLinkWrite(client, warnings);
       if (!ready.success) return createError<RbookDecisionsUpdateResult>(ready.error!);
       const reviewOnly = newStatus === previousStatus && params.supersededBy === undefined;
-      const committed = client.writeTransaction(() => {
+      const committed = recordedTransaction(client, () => {
         if (sets.length > 0) {
           updateParams.push(params.decisionId);
-          const updated = client.execute(
+          const updated = recordedExecute(
+            client,
             `UPDATE strategic_decisions SET ${sets.join(', ')} WHERE id = ?`,
             updateParams
           );

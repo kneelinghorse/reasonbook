@@ -13,6 +13,8 @@ export type StoredLinkSource = CitationIdentity & {
 };
 export interface LinkInventory {
   localProjectId: string | null;
+  /** s96-m12: a copy of a shared record, whose citations resolve by id alone. */
+  byIdAlone: boolean;
   sources: StoredLinkSource[];
   identities: (CitationIdentity & { kind: InventoryKind })[];
 }
@@ -37,7 +39,25 @@ export function linkObject(
 }
 
 /** Missing optional historical tables are empty; malformed existing tables are never empty. */
+/**
+ * s96-m12 (ADR s96 §5): on a copy of a shared record an id names one row on every copy and is never
+ * reused, and copies' clocks differ, so a citation resolves by id alone. The sealed extractor's time
+ * tests are kept true rather than changed: every row a citation can name reads as earlier than every
+ * row that cites. A row citing itself is dropped by its callers, as the time test drops it elsewhere.
+ */
+const CITED_AT = '1970-01-01T00:00:00.000Z';
+const CITING_AT = '9999-12-31T23:59:59.999Z';
+
 export function loadLinkInventory(reader: RecordLinkReader, requireSources = false): LinkInventory {
+  // A copy of a shared record keeps its change log.
+  const byIdAlone = Boolean(
+    requireLinkSuccess(
+      reader.getMany<{ name: string }>(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'record_changes'"
+      ),
+      'shared record check'
+    )?.length
+  );
   const localProjectId =
     requireLinkSuccess(
       reader.getOne<{ value: string }>('SELECT value FROM metadata WHERE key=?', ['project_id']),
@@ -83,13 +103,30 @@ export function loadLinkInventory(reader: RecordLinkReader, requireSources = fal
       const identity = {
         kind,
         id: Number(row.id),
-        created_at: typeof row.created_at === 'string' ? row.created_at : null,
+        created_at: byIdAlone
+          ? CITED_AT
+          : typeof row.created_at === 'string'
+            ? row.created_at
+            : null,
         project_id: typeof row.project_id === 'string' ? row.project_id : null,
       };
       identities.push(identity);
       if (kind === 'decision' || kind === 'learning')
-        sources.push({ ...identity, kind, fields: row });
+        sources.push({
+          ...identity,
+          ...(byIdAlone ? { created_at: CITING_AT } : {}),
+          kind,
+          fields: row,
+        });
     }
   }
-  return { localProjectId, sources, identities };
+  return { localProjectId, byIdAlone, sources, identities };
+}
+
+/** s96-m12: the links a source makes, less one to itself, which only resolving by id alone admits. */
+export function withoutSelfLinks<T extends { to_kind: string; to_id: number }>(
+  links: readonly T[],
+  source: { kind: string; id: number }
+): T[] {
+  return links.filter((link) => !(link.to_kind === source.kind && link.to_id === source.id));
 }

@@ -8,6 +8,7 @@ import { createError, createSuccess, RbookErrors, RBOOK_ERROR_CODES } from './er
 import { ensureReviewTimestamps, ensureLearningsTable } from './schema-migrations';
 import { appendWarnings, attachWarnings } from './format-warnings';
 import { checkWrite } from './write-guard';
+import { recordedExecute } from './record-changes';
 
 /**
  * MODELLED ON `RbookLearningsUpdateResult`, NOT ON `rbook-constraints.ts` reaffirmConstraint —
@@ -100,11 +101,12 @@ export async function rbookLearningsReaffirm(
       // sets/clears the durable flag alongside the bump.
       const updateResult =
         params.evergreen === undefined
-          ? client.execute('UPDATE learnings SET last_reviewed_at = ? WHERE id = ?', [
+          ? recordedExecute(client, 'UPDATE learnings SET last_reviewed_at = ? WHERE id = ?', [
               nowIso,
               params.learningId,
             ])
-          : client.execute(
+          : recordedExecute(
+              client,
               'UPDATE learnings SET last_reviewed_at = ?, evergreen = ? WHERE id = ?',
               [nowIso, params.evergreen ? 1 : 0, params.learningId]
             );

@@ -48,6 +48,7 @@ import { sanitizeContentField } from '../../intelligence/content-sanitizer';
 import { appendWarnings, attachWarnings } from './format-warnings';
 import { checkWrite } from './write-guard';
 import { isTerminalStatus, SPRINT_NO_OPEN_WORK_STATUSES } from './terminal-status';
+import { recordedExecute } from './record-changes';
 
 /** Result of moving a mission to a different sprint. */
 export interface MissionMoveResult {
@@ -246,7 +247,8 @@ export async function rbookMissionMove(
 
       warnings.push(...(ensureMissionTimestamps(client).warnings ?? []));
 
-      const updateResult = client.execute(
+      const updateResult = recordedExecute(
+        client,
         `UPDATE missions
          SET sprint_id = ?,
              notes = COALESCE(notes || ' | ', '') || ?,

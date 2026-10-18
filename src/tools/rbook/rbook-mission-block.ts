@@ -22,6 +22,7 @@ import { ensureMissionTimestamps } from './schema-migrations';
 import { sanitizeContentField, sanitizeStringArray } from '../../intelligence/content-sanitizer';
 import { appendWarnings, attachWarnings } from './format-warnings';
 import { checkWrite } from './write-guard';
+import { recordedExecute } from './record-changes';
 
 /**
  * Result of blocking a mission.
@@ -234,7 +235,8 @@ export async function rbookMissionBlock(
       // Ensure timestamp columns exist (migration)
       warnings.push(...(ensureMissionTimestamps(client).warnings ?? []));
 
-      const updateResult = client.execute(
+      const updateResult = recordedExecute(
+        client,
         `
         UPDATE missions
         SET status = ?,

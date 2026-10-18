@@ -37,6 +37,7 @@ import { applyLearningReaffirm, sanitizeLearningIds } from './learning-reaffirm'
 import type { SupersessionCandidate } from './supersession-detection';
 import { appendWarnings, appendWriteFailures, attachWarnings } from './format-warnings';
 import { checkWrite, type WriteFailure } from './write-guard';
+import { isReplicaRefusal } from './replica-identity';
 import type { RbookToolResult } from './types';
 import { resolveCallerSession } from './session-owner';
 import { readProjectLevel } from './project-level';
@@ -46,6 +47,7 @@ import {
   reconcileStoreOnce,
   type ClosedSessionReceipt,
 } from './implicit-session-lifecycle';
+import { recordedExecute, recordedTransaction } from './record-changes';
 
 /**
  * s91-m04 — policy 3 (decisions keep the ADR lifecycle), made writable. A decision is born
@@ -316,7 +318,7 @@ export async function rbookDecisionsRecord(
       }
       const now = new Date().toISOString();
       let draftRaced = false;
-      const committed = client.writeTransaction(() => {
+      const committed = recordedTransaction(client, () => {
         let decisionId = existingId;
         if (decisionId === undefined) {
           const written = insertDecisionRow(
@@ -363,7 +365,8 @@ export async function rbookDecisionsRecord(
           markAnswered(clientRunner(client), direct.answered, `d:${decisionId}`, now);
         }
         for (const id of supersedes) {
-          const updated = client.execute(
+          const updated = recordedExecute(
+            client,
             `UPDATE strategic_decisions SET status = 'superseded', superseded_by = ? WHERE id = ?`,
             [decisionId, id]
           );
@@ -382,6 +385,8 @@ export async function rbookDecisionsRecord(
           suggestion: `Read the drafts with ${formatCliRemedy('drafts list', { projectRoot: path.resolve(client.path, '../../..') })} before recording again.`,
         });
       }
+      // s96-m01: a shared record's refusal (a full number block) keeps its own code and remedy.
+      if (isReplicaRefusal(committed.error)) return createError(committed.error!);
       if (!committed.success || committed.data === undefined) {
         return createError<RbookDecisionsRecordResult>({
           code: RBOOK_ERROR_CODES.DB_QUERY_FAILED,

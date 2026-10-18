@@ -65,7 +65,9 @@ describe('MCP effect annotations', () => {
             readOnlyHint: false,
             destructiveHint: true,
             idempotentHint: false,
-            openWorldHint: name === 'rbook_message' || name === 'rbook_sprint',
+            // s96-m13: rbook_project's join and sync write a copy on another machine, over SSH.
+            openWorldHint:
+              name === 'rbook_message' || name === 'rbook_sprint' || name === 'rbook_project',
           },
         })
       );
@@ -133,6 +135,8 @@ const READ_ARGS: Readonly<Record<string, Record<string, unknown>>> = {
   'rbook_context:history': {},
   'rbook_context:search': { query: 'storage' },
   'rbook_db:health': {},
+  // s96-m12: a solo store lists no conflicts, and the read leaves it unchanged.
+  'rbook_db:conflicts': {},
   'rbook_decisions:list': {},
   'rbook_decisions:search': { query: 'storage' },
   'rbook_decisions:show': { decisionId: 1 },
@@ -145,6 +149,7 @@ const READ_ARGS: Readonly<Record<string, Record<string, unknown>>> = {
   'rbook_mission:show': { missionId: 'effects-m01' },
   'rbook_mission:status': {},
   'rbook_project:list': {},
+  'rbook_project:members': {},
   'rbook_session:list': {},
   'rbook_session:search': { query: 'storage' },
   'rbook_sprint:list': {},

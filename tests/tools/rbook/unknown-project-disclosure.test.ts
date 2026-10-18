@@ -320,9 +320,18 @@ describe('s87-m04 — an unrecorded identity is disclosed per store, and named h
         ).test(sql),
       }).toEqual({ key, seeded: false });
     }
-    // Non-vacuity: the file must still seed the rows it SHOULD.
-    expect(sql).toContain("VALUES ('schema_version'");
-    expect(sql).toContain("VALUES ('created_at'");
+    // Non-vacuity: the shipped SQL must actually seed these rows, whatever its INSERT spelling.
+    const db = new Database(':memory:');
+    try {
+      db.exec(sql);
+      for (const key of ['schema_version', 'created_at']) {
+        expect(db.prepare('SELECT value FROM metadata WHERE key = ?').get(key)).toEqual({
+          value: expect.stringMatching(/\S/),
+        });
+      }
+    } finally {
+      db.close();
+    }
   });
 
   it('THE ANTI-SYMPTOM GATE: a store from the corrected seed STILL resolves to the literal', async () => {

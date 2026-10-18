@@ -18,6 +18,8 @@ import { createError, createSuccess, RbookErrors, RBOOK_ERROR_CODES } from './er
 import { sanitizeContentField, type SanitizedField } from '../../intelligence/content-sanitizer';
 import { ensureMissionIdColumn } from './rbook-mission-complete';
 import { genesisColumns, getProjectId } from './genesis-columns';
+import { isRecordedStore } from './record-guards';
+import { isReplicaRefusal, isSharedStore, takeReplicaSeq } from './replica-identity';
 import { resolveOpenSprintIdForWrite } from './current-sprint';
 import {
   ensureImplicitSessionColumns,
@@ -31,13 +33,15 @@ import { applyLearningReaffirm, sanitizeLearningIds } from './learning-reaffirm'
 import { recordEmbedding, learningEmbeddingInput } from '../../intelligence/embedding-pipeline';
 import { appendWarnings, appendWriteFailures, attachWarnings } from './format-warnings';
 import { checkWrite, type WriteFailure } from './write-guard';
-import { heldByAnotherProcess, resolveCallerSession } from './session-owner';
+import { heldByAnotherProcess, resolveCallerSession, sessionOfAnotherCopy } from './session-owner';
+import { isPeerSession } from './peer-sessions';
 import { readProjectLevel } from './project-level';
 import {
   closedSessionLines,
   reconcileStoreOnce,
   type ClosedSessionReceipt,
 } from './implicit-session-lifecycle';
+import { recordedTransaction } from './record-changes';
 
 /**
  * Valid capture categories matching the Python session_runtime.
@@ -502,6 +506,8 @@ export async function rbookSessionCapture(
         return createError<RbookSessionCaptureResult>(RbookErrors.sessionNotActive(sessionId));
       }
 
+      if (isPeerSession(session.owner_key))
+        return createError<RbookSessionCaptureResult>(sessionOfAnotherCopy(sessionId));
       // s92-m03: a named session that another running process is writing to is not this
       // caller's to write into; it would be attributed to that process.
       if (heldByAnotherProcess(client, session, 'write')) {
@@ -645,15 +651,19 @@ export async function rbookSessionCapture(
           if (!linkedCategory)
             warnings.push(...(ensureSessionMissionsTable(client).warnings ?? []));
           // INSERT OR IGNORE: idempotent — won't duplicate if already linked
-          checkWrite(
-            client.execute(
-              `INSERT OR IGNORE INTO session_missions (session_id, mission_id, linked_at, source)
+          const linked = client.execute(
+            `INSERT OR IGNORE INTO session_missions (session_id, mission_id, linked_at, source)
              VALUES (?, ?, ?, 'capture')`,
-              [sessionId, missionId, now]
-            ),
-            warnings,
-            'session-to-mission association'
+            [sessionId, missionId, now]
           );
+          // s96-m01: a new link on a shared store takes the copy's next sequence; this unit runs
+          // under the write lock there.
+          if (
+            checkWrite(linked, warnings, 'session-to-mission association') &&
+            linked.data?.changes &&
+            !isRecordedStore(client)
+          )
+            takeReplicaSeq(client, 'session_missions');
         }
 
         // Decision extraction with mission association
@@ -894,9 +904,14 @@ export async function rbookSessionCapture(
         }
         return resultData;
       };
-      const captured = linkedCategory
-        ? client.writeTransaction(captureUnit)
-        : createSuccess(captureUnit());
+      // s96-m01: a shared store allocates a constraint's id under the write lock too.
+      const captured =
+        linkedCategory || isSharedStore(client)
+          ? recordedTransaction(client, captureUnit)
+          : createSuccess(captureUnit());
+      // s96-m01: a shared record's refusal (a full number block) keeps its own code and remedy.
+      if (isReplicaRefusal(captured.error))
+        return createError<RbookSessionCaptureResult>(captured.error!);
       if (!captured.success || !captured.data)
         return recordLinkFailure(captured.error?.message ?? 'Capture rolled back');
       const resultData = captured.data;

@@ -7,7 +7,12 @@ import {
   type RecordLink,
   type CitationDiscards,
 } from './record-link-extractor';
-import { loadLinkInventory, requireLinkSuccess, type RecordLinkReader } from './record-link-store';
+import {
+  loadLinkInventory,
+  requireLinkSuccess,
+  withoutSelfLinks,
+  type RecordLinkReader,
+} from './record-link-store';
 import { inspectRecordLinkSchema } from './record-link-schema';
 
 /** available means a usable graph, including the explicit-only compatibility fallback. */
@@ -43,7 +48,7 @@ export function readRecordLinks(reader: RecordLinkReader): {
           inventory.localProjectId,
           { typedOnly: true }
         );
-        links.push(...parsed.links);
+        links.push(...withoutSelfLinks(parsed.links, source));
         add(parsed.discarded);
       }
       return { available: true, mode: 'typed-fallback', links, warnings: [], discarded };

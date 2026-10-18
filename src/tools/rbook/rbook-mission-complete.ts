@@ -44,6 +44,8 @@ import { checkWrite } from './write-guard';
 import { isOpenStatus } from './terminal-status';
 import { resolveCallerSession, storeNeedsReconcile } from './session-owner';
 import { findReusableSnapshot, snapshotStorage } from './snapshot-content-policy';
+import { recordedExecute, recordedTransaction } from './record-changes';
+import { isSharedStore } from './replica-identity';
 
 interface MissionCompletionRecord {
   id: string;
@@ -356,7 +358,7 @@ export async function rbookMissionComplete(
         if (!ready.success) return createError<MissionCompleteResult>(ready.error!);
       }
 
-      const updateResult = client.execute(updateQuery, updateParams);
+      const updateResult = recordedExecute(client, updateQuery, updateParams);
 
       if (!updateResult.success) {
         return createError<MissionCompleteResult>(
@@ -565,7 +567,7 @@ async function captureDecisions(
 
     for (const decision of decisions) {
       const trimmed = decision.trim();
-      const committed = client.writeTransaction(() => {
+      const committed = recordedTransaction(client, () => {
         const g = genesisColumns(client, 'strategic_decisions', getProjectId(client));
         const insertResult = client.execute(
           // s69-m04: session_id renamed → author_session_id. genesisColumns above
@@ -817,7 +819,9 @@ function syncProjectIdentityFromMetadata(
     if (projectName) rowUpdates.project_name = projectName;
     if (projectDescription) rowUpdates.description = projectDescription;
     if (projectStatus) rowUpdates.status = projectStatus;
-    if (Object.keys(rowUpdates).length > 0) {
+    // s96-m03: on a shared record the identity's recorded keys are the authority's to change, so
+    // no copy converges them from its own metadata.
+    if (Object.keys(rowUpdates).length > 0 && !isSharedStore(client)) {
       patchProjectIdentity(client, rowUpdates);
     }
   } catch {

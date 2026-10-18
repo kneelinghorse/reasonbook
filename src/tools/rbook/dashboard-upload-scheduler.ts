@@ -6,7 +6,7 @@ import { getSetting } from '../../intelligence/legacy-compat';
 import { ProjectGraphRegistry } from '../../intelligence/project-graph-registry';
 import { isSameDirectory } from '../../intelligence/resolution-policy';
 import { triggerCheckpointBackfill } from './checkpoint-backfill';
-import { readUploadProject, uploadLog } from './dashboard-upload';
+import { isMembersStore, readUploadProject, uploadLog } from './dashboard-upload';
 import { isReadOnlyAgentSession } from './read-only-agent-guard';
 import { captureToolCall } from './tool-call-context';
 import { withoutCodexRequest } from '../../codex-request-context';
@@ -51,7 +51,8 @@ export async function markDashboardUploadOwed(projectRoot: string): Promise<void
   if (!enabled()) return;
   try {
     const project = readUploadProject(projectRoot);
-    if (!project?.registered) return;
+    // s96-m13: a member's copy of a shared record never uploads; only the owner's copy does.
+    if (!project?.registered || (await isMembersStore(project))) return;
     const graph = await ProjectGraphRegistry.create();
     const entry = graph.get(project.projectId);
     if (

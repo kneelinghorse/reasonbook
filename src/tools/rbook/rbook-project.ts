@@ -2,7 +2,8 @@
  * rbook_project Tool
  *
  * Consolidated project tool with action parameter support.
- * Actions: init, register, list, unregister, validate, update, sweep.
+ * Actions: init, register, list, unregister, validate, update, sweep; s96-m13's shared-record
+ * actions share, invite, join, members, remove and sync live in rbook-project-shared.ts.
  * Routes to existing project handlers without rewriting business logic.
  * Note: list action supports optional validate flag that runs validation.
  *
@@ -55,6 +56,20 @@ import {
   formatProjectSweepForLLM,
   type SweepResult,
 } from './rbook-project-sweep';
+import {
+  formatSharedProjectForLLM,
+  rbookProjectInvite,
+  rbookProjectJoin,
+  rbookProjectMembers,
+  rbookProjectRemove,
+  rbookProjectShare,
+  rbookProjectSync,
+  SHARED_PROJECT_ACTION_PARAMS,
+  sharedProjectProperties,
+  sharedProjectZodFields,
+  type SharedProjectAction,
+  type SharedProjectResult,
+} from './rbook-project-shared';
 
 export const RBOOK_PROJECT_ACTIONS = [
   'init',
@@ -65,6 +80,12 @@ export const RBOOK_PROJECT_ACTIONS = [
   'prune',
   'update',
   'sweep',
+  'share',
+  'invite',
+  'join',
+  'members',
+  'remove',
+  'sync',
 ] as const;
 
 export type RbookProjectAction = (typeof RBOOK_PROJECT_ACTIONS)[number];
@@ -95,6 +116,7 @@ export const RBOOK_PROJECT_ACTION_PARAMS: ActionParamMap<RbookProjectAction, Rbo
   prune: ['action'],
   update: ['action', 'projectRoot', 'projectType'],
   sweep: ['action', 'instances', 'statusFilter', 'itemType'],
+  ...SHARED_PROJECT_ACTION_PARAMS,
 };
 
 export type RbookProjectResult =
@@ -104,7 +126,8 @@ export type RbookProjectResult =
   | ProjectUnregisterResult
   | ProjectValidateResult
   | ProjectUpdateResult
-  | SweepResult;
+  | SweepResult
+  | SharedProjectResult;
 
 const initialSprintSchema = z
   .object({
@@ -132,7 +155,7 @@ export const rbookProjectSchema = z
     action: z
       .enum(RBOOK_PROJECT_ACTIONS)
       .describe(
-        'Project action: init | register | list | unregister | validate | prune | update | sweep'
+        'Project action: init | register | list | unregister | validate | prune | update | sweep | share | invite | join | members | remove | sync'
       ),
     projectRoot: z.string().optional().describe('Project root directory'),
     // init params
@@ -151,7 +174,10 @@ export const rbookProjectSchema = z
         'Initial missions for init action; refused at the Ledger level, which keeps no missions'
       ),
     // register params
-    name: z.string().optional().describe('Display name for register action'),
+    name: z
+      .string()
+      .optional()
+      .describe("register: the display name; invite and remove: the member's name"),
     setAsDefault: z
       .boolean()
       .optional()
@@ -188,6 +214,7 @@ export const rbookProjectSchema = z
       .enum(['mission', 'session'])
       .optional()
       .describe('Restrict sweep to missions or sessions only'),
+    ...sharedProjectZodFields,
   })
   .strict();
 
@@ -197,12 +224,16 @@ export const rbookProjectToolDefinition = {
   name: 'rbook_project',
   description:
     'Consolidated project tool with action parameter support. ' +
-    'Actions: init, register, list, unregister, validate, prune, update, sweep. ' +
+    'Actions: init, register, list, unregister, validate, prune, update, sweep, share, invite, join, members, remove, sync. ' +
     'The list action supports an optional validate flag. ' +
     'The prune action removes registry entries where the local Reasonbook database no longer exists on disk. ' +
     'The update action sets the level (project_type: general/managed/build) and writes the files ' +
     'the new level uses that the project lacks; it removes no file and overwrites no edited one. ' +
-    'The sweep action returns all open missions and active sessions across registered instances.',
+    'The sweep action returns all open missions and active sessions across registered instances. ' +
+    "The shared-record actions: share makes this copy the owner's of a record others join; invite " +
+    "and remove manage its members; join admits a member's copy over SSH; members lists them; and " +
+    'sync exchanges with every copy this one has a route to, or with confirmOwner confirms a move ' +
+    "of the owner's copy.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -210,7 +241,7 @@ export const rbookProjectToolDefinition = {
         type: 'string',
         enum: [...RBOOK_PROJECT_ACTIONS],
         description:
-          'Project action: init | register | list | unregister | validate | prune | update | sweep',
+          'Project action: init | register | list | unregister | validate | prune | update | sweep | share | invite | join | members | remove | sync',
       },
       projectRoot: { type: 'string', description: 'Project root directory' },
       projectName: { type: 'string', description: 'Project name for init action' },
@@ -264,7 +295,10 @@ export const rbookProjectToolDefinition = {
           additionalProperties: false,
         },
       },
-      name: { type: 'string', description: 'Display name for register action' },
+      name: {
+        type: 'string',
+        description: "register: the display name; invite and remove: the member's name",
+      },
       setAsDefault: {
         type: 'boolean',
         description:
@@ -300,6 +334,7 @@ export const rbookProjectToolDefinition = {
         enum: ['mission', 'session'],
         description: 'Restrict sweep to missions or sessions only',
       },
+      ...sharedProjectProperties,
     },
     required: ['action'],
     additionalProperties: false,
@@ -388,6 +423,36 @@ export async function rbookProject(
         statusFilter: params.statusFilter,
         itemType: params.itemType,
       });
+    case 'share':
+      return rbookProjectShare({
+        projectRoot: params.projectRoot,
+        authorName: params.authorName,
+      });
+    case 'invite':
+      return rbookProjectInvite({
+        projectRoot: params.projectRoot,
+        name: params.name,
+        role: params.role,
+      });
+    case 'join':
+      return rbookProjectJoin({
+        projectRoot: params.projectRoot,
+        member: params.member,
+        host: params.host,
+        remoteRoot: params.remoteRoot,
+        remoteNode: params.remoteNode,
+        remoteBin: params.remoteBin,
+        remoteConfigDir: params.remoteConfigDir,
+      });
+    case 'members':
+      return rbookProjectMembers({ projectRoot: params.projectRoot });
+    case 'remove':
+      return rbookProjectRemove({ projectRoot: params.projectRoot, name: params.name });
+    case 'sync':
+      return rbookProjectSync({
+        projectRoot: params.projectRoot,
+        confirmOwner: params.confirmOwner,
+      });
   }
 }
 
@@ -437,6 +502,16 @@ export function formatProjectForLLM(
       return formatProjectUpdateForLLM(result as RbookToolResult<ProjectUpdateResult>);
     case 'sweep':
       return formatProjectSweepForLLM(result as RbookToolResult<SweepResult>);
+    case 'share':
+    case 'invite':
+    case 'join':
+    case 'members':
+    case 'remove':
+    case 'sync':
+      return formatSharedProjectForLLM(
+        action as SharedProjectAction,
+        result as RbookToolResult<SharedProjectResult>
+      );
     default: {
       if (!result.success) return '❌ Failed to execute rbook_project';
       const lines = ['✓ Project action completed'];

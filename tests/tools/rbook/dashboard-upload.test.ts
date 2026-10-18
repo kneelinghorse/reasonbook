@@ -116,3 +116,19 @@ it('a racing mark stays owed after a successful snapshot upload', async () => {
   });
   expect(graph.readUploadState('upload-test')?.firstOwedAt).not.toBeNull();
 });
+
+// s96-m01 (#629): macOS reaches one folder as /Users/… and as /System/Volumes/Data/…; realpath does
+// not fold the two, so the guard compares device and inode too.
+const DATA_VOLUME = '/System/Volumes/Data';
+const itOnMac = process.platform === 'darwin' && fs.existsSync(DATA_VOLUME) ? it : it.skip;
+itOnMac('accepts a registry row that names the store by its Data volume spelling', async () => {
+  const spelled = DATA_VOLUME + fs.realpathSync.native(root);
+  graph.register({ project_id: 'upload-test', store_path: spelled, name: 'Upload Test' });
+  expect(graph.get('upload-test')?.store_path).toBe(spelled);
+  let ran = false;
+  await withUploadLease(root, true, async () => {
+    ran = true;
+    return { success: true };
+  });
+  expect(ran).toBe(true);
+});

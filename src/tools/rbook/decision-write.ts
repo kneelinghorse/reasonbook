@@ -12,6 +12,7 @@ import { genesisColumns, getProjectId } from './genesis-columns';
 import { recordEmbedding, decisionEmbeddingInput } from '../../intelligence/embedding-pipeline';
 import { checkWrite, type WriteSink } from './write-guard';
 import { requireRecordLinks } from './record-link-write';
+import { recordedExecute } from './record-changes';
 
 /**
  * s91-m04 — extracted from the decision arm of `rbookSessionCapture` so `rbook_decisions(record)`
@@ -118,7 +119,8 @@ export function insertDecisionRow(
 
   const insertColumns = columns.join(', ');
   const insertPlaceholders = columns.map(() => '?').join(', ');
-  const insertResult = client.execute(
+  const insertResult = recordedExecute(
+    client,
     `INSERT INTO strategic_decisions (${insertColumns}) VALUES (${insertPlaceholders})`,
     insertParams
   );

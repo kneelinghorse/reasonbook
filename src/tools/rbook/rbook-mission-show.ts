@@ -20,6 +20,7 @@ import { withClient } from './client';
 import type { RbookToolResult, Mission, MissionStatus, Sprint } from './types';
 import { createError, createSuccess, RbookErrors } from './errors';
 import { getProjectId, tableHasColumn } from './genesis-columns';
+import { authorNamesSince, authorReading } from './author-name';
 import { frameInlineIfForeign, frameTextIfForeign } from '../../intelligence/provenance-frame';
 import { appendWarnings } from './format-warnings';
 
@@ -68,6 +69,9 @@ export interface MissionShowResult extends SpinOutDetails {
 
   /** Last state change timestamp */
   updatedAt: string | null;
+
+  /** s96-m02 (ADR s96 §10): who created it, or the reading for a NULL author. */
+  author: string;
 
   /** Additional metadata (parsed from JSON) */
   metadata: Record<string, unknown> | null;
@@ -170,6 +174,10 @@ export async function rbookMissionShow(
       const updatedAtExpr = missionColumns.has('updated_at') ? 'updated_at' : 'NULL AS updated_at';
       // s84-m03: guarded project_id read (NULL AS on an ancient store lacking the column).
       const projectIdExpr = missionColumns.has('project_id') ? 'project_id' : 'NULL AS project_id';
+      const authorExpr = missionColumns.has('author_name') ? 'author_name' : 'NULL AS author_name';
+      const occurredExpr = missionColumns.has('occurred_at')
+        ? 'occurred_at'
+        : 'NULL AS occurred_at';
 
       const missionResult = client.getOne<Mission>(
         `
@@ -177,7 +185,8 @@ export async function rbookMissionShow(
           id, sprint_id, name, status, completed_at, notes,
           objective, context, success_criteria, deliverables,
           reference_docs, domain_fields, metadata,
-          ${createdAtExpr}, ${startedAtExpr}, ${updatedAtExpr}, ${projectIdExpr}
+          ${createdAtExpr}, ${startedAtExpr}, ${updatedAtExpr}, ${projectIdExpr},
+          ${authorExpr}, ${occurredExpr}
         FROM missions
         WHERE id = ?
       `,
@@ -241,6 +250,11 @@ export async function rbookMissionShow(
         createdAt: (mission as unknown as Record<string, string | null>).created_at ?? null,
         startedAt: (mission as unknown as Record<string, string | null>).started_at ?? null,
         updatedAt: (mission as unknown as Record<string, string | null>).updated_at ?? null,
+        author: authorReading(
+          (mission as unknown as { author_name?: string | null }).author_name,
+          (mission as unknown as { occurred_at?: number | null }).occurred_at,
+          authorNamesSince(client)
+        ),
         metadata: parseJsonObject(mission.metadata),
         sprint: sprintInfo,
         projectId: (mission as unknown as Record<string, string | null>).project_id ?? null,
@@ -332,6 +346,7 @@ export function formatMissionShowForLLM(result: RbookToolResult<MissionShowResul
   const statusIcon = getStatusIcon(m.status);
   lines.push(`# ${m.id}: ${frameInlineIfForeign(m.name, m.projectId, local)}`);
   lines.push(`**Status**: ${statusIcon} ${m.status}`);
+  lines.push(`**Author**: ${m.author}`);
 
   // Sprint context
   if (m.sprint) {

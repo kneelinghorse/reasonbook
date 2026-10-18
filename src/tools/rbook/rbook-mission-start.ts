@@ -31,6 +31,7 @@ import {
 } from './relevance-surfacing';
 import { appendWarnings, attachWarnings } from './format-warnings';
 import { checkWrite } from './write-guard';
+import { recordedExecute } from './record-changes';
 
 /**
  * Result of starting a mission.
@@ -291,7 +292,7 @@ export async function rbookMissionStart(
 
       if (sprintActivationResult.data && mission.sprint_id && !otherOpen)
         activatedSprintId = mission.sprint_id;
-      const updateResult = client.execute(updateQuery, updateParams);
+      const updateResult = recordedExecute(client, updateQuery, updateParams);
 
       if (!updateResult.success) {
         rollbackTransaction();
@@ -454,11 +455,12 @@ function shouldActivateParentSprint(
 }
 
 function activateParentSprint(
-  client: { execute: RbookDatabaseClient['execute'] },
+  client: RbookDatabaseClient,
   sprintId: string,
   startedAt: string
 ): ReturnType<RbookDatabaseClient['execute']> {
-  const updateWithStartDate = client.execute(
+  const updateWithStartDate = recordedExecute(
+    client,
     `
       UPDATE sprints
       SET status = 'Active',
@@ -477,7 +479,8 @@ function activateParentSprint(
     updateWithStartDate.error?.code === RBOOK_ERROR_CODES.DB_SCHEMA_MISMATCH &&
     updateWithStartDate.error?.message.includes('start_date')
   ) {
-    return client.execute(
+    return recordedExecute(
+      client,
       `
       UPDATE sprints
       SET status = 'Active'

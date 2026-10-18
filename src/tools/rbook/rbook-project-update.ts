@@ -22,6 +22,8 @@ import {
 } from './rules-files';
 import { checkWrite, type WriteFailure } from './write-guard';
 import { readmeNote, resolveSeedPath, writeLevelFiles } from './level-files';
+import { recordedChange, recordedExecute } from './record-changes';
+import { isReplicaRefusal } from './replica-identity';
 
 const VALID_PROJECT_TYPES = ['general', 'managed', 'build'] as const;
 export type ProjectType = (typeof VALID_PROJECT_TYPES)[number];
@@ -68,17 +70,27 @@ export async function rbookProjectUpdate(
       // `<root>/rbook/db/rbook.sqlite` → `<root>`.
       const root = path.dirname(path.dirname(path.dirname(client.path)));
 
-      const result = client.execute('INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)', [
-        'project_type',
-        params.projectType!,
-      ]);
+      // s96-m03: project_type is a recorded identity key, so a shared record records its change.
+      const result = recordedExecute(
+        client,
+        'INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)',
+        ['project_type', params.projectType!]
+      );
+      // s96-m12: a member's copy refuses it (ADR s96 §7), and the answer is that refusal.
+      if (isReplicaRefusal(result.error)) return createError<ProjectUpdateResult>(result.error!);
       // s86-m02b: `updated` is the answer's claim about what the store now holds. It may only
       // name project_type when the statement actually ran.
       const warnings: string[] = [];
       if (checkWrite(result, { failures: writeFailures }, 'metadata.project_type')) {
         updated['project_type'] = params.projectType!;
         // s93-m12: the identity row names the tier too, so its view says what the project is.
-        patchProjectIdentity(client, { tier: params.projectType! }, warnings);
+        checkWrite(
+          recordedChange(client, () =>
+            patchProjectIdentity(client, { tier: params.projectType! }, warnings)
+          ),
+          warnings,
+          'project_identity.tier'
+        );
         // s93-m12: the agents file's one Reasonbook line names the level, so it follows the change, and
         // the answer says so, or says what it left (a line edited by hand, a read-only file).
         // The hooks' setting comes from the store too, so the line says all of what the project is.

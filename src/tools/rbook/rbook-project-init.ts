@@ -30,10 +30,15 @@ import Database from 'better-sqlite3';
 import type { RbookToolResult } from './types';
 import { createError, createSuccess, RBOOK_ERROR_CODES } from './errors';
 import { RBOOK_SCHEMA, RBOOK_SCHEMA_VERSION } from './schema';
+import { AUTHOR_NAMES_SINCE_KEY } from './schema-migrations';
+import { rawGenesisColumns } from './genesis-columns';
 import { assertJestDbPathIsolated } from './real-store-guard';
 import { ProjectGraphRegistry, readStoreIdentity } from '../../intelligence/project-graph-registry';
 import { RbookDetector } from '../../intelligence/rbook-detector';
 import { appendWarnings } from './format-warnings';
+import { RbookDatabaseClient } from './client';
+import { isSharedStore } from './replica-identity';
+import { replicaWriteRefusal } from './replica-check';
 import {
   AGENTS_FILE_NAME,
   AMBIENT_METADATA_KEY,
@@ -661,6 +666,38 @@ export async function rbookProjectInit(
     });
   }
 
+  // s96-m01 (ADR s96 §3, §9): a copy of a shared record is checked before init writes anything,
+  // and init seeds no sprint or mission into one: the sprint and mission tools number and record
+  // them under the store's write lock.
+  // The check opens the store read-only, so a refused init leaves it as it found it.
+  let sharedCopy = false;
+  if (storeExists) {
+    const opened = await RbookDatabaseClient.create({
+      dbPath,
+      readonly: true,
+      registerProject: false,
+    });
+    if (opened.success && opened.data) {
+      try {
+        const refused = replicaWriteRefusal(opened.data);
+        if (refused) return createError(refused);
+        sharedCopy = isSharedStore(opened.data);
+      } finally {
+        opened.data.close();
+      }
+    }
+  }
+  if (sharedCopy && (initialSprint || initialMissions?.length)) {
+    return createError({
+      code: RBOOK_ERROR_CODES.INVALID_PARAMETER,
+      message:
+        'This project is shared, so init was refused before it wrote anything: it seeds no sprint or mission into a copy of a shared record.',
+      suggestion:
+        'Add the sprint with rbook_sprint(action="add") and the missions with rbook_mission(action="add"), which number and record them; init without initialSprint and initialMissions changes the rest as before.',
+      field: initialSprint ? 'initialSprint' : 'initialMissions',
+    });
+  }
+
   // s93-m12 (the build critics' B1): a re-init keeps the identity the project already has, and
   // nothing is written before that is settled. The registry and the dashboard know a project by its
   // id, so an init that minted a new one refused every later write as an identity conflict. The id
@@ -739,6 +776,11 @@ export async function rbookProjectInit(
 
       // Execute schema (all CREATE IF NOT EXISTS, safe on existing DB)
       db.exec(RBOOK_SCHEMA);
+      // s96-m02: a new store records authors from its first row (ADR s96 §10).
+      if (isNewProject)
+        db.prepare(
+          `INSERT OR IGNORE INTO metadata (key, value) VALUES ('${AUTHOR_NAMES_SINCE_KEY}', ?)`
+        ).run(String(Date.now()));
 
       // Set project metadata
       const now = new Date().toISOString();
@@ -759,7 +801,8 @@ export async function rbookProjectInit(
       if (projectName || !stored('project_name')?.trim()) {
         updateMetadata.run('project_name', projectName || restoredName);
       }
-      if (tracelabProjectId || stored('tracelab_project_id') === undefined) {
+      // A harmless shared re-init must not introduce an absent recorded identity key.
+      if (tracelabProjectId || (!sharedCopy && stored('tracelab_project_id') === undefined)) {
         updateMetadata.run('tracelab_project_id', tracelabProjectId);
       }
       const currentSchemaVersion = (
@@ -891,15 +934,18 @@ export async function rbookProjectInit(
           .get(initialSprint.id);
 
         if (!existingSprint) {
+          // s96-m01: stamped here, so every copy of this store gives the row one stable id.
+          const g = rawGenesisColumns(db, 'sprints', projectId);
           db.prepare(
-            `INSERT INTO sprints (id, title, focus, status, start_date)
-             VALUES (?, ?, ?, ?, ?)`
+            `INSERT INTO sprints (id, title, focus, status, start_date${g.columns.length ? `, ${g.columns.join(', ')}` : ''})
+             VALUES (?, ?, ?, ?, ?${g.columns.length ? `, ${g.placeholders}` : ''})`
           ).run(
             initialSprint.id,
             initialSprint.title,
             initialSprint.focus || null,
             initialSprint.status || 'Active',
-            now.split('T')[0]
+            now.split('T')[0],
+            ...g.values
           );
           sprintCreated = initialSprint.id;
         }
@@ -909,10 +955,12 @@ export async function rbookProjectInit(
       const missionsCreated: string[] = [];
       const missionWarnings: string[] = [];
       if (initialMissions && initialMissions.length > 0) {
+        // s96-m01: the stamp's columns shape the statement; each mission takes its own stamp below.
+        const g = rawGenesisColumns(db, 'missions', projectId);
         const insertMission = db.prepare(
           `INSERT OR IGNORE INTO missions
-           (id, sprint_id, name, status, objective, success_criteria, deliverables)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`
+           (id, sprint_id, name, status, objective, success_criteria, deliverables${g.columns.length ? `, ${g.columns.join(', ')}` : ''})
+           VALUES (?, ?, ?, ?, ?, ?, ?${g.columns.length ? `, ${g.placeholders}` : ''})`
         );
 
         for (const mission of initialMissions) {
@@ -937,6 +985,8 @@ export async function rbookProjectInit(
               `Sprint '${assignedSprintId}' does not exist for mission '${mission.id}'.`
             );
           }
+          // s96-m01: each mission is stamped at its insert, as the sprint above is.
+          const stamp = rawGenesisColumns(db, 'missions', projectId);
           const result = insertMission.run(
             mission.id,
             assignedSprintId,
@@ -944,7 +994,8 @@ export async function rbookProjectInit(
             mission.status || 'Queued',
             mission.objective || null,
             mission.successCriteria ? JSON.stringify(mission.successCriteria) : null,
-            mission.deliverables ? JSON.stringify(mission.deliverables) : null
+            mission.deliverables ? JSON.stringify(mission.deliverables) : null,
+            ...stamp.values
           );
 
           if (result.changes > 0) {
@@ -1069,7 +1120,10 @@ export async function rbookProjectInit(
               `The project registry held '${registryProjectId}' for this folder, a project that has since moved or been deleted; that entry was dropped, and the project registers again wherever it is on its next write.`
             );
           }
-          graph.registerStore(projectRoot, { name: projectName || undefined });
+          graph.registerStore(projectRoot, {
+            name: projectName || undefined,
+            confirmedCopy: sharedCopy,
+          });
           // s93-m11 (#606 f): the same warning register gives for a temporary folder.
           if (graph.isEphemeral(path.resolve(projectRoot))) {
             warnings.push(

@@ -63,6 +63,7 @@ import {
   type UserScopedKeyRecord,
 } from '../../intelligence/credential-store';
 import { DashboardClient, type ListedKey, resolveDashboardBaseUrl } from './dashboard-client';
+import { forgetDashboardIdentity } from '../../intelligence/user-author';
 import { withClientAsync } from './client';
 import {
   classifyAttribution,
@@ -85,6 +86,7 @@ import {
   type DeviceTokenSuccess,
 } from '../../auth/device-code';
 import { appendWarnings } from './format-warnings';
+import { dashboardOwnerError } from '../../auth/dashboard-owner';
 
 export const RBOOK_AUTH_ACTIONS = [
   'rotate',
@@ -486,10 +488,25 @@ export interface RbookAuthDependencies {
   /** Sprint 59 m04 — override for tests; default = `pollForTokenBounded`. */
   tokenPoller?: TokenPollerImpl;
   /**
+   * s96-m02 — asks the dashboard who the new sign-in is, so author names default to its username
+   * (ADR s96 §10). Override for tests; default = `fetchSignedInIdentity`.
+   */
+  identityFetcher?: IdentityFetcherImpl;
+  /**
    * Sprint 58 m01 — explicit override for tests. When omitted, the canonical resolver applies
    * explicit/env/baked-default precedence. An explicit empty string disables login actions.
    */
   dashboardBaseUrl?: string;
+}
+
+/** s96-m02: asks the dashboard for the identity of the account a new key belongs to. */
+export type IdentityFetcherImpl = (baseUrl: string, apiKey: string) => Promise<void>;
+
+/** The dashboard returns the caller's id and username (H3); a sign-in keeps them for its key. */
+async function fetchSignedInIdentity(baseUrl: string, apiKey: string): Promise<void> {
+  const client = new DashboardClient({ baseUrl, apiKey });
+  const mine = await client.getMyProjects();
+  if (mine.success && mine.data?.user) client.rememberIdentity(mine.data.user);
 }
 
 // ─── Handler ─────────────────────────────────────────────────────────────────
@@ -522,6 +539,11 @@ export async function rbookAuth(
   );
   if (wrongTypedParam) return createError<RbookAuthResult>(wrongTypedParam);
 
+  if ((actionValue === 'rotate' || actionValue === 'reissue') && params.projectRoot) {
+    const ownerError = await dashboardOwnerError(params.projectRoot);
+    if (ownerError) return createError<RbookAuthResult>(ownerError);
+  }
+
   const store = deps.store ?? (await CredentialStore.create());
   const clientResolver = deps.clientResolver ?? defaultDashboardClientResolver;
   const userClientResolver = deps.userClientResolver ?? defaultUserScopedClientResolver;
@@ -530,6 +552,7 @@ export async function rbookAuth(
   const deviceCodeRequester =
     deps.deviceCodeRequester ?? (({ baseUrl, userAgent }) => requestDeviceCode(baseUrl, userAgent));
   const tokenPoller = deps.tokenPoller ?? pollForTokenBounded;
+  const identityFetcher = deps.identityFetcher ?? fetchSignedInIdentity;
   const dashboardBaseUrl =
     deps.dashboardBaseUrl !== undefined ? deps.dashboardBaseUrl : resolveDashboardBaseUrl();
 
@@ -543,11 +566,11 @@ export async function rbookAuth(
     case 'reissue':
       return handleReissue(params, store, userClientResolver, projectIdReader);
     case 'login':
-      return handleLogin(store, deviceCodeFlow, dashboardBaseUrl);
+      return handleLogin(store, deviceCodeFlow, dashboardBaseUrl, identityFetcher);
     case 'login_init':
       return handleLoginInit(deviceCodeRequester, dashboardBaseUrl);
     case 'login_complete':
-      return handleLoginComplete(params, store, tokenPoller, dashboardBaseUrl);
+      return handleLoginComplete(params, store, tokenPoller, dashboardBaseUrl, identityFetcher);
     case 'logout':
       return handleLogout(params, store, clientResolver);
   }
@@ -698,12 +721,15 @@ async function handleRevoke(
     );
   }
 
-  // Local cleanup per inferred scope. 'unknown' → no local row to clean.
+  // Local cleanup per inferred scope. 'unknown' → no local row to clean. s96-m02: a revoked key's
+  // identity is forgotten with it, so author names stop defaulting to it.
   if (scope === 'user') {
+    forgetDashboardIdentity(userScopedKeys[targetKeyId].key);
     await store.removeUserScopedKey(targetKeyId);
   } else if (scope === 'project') {
     for (const [projectRoot, record] of Object.entries(allProjects)) {
       if (record.keyId === targetKeyId) {
+        forgetDashboardIdentity(record.key);
         await store.removeProjectKey(projectRoot);
       } else if (record.pendingRevoke?.keyId === targetKeyId) {
         await store.clearPendingRevoke(projectRoot);
@@ -958,7 +984,8 @@ function reissueAttributionError(failure: AttributionFailure): RbookToolError {
 async function handleLogin(
   store: CredentialStore,
   deviceCodeFlow: DeviceCodeFlowImpl,
-  dashboardBaseUrl: string | null | undefined
+  dashboardBaseUrl: string | null | undefined,
+  identityFetcher: IdentityFetcherImpl
 ): Promise<RbookToolResult<RbookAuthResult>> {
   if (!dashboardBaseUrl) {
     return createError<RbookAuthResult>(RbookErrors.dashboardNotConfigured());
@@ -988,6 +1015,8 @@ async function handleLogin(
       );
     }
 
+    // s96-m02: as login_complete does, learn who signed in so author names default to them.
+    await identityFetcher(dashboardBaseUrl, token.key).catch(() => undefined);
     return createSuccess<RbookAuthResult>({
       action: 'login',
       verificationUri: captured.verificationUri,
@@ -1038,7 +1067,8 @@ async function handleLoginComplete(
   params: RbookAuthParams,
   store: CredentialStore,
   tokenPoller: TokenPollerImpl,
-  dashboardBaseUrl: string | null | undefined
+  dashboardBaseUrl: string | null | undefined,
+  identityFetcher: IdentityFetcherImpl
 ): Promise<RbookToolResult<RbookAuthResult>> {
   if (!dashboardBaseUrl) {
     return createError<RbookAuthResult>(RbookErrors.dashboardNotConfigured());
@@ -1072,6 +1102,9 @@ async function handleLoginComplete(
           lastUsedAt: now,
         };
         await store.upsertUserScopedKey(poll.keyId, record);
+        // s96-m02: learn the account's username now, so author names default to it. The sign-in
+        // stands without it; a later dashboard call that returns the identity keeps it then.
+        await identityFetcher(dashboardBaseUrl, poll.key).catch(() => undefined);
         return createSuccess<RbookAuthResult>({
           action: 'login_complete',
           status: 'approved',
@@ -1158,6 +1191,8 @@ async function handleLogout(
   // Remove the local user-scoped row. Project-scoped children are left alone
   // — they keep working server-side as standalone cmk_ bearers; if the user
   // wants to clean them up they can revoke each individually.
+  // s96-m02: the signed-out key's identity goes with it, so author names stop defaulting to it.
+  forgetDashboardIdentity(userScopedKeys[targetKeyId].key);
   await store.removeUserScopedKey(targetKeyId);
 
   return createSuccess<RbookAuthResult>({

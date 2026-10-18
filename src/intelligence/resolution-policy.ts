@@ -62,7 +62,20 @@ function physical(candidate: string): string {
 
 /** True when `a` and `b` name the same directory, by spelling or by physical location. */
 export function isSameDirectory(a: string, b: string): boolean {
-  return path.resolve(a) === path.resolve(b) || physical(a) === physical(b);
+  return path.resolve(a) === path.resolve(b) || physical(a) === physical(b) || sameInode(a, b);
+}
+
+/**
+ * s96-m01 (#629): realpath does not fold macOS's /System/Volumes/Data spelling of a folder into
+ * /Users/…, so two spellings of one folder are also compared by device and inode.
+ */
+function sameInode(a: string, b: string): boolean {
+  try {
+    const [left, right] = [statSync(a), statSync(b)];
+    return left.dev === right.dev && left.ino === right.ino;
+  } catch {
+    return false;
+  }
 }
 
 /** True when `child` is `parent` or lies under it (by resolved spelling). */

@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "reasonbook-chat",
-  "version": "4.0.2",
+  "version": "4.1.0",
   "description": "Reasonbook: remember project decisions, recall their reasons, and plan what comes next in conversation.",
   "author": {
     "name": "Reasonbook"

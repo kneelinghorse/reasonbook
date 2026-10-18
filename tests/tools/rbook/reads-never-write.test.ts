@@ -47,7 +47,7 @@
  * see no request except a GET, and none at all when no dashboard is configured.
  *
  * SCOPE AND WHAT IT CANNOT SEE (one contract). Scope: the read-classified pairs of
- * action-taxonomy.ts (26 on 2026-10-08, with decisions review), derived here rather than listed, each called through the
+ * action-taxonomy.ts (26 on 2026-10-08, with decisions review; 27 with s96-m12's rbook_db conflicts; 28 with s96-m13's rbook_project members), derived here rather than listed, each called through the
  * MCP dispatch with the argument sets in ARGS. s93-m05 also runs CLI review, relevant, session-start
  * and first/later-prompt recall against the same fixtures and detectors; only each command's exact external
  * telemetry month, fail-open log, hashed recall/turn receipt and owned lifecycle files are exempted. Not seen:
@@ -128,6 +128,8 @@ const ARGS: Readonly<Record<string, ReadonlyArray<Record<string, unknown>>>> = {
   'rbook_context:history': [{}],
   'rbook_context:search': [{ query: 'storage decision' }],
   'rbook_db:health': [{}],
+  // s96-m12: lists a shared record's conflicts; a solo store has none, and nothing is written.
+  'rbook_db:conflicts': [{}],
   'rbook_decisions:list': [{}, { acrossProjects: true }],
   'rbook_decisions:search': [{ query: 'storage' }, { query: 'storage', acrossProjects: true }],
   'rbook_decisions:show': [{ decisionId: 1 }],
@@ -140,6 +142,8 @@ const ARGS: Readonly<Record<string, ReadonlyArray<Record<string, unknown>>>> = {
   'rbook_mission:show': [{ missionId: 'rnw-m01' }],
   'rbook_mission:status': [{}],
   'rbook_project:list': [{}, { validate: true }, { validate: true, prune: true }],
+  // s96-m13: on an unshared store it says so, and reads nothing it would write.
+  'rbook_project:members': [{}],
   'rbook_session:list': [{}],
   'rbook_session:search': [{ query: 'storage' }],
   'rbook_sprint:list': [{}],
@@ -657,6 +661,8 @@ beforeAll(async () => {
     stubHits.push(`${req.method} ${req.url}`);
     res.setHeader('content-type', 'application/json');
     if (req.url?.startsWith('/api/projects/me')) {
+      // s96-m02: the dashboard's sprint-61 shape (H3), with the caller's identity, so a read that
+      // kept it for author names would change the config folder and fail below.
       res.end(
         JSON.stringify({
           projects: [
@@ -668,8 +674,14 @@ beforeAll(async () => {
               rbookAddress: `rbook://${STUB_OWNER}/reads-owner-less`,
             },
           ],
+          user: { id: 'user-reads', username: STUB_OWNER },
         })
       );
+      return;
+    }
+    if (req.url?.startsWith('/api/projects/directory/public')) {
+      // s96-m02: the directory answers, so its read reaches the /api/projects/me join above.
+      res.end(JSON.stringify({ projects: [], totalCount: 0 }));
       return;
     }
     res.statusCode = 404;
@@ -1002,10 +1014,11 @@ const MUST_SUCCEED_ON_CURRENT_STORES = (pair: string): boolean =>
 // ─── The census ────────────────────────────────────────────────────────────────────────────────
 
 describe('s93-m11 — the read universe', () => {
-  it('derives 26 read-classified pairs and has an argument set for each', () => {
+  it('derives 28 read-classified pairs and has an argument set for each', () => {
     const pairs = readPairs();
     // s93-m11 promoted rbook_decisions review (the opener's remedy) from 25 to 26.
-    expect(pairs).toHaveLength(26);
+    // s96-m12: rbook_db conflicts, a read, makes 27; s96-m13's rbook_project members, 28.
+    expect(pairs).toHaveLength(28);
     expect(pairs.filter((pair) => !(pair in ARGS))).toEqual([]);
     expect(Object.keys(ARGS).filter((pair) => !pairs.includes(pair))).toEqual([]);
   });
@@ -1153,11 +1166,33 @@ describe('s93-m11 — the fixtures make the old writes possible (positive contro
           "SELECT content FROM contexts WHERE id = 'master_context'"
         ).data!.content;
         const migrated = applyPendingBlobMigrations(client, 'master_context', raw, JSON.parse(raw));
-        return createSuccess({ seeded: seeded.rowsUpdated, rewritten: migrated.rewritten });
+        return createSuccess({
+          seeded: seeded.rowsUpdated,
+          rewritten: migrated.rewritten,
+          warnings: migrated.warnings,
+          stored: JSON.parse(
+            client.getOne<{ content: string }>(
+              "SELECT content FROM contexts WHERE id = 'master_context'"
+            ).data!.content
+          ),
+          version: client.getOne<{ value: string }>(
+            "SELECT value FROM metadata WHERE key = 'blob_schema_version'"
+          ).data?.value,
+        });
       },
       { projectRoot: prepared.projectRoot, registerProject: false }
     );
-    expect(outcome.data).toEqual({ seeded: 1, rewritten: true });
+    expect(outcome.data).toEqual({
+      seeded: 1,
+      rewritten: true,
+      warnings: [
+        expect.stringMatching(
+          /context_snapshots pre-migration snapshot.*failed:.*missing project_id/
+        ),
+      ],
+      stored: { project: { name: 'reads-unmigrated' } },
+      version: '1',
+    });
   });
 
   it('search-drift: a write path rebuilds the decisions index and writes the missing marker', async () => {
@@ -1242,7 +1277,7 @@ describe.each(ROLES)('s93-m11 — reads never write (RBOOK_AGENT_ROLE %s)', (rol
       // A refused read proves nothing about writes; the store reads must actually answer.
       expect(refusals).toEqual([]);
     },
-    // Each case runs every read pair (26, with its argument sets) on a fresh fixture and diffs the
+    // Each case runs every read pair (28, with its argument sets) on a fresh fixture and diffs the
     // store, config and project folder after each: 5-17 s alone at load 22, past jest's 30 s
     // default under a full parallel run on a loaded machine. The bound is generous, not a hiding
     // place: a read that hangs still fails.

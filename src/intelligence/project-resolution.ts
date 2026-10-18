@@ -37,7 +37,12 @@ import {
  */
 export async function registerResolvedProjectStore(
   projectRoot: string,
-  options: { name?: string; setAsDefault?: boolean; requireStoredIdentity?: boolean } = {}
+  options: {
+    name?: string;
+    setAsDefault?: boolean;
+    requireStoredIdentity?: boolean;
+    confirmedCopy?: boolean;
+  } = {}
 ) {
   const graph = await ProjectGraphRegistry.create();
   return graph.registerStore(projectRoot, options);

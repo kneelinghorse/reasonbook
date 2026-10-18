@@ -5,6 +5,7 @@ import type { RbookDatabaseClient } from './client';
 import type { SanitizedField } from '../../intelligence/content-sanitizer';
 import { ensureReviewTimestamps } from './schema-migrations';
 import { checkWrite, type WriteFailure } from './write-guard';
+import { recordedExecute } from './record-changes';
 
 /**
  * s92-m04 retired the IMPLICIT reaffirm: a capture whose text overlapped a learning by 15+ keywords
@@ -121,7 +122,8 @@ export function reaffirmLearningsByIds(
     return { reaffirmedIds: [], missingIds, writeFailures };
   }
   const idPlaceholders = reaffirmedIds.map(() => '?').join(', ');
-  const updateResult = client.execute(
+  const updateResult = recordedExecute(
+    client,
     `UPDATE learnings SET last_reviewed_at = ? WHERE id IN (${idPlaceholders})`,
     [reaffirmedAt, ...reaffirmedIds]
   );

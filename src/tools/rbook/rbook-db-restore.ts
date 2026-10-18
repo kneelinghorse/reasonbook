@@ -15,6 +15,7 @@ import { z } from 'zod';
 import { withClient } from './client';
 import type { RbookToolResult } from './types';
 import { RBOOK_ERROR_CODES, RbookErrors, createError, createSuccess } from './errors';
+import { REPLICA_ERROR_CODES } from './replica-identity';
 import { appendWarnings } from './format-warnings';
 import {
   mintProjectId,
@@ -142,6 +143,32 @@ export const rbookDbRestoreToolDefinition = {
 } as const;
 
 /**
+ * s96-m13: whether the store file is a copy of a shared record, read without opening a client. A
+ * file that cannot be read says no: a damaged store is what a restore is for.
+ */
+function isSharedStoreFile(dbPath: string): boolean {
+  if (!fs.existsSync(dbPath)) return false;
+  let db: Database.Database | null = null;
+  try {
+    db = new Database(dbPath, { readonly: true, fileMustExist: true });
+    const metadata = db
+      .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'metadata'")
+      .get();
+    return Boolean(
+      metadata &&
+      db.prepare("SELECT 1 FROM metadata WHERE key = 'replica_id' AND value <> ''").get()
+    );
+  } catch (error) {
+    process.stderr.write(
+      `[RESTORE] Could not read ${dbPath} to see whether it is a copy of a shared record, so the restore goes on: ${error instanceof Error ? error.message : String(error)}\n`
+    );
+    return false;
+  } finally {
+    db?.close();
+  }
+}
+
+/**
  * Execute the rbook_db_restore tool.
  *
  * @param params - Tool parameters
@@ -188,6 +215,16 @@ export async function rbookDbRestore(
   }
 
   const dbPath = dbPathResult.data.dbPath;
+  // s96-m13 (ADR s96 §9): a restore brings back an older file, losing what this copy of a shared
+  // record had not synced and leaving a copy the copy check refuses; sync keeps a shared record.
+  if (isSharedStoreFile(dbPath))
+    return createError({
+      code: REPLICA_ERROR_CODES.WRITE_REFUSED,
+      message:
+        'This store is a copy of a shared record, and a restore would lose the changes it has not synced, so it is refused.',
+      suggestion:
+        "Sync keeps a shared record up to date: reasonbook sync. A member's copy that is damaged joins afresh (reasonbook copy on the owner's machine, then reasonbook join); the owner's copy is recovered from its members: reasonbook recover.",
+    });
   const projectRoot = path.resolve(path.dirname(dbPath), '..', '..');
   const snapshotDirectory = path.join(path.dirname(dbPath), 'snapshots');
   const preRestoreBackupDirectory = path.join(snapshotDirectory, 'pre-restore');

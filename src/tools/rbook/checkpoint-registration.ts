@@ -6,6 +6,7 @@ import { withClientAsync } from './client';
 import { DashboardClient } from './dashboard-client';
 import { createSuccess } from './errors';
 import { resolveAndPersistOwner } from './owner-resolution';
+import { isMembersCopy } from './record-membership';
 import { backfillUnknownRbookAddress } from './project-identity';
 import { checkWrite } from './write-guard';
 import { captureRegisterResponse } from '../../auth/project-key-capture';
@@ -56,6 +57,9 @@ export async function checkAndRegister(
   try {
     await withClientAsync(
       async (client) => {
+        // s96-m13 (design §s96-m13 item 3): a member's copy of a shared record never registers or
+        // names the dashboard project; the owner's copy does. Nothing is captured, so nothing uploads.
+        if (isMembersCopy(client)) return createSuccess(undefined);
         captured = {
           sqlitePath: client.path,
           projectSlug: null,

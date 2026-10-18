@@ -185,6 +185,37 @@ describe('s93-m01 — the installed bin', () => {
     expect(output.hookSpecificOutput.additionalContext.length).toBeLessThanOrEqual(6000);
   }, 30_000);
 
+  // s96-m13 (build-time critic C, round 3): the digest takes a shared record's changes from
+  // record-since, never from the merge, which would load zod and the whole apply path at every start.
+  it('hook session-start loads neither zod nor the merge', () => {
+    const project = mkTmp('rbook-hook-e2e-start-');
+    seedRbookDb(project, { projectName: 'hook e2e start' });
+    const preload = path.join(mkTmp('rbook-hook-e2e-start-preload-'), 'record.js');
+    const out = path.join(path.dirname(preload), 'modules.json');
+    fs.writeFileSync(
+      preload,
+      `process.on('exit', () => require('fs').writeFileSync(${JSON.stringify(out)}, JSON.stringify(Object.keys(require.cache))));\n`
+    );
+    const ran = spawnSync(
+      process.execPath,
+      ['-r', preload, installedBin, 'hook', 'session-start'],
+      {
+        cwd: project,
+        input: JSON.stringify({ session_id: 'e2e-start', source: 'startup', cwd: project }),
+        env: { ...process.env, RBOOK_CONFIG_DIR: configDir, CLAUDE_PID: '777777' },
+        encoding: 'utf8',
+      }
+    );
+    expect(ran.status).toBe(0);
+    const loaded = JSON.parse(fs.readFileSync(out, 'utf8')) as string[];
+    expect(loaded.filter((f) => /[\\/]node_modules[\\/]zod[\\/]/.test(f))).toEqual([]);
+    expect(loaded.filter((f) => /dist[\\/]tools[\\/]rbook[\\/]record-apply\.js$/.test(f))).toEqual(
+      []
+    );
+    // The digest's own reader did load: a recorder that saw nothing would pass both checks above.
+    expect(loaded.some((f) => /dist[\\/]tools[\\/]rbook[\\/]record-since\.js$/.test(f))).toBe(true);
+  }, 30_000);
+
   // The m01 build critics, B2 and NB1: npx puts `npm exec` between the harness and its
   // server, so the server's parent has no link. It still writes into the harness session, found by
   // the session id it was spawned with, whether that is the first id or one after a /clear (a

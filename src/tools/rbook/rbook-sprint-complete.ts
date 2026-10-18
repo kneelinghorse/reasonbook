@@ -40,6 +40,7 @@ import { getServerHealth, getServerProjectRoot } from '../../server-health';
 import { resolveProjectRootEnhanced } from '../../intelligence/project-resolution';
 import * as path from 'path';
 import { appendWarnings, appendWriteFailures, attachWarnings } from './format-warnings';
+import { skipConflicted, skippedConflicts } from './record-conflict-skip';
 import { isParkedMissionStatus } from './terminal-status';
 import { countWrite, type WriteFailure } from './write-guard';
 import { applySprintTracking, openSprintPointer, type SprintPointer } from './sprint-tracking';
@@ -59,6 +60,8 @@ import { repairCompletedSprintEndDates, type SprintEndDateRepair } from './sprin
 import { summarizeSessionCaptures } from './session-capture-state';
 import { findReusableSnapshot, snapshotStorage } from './snapshot-content-policy';
 import { storedTimeMs } from './stored-time';
+import { recordedExecute } from './record-changes';
+import { ARCHIVE_WHERE } from './sprint-archive-scope';
 
 type CloseoutContextType = 'master_context' | 'project_context';
 type CloseoutCondensationStrategy = 'none' | 'conservative' | 'auto' | 'aggressive';
@@ -1392,7 +1395,8 @@ function dropLapsedNextSteps(
 ): number[] {
   const dropped: number[] = [];
   for (const id of lapsedIds) {
-    const result = client.execute(
+    const result = recordedExecute(
+      client,
       `UPDATE next_steps SET status = 'dropped', resolved_at = ?
         WHERE id = ? AND status IN ('pending','carried')`,
       [droppedAt, id]
@@ -1463,7 +1467,8 @@ function completeSprintRecord(
   // s92-m02: the ACTUAL close time, always. `COALESCE(end_date, ?)` kept a planned end date,
   // and the next-step lease counted that future date as a close later carries had survived.
   // The planned date is reported on the receipt as plannedEndDate instead.
-  const updateWithEndDate = client.execute(
+  const updateWithEndDate = recordedExecute(
+    client,
     `UPDATE sprints
         SET status = 'Completed',
             end_date = ?
@@ -1484,7 +1489,9 @@ function completeSprintRecord(
     return updateWithEndDate;
   }
 
-  return client.execute(`UPDATE sprints SET status = 'Completed' WHERE id = ?`, [sprintId]);
+  return recordedExecute(client, `UPDATE sprints SET status = 'Completed' WHERE id = ?`, [
+    sprintId,
+  ]);
 }
 
 async function applyOptionalCondensation(params: {
@@ -1533,24 +1540,7 @@ async function applyOptionalCondensation(params: {
   }
 }
 
-/**
- * s87-m02 — THE SHARED ARCHIVE PREDICATE. One base constant, two derived ones.
- *
- * The decisions and learnings arms carried two hand-written copies of the same three-branch
- * disjunction. They were identical, which is the problem: nothing made them stay identical, and
- * an enumeration that does not use the EXACT predicate the UPDATE uses is not evidence about
- * that UPDATE. Hoisted so the pre-SELECT and the UPDATE are the same string by construction.
- *
- * THE THREE BRANCHES ARE RATIFIED, NOT INCIDENTAL. #38 blesses the compound WHERE ("sprint_id OR
- * mission_id-via-sprint OR session_id-via-sprint for comprehensive coverage") and #39 blesses the
- * active-only filter. Do not simplify it: 4 decisions and 2 learnings in this store live ONLY on
- * the session branch, and `sprint-close-archival-disclosure.test.ts` fences both halves.
- */
-const ARCHIVE_WHERE = `status = 'active'
-       AND (sprint_id = ?
-         OR mission_id IN (SELECT id FROM missions WHERE sprint_id = ?)
-         OR author_session_id IN (SELECT id FROM sessions WHERE sprint_id = ?))`;
-
+// s87-m02's shared archive predicate lives in sprint-archive-scope.ts, which s96-m12's checks read too.
 const DECISIONS_WHERE = ARCHIVE_WHERE;
 
 /**
@@ -1606,8 +1596,12 @@ function archiveOneTable(
   warnings: string[]
 ): ArchiveTableOutcome {
   const params = [sprintId, sprintId, sprintId];
+  // s96-m12: on a shared record, a row whose status is in conflict is skipped and named.
+  const skipped = skippedConflicts(client, table, ['status'], where, params);
+  if (skipped) warnings.push(skipped);
+  const skip = skipConflicted(client, table, ['status']);
 
-  const selectSql = `SELECT id FROM ${table} WHERE ${where}`;
+  const selectSql = `SELECT id FROM ${table} WHERE ${where}${skip}`;
   const selected = client.getMany<{ id: number }>(selectSql, params);
   if (!selected.success) {
     const msg = selected.error?.message ?? `Failed to enumerate ${table}`;
@@ -1620,8 +1614,8 @@ function archiveOneTable(
   }
   const ids = (selected.data ?? []).map((r) => r.id);
 
-  const updateSql = `UPDATE ${table} SET status = 'archived' WHERE ${where}`;
-  const updated = client.execute(updateSql, params);
+  const updateSql = `UPDATE ${table} SET status = 'archived' WHERE ${where}${skip}`;
+  const updated = recordedExecute(client, updateSql, params);
   if (!updated.success) {
     const msg = updated.error?.message ?? `Failed to archive ${table}`;
     return {

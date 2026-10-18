@@ -186,6 +186,20 @@ function handleScenario(
       return true;
     }
     if (
+      scenario.outcome === 'approved' &&
+      method === 'GET' &&
+      pathname === '/api/projects/me' &&
+      authorization === 'Bearer cmk_replay_approved'
+    ) {
+      // s96-m02: a completed sign-in asks who it is (the dashboard's H3), so author names can
+      // default to the account's username.
+      sendJson(response, 200, {
+        success: true,
+        data: { projects: [], totalCount: 0, user: { id: 'replay-user', username: 'replay' } },
+      });
+      return true;
+    }
+    if (
       method === 'POST' &&
       pathname === '/api/auth/device/token' &&
       authorization === scenario.expectedAuthorization

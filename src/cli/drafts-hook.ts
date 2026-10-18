@@ -354,7 +354,7 @@ export function onStop(options: {
       const db = openStore(options.dbPath, false);
       try {
         const run = rawRunner(db);
-        db.transaction(() => {
+        const update = (): void => {
           if (read.lines.length) ensureProposalsTable(run);
           else if (!proposalsTableExists(run)) return;
           const live = unexpired(runtime, pendingDrafts(run), now);
@@ -390,7 +390,12 @@ export function onStop(options: {
           });
           for (const id of namedDrafts(reply, unexpired(runtime, pendingDrafts(run), now)))
             if (!shown.includes(id)) shown.push(id);
-        })();
+        };
+        // s96-m11: draft lines are written after the pending drafts are read, so that transaction
+        // takes the write lock at BEGIN; a commit by another process in between made the insert
+        // fail at once. A reply that only names drafts writes nothing, and stays deferred.
+        if (read.lines.length) db.transaction(update).immediate();
+        else db.transaction(update)();
       } finally {
         db.close();
       }

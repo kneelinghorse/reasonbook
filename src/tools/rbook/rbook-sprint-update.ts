@@ -16,6 +16,7 @@ import { buildDemotionWarning, writeSingleCurrentSprint } from './sprint-current
 import { appendWarnings, attachWarnings } from './format-warnings';
 import { syncSprintTracking } from './sprint-tracking';
 import { storedTimeMs } from './stored-time';
+import { recordedExecute } from './record-changes';
 
 /**
  * Fields that can be updated on a sprint.
@@ -262,7 +263,7 @@ export async function rbookSprintUpdate(
         WHERE id = ?
       `;
 
-        const updateResult = client.execute(updateQuery, queryParams);
+        const updateResult = recordedExecute(client, updateQuery, queryParams);
 
         if (!updateResult.success) {
           return createError<void>(

@@ -31,6 +31,7 @@ import { deriveDrift, driftContentProbe } from '../../../src/tools/rbook/rbook-r
 import { withClient } from '../../../src/tools/rbook/client';
 import { createSuccess } from '../../../src/tools/rbook/errors';
 import {
+  ensureAuthorNameColumns,
   ensureAuthorNamespaceColumns,
   ensureFirehoseEventColumns,
 } from '../../../src/tools/rbook/schema-migrations';
@@ -186,6 +187,7 @@ describe('(h) a failed learnings count says so', () => {
       (client) => {
         ensureFirehoseEventColumns(client);
         ensureAuthorNamespaceColumns(client);
+        ensureAuthorNameColumns(client);
         return createSuccess(null);
       },
       { projectRoot: root }

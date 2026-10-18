@@ -279,32 +279,6 @@ export async function runHook(argv: readonly string[], io: CliIo): Promise<numbe
   return 0;
 }
 
-const USAGE =
-  'Usage: reasonbook <verb> …\n' +
-  '  hook <session-start|prompt|stop|pre-compact|session-end> [--format claude|text] [--hook-source <source>]\n' +
-  '       [--harness claude|codex|cursor|devin|copilot|vscode]\n' +
-  '  review --format=context        the record digest, for an agent\n' +
-  '  relevant --query <text>        decisions and learnings that match, as previews\n' +
-  '  decisions record --session-id <id> --content <headline> [--context <why>] [--mode autonomous]\n' +
-  '  capture --session-id <id> --category <c> --content <text>\n' +
-  '  feedback --content <text> [--dry-run] [--format json]\n' +
-  '                                 file friction now, without a session or mission\n' +
-  '  session ensure|close --session-id <id>\n' +
-  '  ambient [on|off|digest-off]    how present Reasonbook is in this project\n' +
-  '  init [--level ledger|planner|builder] [--no-hooks] [--name <n>]\n' +
-  '                                 start a Reasonbook record here: AGENTS.md, CLAUDE.md and the store\n' +
-  '  spin-out --from <root> --to <folder> (--sprint <id>|--missions <ids>) [--apply]\n' +
-  '                                 preview or copy selected work into its own project\n' +
-  '  migrate [--apply] [--docs-only] [--project <root>] [--config]\n' +
-  '                                 preview or apply the Reasonbook rename\n' +
-  '  profile show                   the operator profile every project reads\n' +
-  '  stats [--export]               local usage measurements, as counts\n' +
-  '  drafts list [--all] [--format json]\n' +
-  '                                 drafted records awaiting the operator\n' +
-  '  serve                          run the MCP server (the default with no verb)\n' +
-  'Other verbs take --project-root <dir>; spin-out requires --from and --to explicitly.\n' +
-  'Use the migration guide when upgrading an existing installation.\n';
-
 /**
  * Run a CLI command line (everything after `reasonbook`). Returns the exit code. An unknown verb is a
  * usage error with exit 1, never 2: a mistyped hook command lands here, and Claude Code treats exit
@@ -347,6 +321,22 @@ async function dispatchCli(
       return (await import('./cli/feedback')).runFeedback(rest, io);
     case 'stats':
       return (await import('./cli/stats')).runStats(rest, io);
+    case 'config':
+      return (await import('./cli/config')).runConfig(rest, io);
+    case 'repair':
+      return (await import('./cli/repair')).runRepair(rest, io);
+    case 'sync':
+      return (await import('./cli/sync')).runSync(rest, io);
+    case 'join':
+      return (await import('./cli/sync')).runJoin(rest, io);
+    case 'copy':
+      return (await import('./cli/sync')).runCopy(rest, io);
+    case 'handover':
+      return (await import('./cli/sync-moves')).runHandover(rest, io);
+    case 'recover':
+      return (await import('./cli/sync-moves')).runRecover(rest, io);
+    case 'import':
+      return (await import('./cli/import')).runImport(rest, io);
     case 'drafts':
       return (await import('./cli/drafts')).runDrafts(rest, io);
     case 'review':
@@ -360,7 +350,7 @@ async function dispatchCli(
       return (await import('./cli/commands')).runCommand(verb, rest, io);
     default:
       if (verb !== undefined) io.stderr(`reasonbook: unknown verb "${verb}".`);
-      io.stderr(USAGE.trimEnd());
+      io.stderr((await import('./cli/usage')).USAGE.trimEnd());
       return 1;
   }
 }

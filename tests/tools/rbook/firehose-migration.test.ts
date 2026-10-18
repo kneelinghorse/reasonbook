@@ -255,6 +255,8 @@ describe('ensureFirehoseEventColumns (Sprint 69 m03)', () => {
 
         const now = Date.UTC(2026, 0, 1);
         const g = genesisColumns(client, 'sprints', projectId, now);
+        // The six genesis columns, then s96-m02's author columns (ADR s96 §10), which a write
+        // stamps where its table has them.
         expect(g.columns).toEqual([
           'project_id',
           'stable_event_id',
@@ -262,6 +264,8 @@ describe('ensureFirehoseEventColumns (Sprint 69 m03)', () => {
           'origin_seq',
           'event_type',
           'schema_version',
+          'author_name',
+          'author_user_id',
         ]);
         const ins = client.execute(
           `INSERT INTO sprints (id, title, ${g.columns.join(', ')}) VALUES (?, ?, ${g.placeholders})`,

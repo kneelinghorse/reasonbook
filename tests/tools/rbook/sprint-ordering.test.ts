@@ -7,6 +7,46 @@ import Database from 'better-sqlite3';
 import { sprintIdOrderSql } from '../../../src/tools/rbook/sprint-ordering';
 
 describe('sprintIdOrderSql', () => {
+  it('sorts a sprint id two copies created, sprint-N~K, as sprint N (s96-m12, ADR s96 §3)', () => {
+    const db = new Database(':memory:');
+    db.exec('CREATE TABLE values_to_order (sprint_id TEXT)');
+    const insert = db.prepare('INSERT INTO values_to_order (sprint_id) VALUES (?)');
+    // The near-misses carry no block number after the one tilde, so they stay legacy.
+    ['sprint-10', 'sprint-9~1', 'sprint-2', 'sprint-9', 'sprint-3~x', 'sprint-9~', 'sprint-~1']
+      .concat(['sprint-9~1~2', 'sprint-1x'])
+      .forEach((id) => insert.run(id));
+    const ordered = (direction: 'ASC' | 'DESC'): string[] =>
+      db
+        .prepare(
+          `SELECT sprint_id FROM values_to_order ORDER BY ${sprintIdOrderSql('sprint_id', direction)}`
+        )
+        .all()
+        .map((row) => (row as { sprint_id: string }).sprint_id);
+    expect(ordered('ASC')).toEqual([
+      'sprint-2',
+      'sprint-9',
+      'sprint-9~1',
+      'sprint-10',
+      'sprint-1x',
+      'sprint-3~x',
+      'sprint-9~',
+      'sprint-9~1~2',
+      'sprint-~1',
+    ]);
+    expect(ordered('DESC')).toEqual([
+      'sprint-10',
+      'sprint-9~1',
+      'sprint-9',
+      'sprint-2',
+      'sprint-~1',
+      'sprint-9~1~2',
+      'sprint-9~',
+      'sprint-3~x',
+      'sprint-1x',
+    ]);
+    db.close();
+  });
+
   it('orders canonical IDs numerically before deterministic fleet-legacy and NULL buckets', () => {
     const db = new Database(':memory:');
     db.exec('CREATE TABLE values_to_order (sprint_id TEXT)');

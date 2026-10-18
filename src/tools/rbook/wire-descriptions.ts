@@ -250,9 +250,16 @@ export const WIRE_TEXT: Readonly<Record<string, WireText>> = {
     description:
       'Database admin: health, snapshot, restore, backfill, reconcile, purge, identify_orphans, ' +
       'pull, clone, and prune_snapshots (empties old automatic context-snapshot copies; a dry run ' +
-      'unless confirmed; referenced snapshots and milestones are kept).',
+      'unless confirmed; referenced snapshots and milestones are kept). On a shared project, ' +
+      'conflicts lists the fields copies set apart and settle keeps one value. pull and clone are ' +
+      'retired; use reasonbook sync. backfill uploads registered owner SQLite stores; event replay ' +
+      'and its dry run return LEGACY_SYNC_RETIRED.',
     parameters: {
       action: null,
+      table: 'settle: the table, or "project"',
+      recordId: 'settle: the row id this copy shows',
+      field: 'settle: the field in conflict',
+      value: 'settle: the value to keep',
       listOnly: null,
       maxSnapshots: null,
       snapshotId: null,
@@ -273,7 +280,8 @@ export const WIRE_TEXT: Readonly<Record<string, WireText>> = {
   rbook_project: {
     description:
       'Projects on this machine: init, register, unregister, list, validate, prune, update the ' +
-      "level (adding the new level's files), and sweep open work across all of them.",
+      "level (adding the new level's files), and sweep open work across all of them. A shared " +
+      'record: share, invite, join a copy over SSH, members, remove, and sync.',
     parameters: {
       action: null,
       projectRoot: PROJECT_ROOT,
@@ -290,6 +298,15 @@ export const WIRE_TEXT: Readonly<Record<string, WireText>> = {
       instances: null,
       statusFilter: null,
       itemType: null,
+      authorName: null,
+      role: null,
+      member: null,
+      host: null,
+      remoteRoot: null,
+      remoteNode: null,
+      remoteBin: null,
+      remoteConfigDir: null,
+      confirmOwner: null,
     },
   },
   rbook_feedback: {
@@ -344,44 +361,3 @@ export const WIRE_TEXT: Readonly<Record<string, WireText>> = {
     },
   },
 };
-
-interface DefinitionShape {
-  readonly name: string;
-  readonly description: string;
-  readonly inputSchema: { readonly properties?: Readonly<Record<string, unknown>> };
-}
-
-/** Drop every `description` below the top level: the short form has no room for sub-shapes. */
-function withoutNestedDescriptions(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(withoutNestedDescriptions);
-  if (!value || typeof value !== 'object') return value;
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>)
-      .filter(([key, child]) => !(key === 'description' && typeof child === 'string'))
-      .map(([key, child]) => [key, withoutNestedDescriptions(child)])
-  );
-}
-
-/**
- * The definition as tools/list sends it: the same schema, with the short text. A tool or
- * parameter missing from WIRE_TEXT throws, so a new one cannot ship its long text by accident.
- */
-export function toWireDefinition<T extends DefinitionShape>(definition: T): T {
-  const text = WIRE_TEXT[definition.name];
-  if (!text) throw new Error(`No wire text for tool ${definition.name}`);
-  const properties = definition.inputSchema.properties ?? {};
-  const wireProperties: Record<string, unknown> = {};
-  for (const [name, property] of Object.entries(properties)) {
-    if (!(name in text.parameters)) {
-      throw new Error(`No wire text for ${definition.name}.${name}`);
-    }
-    const hint = text.parameters[name];
-    const stripped = withoutNestedDescriptions(property) as Record<string, unknown>;
-    wireProperties[name] = hint === null ? stripped : { ...stripped, description: hint };
-  }
-  return {
-    ...definition,
-    description: text.description,
-    inputSchema: { ...definition.inputSchema, properties: wireProperties },
-  };
-}

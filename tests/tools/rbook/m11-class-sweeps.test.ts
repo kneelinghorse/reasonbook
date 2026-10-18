@@ -54,6 +54,9 @@ const lineOf = (text: string, index: number): string => {
 
 // ─── Class 1: automatic status writes ──────────────────────────────────────────────────────────
 
+// The admitted hole (s96-m12): the merge writes columns named in a template, status among them
+// (record-materialize.ts materializeEntity, record-settle.ts settleField), which this predicate cannot
+// see. It writes only a value some copy recorded at a caller's request, or a settle a caller asked for.
 const STATUS_UPDATE =
   /UPDATE\s+(strategic_decisions|learnings|constraints|next_steps|\$\{[^}]+\})\s+SET\s(?:(?!WHERE)[\s\S]){0,300}?\bstatus\s*=\s*('[^']*'|\?)/g;
 const STATUS_PUSH = /(sets|setClauses|updates)\.push\(\s*['"`]status\s*=/g;

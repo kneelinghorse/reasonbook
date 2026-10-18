@@ -26,6 +26,7 @@ import { getSetting } from '../intelligence/legacy-compat';
 import { DashboardClient } from '../tools/rbook/dashboard-client';
 import type { RegisterProjectResult } from '../tools/rbook/dashboard-client';
 import { withClientAsync } from '../tools/rbook/client';
+import { dashboardOwnerError } from './dashboard-owner';
 import {
   CredentialStore,
   type KeySource,
@@ -286,6 +287,7 @@ export interface StartupProjectKeyRecoveryResult {
   checked: boolean;
   status:
     | 'skipped-no-project'
+    | 'skipped-member-copy'
     | 'skipped-not-registered'
     | 'skipped-already-present'
     /*
@@ -409,6 +411,19 @@ export async function runStartupProjectKeyRecovery(
       checked: false,
       status: 'skipped-no-project',
       message: 'no project root resolved — skipping',
+    };
+  }
+
+  const ownerError = await dashboardOwnerError(options.projectRoot);
+  if (ownerError) {
+    const message = `${ownerError.code}: ${ownerError.message} ${ownerError.suggestion}`;
+    if (ownerError.code === 'DASHBOARD_OWNER_REQUIRED') {
+      return { checked: true, status: 'skipped-member-copy', message };
+    }
+    return {
+      checked: true,
+      status: 'error',
+      message,
     };
   }
 

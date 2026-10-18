@@ -1,12 +1,16 @@
 # The method
 
-Reasonbook keeps a project's record. The method is how that record is kept: five lines, and three
-levels of structure a project can grow into.
+One project, one record. Its owner can share it; every collaborator keeps a full copy, and changes
+sync between them.
+
+The method is how that record is kept: five lines, and three levels of structure a project can grow
+into.
 
 ## Five lines
 
-1. **One project, one record.** Each project keeps its own decisions, lessons, rules and next steps,
-   in its own folder. Reading across projects is a view, never a shared store.
+1. **One project, one record.** Each project keeps its own decisions, lessons, rules and next steps.
+   When shared, its copies exchange changes through the owner's copy. Reading across different
+   projects remains a view of separate records.
 2. **Every session starts from the record.** Where hooks run (the Claude Code and Codex plugins), a
    digest of the record comes into each session on its own; elsewhere the agent starts with
    `rbook_review`.
@@ -15,8 +19,13 @@ levels of structure a project can grow into.
 4. **Nothing is forgotten silently.** Records expire, go stale or are superseded in the open. A
    sprint close keeps decisions and lessons active unless you ask it to archive them, and lists any
    next step it drops with the command that restores it.
-5. **The record outlives the tool.** It is a SQLite file in the project, and the agents connected
-   to its server all read the same record.
+5. **The record outlives the tool.** Each copy is a SQLite file in its project folder. Its agents
+   read the local copy; sync brings in changes from the other copies.
+
+Sharing is supported in the measured setup: two accounts operated by one person, on two machines
+connected to the owner's copy over SSH. A second person's collaboration and privacy experience
+remain unvalidated. Read the [sharing steps](getting-started.md#share-a-projects-record) and
+[trust boundary](trust.md#shared-copies) before inviting someone.
 
 ## Three levels
 

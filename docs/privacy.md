@@ -1,7 +1,8 @@
 # Privacy
 
-Reasonbook keeps a local project record and offers an optional hosted dashboard. This page describes
-what each part collects, why it keeps it, who can see it and how to remove it. It covers Reasonbook's
+Reasonbook keeps a local project record, can share copies with members, and offers an optional hosted
+dashboard. This page describes what each part collects, why it keeps it, who can see it and how to
+remove it. It covers Reasonbook's
 server and plugins; your AI client's and model provider's own policies apply to the prompts, tool
 results and files they receive. [Trust](trust.md) explains the local hooks and network controls in
 more detail.
@@ -13,14 +14,19 @@ the dashboard only for dashboard operations, including sign-in, or when dashboar
 available. On your machine it keeps:
 
 - your project's record in `rbook/db/rbook.sqlite`;
-- under `~/.config/rbook/`, the project registry and your operator profile;
+- under `~/.config/rbook/`, the project registry, your operator profile and the author name you
+  set (`config.json`), which each record you write carries;
 - a local usage log: tool names, identifiers, counts, error codes, which published prompt patterns
   a prompt matches and the slash command it starts with, without prompt text or record contents;
 - hook state: session identifiers as hashes, the folders and repositories you worked in, each
   session's Git commit and changed filenames, your next message after a displayed draft (up to
   1,000 characters), and which record previews you have already seen;
 - if you sign in, dashboard keys in `credentials.json`, readable only by your user account and
-  not encrypted.
+  not encrypted, and each sign-in's account id, username and dashboard address in
+  `dashboard-identity.json`, so that your records can name you as their author. Each entry is
+  kept under a fingerprint of its key, never the key itself. For an email and password sign-in
+  the fingerprint is of the email, so someone who can read the file and guesses your email can
+  confirm it.
 
 The hooks read your prompt and the agent's last reply. Claude Code hooks also read bounded pieces
 of its transcript; the Codex transcript path is discarded. Reasonbook's MCP tools return the
@@ -43,6 +49,34 @@ configuration locations until you migrate them; deleting only the new location d
 that older data. Follow the [upgrade and migration guide](migrating-from-cmos.md) to identify those
 locations. Init also creates `AGENTS.md` and `CLAUDE.md` when absent; you can edit or remove them.
 
+## Shared copies
+
+**What a member receives.** Sharing gives a member a full copy of the SQLite store, including its
+record history and any pending, declined or expired proposals already stored there. Later exchanges
+carry shared-record changes through the owner's copy, over SSH or bundles carried by hand. There is
+no private subset of the initial store copy. A dashboard account is not required for this exchange.
+
+**Who can see and use it.** A member with the file can read the contents. Editors' accepted rows
+reach the owner's agents as local project content, without a foreign-source fence. Owner/editor
+roles hold among honest copies using the supported SSH and bundle protocol; they do not protect
+against a member who alters their local store or software. Author names provide attribution, not
+independent identity verification. Choose members you trust with the whole record and with the
+content your agents will read.
+
+**Control and removal.** Copies with a saved route exchange automatically at session start and end
+where hooks run, and every five minutes for shared projects a running server has opened. Set
+`RBOOK_SHARED_SYNC=off` in the hook and server environments to stop these automatic exchanges;
+explicit sync and bundle commands remain available. The dashboard-upload switch,
+`RBOOK_CHECKPOINT_SYNC`, is separate. Removing a member stops new changes from reaching them and
+quarantines their changes beyond the removal cut. It cannot retract data their copy already holds;
+the holder must delete that copy. Re-inviting the member resumes exchange, including quarantined
+changes.
+
+The measured support scope is two accounts operated by one person, on two machines in an
+owner/member star over SSH. A second person's collaboration and privacy experience remain
+unvalidated. See the [sharing steps](getting-started.md#share-a-projects-record) and
+[trust boundary](trust.md#shared-copies).
+
 ## Installing from npm
 
 Installing Reasonbook, or letting a plugin install it, downloads the package and its dependencies
@@ -60,7 +94,8 @@ their own policies apply. Reasonbook's dashboard receives no install report.
   times, and last home-page visit;
 - hashes of your API keys and when each was last used;
 - registered projects' uploaded databases, their local file paths, copied record contents,
-  including decision reasons and recorded approval words, and synced events;
+  including decision reasons, recorded approval words and each record's author name and account
+  id, and synced events;
 - sync-request logs, including contents of rejected unauthenticated requests, and activity and
   diagnostic logs;
 - messages between accounts and projects: sender, recipient, type, summary, body, links, status,

@@ -103,8 +103,7 @@ export async function runFirstWriteMaintenance(projectRoot: string): Promise<str
               notes.push(...migration.warnings);
               if (migration.migrated && migration.rewritten) {
                 notes.push(
-                  `Migrated the stored master_context to blob schema v${Math.max(...migration.migrationsApplied)} ` +
-                    '(a pre-migration snapshot was taken first).'
+                  `Migrated the stored master_context to blob schema v${Math.max(...migration.migrationsApplied)}.`
                 );
               }
             }

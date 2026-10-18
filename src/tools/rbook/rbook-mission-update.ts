@@ -29,6 +29,7 @@ import {
 import { recordEmbedding, missionEmbeddingInput } from '../../intelligence/embedding-pipeline';
 import { appendWarnings } from './format-warnings';
 import { checkWrite } from './write-guard';
+import { recordedExecute } from './record-changes';
 
 /**
  * Fields that can be updated on a mission.
@@ -417,7 +418,7 @@ export async function rbookMissionUpdate(
         WHERE id = ?
       `;
 
-        const updateResult = client.execute(updateQuery, queryParams);
+        const updateResult = recordedExecute(client, updateQuery, queryParams);
 
         if (!updateResult.success) {
           return createError<MissionUpdateResult>(

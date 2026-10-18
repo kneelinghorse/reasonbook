@@ -13,6 +13,7 @@ import { createError, RbookErrors, RBOOK_ERROR_CODES } from './errors';
 import { appendWarnings, appendWriteFailures, attachWarnings } from './format-warnings';
 import { ensureReviewTimestamps } from './schema-migrations';
 import { countWrite, type WriteFailure } from './write-guard';
+import { recordedExecute } from './record-changes';
 
 export interface RbookDecisionsBatchUpdateResult {
   /** Number of decisions updated */
@@ -133,10 +134,11 @@ export async function rbookDecisionsBatchUpdate(
           alreadyInStatus.push(id);
           if (stampReview) {
             countWrite(
-              client.execute('UPDATE strategic_decisions SET last_reviewed_at = ? WHERE id = ?', [
-                reviewedAt,
-                id,
-              ]),
+              recordedExecute(
+                client,
+                'UPDATE strategic_decisions SET last_reviewed_at = ? WHERE id = ?',
+                [reviewedAt, id]
+              ),
               { failures: writeFailures },
               `strategic_decisions.last_reviewed_at id=${id}`
             );
@@ -145,11 +147,12 @@ export async function rbookDecisionsBatchUpdate(
         }
 
         const result = stampReview
-          ? client.execute(
+          ? recordedExecute(
+              client,
               'UPDATE strategic_decisions SET status = ?, last_reviewed_at = ? WHERE id = ?',
               [params.status, reviewedAt, id]
             )
-          : client.execute('UPDATE strategic_decisions SET status = ? WHERE id = ?', [
+          : recordedExecute(client, 'UPDATE strategic_decisions SET status = ? WHERE id = ?', [
               params.status,
               id,
             ]);

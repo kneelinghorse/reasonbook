@@ -360,6 +360,8 @@ export async function recordEmbedding(
   } catch (error) {
     const message = error instanceof Error ? error.message : 'unknown error';
     console.error(`[WARN] embedding-pipeline: ${target.type}#${target.id} failed — ${message}`);
+    // s96-m11: callers carry only the warnings, so a failure is one; it used to vanish.
+    warnings.push(`${target.type} ${target.id} was saved without its embedding: ${message}`);
     return { action: 'failed', error: message, warnings };
   }
 }

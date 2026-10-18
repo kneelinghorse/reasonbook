@@ -15,6 +15,9 @@ const CONTROL_SUFFIXES = [
   'ANSWER_SHAPE_SOURCE_ROOT',
   'CODEX_REAL_STORE_ROOT',
   'ADDRESS_REAL_STORE_ROOT',
+  // s96-m12: how many random orders the interleaving property tries (its default is 100).
+  'INTERLEAVINGS',
+  'INTERLEAVINGS_DEBUG',
 ] as const;
 const CREDENTIAL_SUFFIXES = ['DASHBOARD_API_KEY', 'DASHBOARD_USER', 'DASHBOARD_PASSWORD'] as const;
 const LIVE_SUFFIXES = ['DASHBOARD_URL', ...CREDENTIAL_SUFFIXES] as const;

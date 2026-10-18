@@ -1166,33 +1166,20 @@ async function handleSend(
   return createSuccess<MessageSendResult>(out, warnings);
 }
 
-/**
- * s80-m05 — the human-readable source for a message's foreign-provenance descriptor.
- * Uses the fields the dashboard actually populates (probe 2026-07-09): `senderProject` /
- * `senderDisplayName` on inbox, `targetProject` on sent. The legacy `from` / `senderAddress`
- * / `from_project_id` are empty on live rows, which is why the old provenance read
- * "unknown source" — reading them last is a harmless fallback for older payloads.
- *
- * s84-m01 — the sprint-47 cutover REPURPOSES `senderProject`/`targetProject` to the SLUG and
- * moves the display NAME to the new `*Name` twins. Prefer `*Name ?? *Project` (name ?? slug):
- * pre-cutover only `*Project`=NAME is populated → yields NAME; post-cutover `*Name`=NAME is
- * populated → yields NAME. Correct label ("CMOS-MCP Pro", not "cmos-mcp-pro") in BOTH eras.
- */
+/** A foreign source is a validated address or address part, never an arbitrary display name. */
 export function attributionSource(msg: DashboardMessage, tab: string): string | undefined {
-  if (tab === 'sent') {
-    // s80-m05 review: keep the `to_project_id` fallback symmetric with the inbox
-    // `from_project_id` rung below, so an intel/sent row that populated only the
-    // recipient id still labels a source instead of "unknown".
-    return msg.targetProjectName ?? msg.targetProject ?? msg.to ?? msg.to_project_id ?? undefined;
+  const addresses = tab === 'sent' ? [msg.to] : [msg.senderAddress, msg.from];
+  for (const raw of addresses) {
+    if (typeof raw !== 'string') continue;
+    const address = normalizeAddressScheme(raw);
+    if (RBOOK_ADDRESS_REGEX.test(address)) return address;
   }
-  return (
-    msg.senderProjectName ??
-    msg.senderProject ??
-    msg.senderDisplayName ??
-    msg.from ??
-    msg.senderAddress ??
-    msg.from_project_id ??
-    undefined
+  const parts =
+    tab === 'sent'
+      ? [msg.targetProject, msg.targetProjectId, msg.to_project_id]
+      : [msg.senderProject, msg.senderProjectId, msg.from_project_id];
+  return parts.find(
+    (part): part is string => typeof part === 'string' && /^[a-zA-Z0-9_-]+$/.test(part)
   );
 }
 
@@ -1341,51 +1328,73 @@ async function handleGet(
     );
   }
 
-  // s84-m02: try the dashboard read-one endpoint first (GET /api/messages/:id, dashboard
-  // m01) — it is exact + side-effect-free (safe to poll). Fall back to the s80-m05 paging
-  // scan below when the endpoint is absent or degraded, so a PRE-deploy dashboard still
-  // resolves get:
-  //   • a clean single message      → frame + return (the fast path);
-  //   • DASHBOARD_NOT_FOUND         → page (route absent, OR a genuine miss);
-  //   • a non-clean 2xx body        → page ({data:null}/empty/HTML shell/405 → parse or
-  //                                    route error; never frame undefined/garbage — Rev3);
-  //   • an auth/authz/config error  → surface DIRECTLY (paging would re-hit the wall and
-  //                                    mask it; a 403 is the recipient-authz signal).
+  // Read-one supplies the full body, but deployed dashboards omit identity ids there.
+  // Recover those only from the same id in the paginated list; never infer them from names.
   const one = await client.getMessageById(params.messageId);
-  if (one.success && isCleanSingleMessage(one.data, params.messageId)) {
-    const found = one.data;
-    // A read-one row isn't tagged inbox/sent; resolve attribution from whichever side the
-    // row populated (sender first — for a received message the foreign author is the sender).
-    const source = attributionSource(found, 'inbox') ?? attributionSource(found, 'sent');
-    const message: FramedMessage = { ...found, provenance: foreignDescriptor(source) };
-    return createSuccess<MessageGetResult>({ message });
-  }
   if (!one.success && GET_SURFACE_DIRECTLY_CODES.has(one.error?.code ?? '')) {
     return createError<MessageGetResult>(one.error!);
   }
-
-  // s80-m05 (F4=A) FALLBACK: no/degraded read-one endpoint — serve body-on-get client-side
-  // by paging the most recent messages per tab and selecting by id. Best-effort: bounded to
-  // the newest `FETCH_LIMIT` per tab, UNFILTERED (get is NOT project-pinned — see index.ts —
-  // so a message from any of the operator's projects is visible). s80-m05 review: a transient
-  // failure on ONE tab must not hide a message in the OTHER, so remember the error and keep
-  // looking.
+  let found =
+    one.success && isCleanSingleMessage(one.data, params.messageId) ? { ...one.data } : undefined;
+  const identities = [
+    'senderUserId',
+    'senderProjectId',
+    'targetUserId',
+    'targetProjectId',
+  ] as const;
+  let sourceTab = 'inbox';
   const FETCH_LIMIT = 100;
   let lastError: NonNullable<RbookToolResult<MessageGetResult>['error']> | undefined;
-  for (const tab of ['inbox', 'sent'] as const) {
-    const result = await client.listMessages({ tab, limit: FETCH_LIMIT });
-    if (!result.success) {
-      lastError = result.error!;
-      continue;
+  if (!found || identities.some((key) => found![key] === undefined)) {
+    tabs: for (const tab of ['inbox', 'sent'] as const) {
+      let offset = 0;
+      const seen = new Set<string>();
+      for (;;) {
+        const result = await client.listMessages({
+          tab,
+          limit: FETCH_LIMIT,
+          ...(offset ? { offset } : {}),
+        });
+        if (!result.success) {
+          lastError = result.error!;
+          break;
+        }
+        const { messages, totalCount } = result.data!;
+        const listed = messages.find((m) => m.id === params.messageId);
+        if (listed) {
+          if (found) {
+            for (const key of identities)
+              if (
+                found[key] === undefined &&
+                (typeof listed[key] === 'string' || listed[key] === null)
+              )
+                found[key] = listed[key];
+          } else {
+            found = listed;
+            sourceTab = tab;
+          }
+          break tabs;
+        }
+        // A legacy endpoint may ignore offset. Stop on empty or repeated pages as well as the end.
+        if (!messages.length || messages.every((message) => seen.has(message.id))) break;
+        for (const message of messages) seen.add(message.id);
+        offset += messages.length;
+        if (!Number.isFinite(totalCount) || offset >= totalCount) break;
+      }
     }
-    const found = result.data!.messages.find((m) => m.id === params.messageId);
-    if (found) {
-      const message: FramedMessage = {
-        ...found,
-        provenance: foreignDescriptor(attributionSource(found, tab)),
-      };
-      return createSuccess<MessageGetResult>({ message });
-    }
+  }
+  if (found) {
+    const source = attributionSource(found, sourceTab) ?? attributionSource(found, 'sent');
+    const missing = identities.filter((key) => found![key] === undefined);
+    const warnings = missing.length
+      ? [
+          `The dashboard did not supply message identity fields: ${missing.join(', ')}. The exact message is returned; identity could not be recovered from its list entry.`,
+        ]
+      : undefined;
+    return createSuccess<MessageGetResult>(
+      { message: { ...found, provenance: foreignDescriptor(source) } },
+      warnings
+    );
   }
 
   // Not found on any tab that we could read. If a tab fetch actually FAILED, surface
@@ -1395,9 +1404,9 @@ async function handleGet(
   }
   return createError<MessageGetResult>({
     code: 'MESSAGE_NOT_FOUND',
-    message: `Message ${params.messageId} was not found in the newest ${FETCH_LIMIT} inbox or sent messages.`,
+    message: `Message ${params.messageId} was not found in the available inbox or sent pages.`,
     suggestion:
-      'It may predate the fetch window, or have been surfaced only under a status filter (get pages UNFILTERED). A dashboard GET /api/messages/:id endpoint is a pending notify-not-block ask that will make get exact.',
+      'Check the message id and dashboard access. A dashboard that does not support offset pagination may only expose its newest page.',
   });
 }
 
@@ -1521,7 +1530,7 @@ async function handleDirectory(
       ...(ambiguousWith.length > 0 ? { ambiguousWith } : {}),
       provenance: isOwner
         ? { source: p.address, trust: 'local' as const }
-        : foreignDescriptor(p.address),
+        : foreignDescriptor(RBOOK_ADDRESS_REGEX.test(p.address) ? p.address : undefined),
     };
   });
 
@@ -1747,13 +1756,15 @@ function formatDirectoryForLLM(result: RbookToolResult<MessageDirectoryResult>):
     for (const p of d.projects) {
       // s86-m07: no description branch — GET /api/projects/directory/public returns no
       // description for any row, so the old renderer was dead code guarding a dead field.
+      const source = RBOOK_ADDRESS_REGEX.test(p.address) ? p.address : undefined;
+      const address = source ?? frameForeignInline(p.address, source);
       const label = p.ownerDisplayName
-        ? ` — ${frameForeignInline(p.ownerDisplayName, p.address)}`
+        ? ` — ${frameForeignInline(p.ownerDisplayName, source)}`
         : '';
       // createdAt is the REGISTRATION date. Labeled as such, never as activity or freshness.
       const registered = p.createdAt ? `, registered ${p.createdAt}` : '';
       const mine = p.isOwner ? ', yours' : '';
-      lines.push(`  ${p.address} (${p.id})${label}${registered}${mine}`);
+      lines.push(`  ${address} (${p.id})${label}${registered}${mine}`);
       if (p.ambiguousWith && p.ambiguousWith.length > 0) {
         lines.push(`      AMBIGUOUS with ${p.ambiguousWith.join(', ')}`);
       }

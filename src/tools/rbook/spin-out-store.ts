@@ -17,6 +17,7 @@ import { SPIN_OUT_TABLES } from './spin-out-columns';
 import { loadLinkInventory } from './record-link-store';
 import { listRegisteredStoresReadOnly } from '../../intelligence/registered-stores-readonly';
 import {
+  ensureAuthorNameColumns,
   ensureAuthorNamespaceColumns,
   ensureReviewTimestamps,
   ensureConstraintsTable,
@@ -256,7 +257,8 @@ export function prepareSpinOutStore(client: RbookDatabaseClient, warnings: strin
     );
   warnings.push(
     ...(ensureFirehoseEventColumns(client).warnings ?? []),
-    ...(ensureAuthorNamespaceColumns(client).warnings ?? [])
+    ...(ensureAuthorNamespaceColumns(client).warnings ?? []),
+    ...(ensureAuthorNameColumns(client).warnings ?? [])
   );
   const shape = ensureDecisionShapeColumns(client);
   warnings.push(...(shape.warnings ?? []));
@@ -266,7 +268,7 @@ export function prepareSpinOutStore(client: RbookDatabaseClient, warnings: strin
       client.getMany<{ name: string }>(`PRAGMA table_info(${table})`),
       'Verify spin-out columns'
     );
-    for (const name of [...GENESIS_COLUMN_NAMES, 'author_user_id'])
+    for (const name of [...GENESIS_COLUMN_NAMES, 'author_user_id', 'author_name'])
       if (!cols.some((c) => c.name === name))
         throw new Error(
           `${table}.${name} is missing despite migration marker; repair the schema before retrying.`

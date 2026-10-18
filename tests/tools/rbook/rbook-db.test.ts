@@ -98,9 +98,10 @@ describe('rbook_db', () => {
   });
 
   describe('RBOOK_DB_ACTIONS', () => {
-    // s92-m09: prune_snapshots, a dry run unless confirm=true.
-    it('contains 10 actions', () => {
-      expect(RBOOK_DB_ACTIONS).toHaveLength(10);
+    // s92-m09: prune_snapshots, a dry run unless confirm=true. s96-m12: conflicts and settle, on a
+    // shared project.
+    it('contains 12 actions', () => {
+      expect(RBOOK_DB_ACTIONS).toHaveLength(12);
       expect([...RBOOK_DB_ACTIONS]).toEqual([
         'health',
         'snapshot',
@@ -112,6 +113,8 @@ describe('rbook_db', () => {
         'pull',
         'clone',
         'prune_snapshots',
+        'conflicts',
+        'settle',
       ]);
     });
   });

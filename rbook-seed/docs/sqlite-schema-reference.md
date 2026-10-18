@@ -26,7 +26,7 @@ Quick reference for querying Reasonbook history using any SQLite client.
 | `record_links`         | Derived local decision/learning citations | `from_kind`, `from_id`, `to_kind`, `to_id`, `resolution`     |
 | `next_steps`           | Action items from sessions and missions   | `id`, `sprint_id`, `mission_id`, `content`, `status`         |
 | `constraints`          | Project constraints and review state      | `id`, `content`, `status`, `content_hash`                    |
-| `sync_event_queue`     | Outbound synchronization queue            | `id`, `event_type`, `envelope`, `status`                     |
+| `sync_event_queue`     | Legacy unused queue (no active delivery)  | `id`, `event_type`, `envelope`, `status`                     |
 | `prompt_mappings`      | Prompt → behavior mapping                 | `prompt`, `behavior`                                         |
 | `proposals`            | Drafted records awaiting the operator     | `id`, `text`, `kind`, `outcome`, `created_at`, `record_id`   |
 
@@ -62,6 +62,58 @@ transaction. Old stores read explicit typed references without writing a migrati
 produce named warnings. Derived links may be removed when endpoint eligibility changes.
 
 Runtime migrations may add tables such as `agent_feedback` and optional search/vector structures.
+
+### Shared Record Storage
+
+Sharing adds a change log and write guards to a prepared store. An unshared store
+does not need these objects. The schema file describes the base tables; runtime
+preparation adds missing columns and unique indexes on `stable_event_id` across
+the eight logged tables. Inspect the actual store with `PRAGMA table_info` and
+`PRAGMA index_list`: `metadata.schema_version` is a high-water label, not proof
+that a particular migration or sharing step ran.
+
+The shared tables are `strategic_decisions`, `learnings`, `missions`, `sprints`,
+`sessions`, `next_steps`, `constraints`, `mission_dependencies` and
+`session_missions`. Selected project identity fields are also recorded. The first
+seven tables use stable event IDs to identify rows across copies; the two link
+tables use their endpoint pairs. New integer IDs for decisions, learnings, next
+steps and constraints come from each copy's block of one million IDs. Display IDs
+can change during conflict recovery; the stable ID preserves the row's identity.
+
+The following runtime objects are added by sharing or by the first peer route;
+they are absent from the shipped seed schema:
+
+- `record_changes` keeps persistent changes, membership, authority moves and
+  verdicts. Each change names its transaction, project, replica, sequence, clock,
+  kind, entity, field, value and base.
+- `record_heads` keeps competing changes for each field; `record_conflicts` marks
+  fields requiring a choice, and `record_roots` keeps values before later changes.
+- `record_txn_state` and `record_aliases` hold derived transaction state and names
+  assigned when text IDs collide.
+- `record_peers` holds this copy's routes and exchange health. It is created only
+  when needed.
+- `record_write_token`, `record_apply_token` and `record_staged` coordinate
+  transactions and stage changes. They are empty when the store is at rest.
+
+`record_changes` is unique on `(project_id, replica_id, replica_seq)` as well as
+its `change_id`. The owner's copy decides accepted transactions. Only the owner
+settles project-identity and decision-lineage conflicts; admitted editors can
+settle ordinary fields. Concurrent alternatives remain visible until settled; SQL consumers
+should not treat the displayed value as proof that a field has no conflict.
+
+Per-copy state includes metadata such as `replica_id`, `replica_block`,
+`replica_seq`, `replica_author`, confirmed owner moves and the last identity-change
+notice. The local registry also binds the copy to its path, device, inode and
+highest written sequence. Credentials, routes and this registry are not change-log
+records. Context snapshots, feedback, search indexes, embeddings, session ownership
+and derived citations are also outside the ongoing shared change log. A full
+database copy can still contain historical local material; these exclusions do not
+make copying the database a selective export.
+
+Use Reasonbook tools and commands to change recorded data. Guard triggers reject
+direct SQL changes outside the recording transaction, including writes by older
+servers. Do not manufacture tokens or remove the guards. A restored copy may need
+to sync and take a new identity before it can write again.
 
 ---
 
@@ -165,13 +217,13 @@ Use any SQLite client:
 **Command line**:
 
 ```bash
-sqlite3 rbook/db/rbook.sqlite
+sqlite3 -readonly rbook/db/rbook.sqlite
 
 # Run query
-sqlite3 rbook/db/rbook.sqlite "SELECT * FROM sprints;"
+sqlite3 -readonly rbook/db/rbook.sqlite "SELECT * FROM sprints;"
 
 # Interactive mode
-sqlite3 rbook/db/rbook.sqlite
+sqlite3 -readonly rbook/db/rbook.sqlite
 > .tables
 > .schema missions
 > SELECT * FROM missions LIMIT 5;
@@ -237,5 +289,5 @@ ORDER BY name;
 
 ---
 
-**Last Updated**: 2026-10-12
+**Last Updated**: 2026-10-18
 **Replaces**: `sqlite-db-browser-guide.md` (tool-agnostic version)

@@ -24,6 +24,7 @@ import { ensureMissionTimestamps } from './schema-migrations';
 import { recordEmbedding, missionEmbeddingInput } from '../../intelligence/embedding-pipeline';
 import { appendWarnings, attachWarnings } from './format-warnings';
 import { checkWrite } from './write-guard';
+import { recordedWrite } from './record-changes';
 
 /**
  * Result type for rbook_mission_add.
@@ -338,30 +339,33 @@ export async function rbookMissionAdd(
 
       // Insert new mission with created_at timestamp
       const createdAt = new Date().toISOString();
-      const genesis = genesisColumns(client, 'missions', getProjectId(client));
-      const insertResult = client.execute(
-        `INSERT INTO missions (
-          id, sprint_id, name, status, objective, context,
-          success_criteria, deliverables, reference_docs, domain_fields, notes,
-          created_at, updated_at, ${genesis.columns.join(', ')}
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${genesis.placeholders})`,
-        [
-          missionId.trim(),
-          assignedSprintId,
-          name.trim(),
-          status,
-          objective?.trim() || null,
-          contextValue,
-          successCriteria ? JSON.stringify(successCriteria) : null,
-          deliverables ? JSON.stringify(deliverables) : null,
-          referenceDocs ? JSON.stringify(referenceDocs) : null,
-          domainFields ? JSON.stringify(domainFields) : null,
-          notes?.trim() || null,
-          createdAt,
-          createdAt,
-          ...genesis.values,
-        ]
-      );
+      // s96-m01: on a shared store the create takes its sequence under the write lock (ADR s96 §3).
+      const insertResult = recordedWrite(client, () => {
+        const genesis = genesisColumns(client, 'missions', getProjectId(client));
+        return client.execute(
+          `INSERT INTO missions (
+            id, sprint_id, name, status, objective, context,
+            success_criteria, deliverables, reference_docs, domain_fields, notes,
+            created_at, updated_at, ${genesis.columns.join(', ')}
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${genesis.placeholders})`,
+          [
+            missionId.trim(),
+            assignedSprintId,
+            name.trim(),
+            status,
+            objective?.trim() || null,
+            contextValue,
+            successCriteria ? JSON.stringify(successCriteria) : null,
+            deliverables ? JSON.stringify(deliverables) : null,
+            referenceDocs ? JSON.stringify(referenceDocs) : null,
+            domainFields ? JSON.stringify(domainFields) : null,
+            notes?.trim() || null,
+            createdAt,
+            createdAt,
+            ...genesis.values,
+          ]
+        );
+      });
 
       if (!insertResult.success) {
         return createError<MissionAddResult>(

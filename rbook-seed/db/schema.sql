@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS metadata (
 --
 -- No identity rows are seeded: rbook_project(init) writes project_id and project_name. An empty
 -- row would satisfy NOT NULL while meaning nothing, and reads treat an absent row as empty anyway.
-INSERT OR IGNORE INTO metadata (key, value) VALUES ('created_at', datetime('now'));
+INSERT INTO metadata (key, value) SELECT 'created_at', datetime('now') WHERE NOT EXISTS (SELECT 1 FROM metadata WHERE key = 'created_at');
 INSERT OR IGNORE INTO metadata (key, value) VALUES ('schema_version', '2.1');
 
 CREATE TABLE IF NOT EXISTS sprints (
@@ -40,7 +40,8 @@ CREATE TABLE IF NOT EXISTS sprints (
   event_type TEXT,
   schema_version INTEGER NOT NULL DEFAULT 1,
   -- Author identity (nullable; bound when the multi-user layer lands).
-  author_user_id TEXT
+  author_user_id TEXT,
+  author_name TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_sprints_aggkey ON sprints (project_id, event_type, occurred_at);
@@ -77,7 +78,8 @@ CREATE TABLE IF NOT EXISTS missions (
   event_type TEXT,
   schema_version INTEGER NOT NULL DEFAULT 1,
   -- Author identity (nullable; bound when the multi-user layer lands).
-  author_user_id TEXT
+  author_user_id TEXT,
+  author_name TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_missions_aggkey ON missions (project_id, event_type, occurred_at);
@@ -113,6 +115,7 @@ CREATE TABLE IF NOT EXISTS context_snapshots (
   schema_version INTEGER NOT NULL DEFAULT 1,
   -- Author identity (nullable; bound when the multi-user layer lands).
   author_user_id TEXT,
+  author_name TEXT,
   -- Content-tombstone marker: NULL = content intact; a timestamp = the snapshot prune emptied
   -- this row's content, or it was written without content (row, metadata, FK and event kept).
   content_pruned_at TEXT,
@@ -166,6 +169,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   -- Author identity (nullable; user_id is the author author_session_id
   -- points at, bound when the multi-user layer lands).
   author_user_id TEXT,
+  author_name TEXT,
   user_id TEXT,
   -- Implicit sessions: 1 for a session the server opened because a write
   -- named none; owner_key says whose it is (an explicit one's starter, NULL before 3.3.0).
@@ -211,6 +215,7 @@ CREATE TABLE IF NOT EXISTS strategic_decisions (
   schema_version INTEGER NOT NULL DEFAULT 1,
   -- Author identity (nullable; bound when the multi-user layer lands).
   author_user_id TEXT,
+  author_name TEXT,
   -- Decision reasoning and effects; omitted legacy fields remain NULL.
   context_text TEXT,
   alternatives TEXT,     -- JSON array of strings
@@ -258,6 +263,7 @@ CREATE TABLE IF NOT EXISTS learnings (
   schema_version INTEGER NOT NULL DEFAULT 1,
   -- Author identity (nullable; bound when the multi-user layer lands).
   author_user_id TEXT,
+  author_name TEXT,
   FOREIGN KEY (sprint_id) REFERENCES sprints(id) ON DELETE SET NULL,
   FOREIGN KEY (author_session_id) REFERENCES sessions(id) ON DELETE SET NULL,
   FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE SET NULL
@@ -359,7 +365,8 @@ CREATE TABLE IF NOT EXISTS next_steps (
   event_type TEXT,
   schema_version INTEGER NOT NULL DEFAULT 1,
   -- Author identity (nullable; bound when the multi-user layer lands).
-  author_user_id TEXT
+  author_user_id TEXT,
+  author_name TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_next_steps_aggkey ON next_steps (project_id, event_type, occurred_at);
@@ -388,7 +395,8 @@ CREATE TABLE IF NOT EXISTS constraints (
   event_type TEXT,
   schema_version INTEGER NOT NULL DEFAULT 1,
   -- Author identity (nullable; bound when the multi-user layer lands).
-  author_user_id TEXT
+  author_user_id TEXT,
+  author_name TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_constraints_aggkey ON constraints (project_id, event_type, occurred_at);

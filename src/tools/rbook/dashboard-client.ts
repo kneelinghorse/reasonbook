@@ -16,6 +16,7 @@ import {
   toDashboardAddress,
 } from '../../intelligence/legacy-compat';
 import { getSetting } from '../../intelligence/legacy-compat';
+import { rememberDashboardIdentity } from '../../intelligence/user-author';
 import { readFileSync } from 'fs';
 import path from 'path';
 import type { RbookToolResult } from './types';
@@ -398,13 +399,15 @@ export interface ListDirectoryResult {
 export interface GetMyProjectsResult {
   projects: DirectoryProject[];
   totalCount: number;
+  /** s96-m02: the caller's identity, which the dashboard returns since its sprint 61 (H3). */
+  user?: { id: string; username: string | null };
 }
 
 type RawDirectoryProject = Partial<DirectoryProject> & {
   [LEGACY.wireAddressKey]?: string;
 };
 
-function pickNewestUserScopedKey(
+export function pickNewestUserScopedKey(
   keys: Record<string, UserScopedKeyRecord>
 ): { keyId: string; record: UserScopedKeyRecord } | undefined {
   const entries = Object.entries(keys);
@@ -452,12 +455,15 @@ function parseOwnerFromAddress(address: string | undefined): string | undefined 
   return owner && owner.trim().length > 0 ? owner.trim() : undefined;
 }
 
-/** Only protocol address fields change; message prose, evidence and payload are user content. */
+/** Account emails are private metadata; protocol addresses normalize without rewriting user prose. */
 function normalizeMessageAddresses<
   T extends Pick<DashboardMessage, 'from' | 'to' | 'senderAddress'>,
 >(message: T): T {
+  const publicMessage = { ...message } as T & Record<string, unknown>;
+  delete publicMessage.senderEmail;
+  delete publicMessage.targetEmail;
   return {
-    ...message,
+    ...publicMessage,
     ...(typeof message.from === 'string' ? { from: normalizeAddressScheme(message.from) } : {}),
     ...(typeof message.to === 'string' ? { to: normalizeAddressScheme(message.to) } : {}),
     ...(typeof message.senderAddress === 'string'
@@ -1395,13 +1401,16 @@ export class DashboardClient {
    * rbook_message.handleGet() catches to fall back to the pre-deploy paging scan.
    */
   async getMessageById(id: string): Promise<RbookToolResult<DashboardMessage>> {
-    const result = await this.request<DashboardMessage>(
+    const result = await this.request<DashboardMessage | { message: DashboardMessage }>(
       'GET',
       `/api/messages/${encodeURIComponent(id)}`
     );
-    return result.success && result.data
-      ? { ...result, data: normalizeMessageAddresses(result.data) }
-      : result;
+    const body = result.data;
+    const message = body && typeof body === 'object' && 'message' in body ? body.message : body;
+    return {
+      ...result,
+      data: message && typeof message === 'object' ? normalizeMessageAddresses(message) : undefined,
+    };
   }
 
   /**
@@ -1461,7 +1470,40 @@ export class DashboardClient {
     if (!result.success || !result.data) {
       return result;
     }
-    return createSuccess(normalizeProjectListResult(result.data));
+    const user = result.data.user;
+    const identity =
+      user && typeof user.id === 'string' && user.id
+        ? { id: user.id, username: typeof user.username === 'string' ? user.username : null }
+        : undefined;
+    return createSuccess({
+      ...normalizeProjectListResult(result.data),
+      ...(identity ? { user: identity } : {}),
+    });
+  }
+
+  /**
+   * s96-m02 (ADR s96 §10): keep the identity the dashboard returned for this client's credential,
+   * so a write can name its author without calling the dashboard. Only a sign-in and a write path
+   * call it, because reads never write (decision #1199); the identity is kept by the credential's
+   * fingerprint and this dashboard's address, so another sign-in or dashboard never takes it. A
+   * failure to keep it is reported, never fatal.
+   */
+  rememberIdentity(user: { readonly id: string; readonly username: string | null }): void {
+    const credential =
+      this.authMethod === 'apiKey' ? (this.cachedToken ?? '') : `password:${this.email}`;
+    if (!credential || credential === 'password:') return;
+    try {
+      rememberDashboardIdentity(
+        { userId: user.id, username: user.username, baseUrl: this.baseUrl },
+        credential
+      );
+    } catch (error) {
+      process.stderr.write(
+        `[Reasonbook] the signed-in account's name could not be kept for author names: ${
+          error instanceof Error ? error.message : String(error)
+        }\n`
+      );
+    }
   }
 
   /**

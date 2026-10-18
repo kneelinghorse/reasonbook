@@ -36,6 +36,7 @@ import {
   type SpinOutOperation,
 } from './spin-out-ledger';
 import { copySpinOutTarget } from './spin-out-copy';
+import { isSharedStore } from './replica-identity';
 import { markSpinOutSource } from './spin-out-mark';
 import { spinOutParkedSprints, type SpinOutParkedSprint } from './spin-out-report';
 
@@ -136,6 +137,12 @@ export async function spinOut(options: SpinOutOptions): Promise<RbookToolResult<
     if (storeAt(targetRoot)?.hasDatabase) target = await openSpinOut(targetRoot, true);
     let targetIdentity = target ? spinOutIdentity(target, targetRoot) : undefined;
     validateSpinOutPair(sourceIdentity, targetIdentity, options.env);
+    // s96-m01: a shared record's rows keep one id and one stable id on every copy (ADR s96 §2,
+    // §3), and spin-out moves and renumbers rows, so it takes no part in a shared project.
+    if (isSharedStore(source) || (target && isSharedStore(target)))
+      throw new Error(
+        'Spin-out moves records only between projects that are not shared; one of these is a copy of a shared record.'
+      );
     let snapshot = readSpinOutSnapshot(source, sourceIdentity.projectId, selection);
     let operation = readSpinOutMetadata<SpinOutOperation>(source, operationKey(operationId));
     if (operation && targetIdentity)

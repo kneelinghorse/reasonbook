@@ -23,9 +23,10 @@
  *    fully dynamic key and a sync payload remain indirect routes; this syntax gate cannot prove
  *    values obtained through those routes are not branched on.
  * 3. “Monotonic” is closed over the six logical setters classified below, and both mutable paths
- *    atomically re-check the current row before replacement. The fourteen variable-key metadata
- *    writer statements and their 39 current declaration/call-site key roles are a point-in-time
- *    enumeration; a changed ledger forces their keys to be re-audited.
+ *    atomically re-check the current row before replacement. The sixteen variable-key metadata
+ *    writer statements (fifteen INSERT forms and one UPDATE) and their 46 current
+ *    declaration/call-site key roles (s96-m13's copy-key writer and block move added two) are a
+ *    point-in-time enumeration; a changed ledger forces their keys to be re-audited.
  * 4. The label heal runs only on the retrieval path. A store that never performs retrieval does
  *    not heal its label, which is harmless because the label is not a control input.
  *
@@ -59,8 +60,9 @@ const SCHEMA_FILE = 'tools/rbook/schema.ts';
 const VECTOR_MARKER_KEY = 'vector_storage_columns';
 const FIREHOSE_MARKER_KEY = 'firehose_event_columns';
 const LABEL_READ = "SELECT value FROM metadata WHERE key = 'schema_version'";
+// s96-m01 (fold): a variable-key UPDATE writes a key named by its caller too, so it is counted.
 const VARIABLE_WRITER_RE =
-  /INSERT(?:\s+OR\s+REPLACE)?\s+INTO\s+metadata\s*\(\s*key\s*,\s*value\s*\)\s*VALUES\s*\(\s*\?\s*,\s*\?\s*\)/g;
+  /INSERT(?:\s+OR\s+REPLACE)?\s+INTO\s+metadata\s*\(\s*key\s*,\s*value\s*\)\s*VALUES\s*\(\s*\?\s*,\s*\?\s*\)|UPDATE\s+metadata\s+SET\s+value\s*=[^`'";]*?WHERE\s+key\s*=\s*\?/g;
 
 interface SourceSite {
   readonly file: string;
@@ -193,23 +195,32 @@ const EXPECTED_SCHEMA_VERSION_LITERALS: readonly SourceSite[] = sortSourceSites(
   // 32 literal roles, six logical setters and 39 generic-writer key roles; no key changed.
   // s94-m06 adds the owned citation schema and atomic sync units. Label roles remain unchanged;
   // record_links_schema joins only the generic-writer/key ledgers below.
-  { file: 'intelligence/project-graph-registry.ts', line: 320, role: 'ensureSchema' },
+  // s96-m01 (fold): the registry's confirmedCopy option moves these sites down 6 lines.
+  // s96-m03 (fold): its configDirectory getter, for the replay base, moves them down 5 more.
+  { file: 'intelligence/project-graph-registry.ts', line: 349, role: 'ensureSchema' },
   // Read-only registry projection; does not branch on or write the schema label.
   {
     file: 'intelligence/registered-stores-readonly.ts',
     line: 31,
     role: 'listRegisteredStoresReadOnly',
   },
-  { file: 'intelligence/project-graph-registry.ts', line: 397, role: 'register' },
-  { file: 'intelligence/project-graph-registry.ts', line: 398, role: 'register' },
+  { file: 'intelligence/project-graph-registry.ts', line: 427, role: 'register' },
+  { file: 'intelligence/project-graph-registry.ts', line: 428, role: 'register' },
   // s95-m06 moved every rbook-project-init.ts site down 6 lines (the seed copy moved to
   // level-files.ts; the level is settled, and an unreadable store refused, before the identity
   // reads) and rbook-project-update.ts's writer down 10; no role was added, removed or changed.
-  { file: INIT_FILE, line: 766, role: 'rbookProjectInit' },
-  { file: INIT_FILE, line: 797, role: 'rbookProjectInit' },
-  { file: INIT_FILE, line: 797, role: 'rbookProjectInit' },
-  { file: INIT_FILE, line: 961, role: 'rbookProjectInit' },
-  { file: 'tools/rbook/genesis-columns.ts', line: 19, role: '<module>' },
+  // s96-m01 (fold): init checks a shared copy before it writes, moving these down 26 lines, and 9
+  // more when the check opened read-only.
+  // s96-m02: down six more (the author-time stamp for a new store).
+  { file: INIT_FILE, line: 809, role: 'rbookProjectInit' },
+  { file: INIT_FILE, line: 840, role: 'rbookProjectInit' },
+  { file: INIT_FILE, line: 840, role: 'rbookProjectInit' },
+  { file: INIT_FILE, line: 1012, role: 'rbookProjectInit' },
+  // s96-m02: down five lines (the author stamp's imports). s96-m03: one more (record-guards).
+  { file: 'tools/rbook/genesis-columns.ts', line: 34, role: '<module>' },
+  // s96-m03: the change log's column classes name schema_version among the recorded genesis
+  // columns; it is the row's stamp version, not the store-level label.
+  { file: 'tools/rbook/record-columns.ts', line: 47, role: '<module>' },
   // s93-m11 (reads critic fold): the label's read and write moved into raiseSchemaVersionLabel,
   // which stampSchemaVersionAtLeast runs as a lazy repair; the sites below it moved down with the
   // read-deferral of index rebuilds. Nothing was added or removed.
@@ -223,21 +234,23 @@ const EXPECTED_SCHEMA_VERSION_LITERALS: readonly SourceSite[] = sortSourceSites(
   { file: MIGRATIONS_FILE, line: 1598, role: 'ensureVectorStorage' },
   { file: MIGRATIONS_FILE, line: 2501, role: 'migrateFirehoseTable' },
   { file: SCHEMA_FILE, line: 128, role: '<module>' },
+  // s96-m02: author_name follows author_user_id in each of the eight logged tables, moving each
+  // later site down by the tables above it.
   { file: SCHEMA_FILE, line: 146, role: '<module>' },
-  { file: SCHEMA_FILE, line: 183, role: '<module>' },
-  { file: SCHEMA_FILE, line: 218, role: '<module>' },
-  { file: SCHEMA_FILE, line: 270, role: '<module>' },
+  { file: SCHEMA_FILE, line: 184, role: '<module>' },
+  { file: SCHEMA_FILE, line: 220, role: '<module>' },
+  { file: SCHEMA_FILE, line: 273, role: '<module>' },
   // s92-m03 moved the sites below the sessions table down four lines (implicit, owner_key).
   // s93-m06 moved every schema.ts site down one (the proposals import), those below
   // strategic_decisions four more (the approval columns) and those below constraints three more
   // (the proposals table); schema-migrations.ts sites below ensureConstraintEvergreen moved down 28
   // (ensureDecisionApprovalColumns). Nothing was added, removed or re-roled.
-  { file: SCHEMA_FILE, line: 316, role: '<module>' },
-  { file: SCHEMA_FILE, line: 363, role: '<module>' },
-  { file: SCHEMA_FILE, line: 458, role: '<module>' },
-  { file: SCHEMA_FILE, line: 487, role: '<module>' },
-  { file: SCHEMA_FILE, line: 507, role: '<module>' },
-  { file: SCHEMA_FILE, line: 507, role: '<module>' },
+  { file: SCHEMA_FILE, line: 320, role: '<module>' },
+  { file: SCHEMA_FILE, line: 368, role: '<module>' },
+  { file: SCHEMA_FILE, line: 464, role: '<module>' },
+  { file: SCHEMA_FILE, line: 494, role: '<module>' },
+  { file: SCHEMA_FILE, line: 515, role: '<module>' },
+  { file: SCHEMA_FILE, line: 515, role: '<module>' },
   { file: 'tools/rbook/sync-merge.ts', line: 164, role: 'insertSprintRow' },
   { file: 'tools/rbook/sync-merge.ts', line: 192, role: 'insertMissionRow' },
   { file: 'tools/rbook/sync-merge.ts', line: 222, role: 'insertSessionRow' },
@@ -250,7 +263,7 @@ function staticSql(node: ts.Expression): string | null {
 }
 
 /**
- * Pin the fourteen generic metadata-writer statements together with every shipped call-site key
+ * Pin the sixteen generic metadata-writer statements together with every shipped call-site key
  * expression that can reach their wrappers. This closes the natural bypass where an existing
  * `writeMetadata(..., 'owner', ...)` call is silently repointed to `schema_version` without adding
  * another helper declaration.
@@ -266,9 +279,13 @@ function metadataWriterKeySites(sources: SourceMap): WriterKeySite[] {
       let key: ts.Expression | undefined;
       if (
         ts.isIdentifier(node.expression) &&
-        ['writeMetadata', 'setIfEmpty', 'writeMeta', 'writeSpinOutMetadata'].includes(
-          node.expression.text
-        )
+        [
+          'writeMetadata',
+          'setIfEmpty',
+          'writeMeta',
+          'writeSpinOutMetadata',
+          'writeReplicaKey',
+        ].includes(node.expression.text)
       ) {
         callee = node.expression.text;
         key = node.arguments[1];
@@ -290,19 +307,36 @@ function metadataWriterKeySites(sources: SourceMap): WriterKeySite[] {
         callee = 'updateMetadata.run';
         key = node.arguments[0];
       } else if (
-        ts.isPropertyAccessExpression(node.expression) &&
-        node.expression.name.text === 'execute' &&
-        node.arguments.length > 1 &&
-        ts.isArrayLiteralExpression(node.arguments[1])
+        (ts.isPropertyAccessExpression(node.expression) &&
+          ['execute', 'getOne'].includes(node.expression.name.text) &&
+          node.arguments.length > 1 &&
+          ts.isArrayLiteralExpression(node.arguments[1])) ||
+        // s96-m03: a converted site's `recordedExecute(client, sql, params)` is read as the
+        // `client.execute(sql, params)` it replaced, so its key stays pinned.
+        (ts.isIdentifier(node.expression) &&
+          node.expression.text === 'recordedExecute' &&
+          node.arguments.length > 2 &&
+          ts.isArrayLiteralExpression(node.arguments[2]))
       ) {
-        const sql = staticSql(node.arguments[0]);
+        const recorded = ts.isIdentifier(node.expression);
+        const sqlArg = node.arguments[recorded ? 1 : 0];
+        const params = node.arguments[recorded ? 2 : 1] as ts.ArrayLiteralExpression;
+        const verb = recorded
+          ? 'execute'
+          : (node.expression as ts.PropertyAccessExpression).name.text;
+        const sql = staticSql(sqlArg);
         const normalized = sql?.replace(/\s+/g, ' ').toLowerCase() ?? '';
         if (
+          verb === 'execute' &&
           normalized.includes('into metadata') &&
           /values\s*\(\s*\?\s*,\s*\?\s*\)/.test(normalized)
         ) {
           callee = 'metadata.execute';
-          key = node.arguments[1].elements[0];
+          key = params.elements[0];
+        } else if (/^update metadata set value\s*=.*where key\s*=\s*\?/.test(normalized)) {
+          // s96-m01 (fold): a variable-key UPDATE's key is its last parameter, WHERE key = ?.
+          callee = 'metadata.update';
+          key = params.elements[params.elements.length - 1];
         }
       }
 
@@ -322,29 +356,31 @@ function metadataWriterKeySites(sources: SourceMap): WriterKeySite[] {
 const EXPECTED_WRITER_KEYS: readonly WriterKeySite[] = sortSourceSites([
   {
     // s93-m01: the hook CLI's ambient switch — a constant key, never the label.
+    // s96-m12: down 14 lines (relevant marks a row whose fields are in conflict).
     file: 'cli/commands.ts',
-    line: 360,
+    line: 374,
     role: 'ambient',
     callee: 'metadata.execute',
     key: 'AMBIENT_METADATA_KEY',
   },
   {
     file: 'tools/rbook/blob-migrations.ts',
-    line: 149,
+    line: 151,
     role: 'setBlobSchemaVersion',
     callee: 'metadata.execute',
     key: 'BLOB_SCHEMA_VERSION_KEY',
   },
+  // s96-m01 (fold): down 35 lines, and s96-m02 six more, as above; the keys are unchanged.
   ...[
-    [758, "'project_id'"],
-    [760, "'project_name'"],
-    [763, "'tracelab_project_id'"],
-    [814, "'project_type'"],
-    [817, "'project_type'"],
+    [800, "'project_id'"],
+    [802, "'project_name'"],
+    [806, "'tracelab_project_id'"],
+    [857, "'project_type'"],
+    [860, "'project_type'"],
     // s93-m12: a store recreated beside an agents file takes back the level its Reasonbook line names.
-    [820, "'project_type'"],
+    [863, "'project_type'"],
     // s94-m11: recreated stores no longer adopt an ambient setting from the agents file.
-    [828, "'created_at'"],
+    [871, "'created_at'"],
   ].map(([line, key]) => ({
     file: INIT_FILE,
     line: Number(line),
@@ -353,11 +389,58 @@ const EXPECTED_WRITER_KEYS: readonly WriterKeySite[] = sortSourceSites([
     key: String(key),
   })),
   {
+    // s96-m03: down two lines, and read through recordedExecute, which records the change.
+    // s96-m12: down one more (its refusal on a member's copy is imported).
     file: 'tools/rbook/rbook-project-update.ts',
-    line: 71,
+    line: 74,
     role: 'rbookProjectUpdate',
     callee: 'metadata.execute',
     key: "'project_type'",
+  },
+  // s96-m01: a copy's replica identity, written through one helper with each key named.
+  // s96-m03: down four lines (the change log's refusal codes). s96-m12: five more (the slot
+  // clash and field-in-conflict codes, and the peer-sessions import). s96-m13: nine more (three
+  // exchange refusal codes, and this helper's comment naming its one other caller).
+  {
+    file: 'tools/rbook/replica-identity.ts',
+    line: 194,
+    role: 'writeReplicaKey',
+    callee: 'metadata.execute',
+    key: 'key',
+  },
+  ...['REPLICA_KEYS.id', 'REPLICA_KEYS.block', 'REPLICA_KEYS.seq'].map((key, index) => ({
+    file: 'tools/rbook/replica-identity.ts',
+    line: 203 + index,
+    role: 'writeIdentity',
+    callee: 'writeReplicaKey',
+    key,
+  })),
+  // s96-m13: a copy's own keys besides its identity, through writeCopyKey, whose key is a CopyKey:
+  // the join it asked for, the moves it confirmed, its last new identity and its invite's name.
+  {
+    file: 'tools/rbook/replica-copy-keys.ts',
+    line: 27,
+    role: 'writeCopyKey',
+    callee: 'writeReplicaKey',
+    key: 'key',
+  },
+  // s96-m13: a copy that lost a block clash moves to a new block under its replica id.
+  {
+    file: 'tools/rbook/replica-copy-keys.ts',
+    line: 39,
+    role: 'moveReplicaBlock',
+    callee: 'writeReplicaKey',
+    key: 'REPLICA_KEYS.block',
+  },
+  // s96-m01 (fold): the copy's sequence, raised in one variable-key UPDATE; never the label.
+  // s96-m12: down eight lines (the five above, and establishReplica marking the open sessions a
+  // copy brought, at its first identity only). s96-m13: down nine (the lines above).
+  {
+    file: 'tools/rbook/replica-identity.ts',
+    line: 317,
+    role: 'takeReplicaSeq',
+    callee: 'metadata.update',
+    key: 'KEYS.seq',
   },
   {
     // s94-m04 owns this marker; it is not the store-level schema label.
@@ -367,18 +450,21 @@ const EXPECTED_WRITER_KEYS: readonly WriterKeySite[] = sortSourceSites([
     callee: 'metadata.execute',
     key: 'MARKER',
   },
+  // s96-m13: down one line (the member's-copy import), and the keys below five (a member's copy
+  // never overwrites the owner or the dashboard keys).
   {
     file: 'tools/rbook/owner-resolution.ts',
-    line: 175,
+    line: 176,
     role: 'writeMetadata',
     callee: 'metadata.execute',
     key: 'key',
   },
+  // s96-m02: down three lines (owner resolution keeps the sign-in's identity for author names).
   ...[
-    [254, "'dashboard_slug'"],
-    [257, "'dashboard_project_id'"],
-    [291, "'owner'"],
-    [292, "'dashboard_username'"],
+    [262, "'dashboard_slug'"],
+    [265, "'dashboard_project_id'"],
+    [299, "'owner'"],
+    [300, "'dashboard_username'"],
   ].map(([line, key]) => ({
     file: 'tools/rbook/owner-resolution.ts',
     line: Number(line),
@@ -395,15 +481,16 @@ const EXPECTED_WRITER_KEYS: readonly WriterKeySite[] = sortSourceSites([
     key: 'RECORD_LINKS_MARKER',
   },
   {
+    // s96-m02: down two lines (a copied row keeps its own author columns over the stamp's).
     file: 'tools/rbook/spin-out-copy.ts',
-    line: 68,
+    line: 70,
     role: 'copySpinOutTarget',
     callee: 'writeSpinOutMetadata',
     key: '`${SPIN_OUT_ORIGIN_PREFIX}${provenance.kind}:${provenance.targetId}`',
   },
   {
     file: 'tools/rbook/spin-out-copy.ts',
-    line: 150,
+    line: 152,
     role: 'copySpinOutTarget',
     callee: 'writeSpinOutMetadata',
     key: 'operationKey(operation.operationId)',
@@ -445,50 +532,33 @@ const EXPECTED_WRITER_KEYS: readonly WriterKeySite[] = sortSourceSites([
   },
   {
     // s92-m02: the one-time sprint end_date repair's marker — a constant key, never the label.
+    // s96-m03: down two lines (a shared record skips the repair).
     file: 'tools/rbook/sprint-end-date-repair.ts',
-    line: 138,
+    line: 140,
     role: 'repairCompletedSprintEndDates',
     callee: 'metadata.execute',
     key: 'END_DATE_REPAIR_MARKER',
   },
   {
     // s93-m11: the first-write staleness repair's ledger — a constant key, never the label.
+    // s96-m03: down three lines (a shared record skips the restore).
     file: 'tools/rbook/staleness-detection.ts',
-    line: 778,
+    line: 781,
     role: 'writeStalenessRepairLedger',
     callee: 'metadata.execute',
     key: 'STALENESS_REPAIR_LEDGER_KEY',
   },
-  {
-    file: 'tools/rbook/sync-bootstrap.ts',
-    line: 441,
-    role: 'setIfEmpty',
-    callee: 'metadata.execute',
-    key: 'key',
-  },
-  ...[
-    [464, "'project_id'"],
-    [465, "'project_name'"],
-    [466, "'dashboard_slug'"],
-    [467, "'dashboard_project_id'"],
-    [474, "'collab_role'"],
-  ].map(([line, key]) => ({
-    file: 'tools/rbook/sync-bootstrap.ts',
-    line: Number(line),
-    role: 'ensureCloneIdentity',
-    callee: 'setIfEmpty',
-    key: String(key),
-  })),
+  // s96-m08: retired clone no longer has metadata writers.
   {
     file: 'tools/rbook/sync-locks.ts',
-    line: 56,
+    line: 20,
     role: 'writeMeta',
     callee: 'metadata.execute',
     key: 'key',
   },
   {
     file: 'tools/rbook/sync-locks.ts',
-    line: 97,
+    line: 61,
     role: 'resolvePlatformProjectId',
     callee: 'writeMeta',
     key: 'cacheKey',
@@ -573,7 +643,9 @@ function logicalSetterSites(sources: SourceMap): SourceSite[] {
 }
 
 const EXPECTED_LOGICAL_SETTERS: readonly SourceSite[] = [
-  { file: INIT_FILE, line: 778, role: 'prepared-run:rbookProjectInit:RBOOK_SCHEMA_VERSION' },
+  // s96-m01: down one line (init imports rawGenesisColumns).
+  // s96-m01 (fold): down 35 lines, and s96-m02 six more, as the init sites above.
+  { file: INIT_FILE, line: 821, role: 'prepared-run:rbookProjectInit:RBOOK_SCHEMA_VERSION' },
   {
     file: MIGRATIONS_FILE,
     line: 326,
@@ -586,7 +658,8 @@ const EXPECTED_LOGICAL_SETTERS: readonly SourceSite[] = [
   // ensureFirehoseEventColumns now runs under the store's write lock.
   {
     file: MIGRATIONS_FILE,
-    line: 2629,
+    // s96-m01 (fold): down 50 lines (sharing's every-table checks and readiness above it).
+    line: 2684,
     role: 'migration:applyFirehoseEventColumns:FIREHOSE_SCHEMA_VERSION',
   },
   { file: SCHEMA_FILE, line: 128, role: 'seed:ignore' },
@@ -619,13 +692,24 @@ const EXPECTED_VARIABLE_WRITER_FILES = [
   'tools/rbook/rbook-project-update.ts',
   // s94-m06: atomic citation-schema creation/backfill stamps only RECORD_LINKS_MARKER.
   'tools/rbook/record-link-migration.ts',
+  // s96-m12: a merge writes the recorded metadata identity keys its live changes give; only the
+  // five recorded keys are ever captured, never the schema label.
+  'tools/rbook/record-materialize.ts',
+  // s96-m03: the replay check applies recorded metadata identity keys to a scratch copy of the
+  // replay base; only the five recorded keys are ever captured, never the schema label.
+  'tools/rbook/record-replay.ts',
+  // s96-m12: an identity settle writes the one recorded metadata key it settles.
+  'tools/rbook/record-settle.ts',
+  // s96-m01: a copy's replica id, block and sequence (REPLICA_KEYS); never the schema label. The
+  // second statement is the variable-key UPDATE that raises the sequence.
+  'tools/rbook/replica-identity.ts',
+  'tools/rbook/replica-identity.ts',
   // s94-m08: operation, reservation and row/provenance keys; never the schema label.
   'tools/rbook/spin-out-ledger.ts',
   // s92-m02: the one-time sprint end_date repair's marker (key END_DATE_REPAIR_MARKER, a constant).
   'tools/rbook/sprint-end-date-repair.ts',
   // s93-m11: the staleness repair's ledger (key STALENESS_REPAIR_LEDGER_KEY, a constant).
   'tools/rbook/staleness-detection.ts',
-  'tools/rbook/sync-bootstrap.ts',
   'tools/rbook/sync-locks.ts',
   'tools/rbook/sync-merge.ts',
   'tools/rbook/sync-mutable.ts',
@@ -679,7 +763,7 @@ function auditSources(sources: SourceMap): string[] {
   const readers = literalLabelReaders(sources);
   const expectedReaders: readonly SourceSite[] = [
     { file: MIGRATIONS_FILE, line: 130, role: 'raiseSchemaVersionLabel' },
-    { file: SCHEMA_FILE, line: 507, role: '<module>' },
+    { file: SCHEMA_FILE, line: 515, role: '<module>' },
   ];
   if (JSON.stringify(readers) !== JSON.stringify(expectedReaders)) {
     findings.push(`literal label readers changed: ${JSON.stringify(readers)}`);
@@ -737,7 +821,7 @@ function auditSources(sources: SourceMap): string[] {
   });
   if (
     JSON.stringify(parameterizedInitReads) !==
-    JSON.stringify([{ file: INIT_FILE, line: 749, role: 'rbookProjectInit' }])
+    JSON.stringify([{ file: INIT_FILE, line: 791, role: 'rbookProjectInit' }])
   ) {
     findings.push(
       `parameterized init label read changed: ${JSON.stringify(parameterizedInitReads)}`
@@ -793,7 +877,7 @@ describe('schema_version static contract', () => {
       'cannot say WHICH migrations ran',
       'project_identity` view',
       'six logical setters',
-      'fourteen variable-key',
+      'sixteen variable-key',
       'retrieval path',
     ]) {
       expect(header).toContain(phrase);
@@ -812,7 +896,7 @@ describe('schema_version static contract', () => {
     expect(metadataWriterKeySites(SHIPPED_SOURCES)).toEqual(EXPECTED_WRITER_KEYS);
     expect(literalLabelReaders(SHIPPED_SOURCES)).toEqual([
       { file: MIGRATIONS_FILE, line: 130, role: 'raiseSchemaVersionLabel' },
-      { file: SCHEMA_FILE, line: 507, role: '<module>' },
+      { file: SCHEMA_FILE, line: 515, role: '<module>' },
     ]);
   });
 
@@ -854,6 +938,7 @@ describe('schema_version static contract', () => {
     'INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)',
     'INSERT INTO metadata (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
     'INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+    'UPDATE metadata SET value = ? WHERE key = ?',
   ])('mutation control rejects an extra variable-key writer using %s', (sql) => {
     const changed = mutate(
       SHIPPED_SOURCES,

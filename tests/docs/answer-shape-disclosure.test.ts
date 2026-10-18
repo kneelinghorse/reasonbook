@@ -187,16 +187,43 @@ const EXPECTED_TOTALS = {
   // s95-m06: level-files.ts and project-level.ts join the root without a named answer type.
   // ProjectUpdateResult gains filesWritten, and RbookSessionStartResult and RbookDecisionsRecordResult
   // gain projectLevel (three rows, all additive and optional), to be disclosed in the 3.6.0 CHANGELOG.
-  files: 196,
-  roots: 143,
-  declarations: 312,
-  compositions: 312,
-  rows: 1762,
+  // s96-m01: replica-identity.ts, replica-check.ts and intelligence/replica-bindings.ts join the
+  // closure through client.ts. They declare no named answer type, so only the file count moves.
+  // s96-m02: author-name.ts joins the closure without a named answer type. Six rows, all additive:
+  // `author` on RecentDecisionSummary, StrategicDecision (optional), RbookDecisionsShowResult,
+  // MissionShowResult and SessionListItem, and GetMyProjectsResult's optional `user` (H3). The
+  // review's recent decisions carry an optional `author`, only for a recorded name, inside
+  // RbookReviewResult's existing row.
+  // s96-m03: the change log's six modules (record-capture, -changes, -columns, -guards, -replay and
+  // -share) join the closure through the copy check, without a named answer type.
+  // s96-m12: the merge's modules join the closure (nineteen files, peer-sessions.ts among them). rbook_db's conflicts and settle
+  // add the roots RbookDbConflictsResult and RbookDbSettleResult (the RbookDbResult union widens),
+  // with OpenConflict, ConflictCandidate and CheckFinding: five declarations and 23 rows. The
+  // in-process RecallItem gains an optional `conflicts` (one row). All additive, to be disclosed in
+  // the 4.1.0 CHANGELOG with the shared record (s96-m09).
+  // s96-m13: the sync's modules join the closure (29 files: the exchange and its steps, the wire,
+  // SSH, join, membership, moves, recovery, renumbering, the authority chain, the copy keys, the
+  // successor's admission and what a copy holds since a peer's marks among them). rbook_project's share, invite, join, members, remove and sync add
+  // SharedProjectResult, with the exchange, join, membership and move receipts it carries, and
+  // rbook_status gains an optional `shared_sync`. A share's and a sync's warnings ride the answer's
+  // own warnings. All additive, to be disclosed in the 4.1.0 CHANGELOG (s96-m09).
+  // s96-m14: the import's nine modules (the copy, its ids, matching, the ids it assigns, fields,
+  // links, the plan, applying, and its entry); no answer shape: reasonbook import is a CLI verb.
+  // s96-m08: legacy-sync-refusal joins the tool root; compatibility result types remain unchanged.
+  files: 264,
+  roots: 147,
+  declarations: 330,
+  compositions: 330,
+  rows: 1866,
 } as const;
 const EXPLICIT_OPAQUE_LEDGER = [
   'RbookToolError.providedValue = ANY',
   'DashboardMessage.evidence = array<ANY>',
   'PulledSyncEvent.payload = ANY',
+  // s96-m12: a conflicted field's value is whatever the field holds: text, a number, a list or null.
+  'ConflictCandidate.value = ANY',
+  'OpenConflict.provisional = ANY',
+  'RbookDbSettleResult.value = ANY',
 ] as const;
 const GENERIC_HOLE_LEDGER = [
   'RbookToolResult.data = GENERIC',

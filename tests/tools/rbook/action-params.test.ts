@@ -383,9 +383,13 @@ describe('ACTION_PARAMS vacuity floor (s86-m04)', () => {
       // confirm, keepIds, keepSince, keepSources, keepLast, projectRoot).
       // Feedback list adds acrossProjects; triage now accepts resolutionNote: 409 -> 411.
       // s93-m06: decisions record accepts fromDraft: 411 -> 412.
-      expect(actionCount).toBe(84);
+      // s96-m12: 84 -> 86 actions and 417 -> 425 entries for rbook_db conflicts (action,
+      // projectRoot) and settle (action, table, recordId, field, value, projectRoot).
+      // s96-m13: 86 -> 92 actions and 425 -> 448 entries for rbook_project share (3), invite (4),
+      // join (8), members (2), remove (3) and sync (3).
+      expect(actionCount).toBe(92);
       // s94-m04: record adds context, alternatives, consequences, deciders and mode.
-      expect(entryCount).toBe(417);
+      expect(entryCount).toBe(448);
 
       // Floors, so a walker that silently stops producing branches fails here rather than passing
       // every applicability case with nothing to check.

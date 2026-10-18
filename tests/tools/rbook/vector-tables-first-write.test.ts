@@ -8,7 +8,11 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { buildMissionProtocolContext, executeMissionProtocolTool } from '../../../src/index';
-import { setEmbedderForTesting } from '../../../src/intelligence/embedding-pipeline';
+import {
+  recordEmbedding,
+  setEmbedderForTesting,
+} from '../../../src/intelligence/embedding-pipeline';
+import { RbookDatabaseClient } from '../../../src/tools/rbook/client';
 import { rbookDecisions } from '../../../src/tools/rbook/rbook-decisions';
 import { rbookProjectInit } from '../../../src/tools/rbook/rbook-project-init';
 import { rbookSession } from '../../../src/tools/rbook/rbook-session';
@@ -53,6 +57,30 @@ function embedded(
     db.close();
   }
 }
+
+describe('an embedding write that cannot take the store’s lock (s96-m11 build critic)', () => {
+  it('says so in the answer, instead of leaving the record without a vector silently', async () => {
+    expect((await rbookProjectInit({ projectRoot, projectType: 'general' })).success).toBe(true);
+    const dbPath = path.join(projectRoot, 'rbook', 'db', 'rbook.sqlite');
+    // Another process holds the write lock past this client's busy timeout.
+    const holder = new Database(dbPath);
+    holder.exec('BEGIN IMMEDIATE');
+    const client = (await RbookDatabaseClient.create({ dbPath, timeout: 100 })).data!;
+    try {
+      const result = await recordEmbedding(client, {
+        type: 'decision',
+        id: 1,
+        inputText: 'Keep one JSON file per decision.',
+      });
+      expect(result.action).toBe('failed');
+      expect(result.warnings?.join('\n')).toMatch(/decision 1 was saved without its embedding/);
+    } finally {
+      client.close();
+      holder.exec('ROLLBACK');
+      holder.close();
+    }
+  });
+});
 
 describe('the first embedded write on a store made by init', () => {
   it.each(['general', 'build'] as const)('records a decision on a %s store', async (level) => {

@@ -27,6 +27,7 @@ import type { RbookToolResult } from './types';
 import { createError, createSuccess, RbookErrors } from './errors';
 import { ensureNextStepsTable, type NextStepStatus } from './schema-migrations';
 import { appendWarnings, appendWriteFailures, attachWarnings } from './format-warnings';
+import { skipConflicted, skippedConflicts } from './record-conflict-skip';
 import { countWrite, type WriteFailure } from './write-guard';
 import {
   CLOSES_SURVIVED_SQL,
@@ -38,6 +39,7 @@ import {
   leaseState,
   type LeaseState,
 } from './next-step-lease';
+import { recordedExecute } from './record-changes';
 
 /**
  * A next-step record from the database.
@@ -292,7 +294,8 @@ function transitionNextSteps(
   const unmatchedIds: number[] = [];
 
   for (const id of ids) {
-    const result = client.execute(
+    const result = recordedExecute(
+      client,
       `UPDATE next_steps SET status = ?, resolved_at = ? WHERE id = ? AND ${TRANSITIONABLE_STATUS}`,
       [targetStatus, now, id]
     );
@@ -328,7 +331,8 @@ function reopenNextSteps(
   const unmatchedIds: number[] = [];
 
   for (const id of ids) {
-    const result = client.execute(
+    const result = recordedExecute(
+      client,
       `UPDATE next_steps SET status = 'pending', resolved_at = CASE WHEN status = 'carried' THEN resolved_at ELSE NULL END, carried_to_sprint = NULL WHERE id = ? AND ${REOPENABLE_STATUS}`,
       [id]
     );
@@ -383,13 +387,16 @@ function carryNextSteps(
   const writeSink = { failures: [] as WriteFailure[] };
 
   if (!ids || ids.length === 0) {
-    // Carry all pending
-    const result = client.execute(
-      `UPDATE next_steps SET status = 'carried', resolved_at = ?, carried_to_sprint = ? WHERE ${TRANSITIONABLE_STATUS}`,
+    // Carry all pending; on a shared record, skip a row whose status is in conflict (s96-m12).
+    const conflicted = ['status', 'resolved_at', 'carried_to_sprint'];
+    const skipped = skippedConflicts(client, 'next_steps', conflicted, TRANSITIONABLE_STATUS, []);
+    const result = recordedExecute(
+      client,
+      `UPDATE next_steps SET status = 'carried', resolved_at = ?, carried_to_sprint = ? WHERE ${TRANSITIONABLE_STATUS}${skipConflicted(client, 'next_steps', conflicted)}`,
       [now, targetSprint]
     );
     const affected = countWrite(result, writeSink, 'next_steps.carry (all pending)');
-    return createSuccess<NextStepsResult>({
+    const carried = createSuccess<NextStepsResult>({
       nextStepAction: 'carry',
       affected,
       writeFailures: writeSink.failures,
@@ -397,12 +404,14 @@ function carryNextSteps(
         ? `${affected} pending next-step(s) carried to ${targetSprint}`
         : `${affected} pending next-step(s) marked as carried`,
     });
+    return attachWarnings(carried, skipped ? [skipped] : []);
   }
 
   let affected = 0;
   const unmatchedIds: number[] = [];
   for (const id of ids) {
-    const result = client.execute(
+    const result = recordedExecute(
+      client,
       `UPDATE next_steps SET status = 'carried', resolved_at = ?, carried_to_sprint = ? WHERE id = ? AND ${TRANSITIONABLE_STATUS}`,
       [now, targetSprint, id]
     );

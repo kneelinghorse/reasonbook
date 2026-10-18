@@ -15,6 +15,7 @@ import { ensureMissionTimestamps } from './schema-migrations';
 import { sanitizeContentField } from '../../intelligence/content-sanitizer';
 import { appendWarnings, attachWarnings } from './format-warnings';
 import { checkWrite } from './write-guard';
+import { recordedExecute } from './record-changes';
 
 /**
  * Result of deferring a mission.
@@ -162,7 +163,8 @@ export async function rbookMissionDefer(
 
       warnings.push(...(ensureMissionTimestamps(client).warnings ?? []));
 
-      const updateResult = client.execute(
+      const updateResult = recordedExecute(
+        client,
         `UPDATE missions
          SET status = ?,
              domain_fields = ?,

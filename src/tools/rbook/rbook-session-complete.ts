@@ -16,6 +16,7 @@ import { z } from 'zod';
 import * as crypto from 'crypto';
 import { withClientAsync, type RbookDatabaseClient } from './client';
 import { genesisColumns, getProjectId, tableHasColumn } from './genesis-columns';
+import { recordedExecute, recordedTransaction, recordedWrite } from './record-changes';
 import type { RbookToolResult, Session, Context } from './types';
 import { createError, createSuccess, RbookErrors, RBOOK_ERROR_CODES } from './errors';
 import {
@@ -45,7 +46,8 @@ import { checkWrite, type WriteFailure } from './write-guard';
 import { isOpenStatus } from './terminal-status';
 import { resolveOpenSprintIdForWrite } from './current-sprint';
 import { ensureImplicitSessionColumns } from './schema-migrations';
-import { heldByAnotherProcess, resolveCallerSession } from './session-owner';
+import { heldByAnotherProcess, resolveCallerSession, sessionOfAnotherCopy } from './session-owner';
+import { isPeerSession } from './peer-sessions';
 import { storedTimeMs } from './stored-time';
 import {
   findReusableSnapshot,
@@ -424,6 +426,8 @@ export async function rbookSessionComplete(
       // may be closed once its owner is gone from this host or it has idled past the bound,
       // which is exactly when reconcile closes it.
       const isImplicit = session.implicit === 1;
+      if (isPeerSession(session.owner_key))
+        return createError<RbookSessionCompleteResult>(sessionOfAnotherCopy(sessionId));
       if (heldByAnotherProcess(client, session, 'complete')) {
         return createError<RbookSessionCompleteResult>(
           RbookErrors.sessionOwnedByAnotherProcess(sessionId)
@@ -498,7 +502,7 @@ export async function rbookSessionComplete(
         const ready = prepareRecordLinkWrite(client, warnings);
         if (!ready.success) return createError<RbookSessionCompleteResult>(ready.error!);
       }
-      const decisionBatch = client.writeTransaction(() => {
+      const decisionBatch = recordedTransaction(client, () => {
         let decisionsExtracted = 0;
         if (decisionSources.length > 0) {
           const domainResult = client.getOne<{ value: string }>(
@@ -583,7 +587,8 @@ export async function rbookSessionComplete(
       }
 
       // Update the session
-      const updateResult = client.execute(
+      const updateResult = recordedExecute(
+        client,
         `UPDATE sessions
          SET status = 'completed',
              completed_at = ?,
@@ -672,20 +677,23 @@ export async function rbookSessionComplete(
           // mission it belongs to, which is strictly better information.
           const captureMissionId =
             (capture as { missionId?: string }).missionId ?? callMissionId ?? null;
-          const g = genesisColumns(client, 'next_steps', getProjectId(client));
-          const insertResult = client.execute(
-            `INSERT INTO next_steps (content, status, session_id, sprint_id, mission_id, created_at, content_hash, ${g.columns.join(', ')})
-             VALUES (?, 'pending', ?, ?, ?, ?, ?, ${g.placeholders})`,
-            [
-              trimmed,
-              sessionId,
-              (capture as { sprintId?: string }).sprintId ?? closeSprintId,
-              captureMissionId,
-              now,
-              hash,
-              ...g.values,
-            ]
-          );
+          // s96-m01: on a shared store the id comes from this copy's block, under the write lock.
+          const insertResult = recordedWrite(client, () => {
+            const g = genesisColumns(client, 'next_steps', getProjectId(client));
+            return client.execute(
+              `INSERT INTO next_steps (content, status, session_id, sprint_id, mission_id, created_at, content_hash, ${g.columns.join(', ')})
+               VALUES (?, 'pending', ?, ?, ?, ?, ?, ${g.placeholders})`,
+              [
+                trimmed,
+                sessionId,
+                (capture as { sprintId?: string }).sprintId ?? closeSprintId,
+                captureMissionId,
+                now,
+                hash,
+                ...g.values,
+              ]
+            );
+          });
           if (checkWrite(insertResult, writeSink, 'next_steps extraction insert'))
             nextStepsExtracted++;
         }
@@ -715,12 +723,14 @@ export async function rbookSessionComplete(
           } else if (existing.data) {
             continue;
           }
-          const g = genesisColumns(client, 'next_steps', getProjectId(client));
-          const insertResult = client.execute(
-            `INSERT INTO next_steps (content, status, session_id, sprint_id, mission_id, created_at, content_hash, ${g.columns.join(', ')})
-             VALUES (?, 'pending', ?, ?, ?, ?, ?, ${g.placeholders})`,
-            [trimmed, sessionId, closeSprintId, callMissionId ?? null, now, hash, ...g.values]
-          );
+          const insertResult = recordedWrite(client, () => {
+            const g = genesisColumns(client, 'next_steps', getProjectId(client));
+            return client.execute(
+              `INSERT INTO next_steps (content, status, session_id, sprint_id, mission_id, created_at, content_hash, ${g.columns.join(', ')})
+               VALUES (?, 'pending', ?, ?, ?, ?, ?, ${g.placeholders})`,
+              [trimmed, sessionId, closeSprintId, callMissionId ?? null, now, hash, ...g.values]
+            );
+          });
           if (checkWrite(insertResult, writeSink, 'next_steps extraction insert'))
             nextStepsExtracted++;
         }
@@ -752,20 +762,22 @@ export async function rbookSessionComplete(
             continue;
           }
           const expiresAt = (capture as { expiresAt?: string }).expiresAt ?? null;
-          const g = genesisColumns(client, 'constraints', getProjectId(client));
-          const insertResult = client.execute(
-            `INSERT INTO constraints (content, status, session_id, sprint_id, created_at, expires_at, content_hash, ${g.columns.join(', ')})
-             VALUES (?, 'active', ?, ?, ?, ?, ?, ${g.placeholders})`,
-            [
-              trimmed,
-              sessionId,
-              (capture as { sprintId?: string }).sprintId ?? closeSprintId,
-              now,
-              expiresAt,
-              hash,
-              ...g.values,
-            ]
-          );
+          const insertResult = recordedWrite(client, () => {
+            const g = genesisColumns(client, 'constraints', getProjectId(client));
+            return client.execute(
+              `INSERT INTO constraints (content, status, session_id, sprint_id, created_at, expires_at, content_hash, ${g.columns.join(', ')})
+               VALUES (?, 'active', ?, ?, ?, ?, ?, ${g.placeholders})`,
+              [
+                trimmed,
+                sessionId,
+                (capture as { sprintId?: string }).sprintId ?? closeSprintId,
+                now,
+                expiresAt,
+                hash,
+                ...g.values,
+              ]
+            );
+          });
           if (checkWrite(insertResult, writeSink, 'constraints extraction insert'))
             constraintsExtracted++;
         }
@@ -1003,14 +1015,14 @@ export function formatSessionCompleteForLLM(
 // Context Aggregation Helpers
 // ============================================================
 
-interface CaptureItem {
+export interface CaptureItem {
   category: string;
   content: string;
   timestamp?: string;
   context?: string;
 }
 
-interface AggregationParams {
+export interface AggregationParams {
   sessionId: string;
   sprintId: string | null;
   sessionType: string;
@@ -1039,9 +1051,10 @@ const VALID_CAPTURE_CATEGORIES = ['decision', 'learning', 'constraint', 'context
 
 /**
  * Aggregate session captures into both contexts on session completion.
- * Matches Python SessionRuntime.complete_session() behavior.
+ * Matches Python SessionRuntime.complete_session() behavior. s96-m12: a merge runs it too, for each
+ * session another copy closed, so this copy's derived context names that session.
  */
-function aggregateSessionIntoContexts(
+export function aggregateSessionIntoContexts(
   client: RbookDatabaseClient,
   params: AggregationParams,
   sink: { failures: WriteFailure[] }

@@ -21,8 +21,10 @@ import {
   type ConstraintStatus,
 } from './schema-migrations';
 import { appendWarnings, appendWriteFailures, attachWarnings } from './format-warnings';
+import { skipConflicted, skippedConflicts } from './record-conflict-skip';
 import { countWrite, type WriteFailure } from './write-guard';
 import { storedTimeMs } from './stored-time';
+import { recordedExecute } from './record-changes';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -311,14 +313,18 @@ function archiveConstraints(
   const writeSink = { failures: [] as WriteFailure[] };
 
   if (!ids || ids.length === 0) {
-    // Archive all expired constraints
-    const result = client.execute(
+    // Archive all expired constraints; on a shared record, skip one whose status is in conflict (s96-m12).
+    const where = `status = 'active' AND expires_at IS NOT NULL AND julianday(expires_at) <= julianday(?)`;
+    const conflicted = ['status', 'archived_at'];
+    const skipped = skippedConflicts(client, 'constraints', conflicted, where, [now]);
+    const result = recordedExecute(
+      client,
       `UPDATE constraints SET status = 'archived', archived_at = ?
-       WHERE status = 'active' AND expires_at IS NOT NULL AND julianday(expires_at) <= julianday(?)`,
+       WHERE ${where}${skipConflicted(client, 'constraints', conflicted)}`,
       [now, now]
     );
     const affected = countWrite(result, writeSink, 'constraints.archive (all expired)');
-    return createSuccess<ConstraintsResult>({
+    const archived = createSuccess<ConstraintsResult>({
       constraintAction: 'archive',
       affected,
       writeFailures: writeSink.failures,
@@ -339,11 +345,13 @@ function archiveConstraints(
             ? `${affected} expired constraint(s) archived`
             : 'No expired constraints to archive',
     });
+    return attachWarnings(archived, skipped ? [skipped] : []);
   }
 
   let affected = 0;
   for (const id of ids) {
-    const result = client.execute(
+    const result = recordedExecute(
+      client,
       `UPDATE constraints SET status = 'archived', archived_at = ? WHERE id = ? AND status = 'active'`,
       [now, id]
     );
@@ -394,12 +402,15 @@ function reaffirmConstraint(
   // bump; when omitted, this is the unchanged Sprint-82 reaffirm (last_reviewed_at only).
   const updateResult =
     evergreen === undefined
-      ? client.execute('UPDATE constraints SET last_reviewed_at = ? WHERE id = ?', [nowIso, id])
-      : client.execute('UPDATE constraints SET last_reviewed_at = ?, evergreen = ? WHERE id = ?', [
+      ? recordedExecute(client, 'UPDATE constraints SET last_reviewed_at = ? WHERE id = ?', [
           nowIso,
-          evergreen ? 1 : 0,
           id,
-        ]);
+        ])
+      : recordedExecute(
+          client,
+          'UPDATE constraints SET last_reviewed_at = ?, evergreen = ? WHERE id = ?',
+          [nowIso, evergreen ? 1 : 0, id]
+        );
   if (!updateResult.success) {
     return createError<ConstraintsResult>({
       code: RBOOK_ERROR_CODES.DB_QUERY_FAILED,

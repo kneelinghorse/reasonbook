@@ -47,6 +47,7 @@ interface MigrationCallSite {
 
 interface ResidualReason {
   readonly key: string;
+  readonly call: string;
   readonly reason: string;
 }
 
@@ -58,6 +59,8 @@ interface ForwardingCarrier {
 const EXPECTED_PRODUCERS = [
   'ensureAgentFeedbackTable',
   'ensureArchivalColumns',
+  // s96-m02: author_name on the logged tables, under its own marker.
+  'ensureAuthorNameColumns',
   'ensureAuthorNamespaceColumns',
   'ensureColumnWithCheck',
   'ensureConstraintEvergreen',
@@ -91,26 +94,56 @@ const EXPECTED_PRODUCERS = [
  * The only shipped callers with no answer warning carrier to splice into.
  *
  * These are residuals, not exemptions from a reachable-answer rule. Each key includes the
- * enclosing function so two calls of one producer in one file cannot hide behind one
- * filename/producer pair. s93-m11 removed the three staleness residuals: the staleness read runs
+ * enclosing function and exact normalized call, so the marker and every-table calls in one
+ * function have separate obligations. s93-m11 removed the three staleness residuals: the staleness read runs
  * no migration at all now, because reads never write the record.
  */
 const STRUCTURAL_RESIDUALS: readonly ResidualReason[] = [
   {
     key: 'tools/rbook/fts5-retriever.ts:search:ensureDecisionsFts5',
+    call: 'ensureDecisionsFts5(this.client)',
     reason: 'search() returns RankedResult[] and has no RbookToolResult warning envelope',
   },
   {
     key: 'tools/rbook/fts5-retriever.ts:search:ensureVectorStorage',
+    call: 'ensureVectorStorage(this.client)',
     reason: 'search() returns RankedResult[] and has no RbookToolResult warning envelope',
   },
   {
-    key: 'tools/rbook/genesis-columns.ts:genesisColumns:ensureFirehoseEventColumns',
-    reason: 'GenesisStamp is spliced into SQL writes and carries no warnings channel',
+    key: 'tools/rbook/genesis-columns.ts:ensureGenesisSchema:ensureFirehoseEventColumns',
+    call: 'ensureFirehoseEventColumns(client)',
+    reason:
+      'ensureGenesisSchema serves genesisColumns, whose GenesisStamp is spliced into SQL writes, and the change helper, which runs it before its token; neither carries a warnings channel',
   },
   {
-    key: 'tools/rbook/genesis-columns.ts:genesisColumns:ensureAuthorNamespaceColumns',
-    reason: 'GenesisStamp is spliced into SQL writes and carries no warnings channel',
+    key: 'tools/rbook/genesis-columns.ts:ensureGenesisSchema:ensureAuthorNamespaceColumns',
+    call: 'ensureAuthorNamespaceColumns(client)',
+    reason:
+      'ensureGenesisSchema serves genesisColumns, whose GenesisStamp is spliced into SQL writes, and the change helper, which runs it before its token; neither carries a warnings channel',
+  },
+  {
+    key: 'tools/rbook/genesis-columns.ts:ensureGenesisSchema:ensureAuthorNameColumns',
+    call: 'ensureAuthorNameColumns(client)',
+    reason:
+      'ensureGenesisSchema serves genesisColumns, whose GenesisStamp is spliced into SQL writes, and the change helper, which runs it before its token; neither carries a warnings channel',
+  },
+  {
+    key: 'tools/rbook/genesis-columns.ts:ensureGenesisSchema:ensureFirehoseEventColumns',
+    call: 'ensureFirehoseEventColumns(client,{everyTable:true})',
+    reason:
+      'late-table recovery has no warning carrier; the final PRAGMA check refuses a stamp if required columns are still absent',
+  },
+  {
+    key: 'tools/rbook/genesis-columns.ts:ensureGenesisSchema:ensureAuthorNamespaceColumns',
+    call: 'ensureAuthorNamespaceColumns(client,{everyTable:true})',
+    reason:
+      'late-table recovery has no warning carrier; the final PRAGMA check refuses a stamp if required columns are still absent',
+  },
+  {
+    key: 'tools/rbook/genesis-columns.ts:ensureGenesisSchema:ensureAuthorNameColumns',
+    call: 'ensureAuthorNameColumns(client,{everyTable:true})',
+    reason:
+      'late-table recovery has no warning carrier; the final PRAGMA check refuses a stamp if required columns are still absent',
   },
 ] as const;
 
@@ -122,6 +155,7 @@ const FORWARDING_CARRIERS: readonly ForwardingCarrier[] = [
   ...[
     'ensureFirehoseEventColumns',
     'ensureAuthorNamespaceColumns',
+    'ensureAuthorNameColumns',
     'ensureDecisionShapeColumns',
     'ensureRecordLinks',
   ].map((producer) => ({
@@ -145,10 +179,26 @@ const FORWARDING_CARRIERS: readonly ForwardingCarrier[] = [
     reason:
       'RecordAgentFeedbackResult.warnings is spliced by all four answer callers, including the standalone CLI',
   },
+  ...[
+    'ensureFirehoseEventColumns',
+    'ensureAuthorNamespaceColumns',
+    'ensureAuthorNameColumns',
+    'ensureImplicitSessionColumns',
+    // s96-m03: the recorded review and evergreen columns, which a copy needs before its guards.
+    'ensureReviewTimestamps',
+    'ensureLearningsTable',
+    'ensureConstraintReviewTimestamp',
+    'ensureConstraintEvergreen',
+    'ensureDecisionShapeColumns',
+  ].map((producer) => ({
+    key: `tools/rbook/sharing-preconditions.ts:prepareForSharing:${producer}`,
+    reason:
+      "SharingReadiness.warnings carries them to s96-m13's share, whose answer attaches them, its refusal included",
+  })),
   {
     key: 'intelligence/embedding-pipeline.ts:recordEmbedding:ensureVectorStorageForWrite',
     reason:
-      'RecordEmbeddingResult.warnings is spliced by all six callers: decision write, mission add, update and complete, session capture and complete',
+      "RecordEmbeddingResult.warnings is spliced by all six callers: decision write, mission add, update and complete, session capture and complete; a merge embeds through embedMergedRows and embedLive, whose callers, the sync's apply and a bundle's import, attach them to their answers",
   },
   {
     key: 'tools/rbook/learning-reaffirm.ts:reaffirmLearningsByIds:ensureReviewTimestamps',
@@ -730,16 +780,76 @@ function verifyRecordEmbeddingCarrier(
     'recordEmbedding'
   );
   const calls = callsToFunction(program, helper, checker);
+  // s96-m12: embedMergedRows embeds what a merge wrote, after its transaction, and returns the
+  // warnings in its own result. s96-m13: its one caller, embedLive, returns that result, and each
+  // of embedLive's callers pushes its warnings into a sink that reaches the answer's boundary, as
+  // the sync's apply and a bundle's import do.
+  const merged = sourceFunctionByName(program, 'tools/rbook/record-derived.ts', 'embedMergedRows');
+  const live = sourceFunctionByName(program, 'tools/rbook/record-apply-embed.ts', 'embedLive');
+  const inMerged = calls.filter((call) => {
+    for (let node: ts.Node | undefined = call; node; node = node.parent)
+      if (ts.isFunctionDeclaration(node)) return node === merged;
+    return false;
+  });
+  const mergedCalls = callsToFunction(program, merged, checker);
+  const liveCalls = callsToFunction(program, live, checker);
+  const returnedByLive = (call: ts.CallExpression): boolean =>
+    enclosingFunction(call) === live &&
+    ts.isReturnStatement(call.parent) &&
+    call.parent.expression === call;
+  const reachesAnswer = (call: ts.CallExpression): boolean => {
+    const callerSink = warningSinkForCall(call, checker);
+    return Boolean(
+      callerSink &&
+      (reachesAttachBoundary(call, callerSink, checker) ||
+        callbackReturnsSuccessWithSink(call, callerSink, checker) ||
+        mutableSinkReachesAnswers(call, callerSink, program, checker))
+    );
+  };
   return (
-    calls.length === 6 &&
+    calls.length === 7 &&
+    inMerged.length === 1 &&
+    mergedCalls.length === 1 &&
+    mergedCalls.every(returnedByLive) &&
+    liveCalls.length > 0 &&
+    liveCalls.every(reachesAnswer) &&
+    calls
+      .filter((call) => !inMerged.includes(call))
+      .every((call) => {
+        const callerSink = warningSinkForCall(call, checker);
+        return Boolean(
+          callerSink &&
+          (reachesAttachBoundary(call, callerSink, checker) ||
+            callbackReturnsSuccessWithSink(call, callerSink, checker) ||
+            mutableSinkReachesAnswers(call, callerSink, program, checker))
+        );
+      })
+  );
+}
+
+/**
+ * s96-m01: the sharing preconditions' migration warnings ride SharingReadiness.warnings. s96-m13's
+ * share and s96-m14's import are their two callers: each pushes them into a sink that its answer's
+ * attachWarnings boundary returns, the share's refusal included.
+ */
+function verifySharingCarrier(
+  site: MigrationCallSite,
+  program: ts.Program,
+  checker: ts.TypeChecker
+): boolean {
+  const localSink = warningSinkForCall(site.call, checker);
+  if (!localSink || !helperReturnCarrierIsComplete(site, localSink, checker)) return false;
+  const helper = sourceFunctionByName(
+    program,
+    'tools/rbook/sharing-preconditions.ts',
+    'prepareForSharing'
+  );
+  const calls = callsToFunction(program, helper, checker);
+  return (
+    calls.length === 2 &&
     calls.every((call) => {
       const callerSink = warningSinkForCall(call, checker);
-      return Boolean(
-        callerSink &&
-        (reachesAttachBoundary(call, callerSink, checker) ||
-          callbackReturnsSuccessWithSink(call, callerSink, checker) ||
-          mutableSinkReachesAnswers(call, callerSink, program, checker))
-      );
+      return Boolean(callerSink && reachesAttachBoundary(call, callerSink, checker));
     })
   );
 }
@@ -1054,6 +1164,7 @@ function forwardingCarrierIsVerified(
   switch (siteKey(site)) {
     case 'tools/rbook/spin-out-store.ts:prepareSpinOutStore:ensureFirehoseEventColumns':
     case 'tools/rbook/spin-out-store.ts:prepareSpinOutStore:ensureAuthorNamespaceColumns':
+    case 'tools/rbook/spin-out-store.ts:prepareSpinOutStore:ensureAuthorNameColumns':
     case 'tools/rbook/spin-out-store.ts:prepareSpinOutStore:ensureDecisionShapeColumns':
     case 'tools/rbook/spin-out-store.ts:prepareSpinOutStore:ensureRecordLinks':
       return verifySpinOutCarrier(site, program, checker);
@@ -1067,6 +1178,16 @@ function forwardingCarrierIsVerified(
       return verifyAgentFeedbackCarrier(site, program, checker);
     case 'intelligence/embedding-pipeline.ts:recordEmbedding:ensureVectorStorageForWrite':
       return verifyRecordEmbeddingCarrier(site, program, checker);
+    case 'tools/rbook/sharing-preconditions.ts:prepareForSharing:ensureFirehoseEventColumns':
+    case 'tools/rbook/sharing-preconditions.ts:prepareForSharing:ensureAuthorNamespaceColumns':
+    case 'tools/rbook/sharing-preconditions.ts:prepareForSharing:ensureAuthorNameColumns':
+    case 'tools/rbook/sharing-preconditions.ts:prepareForSharing:ensureImplicitSessionColumns':
+    case 'tools/rbook/sharing-preconditions.ts:prepareForSharing:ensureReviewTimestamps':
+    case 'tools/rbook/sharing-preconditions.ts:prepareForSharing:ensureLearningsTable':
+    case 'tools/rbook/sharing-preconditions.ts:prepareForSharing:ensureConstraintReviewTimestamp':
+    case 'tools/rbook/sharing-preconditions.ts:prepareForSharing:ensureConstraintEvergreen':
+    case 'tools/rbook/sharing-preconditions.ts:prepareForSharing:ensureDecisionShapeColumns':
+      return verifySharingCarrier(site, program, checker);
     case 'tools/rbook/learning-reaffirm.ts:reaffirmLearningsByIds:ensureReviewTimestamps':
       return verifyLearningReaffirmCarrier(site, program, checker);
     case 'tools/rbook/rbook-mission-complete.ts:ensureMissionIdColumn:ensureStrategicDecisionsSchema':
@@ -1129,7 +1250,18 @@ describe('s88-m09 MigrationResult warning reachability census', () => {
     // s94-m08: four directly named preparation producers join the forwarding paths.
     // Six array-dispatched preparations are the declared dynamic-dispatch complement below.
     // s96-m11: 73 -> 74 — recordEmbedding makes vector storage before its write, forwarded.
-    expect(census.sites.length).toBe(74);
+    // s96-m01: 74 -> 78 — the sharing preconditions run four schema migrations, forwarded.
+    // s96-m02: 78 -> 81 — author_name's migration, in genesisColumns (a residual), spin-out's
+    // preparation and the sharing preconditions (both forwarded).
+    // s96-m03: four more readiness migrations in prepareForSharing.
+    // s96-m14: 85 -> 87 — the import migrates its temporary copy (decisions' v2.1 step and missions'
+    // timestamps), and its answer attaches their warnings.
+    // s96-m08: 87 -> 82 — retirement removes exactly five direct producers: backfill's
+    // migrateContentHash, plus ensureDecisionShapeColumns and ensureRecordLinks in each of
+    // sync-pull.ts and sync-bootstrap.ts. No producer declaration or residual is removed.
+    // s96-m09: 82 -> 85 — genesis schema preparation adds three every-table recovery calls
+    // for late-created tables. Each is a separately named residual below.
+    expect(census.sites.length).toBe(85);
   });
 
   it('carries every reachable producer through its exact answer boundary', () => {
@@ -1157,7 +1289,10 @@ describe('s88-m09 MigrationResult warning reachability census', () => {
     // s93-m06: +1 (the approval columns in decisions record).
     // s94-m04: six shape-call boundaries replace the draft-only approval boundary (+5 net).
     // Three author boundaries move to the shared helper; pull/bootstrap add two link boundaries.
-    expect(directlyBounded).toHaveLength(53);
+    // s96-m14: +2 — the import's two direct migrations of its temporary copy.
+    // s96-m08: -5 — the removed backfill migration and pull/clone's two migrations each.
+    // The exact-boundary and forwarding assertions above still cover every remaining call.
+    expect(directlyBounded).toHaveLength(50);
     expect(forwarded.map(siteKey).sort()).toEqual([...expectedForwarders.keys()].sort());
   });
 
@@ -1244,13 +1379,17 @@ describe('s88-m09 MigrationResult warning reachability census', () => {
   );
 
   it('leaves only named, structurally carrier-less residuals', () => {
-    const expected = new Map(
-      STRUCTURAL_RESIDUALS.map((residual) => [residual.key, residual.reason])
+    const expectedEntries = STRUCTURAL_RESIDUALS.map(
+      (residual) => [`${residual.key}:${residual.call}`, residual.reason] as const
     );
+    expect(new Set(expectedEntries.map(([key]) => key)).size).toBe(expectedEntries.length);
+    const expected = new Map(expectedEntries);
     const actual = unconsumed.map((site) => ({
-      key: siteKey(site),
+      key: `${siteKey(site)}:${site.call.getText().replace(/\s+/g, '')}`,
       line: site.line,
-      reason: expected.get(siteKey(site)) ?? 'REACHABLE ANSWER DROPS THIS WARNING',
+      reason:
+        expected.get(`${siteKey(site)}:${site.call.getText().replace(/\s+/g, '')}`) ??
+        'REACHABLE ANSWER DROPS THIS WARNING',
     }));
     // eslint-disable-next-line no-console
     console.log(
@@ -1266,7 +1405,13 @@ describe('s88-m09 MigrationResult warning reachability census', () => {
     // s94-m06: 53 direct + 12 structurally verified forwarded warning reads.
     // s94-m08: 53 direct + 16 verified forwarded reads; four residuals remain unchanged.
     // s96-m11: 53 direct + 17 verified forwarded reads (recordEmbedding's storage warnings).
-    expect(consumed).toHaveLength(70);
+    // s96-m01: 53 direct + 21 verified forwarded reads (the four sharing preconditions).
+    // s96-m02: 53 direct + 23 forwarded (author_name in spin-out and the sharing preconditions).
+    // s96-m03: the four readiness migrations, forwarded through SharingReadiness.
+    // s96-m14: +2, the import's two direct migrations, at its attachWarnings boundary.
+    // s96-m08: 50 direct + 27 verified forwarded reads after five retired direct calls leave.
+    // s96-m09: all three late-table recovery calls remain separately named, making eight residuals.
+    expect(consumed).toHaveLength(77);
     expect(unconsumed).toHaveLength(STRUCTURAL_RESIDUALS.length);
   });
 });

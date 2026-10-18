@@ -51,9 +51,9 @@
  *     Re-derived by this file's own census arm, never hard-coded.
  *  2. THE DECLARED COMPLEMENT IS SPLIT, NOT HIDDEN. The 75 non-first-run FAULT sites still need a
  *     fault-injection instrument (read-only DB file, corrupt context JSON, dropped table); the 3
- *     first-run FAULT sites are the separately driven subset. EXTERNAL 24 now has its OWN portable
- *     ledger below: a real loopback HTTP server plus synthetic credential/config state reaches 21,
- *     while 3 are named construction-masked residuals. UNTYPED 1 remains at
+ *     first-run FAULT sites are the separately driven subset. EXTERNAL 26 now has its OWN portable
+ *     ledger below: a real loopback HTTP server plus synthetic credential/config state reaches 24,
+ *     while 2 are named construction-masked residuals. UNTYPED 1 remains at
  *     `sprint-summary-read.ts:45`, whose helper has zero production callers and inherits an
  *     arbitrary error code. `errors.ts:386` has a bounded resolver-code family, proven STATE
  *     below, and its explicit-projectRoot remedy is exercised over stdio. The EXTERNAL arm uses mirrored routers,
@@ -89,12 +89,17 @@
  *     post-call observation is not a handler guard. telemetry-call.test.ts drives number, object,
  *     array and boolean roots and proves the operation runs once, its exact response survives, and
  *     one anonymous event is emitted. Other checks in that file remain inside the static census.
+ *  9. SHORTHAND PROPERTIES ARE NOT READ. `{ code, message, suggestion }` is a shorthand property,
+ *     not a PropertyAssignment, so a remedy written that way is outside this census. s96-m01's
+ *     critics found one, in replica-check.ts; it was rewritten as a PropertyAssignment, and the
+ *     census arm below fails on any shorthand `suggestion` in src rather than reading it.
  *
  * THE MIRROR IS NOT A BUILD. Provenance comes from an AST source transform into a gitignored
  * CommonJS mirror under `node_modules/.cache/` — ZERO `src/` edits — and it proves itself faithful
  * run. See `tests/helpers/suggestion-mirror.ts` for why a structured `remedy` field was rejected.
  */
 
+import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';
 import Database from 'better-sqlite3';
 import * as fs from 'fs';
@@ -103,6 +108,7 @@ import * as path from 'path';
 import * as ts from 'typescript';
 
 import { RbookDetector } from '../../../src/intelligence/rbook-detector';
+import { writeUserAuthor } from '../../../src/intelligence/user-author';
 import { CredentialStore } from '../../../src/intelligence/credential-store';
 import { ProjectGraphRegistry } from '../../../src/intelligence/project-graph-registry';
 import { RBOOK_TOOL_DEFINITIONS } from '../../../src/tools/rbook';
@@ -179,7 +185,7 @@ const SITES_BY_MISSION = {
   's91-m02': ['src/tools/rbook/unknown-param-guard.ts:80'],
   's91-m03': [
     'src/tools/rbook/rbook-mission-complete.ts:232',
-    'src/tools/rbook/rbook-session-complete.ts:332',
+    'src/tools/rbook/rbook-session-complete.ts:333',
   ],
   's91-m04': [
     'src/tools/rbook/rbook-decisions-record.ts:153',
@@ -206,8 +212,8 @@ const SITES_BY_MISSION = {
   // cannot stamp with its review time is refused, in update and batch update (DB_SCHEMA_MISMATCH,
   // FAULT: the column migration failed); both driven in tests/tools/rbook/first-write-upkeep.test.ts.
   's93-m11': [
-    'src/tools/rbook/rbook-project-init.ts:402',
-    'src/tools/rbook/rbook-project.ts:350',
+    'src/tools/rbook/rbook-project-init.ts:403',
+    'src/tools/rbook/rbook-project.ts:385',
     'src/tools/rbook/rbook-decisions-update.ts:137',
     'src/tools/rbook/rbook-decisions-batch-update.ts:101',
     // A since/until no stored time can be compared with is refused (it used to match nothing);
@@ -216,13 +222,13 @@ const SITES_BY_MISSION = {
   ],
   // s93-m12: a re-init naming a project id the project does not have is refused (a re-init keeps
   // the stored identity); driven in axis 2.
-  's93-m12': ['src/tools/rbook/rbook-project-init.ts:665'],
+  's93-m12': ['src/tools/rbook/rbook-project-init.ts:666'],
   // s95-m06: a Ledger init given an initial sprint or missions is refused before it writes
   // anything, naming the Builder init; driven in axis 6.
   's95-m06': [
-    'src/tools/rbook/rbook-project-init.ts:645',
+    'src/tools/rbook/rbook-project-init.ts:646',
     // The confirming critic: init refuses a store it cannot read rather than guess its level.
-    'src/tools/rbook/rbook-project-init.ts:636',
+    'src/tools/rbook/rbook-project-init.ts:637',
   ],
   // s93-m05: a failed local v2 digest read is explicit, with a health-check remedy; driven in
   // review-v2-presentation.test.ts rather than returning an apparently empty successful digest.
@@ -260,8 +266,8 @@ const SITES_BY_MISSION = {
     'src/tools/rbook/rbook-decisions-record.ts:186',
     'src/tools/rbook/rbook-decisions-record.ts:285',
     'src/tools/rbook/rbook-mission-complete.ts:346',
-    'src/tools/rbook/rbook-session-capture.ts:516',
-    'src/tools/rbook/rbook-session-complete.ts:452',
+    'src/tools/rbook/rbook-session-capture.ts:517',
+    'src/tools/rbook/rbook-session-complete.ts:453',
     'src/tools/rbook/sync-bootstrap.ts:149',
     'src/tools/rbook/sync-pull.ts:219',
     'src/tools/rbook/decision-fields.ts:48',
@@ -281,15 +287,15 @@ const SITES_BY_MISSION = {
   // rollback. The inline capture-permissions suggestion retires into shared failure handling.
   's94-m06': [
     'src/tools/rbook/rbook-decisions-record.ts:383',
-    'src/tools/rbook/record-link-write.ts:25',
-    'src/tools/rbook/record-link-write.ts:72',
+    'src/tools/rbook/record-link-write.ts:26',
+    'src/tools/rbook/record-link-write.ts:83',
     'src/tools/rbook/record-links.ts:22',
     'src/tools/rbook/sync-bootstrap.ts:192',
     'src/tools/rbook/sync-pull.ts:230',
   ],
   // s94-m08: four mandatory mission-drop fault remedies and two CLI spin-out refusals.
   's95-m13': [
-    'src/index.ts:1286',
+    'src/index.ts:1289',
     'src/tools/rbook/rbook-message.ts:790',
     'src/tools/rbook/sender-refusal.ts:96',
   ],
@@ -303,17 +309,169 @@ const SITES_BY_MISSION = {
   ],
   // s99-m06: offline migration refusals plus guarded init/client opens.
   's99-m06': [
-    'src/tools/rbook/client.ts:360',
-    'src/tools/rbook/rbook-project-init.ts:625',
+    'src/tools/rbook/client.ts:423',
+    'src/tools/rbook/rbook-project-init.ts:626',
     'src/cli/migrate.ts:176',
     'src/cli/migrate-config.ts:156',
     'src/cli/migrate-config.ts:166',
   ],
+  // s96-m01: the shared record's refusals (a second live copy, a restored copy, an unjoined copy, an
+  // unchecked one and a store that cannot be read), a full number block, and init's refusal to seed
+  // a shared copy. Each was a shorthand or new site; all are named residuals or FAULT below, since
+  // no supported call makes a store shared before s96-m03.
+  's96-m01': [
+    'src/tools/rbook/replica-check.ts:37',
+    'src/tools/rbook/replica-check.ts:48',
+    'src/tools/rbook/replica-check.ts:59',
+    'src/tools/rbook/replica-check.ts:67',
+    'src/tools/rbook/replica-check.ts:77',
+    'src/tools/rbook/replica-identity.ts:289',
+    'src/tools/rbook/rbook-project-init.ts:695',
+  ],
+  // s96-m03: a broken write guard, a delete the change log cannot record, a shared row with no
+  // stable id, and a recorded write that ends its own transaction. Named residuals below: each is
+  // damage or a write no tool makes, on a shared store or not.
+  's96-m03': [
+    'src/tools/rbook/replica-check.ts:112',
+    'src/tools/rbook/record-capture.ts:57',
+    'src/tools/rbook/record-capture.ts:67',
+    'src/tools/rbook/record-guards.ts:405',
+  ],
+  // s96-m12: the merge's refusals and remedies: a delivery of another project's record, a slot that
+  // holds a different change, a merge into a store that keeps no change log, a member admitted off
+  // the owner's copy, a field in conflict, an identity write on a member's copy, a settle with no
+  // value, of a table with no conflicts, of nothing in conflict, of a lineage fork off the owner or
+  // of a value no copy wrote, and a write to a session another copy started. s96-m13's shared-store
+  // matrix case drives the two settles one store reaches; the rest are named residuals below, each
+  // needing a second copy, a delivery or a conflict.
+  's96-m12': [
+    'src/tools/rbook/record-apply.ts:133',
+    'src/tools/rbook/record-apply.ts:141',
+    'src/tools/rbook/record-apply.ts:167',
+    'src/tools/rbook/record-apply.ts:194',
+    'src/tools/rbook/record-decide.ts:38',
+    'src/tools/rbook/record-capture.ts:84',
+    'src/tools/rbook/record-standing.ts:120',
+    'src/tools/rbook/rbook-db-conflicts.ts:70',
+    'src/tools/rbook/record-settle.ts:182',
+    'src/tools/rbook/record-settle.ts:207',
+    'src/tools/rbook/record-settle.ts:214',
+    'src/tools/rbook/record-settle.ts:223',
+    'src/tools/rbook/session-owner.ts:187',
+  ],
+  // s96-m13: the sync, sharing and joining refusals and remedies: share, invite, members, remove and
+  // sync on rbook_project; the exchange and its steps, the wire, SSH and bundles; the join; owner-copy
+  // moves, recovery and re-identification; a member's copy refusing the old backfill, a purge and a
+  // restore; and the CLI's bundle for a member (nine of the 72 added at the build-time critics' folds).
+  's96-m13': [
+    'src/cli/sync.ts:146',
+    'src/tools/rbook/rbook-db-backfill.ts:801',
+    'src/tools/rbook/rbook-db-backfill.ts:138',
+    'src/tools/rbook/rbook-db-restore.ts:226',
+    'src/tools/rbook/rbook-project-shared.ts:117',
+    'src/tools/rbook/rbook-project-shared.ts:146',
+    'src/tools/rbook/rbook-project-shared.ts:230',
+    'src/tools/rbook/record-admit-successor.ts:104',
+    'src/tools/rbook/record-admit-successor.ts:110',
+    'src/tools/rbook/record-admit-successor.ts:125',
+    'src/tools/rbook/record-admit-successor.ts:133',
+    'src/tools/rbook/record-bundle.ts:108',
+    'src/tools/rbook/record-bundle.ts:147',
+    'src/tools/rbook/record-bundle.ts:160',
+    'src/tools/rbook/record-bundle.ts:168',
+    'src/tools/rbook/record-bundle.ts:181',
+    'src/tools/rbook/record-bundle.ts:93',
+    'src/tools/rbook/record-bundle.ts:100',
+    'src/tools/rbook/record-decide.ts:76',
+    'src/tools/rbook/record-exchange-steps.ts:235',
+    'src/tools/rbook/record-exchange-steps.ts:35',
+    'src/tools/rbook/record-exchange.ts:208',
+    'src/tools/rbook/record-exchange.ts:214',
+    'src/tools/rbook/record-exchange.ts:221',
+    'src/tools/rbook/record-exchange.ts:228',
+    'src/tools/rbook/record-exchange.ts:236',
+    'src/tools/rbook/record-exchange.ts:260',
+    'src/tools/rbook/record-exchange.ts:267',
+    'src/tools/rbook/record-exchange.ts:274',
+    'src/tools/rbook/record-exchange.ts:311',
+    'src/tools/rbook/record-join.ts:104',
+    'src/tools/rbook/record-join.ts:115',
+    'src/tools/rbook/record-join.ts:127',
+    'src/tools/rbook/record-join.ts:158',
+    'src/tools/rbook/record-join.ts:163',
+    'src/tools/rbook/record-join.ts:171',
+    'src/tools/rbook/record-join.ts:176',
+    'src/tools/rbook/record-join.ts:184',
+    'src/tools/rbook/record-join.ts:191',
+    'src/tools/rbook/record-join.ts:233',
+    'src/tools/rbook/record-join.ts:243',
+    'src/tools/rbook/record-join.ts:255',
+    'src/tools/rbook/record-membership.ts:138',
+    'src/tools/rbook/record-membership.ts:145',
+    'src/tools/rbook/record-membership.ts:154',
+    'src/tools/rbook/record-membership.ts:168',
+    'src/tools/rbook/record-membership.ts:267',
+    'src/tools/rbook/record-membership.ts:276',
+    'src/tools/rbook/record-move-routes.ts:50',
+    'src/tools/rbook/record-moves.ts:145',
+    'src/tools/rbook/record-moves.ts:153',
+    'src/tools/rbook/record-moves.ts:72',
+    'src/tools/rbook/record-moves.ts:79',
+    'src/tools/rbook/record-moves.ts:88',
+    'src/tools/rbook/record-moves.ts:95',
+    'src/tools/rbook/record-recovery.ts:160',
+    'src/tools/rbook/record-recovery.ts:172',
+    'src/tools/rbook/record-recovery.ts:189',
+    'src/tools/rbook/record-recovery.ts:214',
+    'src/tools/rbook/record-share-action.ts:108',
+    'src/tools/rbook/record-share-action.ts:119',
+    'src/tools/rbook/record-share-action.ts:74',
+    'src/tools/rbook/record-share-action.ts:81',
+    'src/tools/rbook/record-share-action.ts:90',
+    'src/tools/rbook/record-successor.ts:124',
+    'src/tools/rbook/record-successor.ts:168',
+    'src/tools/rbook/record-sync.ts:106',
+    'src/tools/rbook/record-sync.ts:143',
+    'src/tools/rbook/record-sync.ts:201',
+    'src/tools/rbook/record-sync.ts:207',
+    'src/tools/rbook/record-sync.ts:260',
+    'src/tools/rbook/record-sync.ts:330',
+  ],
+  // s96-m14: the import's refusals: a --from holding the store it would write to, a project that is
+  // not shared, a --from with no store or with both layouts, a copy this account cannot read or that is
+  // damaged, a copy of another project or of a shared record, one older than the project id under
+  // another folder name, a store that cannot reach the sharing schema, a zip archive named as the
+  // copy, the shared copy named as its own copy, an --include naming a row the dry run does not
+  // leave out, and a write that would give a numbered row another id than its plan.
+  's96-m14': [
+    'src/tools/rbook/record-import.ts:140',
+    'src/tools/rbook/record-import.ts:146',
+    'src/tools/rbook/record-import.ts:168',
+    'src/tools/rbook/record-import.ts:174',
+    'src/tools/rbook/record-import.ts:182',
+    'src/tools/rbook/record-import.ts:188',
+    'src/tools/rbook/record-import.ts:194',
+    'src/tools/rbook/record-import.ts:201',
+    'src/tools/rbook/record-import.ts:216',
+    'src/tools/rbook/record-import.ts:223',
+    'src/tools/rbook/record-import.ts:230',
+    'src/tools/rbook/record-import.ts:252',
+    'src/tools/rbook/record-import.ts:272',
+    'src/tools/rbook/record-import-apply.ts:86',
+  ],
   // s99-m10: scoped and global reconciliation refuse an unrecognized table-count payload.
   // Both inherit DASHBOARD_ERROR, are driven by the portable HTTP arm, and prescribe no tool call.
   's99-m10': [
-    'src/tools/rbook/rbook-db-backfill.ts:1253',
-    'src/tools/rbook/rbook-db-backfill.ts:1335',
+    'src/tools/rbook/rbook-db-backfill.ts:460',
+    'src/tools/rbook/rbook-db-backfill.ts:542',
+  ],
+  // s96-m08: one common retirement remedy, a local hook-read fault, and owner-key gates.
+  // The message-get remedy changes text at its existing site; it is not an added site.
+  's96-m08': [
+    'src/tools/rbook/legacy-sync-refusal.ts:11',
+    'src/tools/rbook/sync-locks.ts:127',
+    'src/auth/dashboard-owner.ts:19',
+    'src/auth/dashboard-owner.ts:28',
   ],
 } as const satisfies Readonly<Record<string, readonly string[]>>;
 const RATIFIED_SITE_ADDS = Object.values(SITES_BY_MISSION).flat();
@@ -324,9 +482,26 @@ const RATIFIED_SITE_ADDS = Object.values(SITES_BY_MISSION).flat();
  * the caller's implicit session.
  */
 const SITES_REMOVED_BY_MISSION = {
-  's94-m06': ['src/tools/rbook/rbook-session-capture.ts:590'],
+  // s96-m08 removes the old clone/pull/mutable-push implementations. These are their twelve
+  // authored sites at pre-edit commit 25b9aae, not exemptions for active refusal surfaces.
+  // Missing-input, schema/registration and pre-pull refusals all retire into the common remedy.
+  's96-m08': [
+    'src/tools/rbook/sync-bootstrap.ts:133',
+    'src/tools/rbook/sync-bootstrap.ts:151',
+    'src/tools/rbook/sync-bootstrap.ts:164',
+    'src/tools/rbook/sync-bootstrap.ts:182',
+    'src/tools/rbook/sync-bootstrap.ts:192',
+    'src/tools/rbook/sync-mutable-push.ts:111',
+    'src/tools/rbook/sync-mutable-push.ts:140',
+    'src/tools/rbook/sync-mutable-push.ts:155',
+    'src/tools/rbook/sync-mutable-push.ts:166',
+    'src/tools/rbook/sync-pull.ts:192',
+    'src/tools/rbook/sync-pull.ts:221',
+    'src/tools/rbook/sync-pull.ts:230',
+  ],
+  's94-m06': ['src/tools/rbook/rbook-session-capture.ts:591'],
   's94-m05': ['src/tools/rbook/rbook-mission-start.ts:198'],
-  's92-m03': ['src/tools/rbook/rbook-session-capture.ts:425'],
+  's92-m03': ['src/tools/rbook/rbook-session-capture.ts:426'],
 } as const satisfies Readonly<Record<string, readonly string[]>>;
 const RATIFIED_SITE_REMOVALS = Object.values(SITES_REMOVED_BY_MISSION).flat();
 
@@ -346,6 +521,9 @@ const FAULT_CODES = new Set([
   'TOOL_EXECUTION_ERROR',
   'RBOOK_NOT_DETECTED',
   'PULL_BEFORE_PUSH_FAILED',
+  // These name local read faults even though one code carries the dashboard prefix.
+  'LEGACY_SYNC_STATUS_UNAVAILABLE',
+  'DASHBOARD_OWNER_UNREADABLE',
 ]);
 const EXTERNAL_CODES = new Set([
   'SENDER_ATTRIBUTION_MISMATCH',
@@ -379,8 +557,8 @@ const CONSUMER_RESOLVED_CODES: Readonly<Record<string, string>> = {
   'src/tools/rbook/rbook-context-update.ts:818': 'INVALID_PARAMETER',
   'src/tools/rbook/errors.ts:386': '<expr>',
   // These objects spread dashboardError before overriding its suggestion; proven below.
-  'src/tools/rbook/rbook-db-backfill.ts:1253': 'DASHBOARD_ERROR',
-  'src/tools/rbook/rbook-db-backfill.ts:1335': 'DASHBOARD_ERROR',
+  'src/tools/rbook/rbook-db-backfill.ts:460': 'DASHBOARD_ERROR',
+  'src/tools/rbook/rbook-db-backfill.ts:542': 'DASHBOARD_ERROR',
 };
 
 type TriggerClass = 'VALIDATION' | 'STATE' | 'FAULT' | 'EXTERNAL' | 'UNTYPED';
@@ -1973,6 +2151,153 @@ const MATRIX: MatrixCase[] = [
       ],
     })
   ),
+
+  // ── AXIS 9 — the shared record (s96-m13) ──────────────────────────────────────────────────────
+  // One store reaches the refusals the owner's own copy can meet. A member's copy, a second copy,
+  // a delivery, a move or a recovery needs two copies the matrix does not build; those sites are
+  // named residuals below, each with the test that drives it.
+  {
+    axis: '9 shared-record',
+    name: 's96-m13: the shared record actions on an unshared store',
+    reachable:
+      'ordinary: an agent invites, removes or syncs before the project is shared, joins without naming the copy, shares under a name with a control character, or names a folder with no store',
+    // The share a remedy prescribes needs an author name, as a person who shares sets one.
+    setup: () => writeUserAuthor('Oracle Owner'),
+    calls: (ctx) => [
+      {
+        tool: 'rbook_project',
+        params: { action: 'invite', name: 'Darryl', projectRoot: ctx.projectRoot },
+      },
+      {
+        tool: 'rbook_project',
+        params: { action: 'remove', name: 'Darryl', projectRoot: ctx.projectRoot },
+      },
+      { tool: 'rbook_project', params: { action: 'sync', projectRoot: ctx.projectRoot } },
+      { tool: 'rbook_project', params: { action: 'join', projectRoot: ctx.projectRoot } },
+      {
+        tool: 'rbook_project',
+        params: {
+          action: 'share',
+          authorName: `Bell${String.fromCodePoint(7)}`,
+          projectRoot: ctx.projectRoot,
+        },
+      },
+      {
+        tool: 'rbook_project',
+        params: { action: 'members', projectRoot: path.join(ctx.projectRoot, 'no-store-here') },
+      },
+    ],
+  },
+  {
+    axis: '9 shared-record',
+    name: 's96-m13: the shared record actions on a store its first call shares',
+    reachable:
+      'ordinary: the owner shares, shares again, invites a read-only member or a name with a control character, removes the owner, syncs before any copy joined, confirms a move it does not hold, settles what no copy contested, seeds a sprint by init, and restores a snapshot',
+    setup: () => writeUserAuthor('Oracle Owner'),
+    calls: (ctx) => [
+      { tool: 'rbook_project', params: { action: 'share', projectRoot: ctx.projectRoot } },
+      { tool: 'rbook_project', params: { action: 'share', projectRoot: ctx.projectRoot } },
+      {
+        tool: 'rbook_project',
+        params: { action: 'invite', name: 'Rae', role: 'reader', projectRoot: ctx.projectRoot },
+      },
+      {
+        tool: 'rbook_project',
+        params: {
+          action: 'invite',
+          name: `Bell${String.fromCodePoint(7)}`,
+          projectRoot: ctx.projectRoot,
+        },
+      },
+      {
+        tool: 'rbook_project',
+        params: { action: 'invite', name: 'oracle owner', projectRoot: ctx.projectRoot },
+      },
+      {
+        tool: 'rbook_project',
+        params: { action: 'remove', name: 'Oracle Owner', projectRoot: ctx.projectRoot },
+      },
+      { tool: 'rbook_project', params: { action: 'sync', projectRoot: ctx.projectRoot } },
+      {
+        tool: 'rbook_project',
+        params: { action: 'sync', confirmOwner: true, projectRoot: ctx.projectRoot },
+      },
+      {
+        tool: 'rbook_db',
+        params: {
+          action: 'settle',
+          table: 'mission_dependencies',
+          field: 'from_id',
+          value: 'x',
+          projectRoot: ctx.projectRoot,
+        },
+      },
+      {
+        tool: 'rbook_db',
+        params: {
+          action: 'settle',
+          table: 'missions',
+          recordId: ctx.missionId,
+          field: 'status',
+          value: 'Queued',
+          projectRoot: ctx.projectRoot,
+        },
+      },
+      {
+        tool: 'rbook_project',
+        params: {
+          action: 'init',
+          projectRoot: ctx.projectRoot,
+          initialSprint: { id: 's96-m13-oracle', title: 'Oracle sprint' },
+        },
+      },
+      {
+        tool: 'rbook_db',
+        params: {
+          action: 'restore',
+          snapshotId: 'any',
+          confirm: true,
+          projectRoot: ctx.projectRoot,
+        },
+      },
+    ],
+  },
+  {
+    axis: '9 shared-record',
+    name: 's96-m13: sharing a project whose git repository tracks its store',
+    reachable: 'ordinary: a project commits its store, as cmos-mcp does (probe fact 29)',
+    setup: (ctx) => {
+      writeUserAuthor('Oracle Owner');
+      execFileSync('git', ['init', '-q', ctx.projectRoot]);
+      execFileSync('git', [
+        '-C',
+        ctx.projectRoot,
+        'add',
+        '-f',
+        path.join('rbook', 'db', 'rbook.sqlite'),
+      ]);
+    },
+    calls: (ctx) => [
+      { tool: 'rbook_project', params: { action: 'share', projectRoot: ctx.projectRoot } },
+    ],
+  },
+  {
+    axis: '9 shared-record',
+    name: 's96-m13: sharing a store whose stable-id index is not unique',
+    reachable:
+      'SQL-FORCED (UA-5): a hand-made index, or one an older tool made, holds the name of the unique stable-id index the share would make; prepareForSharing refuses rather than share rows two copies could not tell apart',
+    setup: (ctx) => {
+      writeUserAuthor('Oracle Owner');
+      withDb(ctx.dbPath, (db) =>
+        db.exec(
+          'CREATE INDEX IF NOT EXISTS idx_learnings_stable_event_id_unique ON learnings (stable_event_id)'
+        )
+      );
+    },
+    calls: (ctx) => [
+      { tool: 'rbook_project', params: { action: 'share', projectRoot: ctx.projectRoot } },
+    ],
+  },
 ];
 
 // ───────────────────────────────────────────────────────────────────────────────────────────────
@@ -2078,27 +2403,27 @@ const FIRST_RUN = CENSUS.filter((row) => row.code !== null && FIRST_RUN_CODES.ha
 const FIRST_RUN_SITES = new Set(FIRST_RUN.map((row) => row.site));
 
 /**
- * The 3 members the sanctioned dashboard/credential instrument still cannot construct.
+ * The two members the sanctioned dashboard/credential instrument still cannot construct.
  * Both ledger directions are checked below: an absent reason is unaccounted work; a reason for a
  * fired/non-universe site is stale bookkeeping.
  */
 const EXTERNAL_RESIDUAL_REASONS: Readonly<Record<string, string>> = {
-  'src/tools/rbook/client.ts:778':
+  // s96-m01 (fold): client.ts's write-lock tracking moves these down 55 lines; s96-m03 (fold): its
+  // refusal of a transaction verb inside the change helper, 4 more; s96-m12: 8 more (a shared copy
+  // opened during a call is noted, and the recording state moved to record-recording.ts).
+  'src/tools/rbook/client.ts:930':
     '`validateProjectId()` has zero production callers; only direct unit tests invoke the method.',
-  'src/tools/rbook/client.ts:786':
+  'src/tools/rbook/client.ts:938':
     'The second PROJECT_ID_MISMATCH arm is in the same production-unreachable `validateProjectId()` method.',
-  'src/tools/rbook/sync-mutable-push.ts:166':
-    '`maybePropagateMutableStatus` returns before `pushMutableStatus` unless `isCollabStore` is true; ' +
-    'the NOT_COLLAB_STORE defensive branch is construction-masked by its only production caller.',
 };
 
 const HTTP_EXTERNAL_SITES = new Set([
-  'src/tools/rbook/rbook-db-backfill.ts:1253',
-  'src/tools/rbook/rbook-db-backfill.ts:1335',
-  'src/tools/rbook/rbook-auth.ts:610',
-  'src/tools/rbook/rbook-auth.ts:1183',
-  'src/tools/rbook/rbook-auth.ts:1192',
-  'src/tools/rbook/rbook-auth.ts:1200',
+  'src/tools/rbook/rbook-db-backfill.ts:460',
+  'src/tools/rbook/rbook-db-backfill.ts:542',
+  'src/tools/rbook/rbook-auth.ts:633',
+  'src/tools/rbook/rbook-auth.ts:1218',
+  'src/tools/rbook/rbook-auth.ts:1227',
+  'src/tools/rbook/rbook-auth.ts:1235',
   'src/tools/rbook/rbook-message.ts:1092',
   'src/tools/rbook/errors.ts:430',
   'src/tools/rbook/errors.ts:446',
@@ -2108,15 +2433,16 @@ const HTTP_EXTERNAL_SITES = new Set([
   'src/tools/rbook/errors.ts:505',
 ]);
 const SYNTHETIC_EXTERNAL_SITES = new Set([
-  'src/tools/rbook/rbook-auth.ts:572',
-  'src/tools/rbook/rbook-auth.ts:581',
-  'src/tools/rbook/rbook-auth.ts:667',
-  'src/tools/rbook/rbook-auth.ts:807',
-  'src/tools/rbook/rbook-auth.ts:942',
-  'src/tools/rbook/rbook-auth.ts:949',
-  'src/tools/rbook/rbook-auth.ts:1124',
-  'src/tools/rbook/rbook-auth.ts:1133',
-  'src/tools/rbook/dashboard-client.ts:278',
+  'src/auth/dashboard-owner.ts:19',
+  'src/tools/rbook/rbook-auth.ts:595',
+  'src/tools/rbook/rbook-auth.ts:604',
+  'src/tools/rbook/rbook-auth.ts:690',
+  'src/tools/rbook/rbook-auth.ts:833',
+  'src/tools/rbook/rbook-auth.ts:968',
+  'src/tools/rbook/rbook-auth.ts:975',
+  'src/tools/rbook/rbook-auth.ts:1157',
+  'src/tools/rbook/rbook-auth.ts:1166',
+  'src/tools/rbook/dashboard-client.ts:279',
   'src/tools/rbook/errors.ts:495',
 ]);
 
@@ -2141,6 +2467,36 @@ describe('s89-m08 CENSUS — the universe re-derives at build time, never from a
       RATIFIED_AUTHORED_BASE + RATIFIED_SITE_ADDS.length - RATIFIED_SITE_REMOVALS.length
     );
     expect(SITES_BY_MISSION['s90-m07']).toEqual([]);
+  });
+
+  it('finds no shorthand suggestion property, which this census cannot read (profile 9)', () => {
+    const shorthand = (file: string, content: string): string[] => {
+      const found: string[] = [];
+      const source = ts.createSourceFile(file, content, ts.ScriptTarget.ES2020, true);
+      const visit = (node: ts.Node): void => {
+        if (ts.isShorthandPropertyAssignment(node) && node.name.text === 'suggestion')
+          found.push(
+            `${file}:${source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1}`
+          );
+        ts.forEachChild(node, visit);
+      };
+      visit(source);
+      return found;
+    };
+    const sites = walkTsFiles(SRC_ROOT).flatMap((absolute) => {
+      const content = fs.readFileSync(absolute, 'utf8');
+      return content.includes('suggestion')
+        ? shorthand(path.relative(REPO_ROOT, absolute).split(path.sep).join('/'), content)
+        : [];
+    });
+    expect(sites).toEqual([]);
+    // The control: a remedy written in shorthand is found.
+    expect(
+      shorthand(
+        'mutant.ts',
+        'const refusal = (code: string, message: string, suggestion: string) => ({ code, message, suggestion });'
+      )
+    ).toEqual(['mutant.ts:1']);
   });
 
   it('publishes the trigger-class partition, total and disjoint', () => {
@@ -2309,7 +2665,7 @@ describe('s89-m08 T5 — every authored suggestion naming a shipped tool yields 
     expect(offenders.map((o) => o.site)).toEqual([]);
   });
 
-  it('ANTI-VACUITY — the WIDENING is what closed it, and the narrow extractor still reports the RED 8', () => {
+  it('ANTI-VACUITY — the WIDENING still detects every surviving narrow-extractor witness', () => {
     // s85-m01's shipped `CALL_RE` requires a parenthesis. Under it alone, the eight CLASS-2 sites
     // name a shipped tool in a form no gate has ever executed. Reproducing that RED here is what
     // proves the green above is the widening's doing and not a weakened predicate.
@@ -2324,7 +2680,17 @@ describe('s89-m08 T5 — every authored suggestion naming a shipped tool yields 
       // eslint-disable-next-line no-console
       console.log(`  narrow-RED ${site}`);
     }
-    expect(narrowOffenders.length).toBe(8);
+    // s96-m08 removed the eighth witness with the old mutable-push implementation (:166).
+    // Pin the seven surviving witnesses themselves, so a missing surface cannot hide in a count.
+    expect(narrowOffenders).toEqual([
+      'src/tools/rbook/errors.ts:402',
+      'src/tools/rbook/errors.ts:411',
+      'src/tools/rbook/rbook-decisions-update.ts:81',
+      'src/tools/rbook/rbook-feedback.ts:324',
+      'src/tools/rbook/rbook-learnings-reaffirm.ts:91',
+      'src/tools/rbook/rbook-learnings-update.ts:104',
+      'src/tools/rbook/rbook-sprint-complete.ts:577',
+    ]);
   });
 
   it('every widened syntax is actually EXERCISED, so no branch is dead weight', () => {
@@ -3179,6 +3545,27 @@ describe('s90-m07 PORTABLE EXTERNAL + FIRST-RUN LEDGER — loopback, never live 
     }
 
     await runPortableCase({
+      name: 'rotate refuses a recorded copy whose authority cannot be read',
+      family: 'external-synthetic',
+      expectedCode: 'DASHBOARD_OWNER_REQUIRED',
+      expectsHttp: false,
+      scenario: noHttpScenario,
+      seed: { registered: true, credentials: 'project' },
+      // SQL-FORCED (UA-5): a damaged shared copy fails closed as a member before credentials.
+      // member-key-gates.test.ts separately drives this same site on actual joined member copies.
+      setup: ({ dbPath }) =>
+        withDb(dbPath!, (db) => {
+          db.prepare('INSERT OR REPLACE INTO metadata(key,value) VALUES (?,?)').run(
+            'replica_id',
+            'oracle-unreadable-authority'
+          );
+          db.exec('CREATE TABLE record_changes(change_id TEXT)');
+        }),
+      tool: 'rbook_auth',
+      params: ({ projectRoot }) => ({ action: 'rotate', projectRoot }),
+    });
+
+    await runPortableCase({
       name: 'rotate has no local project key',
       family: 'external-synthetic',
       expectedCode: 'CREDENTIAL_NOT_FOUND',
@@ -3533,9 +3920,9 @@ describe('s90-m07 PORTABLE EXTERNAL + FIRST-RUN LEDGER — loopback, never live 
     });
     for (const action of ['clone', 'pull'] as const) {
       await runPortableCase({
-        name: `${action} has configured auth but no dashboard slug`,
+        name: `${action} is retired before checking its dashboard slug`,
         family: 'driveable',
-        expectedCode: 'MISSING_PARAMETER',
+        expectedCode: 'LEGACY_SYNC_RETIRED',
         expectsHttp: false,
         scenario: noHttpScenario,
         seed: { credentials: 'project', removeSlug: true },
@@ -4455,35 +4842,37 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     'CLI-only offline config refusal, outside MCP routers; migrate-config and migration ownership suites drive its blockers.',
   // These spread the underlying database error; their nonliteral code is classified STATE by
   // the syntax census, but the trigger is a database fault, exercised in lifecycle-decoupling.
-  'src/tools/rbook/rbook-mission-add.ts:286':
+  // s96-m01 (fold): down one line (the sharedStoreWrite import).
+  'src/tools/rbook/rbook-mission-add.ts:287':
     'Database read/write/transaction failure branch; the healthy-store axis cannot cause it. Fault cases live in lifecycle-decoupling.test.ts and the integration failure suites.',
-  'src/tools/rbook/rbook-mission-add.ts:302':
+  'src/tools/rbook/rbook-mission-add.ts:303':
     'Database read/write/transaction failure branch; the healthy-store axis cannot cause it. Fault cases live in lifecycle-decoupling.test.ts and the integration failure suites.',
-  'src/tools/rbook/rbook-mission-start.ts:254':
+  'src/tools/rbook/rbook-mission-start.ts:255':
     'Database read/write/transaction failure branch; the healthy-store axis cannot cause it. Fault cases live in lifecycle-decoupling.test.ts and the integration failure suites.',
-  'src/tools/rbook/rbook-mission-start.ts:268':
+  'src/tools/rbook/rbook-mission-start.ts:269':
     'Database read/write/transaction failure branch; the healthy-store axis cannot cause it. Fault cases live in lifecycle-decoupling.test.ts and the integration failure suites.',
   'src/tools/rbook/rbook-mission-status.ts:261':
     'Database read/write/transaction failure branch; the healthy-store axis cannot cause it. Fault cases live in lifecycle-decoupling.test.ts and the integration failure suites.',
-  'src/tools/rbook/rbook-mission-update.ts:326':
+  'src/tools/rbook/rbook-mission-update.ts:327':
     'Database read/write/transaction failure branch; the healthy-store axis cannot cause it. Fault cases live in lifecycle-decoupling.test.ts and the integration failure suites.',
-  'src/tools/rbook/rbook-mission-update.ts:466':
+  'src/tools/rbook/rbook-mission-update.ts:467':
     'Database read/write/transaction failure branch; the healthy-store axis cannot cause it. Fault cases live in lifecycle-decoupling.test.ts and the integration failure suites.',
-  'src/tools/rbook/rbook-mission-update.ts:478':
+  'src/tools/rbook/rbook-mission-update.ts:479':
     'Database read/write/transaction failure branch; the healthy-store axis cannot cause it. Fault cases live in lifecycle-decoupling.test.ts and the integration failure suites.',
 
   // s94-m08: mandatory drop schema/audit/postcondition failures require fault injection.
-  'src/tools/rbook/rbook-mission-drop.ts:69':
+  'src/tools/rbook/rbook-mission-drop.ts:70':
     'Required mission timestamp preparation failed; healthy-store router calls cannot establish this fault. The drop schema preflight refuses before mutation.',
-  'src/tools/rbook/rbook-mission-drop.ts:92':
+  'src/tools/rbook/rbook-mission-drop.ts:93':
     'The drop transaction threw or rollback failed; a healthy-store state sequence cannot cause this. Transaction/audit fault fixtures live in spin-out-durability.test.ts.',
-  'src/tools/rbook/rbook-mission-drop.ts:219':
+  'src/tools/rbook/rbook-mission-drop.ts:221':
     'Mandatory drop audit insertion failed or changed no row. Trigger faults are exercised in spin-out.test.ts and spin-out-durability.test.ts.',
-  'src/tools/rbook/rbook-mission-drop.ts:258':
+  'src/tools/rbook/rbook-mission-drop.ts:260':
     'A trigger or database fault violated the verified drop/audit postcondition. rbook-mission-drop.test.ts deletes the audit event after insertion and proves rollback.',
   'src/tools/rbook/spin-out-mapping.ts:31':
     'CLI-only mapping helper, outside every MCP router in this matrix. spin-out-mapping.test.ts drives unknown-column, malformed-ID and missing-mapping refusals; no rbook_* prescription.',
-  'src/tools/rbook/spin-out.ts:371':
+  // s96-m01 (fold): down seven lines (spin-out refuses a shared store).
+  'src/tools/rbook/spin-out.ts:378':
     'CLI-only spin-out core, dispatched directly by src/cli.ts before ambient routing. Explicit-root, conflict, trigger and retry refusals are driven in the spin-out API/process/durability suites; no rbook_* prescription.',
 
   // ── s93-m06: draft refusals that need a harness session or a race ────────────────────────────
@@ -4501,9 +4890,201 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     'An approved profile draft whose line cannot be written (past the profile cap) releases its ' +
     'claim. Needs the operator words bound in a harness session; driven in draft-approval.test.ts ' +
     '("releases the claim when an approved profile line cannot be written").',
-  'src/tools/rbook/rbook-decisions-record.ts:382':
+  // s96-m01 (fold): down one line (the replica refusal import).
+  'src/tools/rbook/rbook-decisions-record.ts:385':
     'Two records of one decision draft at once: the in-transaction guard approves it once and ' +
     'rolls the other back. Driven in draft-approval.test.ts ("records a draft once").',
+  // ── s96-m01: the shared record's refusals of a copy, which need a second copy or a restore ─────
+  'src/tools/rbook/replica-check.ts:45':
+    'A second live copy of a shared project on one machine. The healthy-store matrix drives routed calls on one store, and makes no second copy; replica-check.test.ts and replica-identity.test.ts drive it, and record-join.test.ts refuses a second copy its join.',
+  'src/tools/rbook/replica-check.ts:57':
+    "A restored backup or a replaced folder, its sequence behind this machine's mark. The healthy-store matrix drives routed calls on one store, and restores none; replica-check.test.ts drives the refusal, and record-reidentify.test.ts syncs such a copy, which then re-identifies and reports what it lost.",
+  'src/tools/rbook/replica-check.ts:67':
+    'A copy of a shared project this machine has not joined, such as a zip carried here. The healthy-store matrix drives routed calls on one store, and carries none; replica-check.test.ts drives it, and record-join.test.ts joins such a copy.',
+  'src/tools/rbook/replica-check.ts:76':
+    'A copy whose check could not run, such as a binding of another project. The healthy-store matrix drives routed calls on one store, and builds no such binding; replica-check.test.ts drives it.',
+  // s96-m03 (fold): down four lines; s96-m12: eight more (two refusal codes, and the open sessions a
+  // joining copy brings, marked as their creator's at its first identity only). s96-m13: nine more
+  // (three refusal codes, and the key writer's comment naming its other caller).
+  'src/tools/rbook/replica-identity.ts:303':
+    'A copy whose number block is full: a million rows of one table in its block. The healthy-store matrix drives routed calls on one store, far below that; replica-check.test.ts and replica-identity.test.ts fill a block and drive it.',
+  // ── s96-m03: the change log's refusals, which need damage or a write no tool makes ─────────────
+  'src/tools/rbook/replica-check.ts:112':
+    'A copy whose write guard is broken (a dropped or changed trigger, a lost guard table, a leftover token or stage, a lost table or recorded column, a column this version does not know) refuses writes and names its remedy: the repair, a restore or an upgrade. It is damage no routed call makes; record-guards.test.ts breaks the guard each way on a shared store, drives the routed tools to the refusal, and runs reasonbook repair --guard.',
+  'src/tools/rbook/record-capture.ts:59':
+    'A delete of a shared row, which no tool path makes: the guard aborts any delete outside the ' +
+    'helper, and inside it this refusal is the backstop. Reached only by a write a future change ' +
+    'adds, so the healthy-store matrix cannot drive it.',
+  'src/tools/rbook/record-capture.ts:93':
+    'A shared row with no stable id, which prepareForSharing and every create rule out: it is ' +
+    'damage to the copy, so the healthy-store matrix cannot drive it.',
+  'src/tools/rbook/record-recording.ts:88':
+    'A recorded write that begins, commits or rolls back its own transaction, or runs a script, which no tool path makes, on a shared store or not: every converted site leaves its transaction to the change helper. record-guards.test.ts drives it with each verb and script.',
+  // ── s96-m12: the merge's refusals, which need a second copy, a delivery or a conflict ─────────
+  'src/tools/rbook/record-apply.ts:133':
+    "A delivery that holds another project's changes. The healthy-store matrix drives routed calls on one store, and delivers nothing; record-merge-fixtures.test.ts refuses one whole on a shared copy and stores nothing of it.",
+  'src/tools/rbook/record-apply.ts:141':
+    "A delivery holding an author name no copy of Reasonbook records. The healthy-store matrix drives routed calls on one store, and delivers nothing; record-merge-fixtures.test.ts sends a member's change with a right-to-left override, an untrimmed name or a bell, on the change or in its row, and nothing of it is stored.",
+  'src/tools/rbook/record-apply.ts:167':
+    "A replica's slot that holds a different change on the two copies, delivered outside an exchange, which renumbers such a copy first. The healthy-store matrix drives routed calls on one store, and delivers nothing; record-merge-fixtures.test.ts delivers such a change and the merge stops.",
+  'src/tools/rbook/record-apply.ts:194':
+    "A merge into a store that keeps no change log. A merge arrives only through a sync, a join or a bundle, between two copies; record-merge-fixtures.test.ts applies a copy's changes to a solo store, which refuses with this remedy.",
+  'src/tools/rbook/record-decide.ts:38':
+    "An admission made off the owner's copy. The healthy-store matrix drives routed calls on one store, and only a member's copy reaches this; record-merge-fixtures.test.ts admits from a member's copy, which refuses.",
+  'src/tools/rbook/record-capture.ts:84':
+    "A plain write to a field whose concurrent values are not settled. A conflict needs two copies' writes; the healthy-store matrix drives routed calls on one store, and builds none; record-merge.test.ts writes each field kind after five copies changed it, and settles it with this remedy.",
+  'src/tools/rbook/record-settle.ts:214':
+    "A member's settle of a decision lineage fork or the project identity, which only the owner settles. The healthy-store matrix drives routed calls on one store, and only a member's copy reaches this; record-merge-fixtures.test.ts tries it on a member's copy, then settles on the owner's.",
+  'src/tools/rbook/record-settle.ts:223':
+    "A settle of a value no copy wrote, which would spread to every copy. It needs a field in conflict, which needs two copies' writes; record-merge-fixtures.test.ts settles a decision status to values no copy wrote and to a candidate.",
+  'src/tools/rbook/record-standing.ts:120':
+    "A project identity write on a member's copy, refused before it is recorded. The healthy-store matrix drives routed calls on one store, and only a member's copy reaches this; record-merge.test.ts drives rbook_context and rbook_project updates on a member's copy.",
+  'src/tools/rbook/session-owner.ts:187':
+    "A write to, or a close of, a session another copy started. A peer's session arrives only by a merge from another copy; record-derived.test.ts completes and captures into a peer's session on the owner's copy.",
+  // ── s96-m13: the sync, sharing and joining refusals a single store cannot reach ──────────────
+  'src/tools/rbook/rbook-db-backfill.ts:138':
+    "The old backfill on a member's copy of a shared record, which never uploads. The healthy-store matrix drives routed calls on one store, and builds no member's copy; record-gates.test.ts joins one and drives the backfill to this refusal.",
+  'src/tools/rbook/record-bundle.ts:93':
+    'A bundle file that is not JSON. Bundles travel through reasonbook sync --bundle-in, no routed tool; record-refusals.test.ts reads one.',
+  'src/tools/rbook/record-bundle.ts:100':
+    'JSON that is not a Reasonbook bundle. Bundles travel through the CLI, no routed tool; record-refusals.test.ts reads one.',
+  'src/tools/rbook/record-bundle.ts:108':
+    'A bundle edited or damaged after it was written. Bundles travel through the CLI, no routed tool; record-bundle.test.ts edits one and imports it.',
+  'src/tools/rbook/record-bundle.ts:147':
+    "A bundle from a copy that has not taken the owner copy's latest move. It needs two copies and a move; record-moves.test.ts carries one.",
+  'src/tools/rbook/record-bundle.ts:181':
+    "A member's bundle whose copy must take a new identity first, which only a direct sync gives. It needs a restored member's copy; record-refusals.test.ts imports one on the owner's copy.",
+  'src/tools/rbook/record-decide.ts:76':
+    "A decision of transactions off the owner's copy. The healthy-store matrix drives routed calls on one store, and only a member's copy reaches this; record-refusals.test.ts tries it on one.",
+  'src/tools/rbook/record-exchange-steps.ts:35':
+    'A copy behind a move meeting a copy ahead that is no owner copy in either view. An exchange needs two copies; record-refusals.test.ts presents one.',
+  'src/tools/rbook/record-exchange-steps.ts:235':
+    'Blocks that still clash after four renumbers: a bound that stops a fault rather than loop. No supported sequence leaves two copies clashing after renumbering; record-refusals.test.ts drives it with copies that never move.',
+  'src/tools/rbook/record-exchange.ts:208':
+    'Two copies that speak different sync protocols. An exchange needs two copies; record-exchange.test.ts presents a newer one.',
+  'src/tools/rbook/record-exchange.ts:214':
+    'Two copies of different projects. An exchange needs two copies; record-exchange.test.ts pairs them.',
+  'src/tools/rbook/record-exchange.ts:221':
+    'Both sides one replica, one copied from the other. An exchange needs two copies; record-refusals.test.ts presents one.',
+  'src/tools/rbook/record-exchange.ts:228':
+    'Two copies naming different owner copies for one move. An exchange needs two copies; record-refusals.test.ts presents one.',
+  'src/tools/rbook/record-exchange.ts:236':
+    "Two members, neither the owner's copy, which the star refuses. An exchange needs two copies; record-exchange.test.ts and record-moves.test.ts pair two members.",
+  'src/tools/rbook/record-exchange.ts:260':
+    "The owner's own stream differing at a change both copies hold, as a restored owner machine that wrote again leaves it. record-reidentify.test.ts restores one and syncs.",
+  'src/tools/rbook/record-exchange.ts:267':
+    "A slot clash on a copy neither side owns, which no honest star produces: a member holds others' streams only as the owner's copy sent them. record-refusals.test.ts states the case directly.",
+  'src/tools/rbook/record-exchange.ts:274':
+    'A block two replicas hold where the one admitted later is not a side of this exchange, so it cannot renumber here. record-reidentify.test.ts admits two copies in one block and syncs the earlier one.',
+  'src/tools/rbook/record-exchange.ts:311':
+    "An owner copy holding less of its own stream than a member, as a restore of the owner's machine leaves it. record-recovery.test.ts restores one and syncs.",
+  'src/tools/rbook/record-join.ts:104':
+    "A copy whose file fails SQLite's integrity check. reasonbook copy writes a consistent file, and a file damaged enough to fail the check mostly fails to open first; no test constructs one.",
+  'src/tools/rbook/record-join.ts:115':
+    'A copy made before sharing, with no baseline, sent to the import. A join runs between two copies; record-join.test.ts presents one.',
+  'src/tools/rbook/record-join.ts:158':
+    'A join request that is not one. Join steps travel by file or SSH, no routed tool; record-refusals.test.ts presents one.',
+  'src/tools/rbook/record-join.ts:163':
+    'A join request in another sync protocol. Join steps travel by file or SSH; record-refusals.test.ts presents one.',
+  'src/tools/rbook/record-join.ts:171':
+    "A join answered off the owner's copy. It needs a member's copy; record-refusals.test.ts tries it on one.",
+  'src/tools/rbook/record-join.ts:176':
+    "A join request from another project's copy. Join steps travel by file or SSH; record-refusals.test.ts presents one.",
+  'src/tools/rbook/record-join.ts:184':
+    'A join for someone the record has not invited. A join runs between two copies; record-join.test.ts drives it.',
+  'src/tools/rbook/record-join.ts:191':
+    'A second answer to a request already answered, so an answer is never reused. record-join.test.ts answers twice.',
+  'src/tools/rbook/record-join.ts:233':
+    'A join answer that is not one. Join steps travel by file or SSH; record-refusals.test.ts presents one.',
+  'src/tools/rbook/record-join.ts:255':
+    'A join answer for another request, or one used already. record-join.test.ts applies one twice and on another copy.',
+  'src/tools/rbook/record-membership.ts:138':
+    "An invite off the owner's copy. The healthy-store matrix drives routed calls on one store, and only a member's copy reaches this; record-join.test.ts invites from one.",
+  'src/tools/rbook/record-membership.ts:267':
+    "A removal off the owner's copy. The healthy-store matrix drives routed calls on one store, and only a member's copy reaches this; record-members.test.ts removes from one.",
+  'src/tools/rbook/record-move-routes.ts:50':
+    'An SSH handover to a copy its own check refuses. The matrix opens no SSH channel; record-routes.test.ts hands over to a restored copy, then again once it re-identifies.',
+  'src/tools/rbook/record-moves.ts:72':
+    "A handover from a member's copy. Handovers run through reasonbook handover, no routed tool; record-moves.test.ts tries one.",
+  'src/tools/rbook/record-moves.ts:79':
+    'A handover from a copy that holds a move it has not confirmed. Handovers run through the CLI; record-recovery.test.ts tries one on a superseded owner copy.',
+  'src/tools/rbook/record-moves.ts:88':
+    "A handover to a copy that is not another of the owner's. Handovers run through the CLI; record-moves.test.ts tries one.",
+  'src/tools/rbook/record-moves.ts:95':
+    'A handover to a copy that held a term already. Handovers run through the CLI; record-moves.test.ts tries one.',
+  'src/tools/rbook/record-moves.ts:153':
+    'A confirmation naming a move this copy does not hold. Only a handover over SSH names the move; record-moves.test.ts names another.',
+  'src/tools/rbook/record-recovery.ts:160':
+    'A recovery on a copy that holds a move it has not confirmed. Recoveries run through reasonbook recover, no routed tool; record-recovery.test.ts tries one.',
+  'src/tools/rbook/record-recovery.ts:172':
+    "A recovery whose confirmed member list is not the record's. Recoveries run through the CLI; record-recovery.test.ts drives it.",
+  'src/tools/rbook/record-recovery.ts:189':
+    "A recovery while the old owner copy is live. Recoveries run through the CLI; record-recovery.test.ts drives it on the owner's machine.",
+  'src/tools/rbook/record-recovery.ts:214':
+    "A recovery that cannot reach every member's copy. Recoveries run through the CLI; record-recovery.test.ts and record-move-routes.test.ts drive it.",
+  'src/tools/rbook/record-admit-successor.ts:104':
+    "A successor admitted off the owner's copy. Successors are admitted inside a direct exchange; record-refusals.test.ts tries it on a member's copy.",
+  'src/tools/rbook/record-admit-successor.ts:110':
+    "A successor for a removed member's copy. Successors are admitted inside a direct exchange; record-refusals.test.ts tries one.",
+  'src/tools/rbook/record-admit-successor.ts:133':
+    'A successor for a copy no member of the record owns. Successors are admitted inside a direct exchange; record-refusals.test.ts tries one.',
+  'src/tools/rbook/record-successor.ts:124':
+    "A block move off the owner's copy. Block moves run inside a direct exchange; record-refusals.test.ts tries one.",
+  'src/tools/rbook/record-successor.ts:168':
+    'A successor taken by a store that is no copy of a shared record. Successors are taken inside a direct exchange; record-refusals.test.ts tries one.',
+  'src/cli/sync.ts:146':
+    'A bundle --for a removed member, a member with no copy, or a name that is none. Bundles travel through reasonbook sync --bundle-out, no routed tool; record-bundle.test.ts asks for each.',
+  'src/tools/rbook/rbook-db-backfill.ts:801':
+    "A purge of the dashboard mirror from a member's copy. The healthy-store matrix drives routed calls on one store, and only a member's copy reaches this; record-gates.test.ts purges from one.",
+  'src/tools/rbook/record-admit-successor.ts:125':
+    'A join a recovery never saw, for an invite it never saw either. The healthy-store matrix builds no recovery; record-recovery.test.ts drives it, invites the member again, and the copy then re-identifies.',
+  'src/tools/rbook/record-bundle.ts:160':
+    "A bundle one move ahead from a copy that is no owner's copy in either view. Bundles travel through the CLI, no routed tool; record-bundle.test.ts imports one.",
+  'src/tools/rbook/record-bundle.ts:168':
+    "A bundle from a copy that shows this copy's member as removed. Bundles travel through the CLI; record-bundle.test.ts imports one on a removed member's copy.",
+  'src/tools/rbook/record-join.ts:243':
+    'A join answer changed after it was written. Join steps travel by file or SSH, no routed tool; record-join.test.ts edits one and applies it.',
+  'src/tools/rbook/record-sync.ts:260':
+    'A sync in which no copy could be reached. The healthy-store matrix drives routed calls on one store, which has no route to any copy; record-routes.test.ts syncs with a copy whose machine is gone.',
+  'src/tools/rbook/record-import.ts:140':
+    'An import of a copy this account cannot read. reasonbook import is a CLI verb, no routed tool; record-import-cli.test.ts takes read access from a copy and imports it.',
+  'src/tools/rbook/record-import.ts:146':
+    'An import of a copy that cannot be read. A CLI verb, no routed tool; record-import-cli.test.ts imports a store file that is not a database, through the CLI too.',
+  'src/tools/rbook/record-import.ts:168':
+    "An import --from the shared copy it runs in. A CLI verb, no routed tool; record-import-cli.test.ts names the owner's own shared copy, run there.",
+  'src/tools/rbook/record-import.ts:174':
+    "An import --from the folder that holds the store it would write to. A CLI verb, no routed tool; record-import-cli.test.ts names the copy's own folder, unshared and shared.",
+  'src/tools/rbook/record-import.ts:182':
+    'An import into a project that is not shared. A CLI verb, no routed tool; record-import-cli.test.ts imports into an unshared project.',
+  'src/tools/rbook/record-import.ts:188':
+    'An import --from a folder that holds no store. A CLI verb, no routed tool; record-import-cli.test.ts names an empty folder.',
+  'src/tools/rbook/record-import.ts:194':
+    'An import --from a folder holding a store in both layouts. A CLI verb, no routed tool; record-import-cli.test.ts names one.',
+  'src/tools/rbook/record-import.ts:201':
+    'An import --from a zip archive rather than the folder it holds. A CLI verb, no routed tool; record-import-cli.test.ts names one.',
+  'src/tools/rbook/record-import.ts:216':
+    "An import of another project's copy, shared or not. A CLI verb, no routed tool; record-import-cli.test.ts imports another project's shared copy, and a copy whose project id it changed.",
+  'src/tools/rbook/record-import.ts:223':
+    "An import --from a copy of a shared record. A CLI verb, no routed tool; record-import-cli.test.ts names a member's joined copy.",
+  'src/tools/rbook/record-import.ts:230':
+    "An import of a copy older than the project id under another folder name. A CLI verb, no routed tool; record-import-cli.test.ts imports one by its folder and by a store file outside both layouts, then the same copy in a folder of the project's name.",
+  'src/tools/rbook/record-import.ts:252':
+    "An import of a store that cannot reach the sharing schema, such as one without a Reasonbook store's tables. A CLI verb, no routed tool; record-import-cli.test.ts imports a store holding a missions table alone.",
+  'src/tools/rbook/record-import.ts:272':
+    'An import --include naming a row the dry run labels neither deleted on the owner nor perhaps in the record already. A CLI verb, no routed tool; record-import.test.ts names a mission the record holds, and record-import-again.test.ts a decision the copy does not hold.',
+  'src/tools/rbook/record-import-apply.ts:86':
+    'An import whose write would give a numbered row another id than its plan gave it, refused before anything is written. A CLI verb, no routed tool; record-import-classify.test.ts applies a plan one number off, which refuses with this remedy.',
+  'src/tools/rbook/record-join.ts:127':
+    "A join asked on a live copy of the shared record, the owner's or a joined member's. The healthy-store matrix's join names no copy to join; record-refusals.test.ts asks one on the owner's copy.",
+  'src/tools/rbook/record-sync.ts:106':
+    'A copy SSH cannot reach. The matrix opens no SSH channel; record-move-routes.test.ts and record-routes.test.ts drive it through the stand-in ssh.',
+  'src/tools/rbook/record-sync.ts:143':
+    'A sync whose far end stops after its handshake. The matrix opens no SSH channel; record-refusals.test.ts drives a far end that exits.',
+  'src/tools/rbook/record-sync.ts:207':
+    "A sync from a member's copy with no route to the owner's. The healthy-store matrix drives routed calls on one store, and builds no member's copy; record-join.test.ts drives it on a joined copy.",
+  'src/tools/rbook/record-sync.ts:330':
+    'A join over SSH whose far end stops after its handshake. The matrix opens no SSH channel; record-refusals.test.ts drives a far end that exits.',
+
   // ── FAULT-SHAPED PRECONDITIONS inside a VALIDATION/STATE-coded site ──────────────────────────
   // These carry a driveable CODE but their trigger is a database fault, so the successor
   // fault-injection instrument (read-only DB file, dropped table, corrupt content) reaches them —
@@ -4513,19 +5094,20 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     'The healthy router matrix cannot create its schema/query/write fault or absent required row. ' +
     'Driven in record-links.test.ts and record-links-writers.test.ts through missing-source, ' +
     'foreign-schema and required-link rollback fixtures.',
-  'src/tools/rbook/client.ts:701':
+  // s96-m01 (fold): down 55 lines, and s96-m03 (fold) 4 more, as above.
+  'src/tools/rbook/client.ts:853':
     'UNIQUE-constraint mapping inside RbookDatabaseClient. Reaching it needs a write that violates a ' +
     'UNIQUE index THROUGH a supported call; every duplicate this matrix can create is refused earlier ' +
     'by a handler check (MISSION_ID_EXISTS, SPRINT_ID_EXISTS). Needs the fault-injection instrument.',
-  'src/tools/rbook/client.ts:712':
+  'src/tools/rbook/client.ts:864':
     'FOREIGN-KEY-constraint mapping inside RbookDatabaseClient. Same shape as :679 — no supported call ' +
     'sequence against a healthy store reaches an FK violation. Needs the fault-injection instrument.',
-  'src/tools/rbook/rbook-context-project-identity.ts:64':
+  'src/tools/rbook/rbook-context-project-identity.ts:65':
     'MEASURED: unreachable by deleting the row. On a write `ensureProjectIdentityRow(client)` runs ' +
     'first and RECREATES it, and on a read (s93-m11) the identity is derived in memory, so the ' +
     'null-identity branch needs the row to be both uncreatable and unreadable — a database fault, ' +
     'not a state this matrix can establish.',
-  'src/tools/rbook/rbook-context-project-identity.ts:124':
+  'src/tools/rbook/rbook-context-project-identity.ts:130':
     'Same fault-shaped precondition as :64, one frame later: `getProjectIdentity` returning null ' +
     'AFTER a write that already succeeded.',
 
@@ -4542,40 +5124,34 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
   'src/tools/rbook/rbook-message.ts:1069':
     'A defensive branch whose own message says the dispatcher should have caught the condition via ' +
     'resolveSenderContext. Reaching it means reaching a state the dispatcher forbids.',
-  'src/tools/rbook/sync-mutable-push.ts:111':
-    'The missing-entityId refusal inside pushMutableStatus. Its only caller chain runs through ' +
-    'maybePropagateMutableStatus, which early-returns unless isCollabStore(db) — so a solo store ' +
-    'never enters the function at all, and a collab store needs a broker.',
-  'src/tools/rbook/sync-mutable-push.ts:155':
-    'Same collab-store gate as :111, one branch later on slug resolution.',
   // ── MASKED BY AN EARLIER REFUSAL ON EVERY PATH THIS MATRIX CAN DRIVE ─────────────────────────
   // s92-m02, s92-m05 and s92-m03 moved these two down (planned-end-date receipt fields; the
   // archive param; a comment on implicit sessions); same branches.
-  'src/tools/rbook/rbook-sprint-complete.ts:666':
+  'src/tools/rbook/rbook-sprint-complete.ts:669':
     'MEASURED: masked. With master_context deleted and the sprint made closable, closeout refuses at ' +
     'the shared errors.ts contextNotFound BEFORE reaching this sprint-local branch, so :666 is ' +
     'unreachable while that earlier guard stands.',
-  'src/tools/rbook/rbook-sprint-complete.ts:677': 'Same masking as :666, for project_context.',
+  'src/tools/rbook/rbook-sprint-complete.ts:680': 'Same masking as :666, for project_context.',
 };
 
 const FAULT_SHAPED_DRIVEABLE_RESIDUALS = new Set([
-  'src/tools/rbook/rbook-mission-drop.ts:69',
-  'src/tools/rbook/rbook-mission-drop.ts:92',
-  'src/tools/rbook/rbook-mission-drop.ts:219',
-  'src/tools/rbook/rbook-mission-drop.ts:258',
-  'src/tools/rbook/rbook-mission-add.ts:286',
-  'src/tools/rbook/rbook-mission-add.ts:302',
-  'src/tools/rbook/rbook-mission-start.ts:254',
-  'src/tools/rbook/rbook-mission-start.ts:268',
+  'src/tools/rbook/rbook-mission-drop.ts:70',
+  'src/tools/rbook/rbook-mission-drop.ts:93',
+  'src/tools/rbook/rbook-mission-drop.ts:221',
+  'src/tools/rbook/rbook-mission-drop.ts:260',
+  'src/tools/rbook/rbook-mission-add.ts:287',
+  'src/tools/rbook/rbook-mission-add.ts:303',
+  'src/tools/rbook/rbook-mission-start.ts:255',
+  'src/tools/rbook/rbook-mission-start.ts:269',
   'src/tools/rbook/rbook-mission-status.ts:261',
-  'src/tools/rbook/rbook-mission-update.ts:326',
-  'src/tools/rbook/rbook-mission-update.ts:466',
-  'src/tools/rbook/rbook-mission-update.ts:478',
+  'src/tools/rbook/rbook-mission-update.ts:327',
+  'src/tools/rbook/rbook-mission-update.ts:467',
+  'src/tools/rbook/rbook-mission-update.ts:479',
 
-  'src/tools/rbook/client.ts:701',
-  'src/tools/rbook/client.ts:712',
-  'src/tools/rbook/rbook-context-project-identity.ts:64',
-  'src/tools/rbook/rbook-context-project-identity.ts:124',
+  'src/tools/rbook/client.ts:853',
+  'src/tools/rbook/client.ts:864',
+  'src/tools/rbook/rbook-context-project-identity.ts:65',
+  'src/tools/rbook/rbook-context-project-identity.ts:130',
 ]);
 const INTERNAL_FAULT_RESUME_TRIGGER =
   'any one of these codes reported from the field by an external adopter, or any in-repo incident that reaches one on a healthy store.';

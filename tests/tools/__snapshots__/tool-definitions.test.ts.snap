@@ -342,7 +342,7 @@ exports[`Tool definitions contract registered tool schema stays stable 1`] = `
       "openWorldHint": false,
       "readOnlyHint": false,
     },
-    "description": "Database admin: health, snapshot, restore, backfill, reconcile, purge, identify_orphans, pull, clone, and prune_snapshots (empties old automatic context-snapshot copies; a dry run unless confirmed; referenced snapshots and milestones are kept).",
+    "description": "Database admin: health, snapshot, restore, backfill, reconcile, purge, identify_orphans, pull, clone, and prune_snapshots (empties old automatic context-snapshot copies; a dry run unless confirmed; referenced snapshots and milestones are kept). On a shared project, conflicts lists the fields copies set apart and settle keeps one value. pull and clone are retired; use reasonbook sync. backfill uploads registered owner SQLite stores; event replay and its dry run return LEGACY_SYNC_RETIRED.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -358,6 +358,8 @@ exports[`Tool definitions contract registered tool schema stays stable 1`] = `
             "pull",
             "clone",
             "prune_snapshots",
+            "conflicts",
+            "settle",
           ],
           "type": "string",
         },
@@ -370,6 +372,10 @@ exports[`Tool definitions contract registered tool schema stays stable 1`] = `
         },
         "expectedSlug": {
           "description": "Refuse unless the slug matches",
+          "type": "string",
+        },
+        "field": {
+          "description": "settle: the field in conflict",
           "type": "string",
         },
         "force": {
@@ -418,11 +424,22 @@ exports[`Tool definitions contract registered tool schema stays stable 1`] = `
           "description": "Project folder or rbook:// address; default: the working folder",
           "type": "string",
         },
+        "recordId": {
+          "description": "settle: the row id this copy shows",
+          "type": "string",
+        },
         "slug": {
           "type": "string",
         },
         "snapshotId": {
           "type": "string",
+        },
+        "table": {
+          "description": "settle: the table, or "project"",
+          "type": "string",
+        },
+        "value": {
+          "description": "settle: the value to keep",
         },
       },
       "required": [
@@ -1135,10 +1152,10 @@ exports[`Tool definitions contract registered tool schema stays stable 1`] = `
     "annotations": {
       "destructiveHint": true,
       "idempotentHint": false,
-      "openWorldHint": false,
+      "openWorldHint": true,
       "readOnlyHint": false,
     },
-    "description": "Projects on this machine: init, register, unregister, list, validate, prune, update the level (adding the new level's files), and sweep open work across all of them.",
+    "description": "Projects on this machine: init, register, unregister, list, validate, prune, update the level (adding the new level's files), and sweep open work across all of them. A shared record: share, invite, join a copy over SSH, members, remove, and sync.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -1152,7 +1169,22 @@ exports[`Tool definitions contract registered tool schema stays stable 1`] = `
             "prune",
             "update",
             "sweep",
+            "share",
+            "invite",
+            "join",
+            "members",
+            "remove",
+            "sync",
           ],
+          "type": "string",
+        },
+        "authorName": {
+          "type": "string",
+        },
+        "confirmOwner": {
+          "type": "boolean",
+        },
+        "host": {
           "type": "string",
         },
         "initialMissions": {
@@ -1226,6 +1258,9 @@ exports[`Tool definitions contract registered tool schema stays stable 1`] = `
           ],
           "type": "string",
         },
+        "member": {
+          "type": "string",
+        },
         "name": {
           "type": "string",
         },
@@ -1249,6 +1284,25 @@ exports[`Tool definitions contract registered tool schema stays stable 1`] = `
         },
         "prune": {
           "type": "boolean",
+        },
+        "remoteBin": {
+          "type": "string",
+        },
+        "remoteConfigDir": {
+          "type": "string",
+        },
+        "remoteNode": {
+          "type": "string",
+        },
+        "remoteRoot": {
+          "type": "string",
+        },
+        "role": {
+          "enum": [
+            "editor",
+            "owner",
+          ],
+          "type": "string",
         },
         "setAsDefault": {
           "description": "Default for calls with no project context",

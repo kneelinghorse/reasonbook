@@ -28,8 +28,22 @@ import { createError, createSuccess, RbookErrors, RBOOK_ERROR_CODES } from './er
 import { loadVecExtension } from './vec-loader';
 import { assertJestDbPathIsolated, RealStoreGuardError } from './real-store-guard';
 import { isReadOnlyAgentSession } from './read-only-agent-guard';
-import { currentToolCallActionMode, recordStoreWrite } from './tool-call-context';
+import {
+  currentToolCallActionMode,
+  recordSharedStore,
+  recordStoreWrite,
+} from './tool-call-context';
 import { enableWal, processBusyTimeout } from './sqlite-busy';
+import {
+  carriedRefusal,
+  discardReplicaMark,
+  flushReplicaMark,
+  isSharedStore,
+  REPLICA_ERROR_CODES,
+  SHARED_TABLES,
+} from './replica-identity';
+import { replicaWriteRefusal } from './replica-check';
+import { isMerging, refusedWhileRecording } from './record-guards';
 
 // Re-export the resolver for convenience. s80-m01 trimmed the dead JSON
 // `ProjectRegistry` / `RegisteredProject` / `ProjectValidation` /
@@ -96,6 +110,12 @@ export interface RbookDatabaseClientOptions {
 
   /** Internal resolver probes can suppress registration even inside a write-classified request. */
   registerProject?: boolean;
+
+  /**
+   * s96-m01: false only for a client that opens a refused copy of a shared record on purpose, to
+   * re-identify it (s96-m13's sync does the same). Every other client opened to write is checked.
+   */
+  replicaCheck?: boolean;
 }
 
 /**
@@ -115,8 +135,29 @@ function shouldRegisterProject(options: RbookDatabaseClientOptions): boolean {
   return actionMode === undefined || actionMode === 'write';
 }
 
+/**
+ * s96-m01 (ADR s96 §9): a client opened to write, outside a read-classified call, is checked once
+ * against this machine's binding of the copy; an unshared store passes at the cost of one read.
+ */
+function opensToWrite(options: RbookDatabaseClientOptions): boolean {
+  return (
+    !options.readonly &&
+    options.replicaCheck !== false &&
+    currentToolCallActionMode() !== 'read' &&
+    !isReadOnlyAgentSession()
+  );
+}
+
 /** A statement that changes rows (not DDL, not a pragma, not a transaction verb). */
 const ROW_WRITE_SQL = /^\s*(INSERT|UPDATE|DELETE|REPLACE)\b/i;
+
+/** s96-m01: the transaction verbs a caller may issue itself; see followTransactionVerb. */
+const BEGIN_WRITE_SQL = /^\s*BEGIN\s+(?:IMMEDIATE|EXCLUSIVE)\b/i;
+const END_SQL = /^\s*(?:COMMIT|END)\b/i;
+
+/** s96-m01: the table a row create or delete names, so one to a shared table can be refused. */
+const ROW_WRITE_TARGET =
+  /^\s*(?:INSERT(?:\s+OR\s+\w+)?\s+INTO|REPLACE\s+INTO|DELETE\s+FROM)\s+["`[]?(\w+)/i;
 
 /**
  * Query parameters for parameterized queries
@@ -160,9 +201,13 @@ export class RbookDatabaseClient {
   private db: DatabaseType | null = null;
   private readonly dbPath: string;
   private readonly options: Required<
-    Omit<RbookDatabaseClientOptions, 'dbPath' | 'projectRoot' | 'registerProject'>
+    Omit<RbookDatabaseClientOptions, 'dbPath' | 'projectRoot' | 'registerProject' | 'replicaCheck'>
   >;
   private statementCache: Map<string, Statement> = new Map();
+  /** Set while the outermost transaction is a writeTransaction, which BEGINs IMMEDIATE. */
+  private writeLocked = false;
+  /** s96-m03: how many outermost transactions this client has begun; see transactionSerial. */
+  private transactions = 0;
 
   /**
    * Private constructor - use RbookDatabaseClient.create() instead
@@ -202,6 +247,7 @@ export class RbookDatabaseClient {
   ): Promise<RbookToolResult<RbookDatabaseClient>> {
     try {
       let dbPath = options.dbPath;
+      let registerRoot: string | null = null;
 
       // If no explicit dbPath, resolve project root and detect database
       if (!dbPath) {
@@ -250,20 +296,14 @@ export class RbookDatabaseClient {
 
         // SPLIT-THE-PATHS (s88-m08): explicit and ambient WRITE opens share one registration
         // point. `registerStore` is the only path here that may mint metadata.project_id, and it
-        // runs before this client's connection (and therefore before any BEGIN IMMEDIATE). Reads
-        // and the review role never enter it. Unlike the old best-effort auto-discovery write, a
+        // runs before this client returns (and therefore before any BEGIN IMMEDIATE). Reads and
+        // the review role never enter it. Unlike the old best-effort auto-discovery write, a
         // failed write precondition fails loud rather than letting the handler stamp a fallback.
         if (shouldRegisterProject(options)) {
-          // Preserve the Jest real-store fence across the newly-added registration write. The
-          // ordinary connection checks this again below, but that would be too late if minting
-          // were allowed to touch the store first.
+          // Preserve the Jest real-store fence across the registration write. The ordinary
+          // connection checks this again below.
           assertJestDbPathIsolated(detection.databasePath);
-          // Registered MCP writes are strict: no handler may continue after an identity write
-          // failed. Direct legacy callers have no action context, so retain registerStore's
-          // historical unreadable-store basename fallback unless they explicitly opt in.
-          const requireStoredIdentity =
-            currentToolCallActionMode() === 'write' || options.registerProject === true;
-          await registerResolvedProjectStore(projectRoot, { requireStoredIdentity });
+          registerRoot = projectRoot;
         }
 
         dbPath = detection.databasePath;
@@ -275,6 +315,34 @@ export class RbookDatabaseClient {
       const connectionResult = client.ensureConnection();
       if (!connectionResult.success) {
         return connectionResult as RbookToolResult<RbookDatabaseClient>;
+      }
+      // s96-m01 (ADR s96 §9): a copy of a shared record is checked before it registers, so a
+      // stale copy never takes the project's registry row; this machine's binding, not the row,
+      // says which copy is live, and a confirmed copy takes the row from any other folder.
+      const refused = client.refusedCopy(options);
+      if (refused) return refused;
+      // s96-m12: a copy of a shared record this call opened, so its answer can name what a
+      // person must know there: fields in conflict, and an id two copies created.
+      if (currentToolCallActionMode() !== undefined && isSharedStore(client))
+        recordSharedStore(client.path);
+      if (registerRoot !== null) {
+        const shared = isSharedStore(client);
+        if (!shared || opensToWrite(options)) {
+          // Registered MCP writes are strict: no handler may continue after an identity write
+          // failed. Direct legacy callers have no action context, so retain registerStore's
+          // historical unreadable-store basename fallback unless they explicitly opt in.
+          const requireStoredIdentity =
+            currentToolCallActionMode() === 'write' || options.registerProject === true;
+          try {
+            await registerResolvedProjectStore(registerRoot, {
+              requireStoredIdentity,
+              confirmedCopy: shared,
+            });
+          } catch (error) {
+            client.close();
+            throw error;
+          }
+        }
       }
 
       return createSuccess(client);
@@ -319,6 +387,8 @@ export class RbookDatabaseClient {
     if (!connectionResult.success) {
       return connectionResult as RbookToolResult<RbookDatabaseClient>;
     }
+    const refused = client.refusedCopy(options);
+    if (refused) return refused;
 
     return createSuccess(client);
   }
@@ -335,6 +405,70 @@ export class RbookDatabaseClient {
    */
   get isOpen(): boolean {
     return this.db !== null && this.db.open;
+  }
+
+  /** Whether a transaction is open on this client's connection. */
+  get inTransaction(): boolean {
+    return this.db?.inTransaction ?? false;
+  }
+
+  /** s96-m01 (ADR s96 §3): whether the open transaction took the write lock at BEGIN IMMEDIATE. */
+  get inWriteTransaction(): boolean {
+    return this.writeLocked && this.inTransaction;
+  }
+
+  /**
+   * s96-m03: a count of this client's outermost transactions, so the change helper names one
+   * transaction id for everything one SQLite transaction records (ADR s96 §4).
+   */
+  get transactionSerial(): number {
+    return this.transactions;
+  }
+
+  /** s96-m01: a client opened to write a copy this machine cannot confirm closes with the refusal. */
+  private refusedCopy(options: RbookDatabaseClientOptions): RbookToolResult<never> | null {
+    if (!opensToWrite(options)) return null;
+    const refused = replicaWriteRefusal(this);
+    if (!refused) return null;
+    this.close();
+    return createError(refused);
+  }
+
+  /**
+   * s96-m01: a transaction a caller BEGINs and ends itself through execute or raw holds the write
+   * lock from BEGIN IMMEDIATE (or EXCLUSIVE), and its end moves or discards this machine's mark of
+   * a shared copy, as writeTransaction's does.
+   */
+  private followTransactionVerb(sql: string, wasInTransaction: boolean): void {
+    const nowInTransaction = this.inTransaction;
+    if (!wasInTransaction && nowInTransaction) {
+      this.transactions += 1;
+      if (BEGIN_WRITE_SQL.test(sql)) this.writeLocked = true;
+    } else if (wasInTransaction && !nowInTransaction) {
+      this.writeLocked = false;
+      if (END_SQL.test(sql)) flushReplicaMark(this);
+      else discardReplicaMark(this);
+    }
+  }
+
+  /**
+   * s96-m01: the backstop for a client that opened without the check: a new or deleted row of a
+   * shared table on a copy this machine cannot confirm is refused. UPDATEs pass, because a schema
+   * migration's backfill must never break a copy; s96-m03's column-scoped guards cover them.
+   */
+  private refusedWrite(sql: string, via: 'execute' | 'raw'): RbookToolResult<never> | null {
+    // s96-m03: while the change helper records, the transaction is its own.
+    const verb = refusedWhileRecording(this, sql, via);
+    if (verb) return createError(verb);
+    const table = ROW_WRITE_TARGET.exec(sql)?.[1]?.toLowerCase();
+    if (!table || !SHARED_TABLES.has(table)) return null;
+    const refused = replicaWriteRefusal(this);
+    if (!refused) return null;
+    // s96-m13: a restored copy's catch-up writes under the merge's token, which only a catch-up
+    // puts down on such a copy (mergeRefusal, record-token.ts). The merge marks its own client, so a
+    // token row that damage left in the file lets nothing through.
+    if (refused.code === REPLICA_ERROR_CODES.RESTORED && isMerging(this)) return null;
+    return createError(refused);
   }
 
   /**
@@ -479,7 +613,10 @@ export class RbookDatabaseClient {
     if (!connectionResult.success) {
       return connectionResult as RbookToolResult<MutationResult>;
     }
+    const refused = this.refusedWrite(sql, 'execute');
+    if (refused) return refused;
 
+    const wasInTransaction = this.inTransaction;
     try {
       const stmt = this.prepareStatement(sql);
       const result = params ? stmt.run(params) : stmt.run();
@@ -492,6 +629,8 @@ export class RbookDatabaseClient {
       });
     } catch (error) {
       return this.handleQueryError(error, sql);
+    } finally {
+      this.followTransactionVerb(sql, wasInTransaction);
     }
   }
 
@@ -513,8 +652,10 @@ export class RbookDatabaseClient {
       const db = this.db!;
       const transaction = db.transaction(fn);
       const result = transaction();
+      if (!db.inTransaction) flushReplicaMark(this);
       return createSuccess(result);
     } catch (error) {
+      if (!this.inTransaction) discardReplicaMark(this);
       return this.handleQueryError(error, 'TRANSACTION');
     }
   }
@@ -532,12 +673,17 @@ export class RbookDatabaseClient {
     if (!connectionResult.success) {
       return connectionResult as RbookToolResult<void>;
     }
+    const refused = this.refusedWrite(sql, 'raw');
+    if (refused) return refused;
 
+    const wasInTransaction = this.inTransaction;
     try {
       this.db!.exec(sql);
       return createSuccess(undefined);
     } catch (error) {
       return this.handleQueryError(error, sql);
+    } finally {
+      this.followTransactionVerb(sql, wasInTransaction);
     }
   }
 
@@ -617,6 +763,9 @@ export class RbookDatabaseClient {
       this.db.close();
     }
     this.db = null;
+    // s96-m01: closing ends any transaction, and with it the write lock.
+    this.writeLocked = false;
+    discardReplicaMark(this);
   }
 
   /**
@@ -649,6 +798,9 @@ export class RbookDatabaseClient {
    * Handle query errors and translate to RbookToolError
    */
   private handleQueryError<T>(error: unknown, _sql: string): RbookToolResult<T> {
+    // s96-m01: a shared record's refusal thrown inside a write keeps its own code and remedy.
+    const refusal = carriedRefusal(error);
+    if (refusal) return createError(refusal);
     // s86-m02b: DUCK-TYPED, not `instanceof Error`. A better-sqlite3 SqliteError that crosses a
     // module-registry / realm boundary (Jest's per-file registry is the everyday case) fails
     // `instanceof`, and the old fallback `String(error)` then produced the class-name-prefixed
@@ -811,10 +963,21 @@ export class RbookDatabaseClient {
     if (!connectionResult.success) {
       return connectionResult as RbookToolResult<T>;
     }
+    const outermost = !this.inTransaction;
+    if (outermost) {
+      this.writeLocked = true;
+      this.transactions += 1;
+    }
     try {
-      return createSuccess(this.db!.transaction(fn).immediate());
+      const result = this.db!.transaction(fn).immediate();
+      // s96-m01: this machine's mark of a shared copy follows the outermost commit, never leads it.
+      if (!this.inTransaction) flushReplicaMark(this);
+      return createSuccess(result);
     } catch (error) {
+      if (!this.inTransaction) discardReplicaMark(this);
       return this.handleQueryError(error, 'TRANSACTION');
+    } finally {
+      if (outermost) this.writeLocked = false;
     }
   }
 }

@@ -27,6 +27,7 @@ import {
   readExcerpt,
   readScans,
   startsSince,
+  takeShown,
 } from '../../src/tools/rbook/draft-runtime';
 import { harnessSessionHash } from '../../src/tools/rbook/harness-session';
 import * as proposals from '../../src/tools/rbook/proposals';
@@ -136,6 +137,73 @@ describe('Stop stores the proposal and says nothing', () => {
       }),
     ]);
     expect(JSON.stringify(drafts())).not.toContain('s-one');
+  });
+
+  it('keeps the draft when another process commits between its read and its write (s96-m11)', async () => {
+    // The write reads the pending drafts first. In a deferred transaction, a commit by another
+    // process in between made SQLite refuse the insert at once (SQLITE_BUSY_SNAPSHOT), and the
+    // hook fails open, so that turn's drafts were lost. The draft write takes the lock at BEGIN.
+    await start('s-one');
+    await stop('s-one', PROPOSAL);
+    // A store in use is in WAL mode, where a reader never holds a writer off; the seed is not.
+    const wal = new Database(dbPath);
+    wal.pragma('journal_mode = WAL');
+    wal.close();
+    const other = new Database(dbPath, { timeout: 100 });
+    const real = proposals.pendingDrafts;
+    const read = jest.spyOn(proposals, 'pendingDrafts').mockImplementation((run) => {
+      const rows = real(run);
+      try {
+        other.prepare("INSERT INTO metadata (key, value) VALUES ('s96-m11-other', '1')").run();
+      } catch {
+        // Held off by the draft write's lock: the case the immediate transaction is for.
+      }
+      return rows;
+    });
+    try {
+      const outcome = onStop({
+        dbPath,
+        rawSessionId: 's-one',
+        reply: PROPOSAL.replace(/JSON/g, 'YAML'),
+        env: process.env,
+        deadlineAtMs: Date.now() + 10_000,
+      });
+      expect(outcome.created).toBe(1);
+    } finally {
+      read.mockRestore();
+      other.close();
+    }
+    expect(drafts()).toHaveLength(2);
+  });
+
+  it('binds a draft the reply names while another process holds the store, since that writes nothing', async () => {
+    // s96-m11 build critic, round 2: only a reply with draft lines takes the write lock, so a reply
+    // that names a pending draft is never held off by another writer, and its draft still binds.
+    await start('s-one');
+    await stop('s-one', PROPOSAL);
+    const wal = new Database(dbPath);
+    wal.pragma('journal_mode = WAL');
+    wal.close();
+    const holder = new Database(dbPath);
+    holder.exec('BEGIN IMMEDIATE');
+    try {
+      onStop({
+        dbPath,
+        rawSessionId: 's-one',
+        reply: 'Shall I go ahead with draft P1, one JSON file per decision for project decisions?',
+        env: process.env,
+        deadlineAtMs: Date.now() + 10_000,
+      });
+    } finally {
+      holder.exec('ROLLBACK');
+      holder.close();
+    }
+    const runtime = openDraftRuntime(dbPath, process.env)!;
+    try {
+      expect(takeShown(runtime, harnessSessionHash('s-one'), Date.now())).toEqual([1]);
+    } finally {
+      runtime.close();
+    }
   });
 
   it('never writes stdout, whatever it is handed', async () => {

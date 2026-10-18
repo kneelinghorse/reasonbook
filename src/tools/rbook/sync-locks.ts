@@ -1,50 +1,14 @@
-// ABOUTME: Sprint 71 m05 / 72 m01 — soft-lock control plane for the mutable surface:
-// ABOUTME: resolve the platform project id, wrap the m04 push in acquire→push→release
-// ABOUTME: (take-over-on-expired + respect-active-holder), all generic over fieldScope,
-// ABOUTME: and the resilient dispatcher hook that propagates a mutable-surface edit on
-// ABOUTME: a collab store (thin mission_active wrapper keeps the mission path frozen).
-
-/**
- * Soft-lock orchestration (Sprint 71 m05, UC2 — see rbook/docs/multiuser-collab-client.md §6).
- *
- * m04 built the data plane (pull-before-push + per-field push + inbound LWW). m05 is
- * the control plane that wraps it:
- *
- *   - `resolvePlatformProjectId` — the lock + conflict routes key on the platform
- *     `projects.id` (what authorizeProjectAccess resolves), NOT the rbook_projects.id
- *     that GET /state returns. We resolve it once via getMyProjects() matched by slug
- *     and cache it in `metadata.platform_project_id`.
- *   - `pushMutableStatusUnderLock` — acquire the advisory `mission_active` soft-lock
- *     (take over an EXPIRED lock; respect — i.e. surface — an ACTIVE holder and push
- *     anyway, since the lock is advisory and the broker's LWW + restore is the real
- *     safety net), run the m04 push with the EDITOR's own credential, then release a
- *     lock we hold.
- *   - `maybePropagateMissionStatus` — the rbook_mission_transition hook. On a COLLAB
- *     store, after a successful transition, push the post-transition status to the
- *     broker. RESILIENT: a sync/lock/network failure never fails the local
- *     transition — it is folded into the result's warnings.
- *
- * The editor own-identity requirement (criterion 3) falls out of the existing
- * `fromEnvForProject` resolution: a shared project has no project-scoped key for the
- * editor, so it resolves to their user-scoped key — the same credential drives both
- * the lock calls and the push, and author_user_id is stamped dashboard-authoritative.
- *
- * @module tools/rbook/sync-locks
- */
+// ABOUTME: Retired dashboard soft-lock entry points refuse before contacting the old sync service.
+// ABOUTME: Existing mission, sprint and identity hooks keep local edits and warn on legacy collab_role stores.
 
 import { withClientAsync, type RbookDatabaseClient } from './client';
-import { DashboardClient, type ProjectLock } from './dashboard-client';
-import { createSuccess, RbookErrors } from './errors';
+import type { DashboardClient } from './dashboard-client';
+import { createError, createSuccess } from './errors';
 import type { RbookToolResult } from './types';
-import { readDashboardSlug } from './sync-merge';
-import {
-  isCollabStore,
-  readStatusState,
-  PROJECT_IDENTITY_ENTITY_ID,
-  type MutableFieldScope,
-} from './sync-mutable';
+import { PROJECT_IDENTITY_ENTITY_ID, type MutableFieldScope } from './sync-mutable';
 import { getProjectIdentity } from './project-identity';
-import { pushMutableStatus, type PushMutableStatusResult } from './sync-mutable-push';
+import type { PushMutableStatusResult } from './sync-mutable-push';
+import { legacySyncRefusal } from './legacy-sync-refusal';
 import { checkWrite, type WriteSink } from './write-guard';
 
 function readMeta(db: RbookDatabaseClient, key: string): string | null {
@@ -130,230 +94,54 @@ export interface PushUnderLockParams {
   client?: DashboardClient;
 }
 
-/**
- * Acquire the advisory `mission_active` soft-lock, run the m04 push with the editor's
- * own credential, then release a lock we hold. The lock is advisory: an ACTIVE
- * holder is surfaced (not blocking) and the push still proceeds, because the broker's
- * LWW + the conflict/restore surface is the real safety net (dashboard Q3). An
- * EXPIRED lock is taken over. The push runs regardless of lock state — a lock failure
- * never blocks propagation.
- */
+/** Retired before any platform-id lookup, advisory lock or mutable push. */
 export async function pushMutableStatusUnderLock(
-  params: PushUnderLockParams
+  _params: PushUnderLockParams
 ): Promise<RbookToolResult<PushUnderLockResult>> {
-  // Resolve scope + entity (Sprint 72 m01). Defaults preserve the frozen mission path.
-  const fieldScope: MutableFieldScope = params.fieldScope ?? 'mission_active';
-  const entityId = params.entityId ?? params.missionId;
-
-  let client = params.client;
-  if (!client) {
-    const cr = await DashboardClient.fromEnvForProject(params.projectRoot);
-    if (!cr.success || !cr.data)
-      return { success: false, error: RbookErrors.dashboardNotConfigured() };
-    client = cr.data.client;
-  }
-
-  const warnings: string[] = [];
-  let lockState: LockState = 'unavailable';
-  let lockHolder: PushUnderLockResult['lockHolder'] = null;
-  let weHoldLock = false;
-
-  // Resolve the platform project id (cached) and acquire the lock. Any failure here
-  // degrades to a lockless push — the lock is advisory, not a gate.
-  const platformId = await withClientAsync(
-    async (db) => {
-      const slug = params.slug ?? readDashboardSlug(db);
-      if (!slug) return createSuccess<string | null>(null);
-      return createSuccess<string | null>(
-        await resolvePlatformProjectId(db, client!, slug, warnings)
-      );
-    },
-    { projectRoot: params.projectRoot }
-  );
-
-  const pid = platformId.success ? platformId.data : null;
-  if (!pid) {
-    warnings.push(
-      'Could not resolve the platform project id (getMyProjects/slug) — pushed without a soft-lock. ' +
-        'The broker LWW + conflict/restore still protects the edit.'
-    );
-  } else {
-    const acq = await client.acquireLock(pid, fieldScope);
-    if (acq.success && acq.data) {
-      if (acq.data.ok) {
-        lockState = 'acquired';
-        weHoldLock = true;
-      } else if (acq.data.reason === 'expired') {
-        const took = await client.takeoverLock(pid, fieldScope);
-        if (took.success && took.data?.ok) {
-          lockState = 'tookover';
-          weHoldLock = true;
-        } else if (took.success && took.data && !took.data.ok) {
-          // The takeover lost a race — the lock became active again under a new holder.
-          lockState = 'held-by-other';
-          lockHolder = lockHolderOf(took.data.lock);
-          warnings.push(lockContentionWarning(lockHolder, fieldScope));
-        } else {
-          // The takeover CALL failed (network, or 403 write-denied) — proceed lockless
-          // rather than mislabel it as another editor holding the lock.
-          lockState = 'unavailable';
-          warnings.push(
-            `Could not take over the expired ${fieldScope} lock (${
-              took.error?.message ?? 'lock API error'
-            }) — pushed without a lock.`
-          );
-        }
-      } else {
-        // active lock another editor holds
-        lockState = 'held-by-other';
-        lockHolder = lockHolderOf(acq.data.lock);
-        warnings.push(lockContentionWarning(lockHolder, fieldScope));
-      }
-    } else {
-      warnings.push(
-        `Soft-lock unavailable (${acq.error?.message ?? 'lock API error'}) — pushed without a lock.`
-      );
-    }
-  }
-
-  // Run the m04 push with the same editor credential. Pull-before-push + converge.
-  const push = await pushMutableStatus({
-    projectRoot: params.projectRoot,
-    slug: params.slug,
-    fieldScope,
-    entityId,
-    status: params.status,
-    now: params.now,
-    client,
-  });
-
-  // Release a lock we hold, regardless of push outcome (best-effort).
-  let released = false;
-  if (weHoldLock && pid) {
-    const rel = await client.releaseLock(pid, fieldScope);
-    released = rel.success ? (rel.data?.released ?? false) : false;
-    if (!rel.success) warnings.push(`Failed to release the soft-lock: ${rel.error?.message}`);
-  }
-
-  if (!push.success) {
-    warnings.push(
-      `Shared-project sync failed: ${push.error?.message ?? 'push error'}. The local edit is kept; ` +
-        'retry to propagate it.'
-    );
-    return createSuccess<PushUnderLockResult>({
-      lockState,
-      lockHolder,
-      released,
-      push: null,
-      warnings,
-    });
-  }
-
-  if (push.data?.superseded && push.data.conflict) {
-    warnings.push(
-      `Your '${params.status}' edit was superseded by '${push.data.localStatus}' (conflict ` +
-        `${push.data.conflict.id}) — restore your version via the conflict surface.`
-    );
-  }
-
-  return createSuccess<PushUnderLockResult>({
-    lockState,
-    lockHolder,
-    released,
-    push: push.data ?? null,
-    warnings,
-  });
+  return legacySyncRefusal('Dashboard soft-lock sync');
 }
 
-function lockHolderOf(lock: ProjectLock | null): PushUnderLockResult['lockHolder'] {
-  if (!lock) return null;
-  return { userId: lock.holderUserId, email: lock.holderEmail, expiresAt: lock.expiresAt };
-}
-
-function lockContentionWarning(
-  holder: PushUnderLockResult['lockHolder'],
-  scope: MutableFieldScope
-): string {
-  const who = holder ? `${holder.email} (until ${holder.expiresAt})` : 'another editor';
-  return (
-    `${scope} is locked by ${who} — your edit was pushed anyway (the soft-lock is advisory; ` +
-    'the broker LWW + conflict/restore is the real safety net).'
-  );
-}
-
-// ─── Dispatcher hook ─────────────────────────────────────────────────────────
-
-/**
- * After a successful mutable-surface edit, propagate it to the broker IFF this is a
- * collaborative store (Sprint 72 m01, generic over scope). RESILIENT by contract: the
- * local edit already succeeded, so any sync/lock/network failure is folded into the
- * result's `warnings` and the result stays successful — collaboration must never make
- * a local edit fail. A solo store (no collab_role) returns the result untouched, so the
- * calling handler behaves byte-identically for non-shared projects.
- *
- * `statusReader` re-reads the authoritative post-handler value for the entity (mission
- * status / sprint status / project name) and is only invoked on a collab store.
- *
- * `options.emitOnlyIfChanged` (Sprint 72 m02) suppresses a redundant emit when the
- * re-read value equals the recorded `mutable_status:<scope>:<entityId>` winner — so a
- * status-bearing edit that doesn't actually change the value doesn't push. The mission
- * path does NOT pass it (every transition emits), keeping mission_active frozen.
- */
+/** Keep the completed local edit and expose retirement on old collab stores, with no remote work. */
 export async function maybePropagateMutableStatus<T>(
   result: RbookToolResult<T>,
-  scope: MutableFieldScope,
-  entityId: string,
-  statusReader: (db: RbookDatabaseClient) => string | null,
+  _scope: MutableFieldScope,
+  _entityId: string,
+  _statusReader: (db: RbookDatabaseClient) => string | null,
   projectRoot: string | undefined,
-  options?: { emitOnlyIfChanged?: boolean }
+  _options?: { emitOnlyIfChanged?: boolean }
 ): Promise<RbookToolResult<T>> {
   if (!result.success || !result.data) return result;
-  try {
-    const info = await withClientAsync(
-      async (db) => {
-        if (!isCollabStore(db))
-          return createSuccess({ collab: false, status: null as string | null });
-        const current = statusReader(db);
-        // Change-guard: a no-op (same-as-recorded) edit emits nothing.
-        if (options?.emitOnlyIfChanged && current != null) {
-          const recorded = readStatusState(db, scope, entityId);
-          if (recorded?.status === current) {
-            return createSuccess({ collab: true, status: null as string | null });
-          }
-        }
-        return createSuccess({ collab: true, status: current });
-      },
-      { projectRoot }
-    );
-    if (!info.success || !info.data?.collab || !info.data.status) return result;
-
-    const outcome = await pushMutableStatusUnderLock({
-      projectRoot,
-      fieldScope: scope,
-      entityId,
-      status: info.data.status,
-    });
-    const w = outcome.success
-      ? (outcome.data?.warnings ?? [])
-      : [outcome.error?.message ?? 'collab sync error'];
-    if (w.length > 0) {
-      result.warnings = [...(result.warnings ?? []), ...w];
-    }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'unknown error';
+  const info = await withClientAsync(
+    async (db) => {
+      const role = db.getOne<{ value: string | null }>(
+        "SELECT value FROM metadata WHERE key = 'collab_role'"
+      );
+      if (!role.success) return createError<boolean>(role.error!);
+      return createSuccess(role.data?.value === 'owner' || role.data?.value === 'editor');
+    },
+    { projectRoot }
+  ).catch((error: unknown) =>
+    createError<boolean>({
+      code: 'LEGACY_SYNC_STATUS_UNAVAILABLE',
+      message: error instanceof Error ? error.message : String(error),
+      suggestion: 'Use reasonbook sync to exchange the shared record between copies.',
+    })
+  );
+  if (!info.success) {
     result.warnings = [
       ...(result.warnings ?? []),
-      `Collab propagation error (non-fatal): ${message}`,
+      `The local edit is kept, but its old sync status could not be read: ${info.error?.message ?? 'unknown error'}.`,
     ];
+  } else if (info.data) {
+    const refusal = legacySyncRefusal('Dashboard event sync and soft-lock propagation').error!;
+    const warning = `${refusal.code}: ${refusal.message} The local edit is kept. ${refusal.suggestion}`;
+    if (!result.warnings?.includes(warning))
+      result.warnings = [...(result.warnings ?? []), warning];
   }
   return result;
 }
 
-/**
- * Thin `mission_active` wrapper over {@link maybePropagateMutableStatus} (Sprint 72 m01,
- * fork #6) — the rbook_mission_transition hook. Preserves the Sprint 71 m05 signature +
- * behavior byte-for-byte so rbook-mission-transition.ts stays UNTOUCHED.
- */
+/** Preserve the mission transition hook signature; old collab stores receive a retirement warning. */
 export async function maybePropagateMissionStatus<T>(
   result: RbookToolResult<T>,
   missionId: string,
@@ -373,13 +161,7 @@ export async function maybePropagateMissionStatus<T>(
   );
 }
 
-/**
- * Thin `sprint_status` wrapper over {@link maybePropagateMutableStatus} (Sprint 72 m02) —
- * the rbook_sprint dispatcher hook. Re-reads the authoritative `sprints.status` and emits
- * `sprint_updated` under the sprint_status soft-lock, ONLY when the status actually
- * changed (emitOnlyIfChanged). Resilient: a sync/lock failure folds into result.warnings
- * and never fails the local sprint edit; a solo store is a no-op.
- */
+/** Preserve the sprint hook signature; completed local edits never emit old sync events. */
 export async function maybePropagateSprintStatus<T>(
   result: RbookToolResult<T>,
   sprintId: string,
@@ -400,15 +182,7 @@ export async function maybePropagateSprintStatus<T>(
   );
 }
 
-/**
- * Thin `project_identity` wrapper over {@link maybePropagateMutableStatus} (Sprint 72 m03) —
- * the rbook_context project_identity update dispatcher hook. Re-reads the authoritative
- * post-update `project_name` and emits `project_identity_updated` {name} under the
- * project_identity soft-lock (advisory acquire→push→release, #789), keyed on the
- * PROJECT_IDENTITY_ENTITY_ID sentinel. emitOnlyIfChanged suppresses a same-name re-emit;
- * resilient + no-op on solo stores. The caller gates this on `project_name` having
- * actually been in the update (so a description-only edit emits nothing).
- */
+/** Preserve the name-update hook signature; old collab stores receive the shared-record remedy. */
 export async function maybePropagateProjectIdentity<T>(
   result: RbookToolResult<T>,
   projectRoot: string | undefined

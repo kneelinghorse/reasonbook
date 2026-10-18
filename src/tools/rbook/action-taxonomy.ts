@@ -55,13 +55,13 @@ export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set(['rbook_review', 'rb
  */
 export const READ_ONLY_ACTIONS: Readonly<Record<string, readonly string[]>> = {
   rbook_context: ['view', 'history', 'search'],
-  rbook_db: ['health'],
+  rbook_db: ['health', 'conflicts'],
   rbook_decisions: ['list', 'search', 'show', 'review'],
   rbook_feedback: ['list'],
   rbook_learnings: ['list', 'search', 'show'],
   rbook_mission: ['list', 'show', 'status'],
   rbook_mission_transition: [],
-  rbook_project: ['list'],
+  rbook_project: ['list', 'members'],
   rbook_session: ['list', 'search'],
   rbook_sprint: ['list', 'show'],
   rbook_auth: ['list'],

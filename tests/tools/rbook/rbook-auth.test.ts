@@ -193,6 +193,8 @@ describe('rbook_auth', () => {
       // for a fixture reason rather than a behavioural one.
       userClientResolver: async () => ({ client: stubClient(), keySource: 'user-scoped' }),
       projectIdReader: async () => 'dashboard-project-id',
+      // s96-m02: a completed sign-in asks the dashboard who it is; no network in unit tests.
+      identityFetcher: async () => undefined,
       ...overrides,
     };
   }

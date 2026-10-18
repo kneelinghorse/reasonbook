@@ -2,6 +2,7 @@
 // ABOUTME: s93-m01 — `hook session-end`: mark the harness link ended and close the harness session's sessions.
 // ABOUTME: Never prints: Claude Code discards SessionEnd output. A close that fails is reported, not dropped.
 
+import { launchSync, sharedSyncEnabled, syncsOnItsOwn } from '../tools/rbook/record-sync-trigger';
 import type { HookVerbContext } from '../cli';
 import { unlinkHarness } from '../tools/rbook/harness-session';
 import { hookRuntimeIdentity } from './hook-runtime';
@@ -41,5 +42,7 @@ export async function run(ctx: HookVerbContext): Promise<null> {
     );
   }
   cleanupLifecycle(runtime, ctx.io.env);
+  // s96-m13 (design §s96-m13 item 4): a shared copy with a route syncs at session end, detached.
+  if (sharedSyncEnabled() && syncsOnItsOwn(store.dbPath)) launchSync(store.projectRoot);
   return null;
 }

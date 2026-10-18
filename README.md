@@ -41,7 +41,7 @@ Requires Node.js 20 or newer.
 1. Install the pinned CLI:
 
    ```sh
-   npm install -g @aquex/reasonbook@4.0.2
+   npm install -g @aquex/reasonbook@4.1.0
    ```
 
    Ensure the global npm bin directory is on your PATH. If the former package is installed globally, run `npm uninstall -g @aquex/cmos-mcp` first. Version 4 provides only the `reasonbook` command; update scripts and MCP configurations that use the old command.
@@ -62,7 +62,7 @@ Requires Node.js 20 or newer.
 The digest names this project and shows its decisions, lessons and open work. A new
 Ledger starts empty. Planner adds next steps; Builder adds sprints and missions.
 
-## Codex plugins — 4.0.2
+## Codex plugins — 4.1.0
 
 The developer plugin `reasonbook` supplies the server, seven skills and five lifecycle hooks.
 The conversation-focused `reasonbook-chat` supplies the same server and six distinct chat skills,
@@ -160,7 +160,7 @@ MCP tool writes also schedule an upload after 5 quiet minutes or 30 minutes of c
 the next poll starts it within 60 seconds when no upload lease or failure backoff blocks it.
 Transfer time follows. See the timing and failure details under [Optional: hosted dashboard](#optional-hosted-dashboard).
 `RBOOK_CHECKPOINT_SYNC=off` stops automatic uploads, not requested network actions or
-shared-collaboration pushes. Implicit process-exit closes do not upload. [Full network and data disclosure](SECURITY.md#outbound-network).
+shared-record exchanges. Implicit process-exit closes do not upload. [Full network and data disclosure](SECURITY.md#outbound-network).
 
 ## Technical reference
 
@@ -178,7 +178,7 @@ Out of the box you get:
   a restore or a snapshot prune with selected rows
 - Per-project credential store and device-code auth (RFC 8628)
 
-The dashboard at [reasonbook.ai](https://reasonbook.ai) is **optional**. You can run Reasonbook standalone forever — sign-up unlocks sync (SQLite ↔ Postgres mirror), the project registry (`rbook://you/*` addresses), and cross-project messaging. Without it, every other tool still works locally.
+The dashboard at [reasonbook.ai](https://reasonbook.ai) is **optional**. You can run Reasonbook standalone forever — sign-up unlocks dashboard uploads (SQLite → Postgres mirror), the project registry (`rbook://you/*` addresses), and cross-project messaging. Without it, every other tool still works locally.
 
 ## Install
 
@@ -186,7 +186,7 @@ Recommended: a global install of this release. The server then starts from disk,
 lookup on launch:
 
 ```bash
-npm install -g @aquex/reasonbook@4.0.2
+npm install -g @aquex/reasonbook@4.1.0
 ```
 
 If the former package is installed globally, run `npm uninstall -g @aquex/cmos-mcp` first. Version 4 provides only the `reasonbook` command; update scripts and MCP configurations that use the old command.
@@ -195,7 +195,7 @@ Or run it on demand with `npx`. Pin the version and prefer the local cache: an u
 can look the package up again on every launch.
 
 ```bash
-npx --prefer-offline -y @aquex/reasonbook@4.0.2
+npx --prefer-offline -y @aquex/reasonbook@4.1.0
 ```
 
 Semantic (vector) search is optional. Without it, retrieval is keyword-only, and the install is
@@ -214,7 +214,7 @@ arguments (keep `--project-root` where an example has it).
 ### Claude Code
 
 ```bash
-claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.0.2"]}'
+claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.1.0"]}'
 ```
 
 ### Claude Desktop
@@ -229,7 +229,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
       "args": [
         "--prefer-offline",
         "-y",
-        "@aquex/reasonbook@4.0.2",
+        "@aquex/reasonbook@4.1.0",
         "--project-root",
         "/absolute/path/to/your/project"
       ]
@@ -253,7 +253,7 @@ Add to `~/.cursor/mcp.json`:
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.0.2"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.1.0"]
     }
   }
 }
@@ -266,7 +266,7 @@ Add to `~/.cursor/mcp.json`:
   "context_servers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.0.2"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.1.0"]
     }
   }
 }
@@ -287,7 +287,7 @@ your terminal PATH, so the terminal route needs the standalone Claude CLI.
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.0.2"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.1.0"]
     }
   }
 }
@@ -333,18 +333,35 @@ Reasonbook exposes 15 consolidated tools. 12 use an `action` parameter to select
 | `rbook_decisions`          | Strategic decisions — record, show, list, search, update, staleness review    |
 | `rbook_learnings`          | Cross-cutting learnings — list, search, show, update, and reaffirm            |
 | `rbook_db`                 | Database ops — health, snapshot/restore, sync, and a context-snapshot prune   |
-| `rbook_project`            | Project registry — init, register, list, validate                             |
+| `rbook_project`            | Projects — init, register, list, validate; share, invite, join, members, sync |
 | `rbook_auth`               | Dashboard credential lifecycle — device-code login, rotate, revoke            |
 | `rbook_message`            | Cross-project messaging (requires the hosted dashboard)                       |
 | `rbook_feedback`           | Agent-feedback channel — list, triage, resolve, archive                       |
 
 See **[TOOL_REFERENCE.md](TOOL_REFERENCE.md)** for the exact per-action parameter reference — it is generated from the tool definitions on every build, so it never drifts from the shipped surface.
 
+## Share a project's record
+
+The owner can share a project with an editor. Each keeps a full local copy, works locally, and
+exchanges changes through the owner's copy over SSH or with bundles carried by hand. Conflicting
+field values stay visible until someone settles them.
+
+Sharing is supported in the measured setup: two accounts operated by one person, on two machines
+in an owner/member star over SSH. A second person's collaboration and privacy experience remain
+unvalidated. Editors' rows become local project content for the owner's agents, without a
+foreign-source fence; invite people whose record content you trust.
+
+Start with the [sharing steps](docs/getting-started.md#share-a-projects-record) and
+[trust boundary](docs/trust.md#shared-copies). A dashboard account is optional. Automatic exchanges
+run at session start and end where hooks run, and every five minutes for shared projects the server
+has opened with a saved route. `RBOOK_SHARED_SYNC=off` stops those automatic exchanges; explicit
+sync and bundle commands remain available.
+
 ## Optional: hosted dashboard
 
 The dashboard is a separate service. Sign up at [reasonbook.ai](https://reasonbook.ai) to unlock:
 
-- **Sync** — your local SQLite mirrors to a Postgres replica; survives machine swaps and IDE reinstalls.
+- **Dashboard mirror** — uploads a snapshot of your whole SQLite file for the dashboard to display.
 - **Project registry** — addressable `rbook://you/project-name` URIs across machines.
 - **Messaging** — `rbook_message(action="send")` between your own projects.
 
@@ -356,11 +373,11 @@ export RBOOK_DASHBOARD_URL=https://reasonbook.ai
 
 Then run `rbook_auth(action="login_init")` from your agent. It returns a one-time `userCode` and `verificationUri` — paste the code at the URL in your browser, then run `rbook_auth(action="login_complete", deviceCode=...)` to finish. Credentials persist atomically to `~/.config/rbook/credentials.json` (mode 0600).
 
-`RBOOK_DASHBOARD_URL` defaults to `https://reasonbook.ai`. Until you sign in, the dashboard tools (`rbook_message`, sync, registry) return a structured `DASHBOARD_NOT_CONFIGURED` error that names `rbook_auth(action="login_init")`. Local tools never depend on the dashboard.
+`RBOOK_DASHBOARD_URL` defaults to `https://reasonbook.ai`. Without a dashboard credential, dashboard operations return a structured `DASHBOARD_NOT_CONFIGURED` error that names `rbook_auth(action="login_init")`. Local tools and direct shared-record exchanges work without the dashboard.
 
 With a stored user-scoped dashboard key or legacy environment credentials, explicit `rbook_session(action="complete")` and `rbook_sprint(action="complete")` calls attempt a background upload and may register the project first. For a registered project, an MCP tool call that actually writes its store also schedules an upload. It becomes due after 5 quiet minutes or 30 minutes of continuous writes, and starts within the next 60 seconds when no upload lease or failure backoff blocks it. A running server must have opened the project; work owed by a short-lived process survives for the next server. Each upload sends a consistent snapshot of the whole SQLite file, including pending, declined and expired proposals. Transfer time is additional, and concurrent servers share one upload lease per project.
 
-Upload results and failures appear in `rbook_status` and `rbook_review`. HTTP 401, 402 or 403 pauses automatic retries until an explicit close succeeds. A failed upload does not fail the local write or close. Implicit process-exit closes do not upload. Set `RBOOK_CHECKPOINT_SYNC=off` in the server environment to disable automatic uploads; it does not disable explicit sync, messaging, sign-in, shared-collaboration pushes or other requested network actions. See [SECURITY.md](SECURITY.md#outbound-network).
+Upload results and failures appear in `rbook_status` and `rbook_review`. HTTP 401, 402 or 403 pauses automatic retries until an explicit close succeeds. A failed upload does not fail the local write or close. Implicit process-exit closes do not upload. Set `RBOOK_CHECKPOINT_SYNC=off` in the server environment to disable automatic uploads; it does not disable explicit sync, messaging, sign-in, shared-record exchanges or other requested network actions. See [SECURITY.md](SECURITY.md#outbound-network).
 
 ## Project resolution
 
@@ -463,6 +480,10 @@ RBOOK_MAX_SNAPSHOTS=50
 # Optional — disable background uploads after writes and explicit completion calls.
 # Shared-store propagation and explicitly requested network actions remain available.
 RBOOK_CHECKPOINT_SYNC=off
+
+# Optional — disable shared-record exchanges started by hooks and the server timer.
+# Explicit reasonbook sync and bundle commands remain available.
+RBOOK_SHARED_SYNC=off
 ```
 
 ## Error response shape
@@ -487,12 +508,12 @@ Every tool returns a uniform envelope:
 - **Append-only audit.** Session events and mission transitions are append-only rows. Context snapshots keep their rows, ids and events, but `rbook_db(action="prune_snapshots")` can empty the content of copies Reasonbook wrote on its own.
 - **Atomic credential writes.** `credentials.json` is written via temp-file + rename with 0600 permissions.
 - **Database snapshots.** `rbook_db(action="snapshot")` copies the database on demand. A `rbook_sprint(action="complete")` attempts a snapshot before and after the close; a snapshot failure warns without blocking completion. Applying `rbook_db(action="prune_snapshots")` to a nonempty selection requires a backup, and `rbook_db(action="restore")` first copies the live database to `rbook/db/snapshots/pre-restore/`. `RBOOK_MAX_SNAPSHOTS` caps how many are kept: taking one deletes the oldest beyond it, automatic ones included. Nothing else snapshots first, and there is no soft-delete net — `rbook_db(action="purge")` deletes this project's data from the dashboard mirror. See [SECURITY.md](SECURITY.md#backups--deletion--the-honest-reality).
-- **Dry-run where it exists.** `rbook_context(action="condense")` and `rbook_db(action="backfill")` accept `dryRun` to preview without committing. It is not a general property of mutating tools.
+- **Dry-run where it exists.** `rbook_context(action="condense")` accepts `dryRun` to preview without committing. It is not a general property of mutating tools. Backfill's old event-replay dry run is retired and refuses with `LEGACY_SYNC_RETIRED`.
 
 ## Known limits
 
-- Registered projects sync after writes and explicit closes while a server is running; manual `rbook_db(action="backfill")` requests a sync immediately.
-- SQLite is the source of truth and the Postgres mirror is a mirror. To bring state down, `rbook_db(action="clone")` bootstraps a fresh machine from dashboard state and `rbook_db(action="pull")` merges events since your last cursor.
+- Registered projects with dashboard credentials upload snapshots after writes and explicit closes while a server is running; manual `rbook_db(action="backfill")` requests a whole-file upload immediately. Shared-record exchanges use their own hooks, timer and `RBOOK_SHARED_SYNC` control.
+- SQLite is the source of truth; the dashboard holds the owner's uploaded mirror. Shared copies exchange their record with `reasonbook sync`, over SSH or by bundle. The old `rbook_db(action="clone")` and `rbook_db(action="pull")` actions refuse with `LEGACY_SYNC_RETIRED`; their action values remain until 5.0.0.
 
 ## Documentation
 

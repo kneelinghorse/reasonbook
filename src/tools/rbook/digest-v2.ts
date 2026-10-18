@@ -8,12 +8,15 @@ import type { OperatorProfile } from './operator-profile';
 import { PROFILE_CAP_CHARS } from './operator-profile';
 import type { RenderedContext } from './rendered-context';
 import { levelName, type ProjectLevel } from './rules-files';
+import type { SharedRecordReview } from './record-review';
 
 export interface DigestRow {
   readonly id: string;
   readonly text: string;
   readonly projectId: string | null;
   readonly date?: string;
+  /** s96-m12: on a shared record, who wrote it, when someone other than this copy's writer did. */
+  readonly author?: string;
 }
 
 export interface DigestV2Model {
@@ -36,6 +39,8 @@ export interface DigestV2Model {
   /** s93-m06: pending, unexpired drafts awaiting the operator, oldest first. */
   readonly drafts?: readonly DigestDraft[];
   readonly feedback?: string | null;
+  /** s96-m12: what a shared record holds for a person; absent or null off one. */
+  readonly shared?: SharedRecordReview | null;
 }
 
 export interface DigestDraft {
@@ -49,6 +54,8 @@ export const DIGEST_V2_CAP = 4000;
 export const DIGEST_POINTER =
   'Full: Reasonbook show by ID; search: Reasonbook context search. The operator’s call: end with Would record: <decision>.';
 export const DRAFTS_SECTION_CAP = 450;
+/** s96-m12: the shared record's section, which takes its room before the drafts do. */
+export const SHARED_SECTION_CAP = 600;
 const DRAFTS_ASK = 'Name each as "draft P<n>" with its subject; record approval with fromDraft.';
 
 /** Cut only the body, before framing it; never split a provenance boundary or typed ID. */
@@ -83,7 +90,7 @@ function section(lines: readonly Line[]): Section {
 }
 
 function rowLine(row: DigestRow, cap: number, local: string | null): Line | null {
-  const prefix = `  • ${row.id}${row.date ? ` ${row.date}` : ''} `;
+  const prefix = `  • ${row.id}${row.date ? ` ${row.date}` : ''}${row.author ? ` (${cut(row.author, 24)})` : ''} `;
   const overhead = frameInlineIfForeign('', row.projectId, local).length;
   const room = Math.min(140, cap - prefix.length - overhead);
   if (room < 16) return null;
@@ -155,6 +162,92 @@ function projectSection(model: DigestV2Model): Section {
 }
 
 /**
+ * s96-m12: a shared record's conflicts, the states its checks find, the changes not live and who
+ * started each mission in progress, within its cap and the room left; a short count when tight.
+ */
+function sharedSection(
+  review: SharedRecordReview | null | undefined,
+  room: number
+): Section | null {
+  if (!review) return null;
+  const { conflicts, states, waiting, started } = review;
+  const peers = review.peers ?? [];
+  const moves = review.moves ?? [];
+  if (
+    !conflicts.length &&
+    !states.length &&
+    !waiting.length &&
+    !started.length &&
+    !peers.length &&
+    !moves.length
+  )
+    return null;
+  const cap = Math.min(SHARED_SECTION_CAP, room);
+  const more = (list: readonly string[], shown: number) =>
+    list.length > shown ? `; and ${list.length - shown} more` : '';
+  const lines = ['Shared record:'];
+  // s96-m13 (ADR s96 §8): a move this copy must confirm comes first; nothing else settles it.
+  if (moves.length) lines.push(`  • Owner's copy: ${moves.join('; ')}.`);
+  if (conflicts.length)
+    lines.push(
+      `  • ${conflicts.length} field(s) in conflict, so reads show a provisional value: ${conflicts.slice(0, 3).join('; ')}${more(conflicts, 3)}.`
+    );
+  if (states.length)
+    lines.push(`  • ${states.length} state(s) need a person: ${states[0]}${more(states, 1)}`);
+  if (waiting.length) lines.push(`  • Changes not live: ${waiting.join('; ')}.`);
+  if (started.length) lines.push(`  • In progress: ${started.join('; ')}.`);
+  // s96-m13 (design §s96-m13 item 5): each copy this one syncs with, its last exchange and errors.
+  if (peers.length) lines.push(`  • Sync: ${peers.join('; ')}.`);
+  // Only conflicts and the checks' states are listed and settled there; changes not live wait.
+  const settle = conflicts.length || states.length;
+  if (settle) lines.push('  List and settle them with rbook_db(action="conflicts").');
+  const full = lines.map((line) => cut(line, 300)).join('\n');
+  if (full.length <= cap) return section([{ text: full }]);
+  const short = sharedShortForm(review);
+  return short && short.length <= cap ? section([{ text: short }]) : null;
+}
+
+/** The shared section's short form, a count of each part it has, whose room the digest keeps. */
+function sharedShortForm(review: SharedRecordReview | null | undefined): string | null {
+  if (!review) return null;
+  const { conflicts, states, waiting, waitingTotal, started } = review;
+  const peers = review.peers ?? [];
+  const moves = review.moves ?? [];
+  if (
+    !conflicts.length &&
+    !states.length &&
+    !waiting.length &&
+    !started.length &&
+    !peers.length &&
+    !moves.length
+  )
+    return null;
+  const settle = conflicts.length || states.length;
+  const syncErrors = review.syncErrors ?? 0;
+  const counts = [
+    review.movePending
+      ? "a move of the owner's copy to confirm (reasonbook sync --confirm-owner)"
+      : '',
+    conflicts.length ? `${conflicts.length} field(s) in conflict` : '',
+    states.length ? `${states.length} state(s) need a person` : '',
+    waitingTotal ? `${waitingTotal} change(s) not live yet` : '',
+    syncErrors ? `${syncErrors} sync error(s)` : '',
+    !settle && !waitingTotal && !syncErrors && started.length
+      ? `${started.length} mission(s) in progress`
+      : '',
+  ].filter(Boolean);
+  if (!counts.length && moves.length) counts.push(`${moves.length} note(s) on the owner's copy`);
+  if (!counts.length) counts.push(`${peers.length} copy(ies) syncing`);
+  return `Shared record: ${counts.join(', ')}${settle ? '; rbook_db(action="conflicts")' : ''}.`;
+}
+
+/** The drafts' short form, which also sets the room the shared section leaves them (s96-m12). */
+function draftsShortForm(drafts: readonly DigestDraft[], target: CliRemedyTarget): string {
+  const short = `Pending drafts: ${drafts.length}. Read them: ${formatCliRemedy('drafts list', target)}.`;
+  return short;
+}
+
+/**
  * The drafts section within its own cap and whatever room the rest of the digest leaves under
  * {@link DIGEST_V2_CAP}: a full store never makes the digest throw because drafts are pending.
  */
@@ -177,7 +270,7 @@ function draftsSection(
     lines.push({ text: prefix + cut(digestHeadline(draft.text) || draft.text, roomForText) });
   }
   if (lines.length) return section([{ text: heading }, ...lines, { text: DRAFTS_ASK }]);
-  const short = `Pending drafts: ${drafts.length}. Read them: ${formatCliRemedy('drafts list', target)}.`;
+  const short = draftsShortForm(drafts, target);
   return short.length <= cap ? section([{ text: short }]) : null;
 }
 
@@ -201,17 +294,20 @@ export function renderDigestV2(
     );
   }
   const local = model.localProjectId;
-  for (const value of [
-    rowsSection('Rules in force', model.rules, 500, 4, local),
+  const decisionsAt = (cap: number) =>
     rowsSection(
       'Recent decisions',
       model.decisions.rows,
-      1000,
+      cap,
       8,
       local,
       model.decisions.total,
       true
-    ),
+    );
+  const recent = decisionsAt(1000);
+  for (const value of [
+    rowsSection('Rules in force', model.rules, 500, 4, local),
+    recent,
     rowsSection(
       'Recent learnings',
       model.learnings.rows,
@@ -227,11 +323,24 @@ export function renderDigestV2(
   const tail: Section[] = [];
   if (model.feedback) tail.push(section([{ text: model.feedback }]));
   tail.push(section([{ text: DIGEST_POINTER }]));
-  const used = [...sections, ...tail].reduce(
-    (sum, part, i) => sum + part.text.length + (i ? 2 : 0),
-    0
-  );
-  const drafts = draftsSection(model.drafts ?? [], DIGEST_V2_CAP - used - 2, target);
+  const room = (): number =>
+    DIGEST_V2_CAP -
+    [...sections, ...tail].reduce((sum, part, i) => sum + part.text.length + (i ? 2 : 0), 0) -
+    2;
+  // s96-m12: pending drafts keep room for their short form, since the operator's answer needs them.
+  const draftsReserve = model.drafts?.length ? draftsShortForm(model.drafts, target).length + 2 : 0;
+  // On a shared copy the shared record's short form keeps its room too: the recent decisions give up
+  // what the two need, since rbook_review's answer carries no shared-record notice of its own.
+  const sharedShort = sharedShortForm(model.shared);
+  const owed = sharedShort ? sharedShort.length + draftsReserve - room() : 0;
+  const at = recent ? sections.indexOf(recent) : -1;
+  if (owed > 0 && recent && at >= 0) {
+    const smaller = decisionsAt(recent.text.length - owed);
+    if (smaller && smaller.text.length < recent.text.length) sections[at] = smaller;
+  }
+  const shared = sharedSection(model.shared, room() - draftsReserve);
+  if (shared) sections.splice(1, 0, shared);
+  const drafts = draftsSection(model.drafts ?? [], room(), target);
   if (drafts) sections.push(drafts);
   sections.push(...tail);
   let text = '';

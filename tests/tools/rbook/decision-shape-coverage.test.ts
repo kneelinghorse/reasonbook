@@ -12,7 +12,7 @@ const exemptions: Record<string, string> = {
   'tools/rbook/rbook-session-complete.ts':
     'Defensive session extraction contains headlines only; approval cannot be invented.',
   'tools/rbook/sync-merge.ts':
-    'The existing remote DTO lacks shape/evidence/approval; preserve origin provenance and NULL fields.',
+    'The retained legacy merge DTO lacks shape/evidence/approval; preserve origin provenance and NULL fields.',
 };
 // Scope: SQL literals/templates in all src TypeScript. Complement: dynamic SQL assembled outside
 // literals, non-TypeScript historical writers, scripts and fixtures; these are explicitly outside
@@ -60,13 +60,13 @@ it('covers every discovered production writer, including deliberate text-only an
   const files = sources();
   expect([...files.values()].reduce((count, source) => count + sites(source), 0)).toBe(4);
   expect(violations(files)).toEqual([]);
+  // s96-m08: pull and bootstrap refuse before writing and no longer require the shape migration.
+  // The retained merge helper remains an explicit omission above; the SQL INSERT count stays four.
   for (const file of [
     'rbook-decisions-record',
     'rbook-session-capture',
     'rbook-mission-complete',
     'rbook-session-complete',
-    'sync-pull',
-    'sync-bootstrap',
   ]) {
     expect(files.get(`tools/rbook/${file}.ts`)).toMatch(
       /ensureDecisionShapeColumns\((?:client|db)\)/
@@ -83,9 +83,9 @@ it('rejects new or duplicate writers and removed shared shape input', () => {
     files.get('tools/rbook/rbook-session-complete.ts') + '\n' + sql
   );
   expect(violations(files)).toContain('tools/rbook/rbook-session-complete.ts');
-  files.set(
-    'tools/rbook/decision-write.ts',
-    files.get('tools/rbook/decision-write.ts')!.replace('storedDecisionFields(input)', '{}')
-  );
+  const writer = files.get('tools/rbook/decision-write.ts')!;
+  const withoutFields = writer.replace('storedDecisionFields(input)', '{}');
+  expect(withoutFields).not.toBe(writer);
+  files.set('tools/rbook/decision-write.ts', withoutFields);
   expect(violations(files)).toContain('tools/rbook/decision-write.ts: missing fields');
 });

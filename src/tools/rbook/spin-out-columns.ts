@@ -54,6 +54,7 @@ export const SPIN_OUT_COLUMN_POLICIES: Readonly<
     updated_at: 'keep',
     last_embedded_hash: 'null',
     author_user_id: 'keep',
+    author_name: 'keep',
     ...genesis,
   },
   decision: {
@@ -75,6 +76,7 @@ export const SPIN_OUT_COLUMN_POLICIES: Readonly<
     last_reviewed_at: 'keep',
     last_embedded_hash: 'null',
     author_user_id: 'keep',
+    author_name: 'keep',
     context_text: 'text',
     alternatives: 'text-array',
     consequences: 'text',
@@ -98,6 +100,7 @@ export const SPIN_OUT_COLUMN_POLICIES: Readonly<
     evergreen: 'keep',
     last_embedded_hash: 'null',
     author_user_id: 'keep',
+    author_name: 'keep',
     ...genesis,
   },
   'next-step': {
@@ -112,6 +115,7 @@ export const SPIN_OUT_COLUMN_POLICIES: Readonly<
     carried_to_sprint: 'null',
     content_hash: 'hash',
     author_user_id: 'keep',
+    author_name: 'keep',
     ...genesis,
   },
 };

@@ -21,10 +21,17 @@ export const CLI_VERBS: ReadonlySet<string> = new Set([
   'session',
   'ambient',
   'profile',
+  'config',
+  'repair',
   'stats',
   'feedback',
   'drafts',
   'migrate',
+  'sync',
+  'join',
+  'copy',
+  'handover',
+  'recover',
 ]);
 
 export type BinRoute =

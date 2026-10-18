@@ -145,9 +145,15 @@ const SRC_ROOT = path.resolve(__dirname, '../../../src');
 // LEAVES that call appendWarnings on both branches; the dispatcher count stays 10.
 // s92-m09: 90 -> 91 and 80 -> 81 — formatPruneSnapshotsForLLM (rbook-db-prune-snapshots.ts), a
 // LEAF that calls appendWarnings on both branches; the dispatcher count stays 10.
-const EXPECTED_DECLARATIONS = 91;
+// s96-m12: 91 -> 93 and 81 -> 83 — formatConflictsForLLM and formatSettleForLLM
+// (rbook-db-conflicts.ts), two LEAVES that call appendWarnings on both branches. formatDbForLLM moved
+// to rbook-db-format.ts and stays a dispatcher, so the dispatcher count stays 10.
+// s96-m13: 93 -> 94 and 83 -> 84 — formatSharedProjectForLLM (rbook-project-shared.ts), the shared
+// record's actions, a LEAF that calls appendWarnings on its success path; formatProjectForLLM stays
+// the dispatcher, so the dispatcher count stays 10.
+const EXPECTED_DECLARATIONS = 94;
 const EXPECTED_DISPATCHERS = 10;
-const EXPECTED_LEAVES = 81;
+const EXPECTED_LEAVES = 84;
 /** The one leaf with no RbookToolResult parameter — reported by name, never skipped silently. */
 const STRUCTURAL_EXCLUSION = 'formatSyncHealthForLLM';
 
@@ -677,10 +683,14 @@ describe('s86-m02 Step 1 — the envelope warnings channel is universal', () => 
       // rbook_db dispatcher gains one delegated return.
       // s93-m06: formatDecisionsRecordForLLM adds one render return, for a draft recorded as a
       // constraint, rule or profile line; it renders the envelope's warnings.
-      terminalReturns: 278,
-      errorPreambles: 95,
-      delegatedReturns: 75,
-      genuineRenderReturns: 108,
+      // s96-m12: the conflicts and settle formatters add one error preamble and one render return
+      // each, and the rbook_db dispatcher gains two delegated returns.
+      // s96-m13: formatSharedProjectForLLM adds one error preamble and one render return, and the
+      // rbook_project dispatcher gains one delegated return.
+      terminalReturns: 287,
+      errorPreambles: 98,
+      delegatedReturns: 78,
+      genuineRenderReturns: 111,
     });
     expect(
       uncoveredGenuineReturns.map(
@@ -716,7 +726,14 @@ describe('s86-m02 Step 1 — the envelope warnings channel is universal', () => 
       // and appends it to the digest text; it adds no format*ForLLM declaration.
       // s94-m04: sync-bootstrap.ts and sync-pull.ts now attach failed migration warnings to
       // their error envelopes too; their existing formatters already render those warnings.
-    }).toEqual({ warningEnvelopeModules: 36, modulesWithFormatters: 32, formatters: 35 });
+      // s96-m13: record-apply-embed.ts and record-bundle.ts attach what a merge could not embed to
+      // the apply's and the import's envelopes, and record-share-action.ts the sharing migrations'
+      // warnings to the share's; none has a formatter, and formatSharedProjectForLLM renders them.
+      // s96-m14: record-import.ts attaches its temporary copy's migration warnings to the import's
+      // answer; it has no formatter, and reasonbook import prints each as a note.
+      // s96-m08: retired pull, clone and mutable-push bodies no longer produce warning envelopes;
+      // their public formatters remain covered by the universal rendering census above.
+    }).toEqual({ warningEnvelopeModules: 37, modulesWithFormatters: 29, formatters: 32 });
     expect(
       [...new Set(looseErrorPreambles.map((row) => row.errorPreambleCondition))].sort()
     ).toEqual(['!result.success || !result.data']);

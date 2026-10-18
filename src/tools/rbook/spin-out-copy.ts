@@ -35,16 +35,18 @@ export function copySpinOutTarget(client: RbookDatabaseClient, operation: SpinOu
     );
     if (!seq || !Number.isSafeInteger(seq.next) || seq.next < 1)
       throw new Error(`Invalid ${row.table} origin sequence`);
-    const stamp = genesisColumns(client, row.table, operation.target.projectId);
-    const columns = [...Object.keys(row.values), ...stamp.columns];
-    intended.set(spinOutKeyText(row.target), {
-      ...row.values,
-      ...Object.fromEntries(stamp.columns.map((name, index) => [name, stamp.values[index]])),
-    });
+    const genesis = genesisColumns(client, row.table, operation.target.projectId);
+    // s96-m02: a column the row already carries is kept as copied: the stamp's author columns
+    // would name whoever ran the spin-out, not the row's original author (ADR s96 §10).
+    const stamp = genesis.columns
+      .map((name, index) => [name, genesis.values[index]] as const)
+      .filter(([name]) => !Object.prototype.hasOwnProperty.call(row.values, name));
+    const columns = [...Object.keys(row.values), ...stamp.map(([name]) => name)];
+    intended.set(spinOutKeyText(row.target), { ...row.values, ...Object.fromEntries(stamp) });
     writeSpinOutRow(
       client,
       `INSERT INTO ${row.table} (${columns.map((name) => `"${name}"`).join(',')}) VALUES (${columns.map(() => '?').join(',')})`,
-      [...Object.values(row.values), ...stamp.values],
+      [...Object.values(row.values), ...stamp.map(([, value]) => value)],
       `Copy ${spinOutKeyText(row.source)}`
     );
   }

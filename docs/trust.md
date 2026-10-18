@@ -4,8 +4,8 @@ Reasonbook, formerly CMOS, keeps your project's record in a SQLite file inside y
 runs as a local MCP server over stdin and stdout. It opens no listening port. The dashboard is
 optional: without a dashboard credential, ordinary local work never contacts it.
 
-Every statement here comes from the code, from [SECURITY.md](../SECURITY.md), or, for how Codex
-starts a plugin's server, from a recorded test of Codex itself.
+These disclosures come from the code, [SECURITY.md](../SECURITY.md), and recorded tests of the
+shared-record workflow and how Codex starts a plugin's server.
 
 [Privacy](privacy.md) covers collection, dashboard account visibility, retention and removal.
 Existing installations may still use older record and configuration locations until migrated;
@@ -15,16 +15,46 @@ remains in an older location.
 
 ## What leaves your machine, and when
 
-| What                                           | When                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | How to stop or control it                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The Reasonbook package, from your npm registry | The plugin's first launch installs its exact Reasonbook version and dependencies with `npm install`: into the plugin's data folder in Claude Code, or into `~/.config/rbook/plugins` in Codex, which both Codex plugins share. Until that install is ready, a command run through the plugin in Claude Code fetches the same version through `npx`. The one dependency with an install script, SQLite's `better-sqlite3`, downloads a prebuilt build from its GitHub releases, or Node's headers from nodejs.org when it has to build one | Install the exact version yourself: in Claude Code the plugin then uses that copy from your PATH instead of installing its own, while Codex always installs its own. Or set up the server without the plugin. Either way the package comes from npm                                                                                                                                                                                                                                                  |
-| Your project's record, to the dashboard        | Only with a dashboard credential, or when you sign in. Signing in sends your computer's name in its request. With a credential: a snapshot of the whole `rbook.sqlite` file after writes in a registered project and at explicit session or sprint closes; a key recovered at startup; a shared project's sync around mission and sprint changes; and the calls you make (messages, status, sync, a sprint's carry-forward, and `rbook_auth`'s sign-in and key actions), including the message summaries in review and onboard            | `RBOOK_CHECKPOINT_SYNC=off` stops the automatic snapshot uploads, where it reaches the server. The developer plugin requests environment forwarding; the portable chat plugin uses its host's inherited environment. Configure a server yourself if your loader does not forward it. It does not stop a shared project's sync or the calls you make. Signing out stops the automatic uploads unless your environment sets a dashboard key or user and password; without a credential nothing is sent |
-| The embedding model, from Hugging Face         | Only if you installed the optional `@xenova/transformers` package for semantic search: the first embedding downloads `Xenova/all-MiniLM-L6-v2` (about 25 MB) once, and installing that package also downloads native libraries for its `sharp` dependency                                                                                                                                                                                                                                                                                 | Leave the optional package out (the default), or set `RBOOK_OFFLINE_EMBEDDINGS=1`                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| What                                           | When                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | How to stop or control it                                                                                                                                                                                                                                                                                                            |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| The Reasonbook package, from your npm registry | The plugin's first launch installs its exact Reasonbook version and dependencies with `npm install`: into the plugin's data folder in Claude Code, or into `~/.config/rbook/plugins` in Codex, which both Codex plugins share. Until that install is ready, a command run through the plugin in Claude Code fetches the same version through `npx`. The one dependency with an install script, SQLite's `better-sqlite3`, downloads a prebuilt build from its GitHub releases, or Node's headers from nodejs.org when it has to build one | Install the exact version yourself: in Claude Code the plugin then uses that copy from your PATH instead of installing its own, while Codex always installs its own. Or set up the server without the plugin. Either way the package comes from npm                                                                                  |
+| Your project's record, to the dashboard        | Only with a dashboard credential, or when you sign in. Signing in sends your computer's name in its request. With a credential: a snapshot of the whole `rbook.sqlite` file after writes in a registered project and at explicit session or sprint closes; a key recovered at startup; and the dashboard calls you make, including message summaries in review and onboard                                                                                                                                                                | `RBOOK_CHECKPOINT_SYNC=off` stops automatic snapshot uploads where it reaches the server. It does not stop requested dashboard calls or direct shared-record exchanges. Signing out stops automatic uploads unless your environment sets a dashboard key or user and password; without a credential nothing is sent to the dashboard |
+| Your shared record, to its members             | The initial full store copy, then changes over SSH or bundles carried by hand. Copies with saved routes also exchange at session start and end where hooks run, and every five minutes while a server that opened them is running                                                                                                                                                                                                                                                                                                         | `RBOOK_SHARED_SYNC=off` in the hook and server environments stops automatic exchanges. Explicit sync and bundle commands remain available. Removal stops new exchange with that member but cannot retract data already copied                                                                                                        |
+| The embedding model, from Hugging Face         | Only if you installed the optional `@xenova/transformers` package for semantic search: the first embedding downloads `Xenova/all-MiniLM-L6-v2` (about 25 MB) once, and installing that package also downloads native libraries for its `sharp` dependency                                                                                                                                                                                                                                                                                 | Leave the optional package out (the default), or set `RBOOK_OFFLINE_EMBEDDINGS=1`                                                                                                                                                                                                                                                    |
 
 There is no remote telemetry. Reasonbook keeps a local log of tool and hook use in
 `~/.config/rbook/telemetry/`: tool names, ids, counts, error codes, which of Reasonbook's published prompt
 patterns a prompt matches and the slash command it starts with, never the text of your prompts or
 your record. It keeps the three newest months and is never uploaded.
+
+## Shared copies
+
+Sharing is supported in the measured setup: two accounts operated by one person, on two machines
+in an owner/member star over SSH. A second person's collaboration and privacy experience remain
+unvalidated. The [getting-started guide](getting-started.md#share-a-projects-record) gives the
+share, copy, join and sync steps.
+
+A member receives a full copy of the SQLite store, including its history and any pending, declined
+or expired proposals already stored there. Choose the project boundary before sharing: there is no
+private subset of the record that an invited member's initial copy cannot read. Subsequent exchanges
+carry the shared record's changes through the owner's copy.
+
+Editors' accepted rows reach the owner's agents as local project content, without the foreign-source
+fence used for content from another project. An author's name is attribution, not a guarantee that
+the content is safe. Invite editors whose record content you trust.
+
+Owner/editor roles hold among honest copies using the supported protocol over SSH or carried
+bundles. They are not a security boundary against a member who controls and modifies their local
+store or software. Protect SSH access and the files you carry. Removing a member stops new changes
+from reaching that member and quarantines their changes beyond the removal cut; it does not erase
+what their copy already holds. Re-inviting the member permits exchange again, including quarantined
+changes.
+
+`RBOOK_SHARED_SYNC=off` stops the exchanges Reasonbook starts itself through hooks and its five-minute
+server timer. Explicit sync and bundle commands still run. `RBOOK_CHECKPOINT_SYNC=off` controls
+automatic dashboard uploads separately. These settings must reach the relevant processes: the
+developer plugin requests environment forwarding, while the portable chat plugin inherits its
+host's environment. Configure the server yourself if its loader does not forward the setting.
 
 ## What the hooks read and add
 
@@ -87,12 +117,16 @@ tree and why.
   them back on.
 - **Automatic uploads:** `RBOOK_CHECKPOINT_SYNC=off` in the server's environment, or signing out
   (with no dashboard key, user or password set in the environment).
+- **Automatic shared-record exchanges:** `RBOOK_SHARED_SYNC=off` in the hook and server environments.
+  Explicit sync and bundle commands remain available.
 - **The plugin:** uninstall it in your client. The Reasonbook server can still run on its own.
 
 ## Removing your data
 
 - **The record:** delete the project's `rbook/` folder. Init also wrote the project's `AGENTS.md`
   and `CLAUDE.md` if they did not exist; edit or delete them as you like.
+- **Other members' copies:** removing a member or deleting your local record cannot erase data
+  already held on another machine. Each holder must remove their own copy.
 - **An interrupted upload's copy:** an upload that stopped partway can leave a copy of the record in
   your temp folder, in a folder named `rbook-dashboard-upload-*`. The next upload removes your copies
   older than a day, except on Windows, where you delete them yourself.

@@ -15,6 +15,8 @@ interface ToolCallContext {
   readonly storeUpkeepNotes: Set<string>;
   /** s93-m11 — the database files this call changed a row in (see recordStoreWrite). */
   readonly writtenStores: Set<string>;
+  /** s96-m12 — the copies of a shared record this call opened (see recordSharedStore). */
+  readonly sharedStores: Set<string>;
   /** s93-m11 — how many lazy repairs are running now (see asLazyRepair). */
   lazyRepairDepth: number;
 }
@@ -77,6 +79,19 @@ export function recordStoreUpkeepNote(message: string): void {
 }
 
 /**
+ * s96-m12 — note that this call opened a copy of a shared record, so its answer can carry what a
+ * person must know there: fields in conflict, and an id two copies created.
+ */
+export function recordSharedStore(dbPath: string): void {
+  toolCallStorage.getStore()?.sharedStores.add(dbPath);
+}
+
+/** s96-m12 — the copies of a shared record this call opened. */
+export function currentSharedStores(): string[] {
+  return [...(toolCallStorage.getStore()?.sharedStores ?? [])];
+}
+
+/**
  * s93-m11 — note that this call changed a row in the database at `dbPath` (an INSERT, UPDATE,
  * DELETE or REPLACE that changed at least one row). First-write upkeep runs only for a store the
  * call really wrote: a write-classified call that only read (onboard without feedback, a review
@@ -132,6 +147,7 @@ export async function captureToolCall<T>(
     actionMode,
     projectIdentityDisclosures: new Set<string>(),
     storeUpkeepNotes: new Set<string>(),
+    sharedStores: new Set<string>(),
     writtenStores: new Set<string>(),
     lazyRepairDepth: 0,
   };

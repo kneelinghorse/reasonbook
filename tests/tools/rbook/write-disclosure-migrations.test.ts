@@ -511,12 +511,7 @@ describe('s86-m02b f23: the structural shape of the migration warnings channel',
         // symbol-aware reachability gate proves every caller's exact sink through refusals.
         splices: [['warnings.push(...(author.warnings ?? []));', 1]],
       },
-      {
-        file: 'tools/rbook/rbook-db-backfill.ts',
-        // Spliced through a local const rather than inline — migrateContentHash's other fields
-        // are read too.
-        splices: [['warnings.push(...(contentHashMigration.warnings ?? []));', 1]],
-      },
+      // s96-m08: retired event replay no longer runs the content-hash migration.
     ];
 
     let total = 0;
@@ -531,7 +526,7 @@ describe('s86-m02b f23: the structural shape of the migration warnings channel',
         total += count;
       }
     }
-    expect(total).toBe(4);
+    expect(total).toBe(3);
     for (const file of ['rbook-session-capture.ts', 'rbook-session-complete.ts']) {
       const source = fs.readFileSync(path.join(SRC_ROOT, 'tools', 'rbook', file), 'utf8');
       expect(

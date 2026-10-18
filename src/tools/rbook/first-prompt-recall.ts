@@ -14,6 +14,7 @@ import { citationNeighbors } from './citation-neighbors';
 import { storedTimeMs } from './stored-time';
 import { previewText } from './text-preview';
 import { getProjectId } from './project-id';
+import { markConflicts, rawQuery } from './record-conflict-marks';
 import type { RbookDatabaseClient, QueryParams } from './client';
 import type { RbookToolResult } from './types';
 
@@ -30,6 +31,8 @@ export interface RecallItem {
   readonly truncated: boolean;
   readonly retrievalSource: 'keyword' | 'citation' | 'keyword+citation';
   readonly via: readonly RecallVia[];
+  /** s96-m12: on a shared record, the fields of this decision in conflict; its text may be provisional. */
+  readonly conflicts?: readonly string[];
 }
 export interface RecallResult {
   readonly items: readonly RecallItem[];
@@ -174,7 +177,12 @@ export function recallFirstPrompt(
         via: citation?.via ?? [],
       };
     });
-    return { items, localProjectId, warnings: citations.warnings, available: true };
+    return {
+      items: markConflicts(rawQuery(db), items),
+      localProjectId,
+      warnings: citations.warnings,
+      available: true,
+    };
   } catch (error) {
     const known = ['recall_deadline', 'recall_schema_missing', 'recall_index_missing'];
     const warning =

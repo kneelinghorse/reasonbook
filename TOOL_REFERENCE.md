@@ -536,22 +536,22 @@ Consolidated decisions tool with action parameter support. Actions: list, search
 
 ## rbook_db
 
-Consolidated database admin tool with action parameter support. Actions: health, snapshot, restore, backfill, reconcile, purge, identify_orphans, pull, clone, prune_snapshots. prune_snapshots reclaims the content of automatic context-snapshot copies: a dry run unless confirm=true, which takes a database snapshot first and empties content without deleting any row; referenced snapshots, sprint milestones and snapshots someone named are always kept. Routes to the existing DB handlers without changing DB business logic.
+Consolidated database admin tool with action parameter support. Actions: health, snapshot, restore, backfill, reconcile, purge, identify_orphans, pull, clone, prune_snapshots, conflicts, settle. pull and clone are retired and return LEGACY_SYNC_RETIRED; use reasonbook sync. backfill retains registered owner SQLite upload; event replay and its dry run are retired. On a shared project, conflicts lists each field that holds values from copies that had not seen each other, and settle keeps one value for it. prune_snapshots reclaims the content of automatic context-snapshot copies: a dry run unless confirm=true, which takes a database snapshot first and empties content without deleting any row; referenced snapshots, sprint milestones and snapshots someone named are always kept. Routes to the existing DB handlers without changing DB business logic.
 
-**Actions:** `health`, `snapshot`, `restore`, `backfill`, `reconcile`, `purge`, `identify_orphans`, `pull`, `clone`, `prune_snapshots`
+**Actions:** `health`, `snapshot`, `restore`, `backfill`, `reconcile`, `purge`, `identify_orphans`, `pull`, `clone`, `prune_snapshots`, `conflicts`, `settle`
 
 ### rbook_db(action="health")
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Database action: health \| snapshot \| restore \| backfill \| reconcile \| purge \| identify_orphans \| pull \| clone \| prune_snapshots |
+| `action` | string | yes | Database action: health \| snapshot \| restore \| backfill \| reconcile \| purge \| identify_orphans \| pull \| clone \| prune_snapshots \| conflicts \| settle |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
 
 ### rbook_db(action="snapshot")
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Database action: health \| snapshot \| restore \| backfill \| reconcile \| purge \| identify_orphans \| pull \| clone \| prune_snapshots |
+| `action` | string | yes | Database action: health \| snapshot \| restore \| backfill \| reconcile \| purge \| identify_orphans \| pull \| clone \| prune_snapshots \| conflicts \| settle |
 | `listOnly` | boolean | no | List snapshots instead of creating one |
 | `maxSnapshots` | integer | no | snapshot: how many database snapshots to keep (default RBOOK_MAX_SNAPSHOTS or 50); taking one deletes the oldest beyond it, automatic ones included |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
@@ -560,7 +560,7 @@ Consolidated database admin tool with action parameter support. Actions: health,
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Database action: health \| snapshot \| restore \| backfill \| reconcile \| purge \| identify_orphans \| pull \| clone \| prune_snapshots |
+| `action` | string | yes | Database action: health \| snapshot \| restore \| backfill \| reconcile \| purge \| identify_orphans \| pull \| clone \| prune_snapshots \| conflicts \| settle |
 | `snapshotId` | string | no | Snapshot ID for restore action |
 | `confirm` | boolean | no | Confirmation flag for restore/purge/prune_snapshots actions (prune_snapshots is a dry run without it) |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
@@ -569,23 +569,23 @@ Consolidated database admin tool with action parameter support. Actions: health,
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Database action: health \| snapshot \| restore \| backfill \| reconcile \| purge \| identify_orphans \| pull \| clone \| prune_snapshots |
-| `force` | boolean | no | Force full backfill, ignoring cursor |
-| `dryRun` | boolean | no | Preview backfill without pushing |
+| `action` | string | yes | Database action: health \| snapshot \| restore \| backfill \| reconcile \| purge \| identify_orphans \| pull \| clone \| prune_snapshots \| conflicts \| settle |
+| `force` | boolean | no | Legacy backfill option; SQLite uploads already include the full store. |
+| `dryRun` | boolean | no | Retired event-replay preview; returns LEGACY_SYNC_RETIRED. Use reasonbook sync. |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
 
 ### rbook_db(action="reconcile")
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Database action: health \| snapshot \| restore \| backfill \| reconcile \| purge \| identify_orphans \| pull \| clone \| prune_snapshots |
+| `action` | string | yes | Database action: health \| snapshot \| restore \| backfill \| reconcile \| purge \| identify_orphans \| pull \| clone \| prune_snapshots \| conflicts \| settle |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
 
 ### rbook_db(action="purge")
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Database action: health \| snapshot \| restore \| backfill \| reconcile \| purge \| identify_orphans \| pull \| clone \| prune_snapshots |
+| `action` | string | yes | Database action: health \| snapshot \| restore \| backfill \| reconcile \| purge \| identify_orphans \| pull \| clone \| prune_snapshots \| conflicts \| settle |
 | `confirm` | boolean | no | Confirmation flag for restore/purge/prune_snapshots actions (prune_snapshots is a dry run without it) |
 | `expectedSlug` | string | no | Expected project slug for guardrail checks on purge |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
@@ -594,32 +594,32 @@ Consolidated database admin tool with action parameter support. Actions: health,
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Database action: health \| snapshot \| restore \| backfill \| reconcile \| purge \| identify_orphans \| pull \| clone \| prune_snapshots |
+| `action` | string | yes | Database action: health \| snapshot \| restore \| backfill \| reconcile \| purge \| identify_orphans \| pull \| clone \| prune_snapshots \| conflicts \| settle |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
 
 ### rbook_db(action="pull")
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Database action: health \| snapshot \| restore \| backfill \| reconcile \| purge \| identify_orphans \| pull \| clone \| prune_snapshots |
-| `slug` | string | no | Dashboard slug to pull/clone (for pull and clone actions; defaults to the registered slug) |
-| `limit` | integer | no | Per-page event limit for pull action (default 500, broker caps at 1000) |
-| `maxPages` | integer | no | Safety bound on the pull pagination loop (default 1000) |
+| `action` | string | yes | Database action: health \| snapshot \| restore \| backfill \| reconcile \| purge \| identify_orphans \| pull \| clone \| prune_snapshots \| conflicts \| settle |
+| `slug` | string | no | Legacy pull/clone option; both actions are retired. Use reasonbook sync. |
+| `limit` | integer | no | Legacy pull option; pull is retired. Use reasonbook sync. |
+| `maxPages` | integer | no | Legacy pull option; pull is retired. Use reasonbook sync. |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
 
 ### rbook_db(action="clone")
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Database action: health \| snapshot \| restore \| backfill \| reconcile \| purge \| identify_orphans \| pull \| clone \| prune_snapshots |
-| `slug` | string | no | Dashboard slug to pull/clone (for pull and clone actions; defaults to the registered slug) |
+| `action` | string | yes | Database action: health \| snapshot \| restore \| backfill \| reconcile \| purge \| identify_orphans \| pull \| clone \| prune_snapshots \| conflicts \| settle |
+| `slug` | string | no | Legacy pull/clone option; both actions are retired. Use reasonbook sync. |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
 
 ### rbook_db(action="prune_snapshots")
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Database action: health \| snapshot \| restore \| backfill \| reconcile \| purge \| identify_orphans \| pull \| clone \| prune_snapshots |
+| `action` | string | yes | Database action: health \| snapshot \| restore \| backfill \| reconcile \| purge \| identify_orphans \| pull \| clone \| prune_snapshots \| conflicts \| settle |
 | `confirm` | boolean | no | Confirmation flag for restore/purge/prune_snapshots actions (prune_snapshots is a dry run without it) |
 | `keepIds` | array | no | prune_snapshots: context snapshot ids to keep, whatever else applies |
 | `keepSince` | string | no | prune_snapshots: keep every snapshot created at or after this date |
@@ -627,17 +627,35 @@ Consolidated database admin tool with action parameter support. Actions: health,
 | `keepLast` | integer | no | prune_snapshots: snapshots still holding content kept per context, newest first (default 30) |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
 
+### rbook_db(action="conflicts")
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `action` | string | yes | Database action: health \| snapshot \| restore \| backfill \| reconcile \| purge \| identify_orphans \| pull \| clone \| prune_snapshots \| conflicts \| settle |
+| `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
+
+### rbook_db(action="settle")
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `action` | string | yes | Database action: health \| snapshot \| restore \| backfill \| reconcile \| purge \| identify_orphans \| pull \| clone \| prune_snapshots \| conflicts \| settle |
+| `table` | string | no | settle: the table, or "project" for the identity |
+| `recordId` | string | no | settle: the row id as this copy shows it |
+| `field` | string | no | settle: the conflicted field |
+| `value` | object | no | settle: the value to keep |
+| `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
+
 ## rbook_project
 
-Consolidated project tool with action parameter support. Actions: init, register, list, unregister, validate, prune, update, sweep. The list action supports an optional validate flag. The prune action removes registry entries where the local Reasonbook database no longer exists on disk. The update action sets the level (project_type: general/managed/build) and writes the files the new level uses that the project lacks; it removes no file and overwrites no edited one. The sweep action returns all open missions and active sessions across registered instances.
+Consolidated project tool with action parameter support. Actions: init, register, list, unregister, validate, prune, update, sweep, share, invite, join, members, remove, sync. The list action supports an optional validate flag. The prune action removes registry entries where the local Reasonbook database no longer exists on disk. The update action sets the level (project_type: general/managed/build) and writes the files the new level uses that the project lacks; it removes no file and overwrites no edited one. The sweep action returns all open missions and active sessions across registered instances. The shared-record actions: share makes this copy the owner's of a record others join; invite and remove manage its members; join admits a member's copy over SSH; members lists them; and sync exchanges with every copy this one has a route to, or with confirmOwner confirms a move of the owner's copy.
 
-**Actions:** `init`, `register`, `list`, `unregister`, `validate`, `prune`, `update`, `sweep`
+**Actions:** `init`, `register`, `list`, `unregister`, `validate`, `prune`, `update`, `sweep`, `share`, `invite`, `join`, `members`, `remove`, `sync`
 
 ### rbook_project(action="init")
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep |
+| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync |
 | `projectRoot` | string | no | Project root directory |
 | `projectName` | string | no | Project name for init action |
 | `projectId` | string | no | Project ID for init action |
@@ -661,43 +679,43 @@ Consolidated project tool with action parameter support. Actions: init, register
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep |
+| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync |
 | `projectRoot` | string | no | Project root directory |
-| `name` | string | no | Display name for register action |
+| `name` | string | no | register: the display name; invite and remove: the member's name |
 | `setAsDefault` | boolean | no | register: make this the default for calls with no project context (no projectRoot, no MCP roots, cwd of /, $HOME or the install root) |
 
 ### rbook_project(action="list")
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep |
+| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync |
 | `validate` | boolean | no | Run validation on list action (routes to validate handler) |
 
 ### rbook_project(action="unregister")
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep |
+| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync |
 | `projectRoot` | string | no | Project root directory |
 
 ### rbook_project(action="validate")
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep |
+| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync |
 | `prune` | boolean | no | validate: archive the registry entries whose store is missing, stale or ephemeral |
 
 ### rbook_project(action="prune")
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep |
+| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync |
 
 ### rbook_project(action="update")
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep |
+| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync |
 | `projectRoot` | string | no | Project root directory |
 | `projectType` | string | no | The level of record for init and update: general (decisions and lessons), managed (also next steps, as tasks in cycles) or build (sprints and missions); a new project defaults to general, or to the level its folder AGENTS.md already names, and init keeps an existing project level unless one is passed |
 
@@ -705,10 +723,63 @@ Consolidated project tool with action parameter support. Actions: init, register
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep |
+| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync |
 | `instances` | array | no | Restrict sweep to these registry names only |
 | `statusFilter` | array | no | Restrict sweep to these mission/session statuses |
 | `itemType` | string | no | Restrict sweep to missions or sessions only |
+
+### rbook_project(action="share")
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync |
+| `projectRoot` | string | no | Project root directory |
+| `authorName` | string | no | share: the author name the owner goes by, set here when this machine has none |
+
+### rbook_project(action="invite")
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync |
+| `projectRoot` | string | no | Project root directory |
+| `name` | string | no | register: the display name; invite and remove: the member's name |
+| `role` | string | no | invite: editor (the default), or owner for another copy of your own |
+
+### rbook_project(action="join")
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync |
+| `projectRoot` | string | no | Project root directory |
+| `member` | string | no | join: the invited member the joining copy is for |
+| `host` | string | no | join: the SSH host the joining copy is on |
+| `remoteRoot` | string | no | join: the project folder on that host |
+| `remoteNode` | string | no | join: the node binary on that host, when a non-login SSH command's PATH lacks it |
+| `remoteBin` | string | no | join: the Reasonbook entry on that host, when its PATH lacks reasonbook |
+| `remoteConfigDir` | string | no | join: the Reasonbook config folder on that host, when it is not the user's |
+
+### rbook_project(action="members")
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync |
+| `projectRoot` | string | no | Project root directory |
+
+### rbook_project(action="remove")
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync |
+| `projectRoot` | string | no | Project root directory |
+| `name` | string | no | register: the display name; invite and remove: the member's name |
+
+### rbook_project(action="sync")
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync |
+| `projectRoot` | string | no | Project root directory |
+| `confirmOwner` | boolean | no | sync: confirm the move of the owner's copy this copy holds, as your word |
 
 ## rbook_learnings
 

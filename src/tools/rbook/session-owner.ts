@@ -16,6 +16,9 @@ import type { RbookToolError } from './types';
 import { checkWrite } from './write-guard';
 import { storedTimeMs } from './stored-time';
 import { hasHookSession, openDraftRuntime } from './draft-runtime';
+import { recordedWrite } from './record-changes';
+import { readReplicaIdentity } from './replica-identity';
+import { PEER_OWNER_PREFIX } from './peer-sessions';
 
 /**
  * WHY (aquex.ai message 9b183348 item 4; s92 design, m03). A capture with no open session was
@@ -174,6 +177,17 @@ export function explicitSessionOwnerKey(
  */
 export type OwnerLiveness = 'self' | 'alive' | 'dead' | 'unknown';
 
+/** The refusal of a write to, or a close of, a session another copy started (s96-m12). */
+export function sessionOfAnotherCopy(sessionId: string): RbookToolError {
+  return {
+    code: RBOOK_ERROR_CODES.INVALID_PARAMETER,
+    message: `Session '${sessionId}' belongs to another copy of this shared record, and only that copy writes to it or closes it; this call did not change it.`,
+    field: 'sessionId',
+    providedValue: sessionId,
+    suggestion: 'Leave sessionId out to use a session on this copy.',
+  };
+}
+
 export function ownerLiveness(
   ownerKey: string | null,
   self: SessionOwner = currentSessionOwner()
@@ -190,11 +204,18 @@ export function ownerLiveness(
   }
 }
 
-/** Format: PS-YYYY-MM-DD-NNN, one counter per project per day. */
-export function generateSessionId(existingIds: string[]): string {
-  const now = new Date();
+/** The day's id prefix: `PS-YYYY-MM-DD-` in block 0, `PS-YYYY-MM-DD-bK-` in block K (ADR s96 §3). */
+export function sessionIdPrefix(block = 0, now = new Date()): string {
   const dateStr = now.toISOString().split('T')[0];
-  const prefix = `PS-${dateStr}-`;
+  return block ? `PS-${dateStr}-b${block}-` : `PS-${dateStr}-`;
+}
+
+/**
+ * Format: PS-YYYY-MM-DD-NNN, one counter per project per day; a copy of a shared record in block K
+ * writes PS-YYYY-MM-DD-bK-NNN. Block 0's counter skips the segmented ids (their tail is no number).
+ */
+export function generateSessionId(existingIds: string[], block = 0): string {
+  const prefix = sessionIdPrefix(block);
 
   // Find the highest counter for today
   let maxCounter = 0;
@@ -240,7 +261,8 @@ export function insertNewSession(
   input: NewSessionInput
 ): NewSessionOutcome {
   const warnings: string[] = [];
-  const todayPrefix = `PS-${new Date().toISOString().split('T')[0]}-`;
+  const block = readReplicaIdentity(client)?.block ?? 0;
+  const todayPrefix = sessionIdPrefix(block);
   const MAX_ID_RETRIES = 3;
   let sessionId = '';
   let inserted: ReturnType<RbookDatabaseClient['execute']> = { success: false };
@@ -251,25 +273,30 @@ export function insertNewSession(
       [`${todayPrefix}%`]
     );
     sessionId = generateSessionId(
-      existing.success && existing.data ? existing.data.map((r) => r.id) : []
+      existing.success && existing.data ? existing.data.map((r) => r.id) : [],
+      block
     );
 
-    const g = genesisColumns(client, 'sessions', getProjectId(client));
-    inserted = client.execute(
-      `INSERT INTO sessions (id, type, title, sprint_id, started_at, agent, status, captures, next_steps, metadata, implicit, owner_key, ${g.columns.join(', ')})
-       VALUES (?, ?, ?, ?, ?, ?, 'active', '[]', NULL, NULL, ?, ?, ${g.placeholders})`,
-      [
-        sessionId,
-        input.type,
-        input.title,
-        input.sprintId,
-        input.now,
-        input.agent,
-        input.implicit ? 1 : 0,
-        input.ownerKey,
-        ...g.values,
-      ]
-    );
+    // s96-m01: on a shared store each attempt takes its sequence under the write lock, so a
+    // colliding attempt rolls its sequence back (ADR s96 §3).
+    inserted = recordedWrite(client, () => {
+      const g = genesisColumns(client, 'sessions', getProjectId(client));
+      return client.execute(
+        `INSERT INTO sessions (id, type, title, sprint_id, started_at, agent, status, captures, next_steps, metadata, implicit, owner_key, ${g.columns.join(', ')})
+         VALUES (?, ?, ?, ?, ?, ?, 'active', '[]', NULL, NULL, ?, ?, ${g.placeholders})`,
+        [
+          sessionId,
+          input.type,
+          input.title,
+          input.sprintId,
+          input.now,
+          input.agent,
+          input.implicit ? 1 : 0,
+          input.ownerKey,
+          ...g.values,
+        ]
+      );
+    });
     if (inserted.success) break;
 
     // Only a UNIQUE collision on the session id is worth another counter.
@@ -583,6 +610,7 @@ export function explicitSessionsAtStart(
     keyed
       ? `SELECT id, title, started_at, captures, owner_key FROM sessions
           WHERE status = 'active' AND implicit = 0
+            AND (owner_key IS NULL OR substr(owner_key, 1, ${PEER_OWNER_PREFIX.length}) <> '${PEER_OWNER_PREFIX}')
           ORDER BY julianday(started_at) ASC`
       : migrated
         ? `SELECT id, title, started_at, captures, NULL AS owner_key FROM sessions

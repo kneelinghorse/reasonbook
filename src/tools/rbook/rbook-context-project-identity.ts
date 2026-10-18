@@ -12,6 +12,7 @@ import {
 } from './project-identity';
 import { appendWarnings } from './format-warnings';
 import { storedTimeMs } from './stored-time';
+import { recordedChange } from './record-changes';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -105,7 +106,12 @@ export async function rbookContextUpdateProjectIdentity(
       const updatedPaths: string[] = [];
 
       for (const update of fieldUpdates) {
-        const result = applyProjectIdentityFieldUpdate(client, update.path, update.value);
+        // s96-m03: on a shared record each field update is recorded with its change.
+        const written = recordedChange(client, () =>
+          applyProjectIdentityFieldUpdate(client, update.path, update.value)
+        );
+        if (!written.success) return createError<ProjectIdentityUpdateResult>(written.error!);
+        const result = written.data!;
         if (!result.success) {
           return createError<ProjectIdentityUpdateResult>({
             code: RBOOK_ERROR_CODES.INVALID_PARAMETER,

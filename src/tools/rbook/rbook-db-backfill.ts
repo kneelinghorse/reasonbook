@@ -1,103 +1,39 @@
-// ABOUTME: rbook_db backfill action — replays Reasonbook state as sync events to the dashboard PG mirror.
-// ABOUTME: Includes large-delta guard, per-request timeout, overall wall-clock timeout, and progress logging.
+// ABOUTME: Dashboard backfill uploads a registered owner store as SQLite; retired event replay and fallback refuse.
+// ABOUTME: Reconciliation, orphan reporting and explicit purge remain available through their existing guarded paths.
 
-/**
- * rbook_db backfill action
- *
- * Replays existing Reasonbook state (sprints, missions, sessions, decisions)
- * as sync events so the dashboard has the full project picture.
- *
- * Idempotency: Tracks a `backfill_cursor` in the metadata table.
- * Re-running only pushes events with timestamps after the cursor.
- * Use `force: true` to replay everything regardless of cursor.
- *
- * Reliability:
- * - Large-delta guard: skips push when any table exceeds LARGE_DELTA_THRESHOLD (50) records.
- *   Instructs the user to re-upload the SQLite file instead.
- * - Per-request timeout: each HTTP push aborts after PER_REQUEST_TIMEOUT_MS (30s).
- * - Overall timeout: the push loop aborts after OVERALL_TIMEOUT_MS (120s) wall-clock time.
- * - Progress logging: reports pushed/failed/remaining to stderr every PROGRESS_LOG_INTERVAL events.
- *
- * @module tools/rbook/rbook-db-backfill
- */
-
-import { normalizeMissionStatus } from './terminal-status';
+import { isMembersCopy } from './record-membership';
+import { REPLICA_ERROR_CODES } from './replica-identity';
 import * as path from 'path';
 import { withClientAsync, type RbookDatabaseClient } from './client';
-import { DashboardClient, resolveDashboardBaseUrl } from './dashboard-client';
+import { DashboardClient } from './dashboard-client';
 import { createError, createSuccess, RbookErrors } from './errors';
 import type { RbookToolResult } from './types';
-import { migrateContentHash, computeContentHash } from './schema-migrations';
 import { appendWarnings, attachWarnings } from './format-warnings';
 import { checkWrite } from './write-guard';
 import { deriveProjectSlug } from './project-identity';
-import { sprintIdOrderSql } from './sprint-ordering';
 import { registerResolvedProjectStore } from '../../intelligence/project-resolution';
-import { compareStoredTimes, storedTimeMs } from './stored-time';
-
-/**
- * s86-m01 — write diagnostics straight to fd 2 instead of through the global
- * console object.
- *
- * `rbookDbBackfill` is reachable from the fire-and-forget checkpoint IIFE
- * (checkpoint-backfill.ts's event-replay fallback arm), so its progress and
- * failure lines can land after a Jest suite has torn down — where the patched
- * console throws "Cannot log after tests are done" and turns a green run into a
- * nonzero exit. `process.stderr` is not patched. Production behaviour is
- * unchanged: these lines already went to fd 2, which is where a stdio MCP
- * server's diagnostics belong (stdout carries JSON-RPC).
- *
- * Guarded by tests/tools/rbook/detached-log-gate.test.ts Arm A.
- */
-function log(line: string): void {
-  process.stderr.write(line + '\n');
-}
+import { legacySyncRefusal } from './legacy-sync-refusal';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-/**
- * Maximum per-table event delta before skipping push and recommending SQLite re-upload.
- * Exported so tests can reference the boundary without magic numbers.
- */
+/** Retained public legacy threshold; event replay is retired and no longer uses it. */
 export const LARGE_DELTA_THRESHOLD = 50;
 
 /** Per-request HTTP timeout for sync event pushes (ms). */
 const PER_REQUEST_TIMEOUT_MS = 30_000;
 
-/** Maximum wall-clock time for a full backfill run (ms). */
-const OVERALL_TIMEOUT_MS = 120_000;
-
-/** Log a progress line every N events pushed/failed. */
-const PROGRESS_LOG_INTERVAL = 10;
-
-/**
- * Event types to suppress on the event-replay path because the dashboard PG
- * mirror cannot ingest them yet (it would HTTP 400).
- *
- * EMPTY as of dashboard migration 029 (dashboard msg bbf75ca1, 2026-05-31):
- * next_step_created / constraint_added / snapshot_taken now have mirror tables
- * (rbook_next_steps / rbook_constraints / rbook_context_snapshots, keyed
- * (project_id, id)) and are ingested on BOTH the event-replay and file-based
- * paths — so nothing is suppressed today and a force backfill reconciles the
- * full firehose. This supersedes the temporary suppression added for the Q3 gap
- * (dashboard msg 03064b74; carry-forward #770).
- *
- * The mechanism stays as a version-skew valve: if the client ever emits a new
- * genesis event type before the dashboard ingests it, add it here to suppress it
- * on the fallback event-replay path until the dashboard catches up. Exported so
- * tests can assert the gate.
- */
+/** Retained public legacy constant; no event replay path remains to apply this filter. */
 export const DASHBOARD_UNSUPPORTED_EVENT_TYPES: ReadonlySet<string> = new Set<string>();
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface RbookDbBackfillParams {
   projectRoot?: string;
-  /** Force full backfill, ignoring cursor */
+  /** Retained legacy option; SQLite uploads already include the full store. */
   force?: boolean;
-  /** Dry run: count events without pushing */
+  /** Legacy event-replay preview; returns LEGACY_SYNC_RETIRED. */
   dryRun?: boolean;
   /**
    * Per-request HTTP timeout in ms (default: 30_000). Override in tests for fast abort.
@@ -149,155 +85,16 @@ export interface RbookDbBackfillResult {
 
 // ─── DB Row Types ────────────────────────────────────────────────────────────
 
-/**
- * The genesis provenance columns (s68 ADR §1, stamped on every firehose row by
- * genesisColumns) carried by the 5 emitted firehose row types. s71-m01 (decision
- * #777) surfaces them in the outbound event `data` so the dashboard's migration-024
- * mirror can order LWW-by-(occurred_at, origin_seq) on the shared mutable surface
- * instead of falling back to synced_at. s71-m02 adds `schema_version` so the full
- * genesis set round-trips for the PULL consumer, which reconstructs a replica row
- * carrying the origin's provenance verbatim (NOT re-stamped). The other two genesis
- * columns — event_type and project_id — already ride on the envelope top-level
- * (eventType / projectId), so they are not duplicated here. Optional because a row
- * written before the firehose migration won't have them — the dashboard reads NULL
- * provenance as "fall back to synced_at", so it degrades cleanly. author_user_id is
- * deliberately NOT here: it stays dashboard-authoritative (stamped on PUSH).
- */
-interface GenesisProvenanceRow {
-  stable_event_id?: string | null;
-  occurred_at?: number | null;
-  origin_seq?: number | null;
-  schema_version?: number | null;
-}
-
-interface SprintRow extends GenesisProvenanceRow {
-  id: string;
-  title: string;
-  status: string | null;
-  start_date: string | null;
-  end_date: string | null;
-  total_missions: number | null;
-  completed_missions: number | null;
-}
-
-interface MissionRow extends GenesisProvenanceRow {
-  id: string;
-  sprint_id: string | null;
-  name: string;
-  status: string;
-  notes: string | null;
-  created_at: string | null;
-  started_at: string | null;
-  completed_at: string | null;
-}
-
-interface SessionRow extends GenesisProvenanceRow {
-  id: string;
-  type: string;
-  title: string;
-  sprint_id: string | null;
-  started_at: string;
-  completed_at: string | null;
-  status: string;
-  summary: string | null;
-  next_steps: string | null;
-  captures: string | null;
-}
-
-interface DecisionRow extends GenesisProvenanceRow {
-  id: number;
-  decision_text: string;
-  sprint_id: string | null;
-  // s69-m04: column renamed session_id → author_session_id. SELECT * surfaces
-  // whichever the store carries; both are optional so a migrated DB (only
-  // author_session_id) and a legacy snapshot (only session_id) both type-check.
-  author_session_id?: string | null;
-  session_id?: string | null;
-  mission_id: string | null;
-  project_domain: string | null;
-  created_at: string;
-  content_hash: string | null;
-}
-
-interface LearningRow extends GenesisProvenanceRow {
-  id: number;
-  content: string;
-  category: string | null;
-  status: string;
-  sprint_id: string | null;
-  // s69-m04: see DecisionRow — session_id renamed to author_session_id.
-  author_session_id?: string | null;
-  session_id?: string | null;
-  mission_id: string | null;
-  created_at: string;
-  content_hash: string | null;
-}
-
-interface DependencyRow {
-  from_id: string;
-  to_id: string;
-  type: string;
-  from_created_at: string | null;
-}
-
 interface MetadataRow {
   value: string;
 }
 
-// ─── Backfill Event ──────────────────────────────────────────────────────────
+// ─── Project Identity ────────────────────────────────────────────────────────
 
-interface BackfillEvent {
-  type: string;
-  timestamp: string;
-  data: Record<string, unknown>;
-}
-
-/** Project identity for sync envelope construction */
 interface ProjectIdentity {
   projectId: string;
   projectName: string;
 }
-
-/** Build a sync envelope for the dashboard push API */
-function buildSyncEnvelope(
-  identity: ProjectIdentity,
-  eventType: string,
-  timestamp: string,
-  data: Record<string, unknown>
-): Record<string, unknown> {
-  return {
-    projectId: identity.projectId,
-    projectName: identity.projectName,
-    eventType,
-    timestamp,
-    data,
-  };
-}
-
-/**
- * Extract the genesis provenance fields (s71-m01 decision #777; schema_version
- * added s71-m02) from a firehose row into the outbound event `data`. camelCase
- * keys to match the existing data builders — the dashboard accepts camelCase OR
- * snake_case (msg 03064b74 Q1). Null when the row predates the firehose migration;
- * the dashboard reads NULL as "fall back to synced_at". occurred_at rides here in
- * `data` as raw ms-epoch, NEVER in the envelope `timestamp` (which must stay ISO
- * 8601 or the dashboard 400s the event).
- */
-function provenanceData(row: GenesisProvenanceRow): {
-  stableEventId: string | null;
-  occurredAt: number | null;
-  originSeq: number | null;
-  schemaVersion: number | null;
-} {
-  return {
-    stableEventId: row.stable_event_id ?? null,
-    occurredAt: row.occurred_at ?? null,
-    originSeq: row.origin_seq ?? null,
-    schemaVersion: row.schema_version ?? null,
-  };
-}
-
-// ─── Implementation ──────────────────────────────────────────────────────────
 
 /**
  * Resolve a DashboardClient for rbook_db sync operations.
@@ -329,19 +126,29 @@ async function resolveSyncClient(
 export async function rbookDbBackfill(
   params: RbookDbBackfillParams
 ): Promise<RbookToolResult<RbookDbBackfillResult>> {
-  // Resolve the dashboard client (credential store first, env fallback);
-  // honour per-request timeout override
-  const clientResult = await resolveSyncClient(params.projectRoot, {
-    timeoutMs: params.perRequestTimeoutMs ?? PER_REQUEST_TIMEOUT_MS,
-  });
-  if (!clientResult.success || !clientResult.data) {
-    return createError(RbookErrors.dashboardNotConfigured());
-  }
-  const dashboardClient = clientResult.data;
-
-  const migrationWarnings: string[] = [];
-  const result = await withClientAsync<RbookDbBackfillResult>(
+  if (params.dryRun) return legacySyncRefusal('Dashboard event-replay dry run');
+  return withClientAsync<RbookDbBackfillResult>(
     async (db) => {
+      if (isMembersCopy(db))
+        return createError<RbookDbBackfillResult>({
+          code: REPLICA_ERROR_CODES.WRITE_REFUSED,
+          message:
+            "This is a member's copy of a shared record, which never uploads: the owner's copy uploads the record, members' work included.",
+          suggestion:
+            "Sync with the owner's copy (reasonbook sync); its next upload carries this work.",
+        });
+      const slugResult = db.getOne<MetadataRow>(
+        "SELECT value FROM metadata WHERE key = 'dashboard_slug'"
+      );
+      if (!slugResult.success) return createError<RbookDbBackfillResult>(slugResult.error!);
+      const slug = slugResult.data?.value;
+      if (!slug) return legacySyncRefusal('Dashboard event replay');
+      const clientResult = await resolveSyncClient(params.projectRoot, {
+        timeoutMs: params.perRequestTimeoutMs ?? PER_REQUEST_TIMEOUT_MS,
+      });
+      if (!clientResult.success || !clientResult.data)
+        return createError(RbookErrors.dashboardNotConfigured());
+      const dashboardClient = clientResult.data;
       // Backfill owns a legacy identity-repair sequence (dashboard_slug before directory). Suppress
       // the generic pre-open UUID mint, perform that authoritative repair first, then register
       // before any dashboard publish. No transaction is open, so the registration connection
@@ -366,651 +173,51 @@ export async function rbookDbBackfill(
         });
       }
       const previousCursor = getCursor(db);
-      // force=true bypasses the large-delta guard but still resumes from the cursor.
-      // Starting from scratch on every force run means the timeout always hits the same
-      // early events and the cursor can never advance past them (or worse, regresses).
-      // True "replay from scratch" can be achieved by clearing the cursor first.
-      const since = previousCursor;
-      // s93-m11: the cursor compares as an instant, never as text. A row whose time cannot be read
-      // is pushed again rather than skipped for good (pushes are idempotent upserts).
-      const sinceMs = storedTimeMs(since);
-
-      // s81-m01: when file-based sync fails and we drop to the slower event-replay
-      // path below, capture WHY so it surfaces as a structured warnings[] entry on
-      // the result — not stderr-only. A silent fallback masked the #391 choke as a
-      // slow-but-succeeding backfill; the warning makes the degraded path audible.
-      let fileSyncFallbackWarning: string | null = null;
-
-      // File-based sync: if the project is registered (has a dashboard_slug), use
-      // POST /api/sync/sqlite-backfill instead of event-replay. One HTTP call handles
-      // any number of records without timeout or cursor issues.
-      if (!params.dryRun) {
-        const slugResult = db.getOne<MetadataRow>(
-          `SELECT value FROM metadata WHERE key = 'dashboard_slug'`
+      const fileResult = await dashboardClient.syncSqliteFile(
+        db.path,
+        slug,
+        deriveProjectSlug(identity.projectName)
+      );
+      if (!fileResult.success || !fileResult.data)
+        return attachWarnings(
+          legacySyncRefusal<RbookDbBackfillResult>(
+            'Dashboard event-replay fallback',
+            `The SQLite upload failed: ${fileResult.error?.message ?? 'unknown error'}. No events were replayed.`
+          ),
+          identity.warnings
         );
-        const slug = (slugResult.success && slugResult.data?.value) || null;
-        if (slug) {
-          // s81-m02: keep the STRICT expectedSlug=derive(project_name) guard on this
-          // explicit-backfill path. Unlike the checkpoint path, rbookDbBackfill has no
-          // reconcile/confirm step, so it cannot safely relax the guard against a possibly
-          // stale dashboard_slug. When project_name diverges from the incumbent slug the
-          // file-sync is refused (EXPECTED_SLUG_MISMATCH) and we fall through to
-          // event-replay below, which keys by metadata.project_id (the stable local key) —
-          // so a divergent-name store still syncs to the RIGHT project and never
-          // mis-routes. (defect-3's getProjectIdentity keeps project_name consistent with
-          // dashboard_slug when it was missing, so the common registered case still
-          // file-syncs.)
-          const fileResult = await dashboardClient.syncSqliteFile(
-            db.path,
-            slug,
-            deriveProjectSlug(identity.projectName)
-          );
-          if (fileResult.success && fileResult.data) {
-            const d = fileResult.data;
-            const counts = d.counts ?? {};
-            const total = Object.values(counts).reduce((a, b) => a + b, 0);
-            return createSuccess<RbookDbBackfillResult>({
-              mode: 'backfill',
-              dryRun: false,
-              totalEvents: total,
-              pushed: total,
-              failed: d.errors.length,
-              skipped: 0,
-              deduped: 0,
-              breakdown: {
-                sprints: counts['sprints'] ?? 0,
-                missions: counts['missions'] ?? 0,
-                sessions: counts['sessions'] ?? 0,
-                decisions: counts['decisions'] ?? 0,
-                learnings: counts['learnings'] ?? 0,
-                dependencies: counts['dependencies'] ?? 0,
-              },
-              cursor: null,
-              previousCursor,
-              message:
-                `File-based sync complete (${d.durationMs}ms): ${total} record(s) synced` +
-                (d.errors.length > 0 ? `, ${d.errors.length} error(s)` : '') +
-                `. Sprints: ${counts['sprints'] ?? 0}, missions: ${counts['missions'] ?? 0}, sessions: ${counts['sessions'] ?? 0}, decisions: ${counts['decisions'] ?? 0}, learnings: ${counts['learnings'] ?? 0}.`,
-            });
-          }
-          // File sync failed — fall through to event-replay as fallback
-          const fileSyncErr = fileResult.error?.message ?? 'unknown';
-          fileSyncFallbackWarning =
-            `File-based sync failed (slug: ${slug}) — fell back to slower event-replay: ${fileSyncErr}. ` +
-            'The dashboard mirror was still updated via event-replay, but this path is cursor-bound and slower; ' +
-            'investigate the file-sync failure if it recurs.';
-          log(`[backfill] ${fileSyncFallbackWarning}`);
-        }
-      }
-
-      // Ensure content_hash columns exist and are populated
-      const contentHashMigration = migrateContentHash(db);
-      migrationWarnings.push(...(contentHashMigration.warnings ?? []));
-
-      const warnings: string[] = [];
-      // s81-m01: surface the file-sync→event-replay fallback (captured above) so the
-      // degraded path is visible on the tool response, not just stderr. Ordered first
-      // so it leads the warnings list when it fires.
-      if (fileSyncFallbackWarning) {
-        warnings.push(fileSyncFallbackWarning);
-      }
-      // s86-m02b (fork f23, consumer side): a half-applied content_hash migration would
-      // otherwise be invisible here — the dedup below keys on content_hash, so a failed
-      // backfill silently changes what "deduped" counts.
-      warnings.push(...(contentHashMigration.warnings ?? []));
-      // s86-m02b: the identity repair reports `repaired: true` off in-memory values; if the
-      // metadata write that persists them errored, say so instead of implying it stuck.
-      warnings.push(...identity.warnings);
-      if (identity.repaired) {
-        warnings.push(
-          `Project metadata was empty — repaired from ${identity.repairSource} (id: ${identity.projectId}, name: ${identity.projectName})`
-        );
-      } else if (identity.projectId === 'unknown') {
-        warnings.push(
-          'Project identity is still "unknown" after repair attempts. ' +
-            'Run rbook_project(action="register", projectRoot="<path>", name="<name>") to set identity.'
-        );
-      }
-
-      const events: BackfillEvent[] = [];
-      const breakdown = {
-        sprints: 0,
-        missions: 0,
-        sessions: 0,
-        decisions: 0,
-        learnings: 0,
-        dependencies: 0,
-        nextSteps: 0,
-        constraints: 0,
-        snapshots: 0,
-      };
-
-      // 1. Sprints
-      const sprintsResult = db.getMany<SprintRow>(
-        `SELECT * FROM sprints ORDER BY ${sprintIdOrderSql('id', 'ASC')}`
-      );
-      if (sprintsResult.success && sprintsResult.data) {
-        for (const sprint of sprintsResult.data) {
-          const ts = sprint.start_date ?? sprint.end_date ?? new Date().toISOString();
-          if (since && storedTimeMs(ts) <= sinceMs) continue;
-
-          events.push({
-            type: 'sprint_added',
-            timestamp: ts,
-            data: { sprintId: sprint.id, title: sprint.title, ...provenanceData(sprint) },
-          });
-          breakdown.sprints++;
-
-          if (sprint.status === 'Completed' && sprint.end_date) {
-            events.push({
-              type: 'sprint_completed',
-              timestamp: sprint.end_date,
-              data: {
-                sprintId: sprint.id,
-                previousStatus: 'Active',
-                completedAt: sprint.end_date,
-                lifecycle: {
-                  kpis: {
-                    totalMissions: sprint.total_missions,
-                    completedMissions: sprint.completed_missions,
-                  },
-                },
-                ...provenanceData(sprint),
-              },
-            });
-            breakdown.sprints++;
-          }
-        }
-      }
-
-      // 2. Missions
-      const missionsResult = db.getMany<MissionRow>(
-        `SELECT * FROM missions ORDER BY julianday(COALESCE(created_at, started_at, completed_at)) IS NULL, julianday(COALESCE(created_at, started_at, completed_at)), id`
-      );
-      if (missionsResult.success && missionsResult.data) {
-        for (const mission of missionsResult.data) {
-          const createdTs = mission.created_at ?? mission.started_at ?? new Date().toISOString();
-          if (since && storedTimeMs(createdTs) <= sinceMs) continue;
-
-          // Always emit mission_added so every mission gets a PG row
-          events.push({
-            type: 'mission_added',
-            timestamp: createdTs,
-            data: {
-              missionId: mission.id,
-              name: mission.name,
-              sprintId: mission.sprint_id,
-              status: mission.status,
-              objective: mission.notes ?? null,
-              successCriteria: null,
-              deliverables: null,
-              addedAt: createdTs,
-              ...provenanceData(mission),
-            },
-          });
-          breakdown.missions++;
-
-          if (mission.started_at) {
-            events.push({
-              type: 'mission_started',
-              timestamp: mission.started_at,
-              data: {
-                missionId: mission.id,
-                previousStatus: 'Queued',
-                currentStatus: 'In Progress',
-                sprintId: mission.sprint_id,
-                notes: null,
-                transitionAt: mission.started_at,
-                ...provenanceData(mission),
-              },
-            });
-            breakdown.missions++;
-          }
-
-          if (normalizeMissionStatus(mission.status) === 'Completed' && mission.completed_at) {
-            events.push({
-              type: 'mission_completed',
-              timestamp: mission.completed_at,
-              data: {
-                missionId: mission.id,
-                previousStatus: 'In Progress',
-                currentStatus: 'Completed',
-                completedAt: mission.completed_at,
-                ...provenanceData(mission),
-              },
-            });
-            breakdown.missions++;
-          }
-
-          if (mission.status === 'Blocked') {
-            events.push({
-              type: 'mission_blocked',
-              timestamp: createdTs,
-              data: {
-                missionId: mission.id,
-                previousStatus: 'In Progress',
-                currentStatus: 'Blocked',
-                reason: mission.notes ?? 'Unknown',
-                ...provenanceData(mission),
-              },
-            });
-            breakdown.missions++;
-          }
-        }
-      }
-
-      // 3. Sessions
-      const sessionsResult = db.getMany<SessionRow>(
-        `SELECT * FROM sessions ORDER BY julianday(started_at)`
-      );
-      if (sessionsResult.success && sessionsResult.data) {
-        for (const session of sessionsResult.data) {
-          if (since && storedTimeMs(session.started_at) <= sinceMs) continue;
-
-          events.push({
-            type: 'session_started',
-            timestamp: session.started_at,
-            data: {
-              sessionId: session.id,
-              type: session.type,
-              title: session.title,
-              startedAt: session.started_at,
-              sprintId: session.sprint_id,
-              ...provenanceData(session),
-            },
-          });
-          breakdown.sessions++;
-
-          if (session.status === 'completed' && session.completed_at) {
-            let captureCount = 0;
-            let nextSteps: string[] | null = null;
-            try {
-              captureCount = JSON.parse(session.captures ?? '[]').length;
-            } catch {
-              /* ignore */
-            }
-            try {
-              nextSteps = session.next_steps ? JSON.parse(session.next_steps) : null;
-            } catch {
-              /* ignore */
-            }
-
-            events.push({
-              type: 'session_completed',
-              timestamp: session.completed_at,
-              data: {
-                sessionId: session.id,
-                completedAt: session.completed_at,
-                summary: session.summary,
-                captureCount,
-                nextSteps,
-                ...provenanceData(session),
-              },
-            });
-            breakdown.sessions++;
-          }
-        }
-      }
-
-      // 4. Decisions (with content hash dedup)
-      const seenDecisionHashes = new Set<string>();
-      let deduped = 0;
-      const decisionsResult = db.getMany<DecisionRow>(
-        `SELECT * FROM strategic_decisions ORDER BY julianday(created_at)`
-      );
-      if (decisionsResult.success && decisionsResult.data) {
-        for (const decision of decisionsResult.data) {
-          if (since && storedTimeMs(decision.created_at) <= sinceMs) continue;
-
-          // Compute or use stored content hash for dedup
-          const hash =
-            decision.content_hash ??
-            computeContentHash(decision.decision_text, decision.project_domain ?? 'general');
-          if (seenDecisionHashes.has(hash)) {
-            deduped++;
-            continue;
-          }
-          seenDecisionHashes.add(hash);
-
-          events.push({
-            type: 'decision_captured',
-            timestamp: decision.created_at,
-            data: {
-              decisionId: decision.id,
-              sessionId: decision.author_session_id ?? decision.session_id ?? '',
-              category: 'decision',
-              content: decision.decision_text,
-              contentHash: hash,
-              missionId: decision.mission_id,
-              sprintId: decision.sprint_id,
-              ...provenanceData(decision),
-            },
-          });
-          breakdown.decisions++;
-        }
-      }
-
-      // 5. Learnings (with content hash dedup)
-      const seenLearningHashes = new Set<string>();
-      const learningsResult = db.getMany<LearningRow>(
-        `SELECT * FROM learnings ORDER BY julianday(created_at)`
-      );
-      if (learningsResult.success && learningsResult.data) {
-        for (const learning of learningsResult.data) {
-          if (since && storedTimeMs(learning.created_at) <= sinceMs) continue;
-
-          // Compute or use stored content hash for dedup
-          const hash =
-            learning.content_hash ?? computeContentHash(learning.content, learning.category ?? '');
-          if (seenLearningHashes.has(hash)) {
-            deduped++;
-            continue;
-          }
-          seenLearningHashes.add(hash);
-
-          events.push({
-            type: 'learning_captured',
-            timestamp: learning.created_at,
-            data: {
-              learningId: learning.id,
-              content: learning.content,
-              contentHash: hash,
-              sessionId: learning.author_session_id ?? learning.session_id ?? '',
-              sprintId: learning.sprint_id,
-              missionId: learning.mission_id,
-              capturedAt: learning.created_at,
-              ...provenanceData(learning),
-            },
-          });
-          breakdown.learnings++;
-        }
-      }
-
-      // 6. Dependencies (join with missions to get a timestamp)
-      const dependenciesResult = db.getMany<DependencyRow>(
-        `SELECT d.from_id, d.to_id, d.type, m.created_at AS from_created_at
-         FROM mission_dependencies d
-         LEFT JOIN missions m ON d.from_id = m.id
-         ORDER BY julianday(m.created_at) IS NULL, julianday(m.created_at), d.from_id`
-      );
-      if (dependenciesResult.success && dependenciesResult.data) {
-        for (const dep of dependenciesResult.data) {
-          const ts = dep.from_created_at ?? new Date().toISOString();
-          if (since && storedTimeMs(ts) <= sinceMs) continue;
-
-          events.push({
-            type: 'dependency_added',
-            timestamp: ts,
-            data: {
-              fromId: dep.from_id,
-              toId: dep.to_id,
-              type: dep.type,
-            },
-          });
-          breakdown.dependencies++;
-        }
-      }
-
-      // 7. Next steps (s69-m03 §2.5 sync-emitter parity for next_step_created)
-      const nextStepsResult = db.getMany<{
-        id: number;
-        content: string;
-        status: string;
-        session_id: string | null;
-        sprint_id: string | null;
-        mission_id: string | null;
-        created_at: string;
-      }>(
-        `SELECT id, content, status, session_id, sprint_id, mission_id, created_at FROM next_steps ORDER BY julianday(created_at)`
-      );
-      if (nextStepsResult.success && nextStepsResult.data) {
-        for (const step of nextStepsResult.data) {
-          if (since && storedTimeMs(step.created_at) <= sinceMs) continue;
-          events.push({
-            type: 'next_step_created',
-            timestamp: step.created_at,
-            data: {
-              nextStepId: step.id,
-              content: step.content,
-              status: step.status,
-              sessionId: step.session_id ?? '',
-              sprintId: step.sprint_id,
-              missionId: step.mission_id,
-            },
-          });
-          breakdown.nextSteps++;
-        }
-      }
-
-      // 8. Constraints (s69-m03 §2.5 sync-emitter parity for constraint_added)
-      const constraintsResult = db.getMany<{
-        id: number;
-        content: string;
-        status: string;
-        session_id: string | null;
-        sprint_id: string | null;
-        created_at: string;
-        expires_at: string | null;
-      }>(
-        `SELECT id, content, status, session_id, sprint_id, created_at, expires_at FROM constraints ORDER BY julianday(created_at)`
-      );
-      if (constraintsResult.success && constraintsResult.data) {
-        for (const constraint of constraintsResult.data) {
-          if (since && storedTimeMs(constraint.created_at) <= sinceMs) continue;
-          events.push({
-            type: 'constraint_added',
-            timestamp: constraint.created_at,
-            data: {
-              constraintId: constraint.id,
-              content: constraint.content,
-              status: constraint.status,
-              sessionId: constraint.session_id ?? '',
-              sprintId: constraint.sprint_id,
-              expiresAt: constraint.expires_at,
-            },
-          });
-          breakdown.constraints++;
-        }
-      }
-
-      // 9. Context snapshots (s69-m03 §2.5 sync-emitter parity for snapshot_taken)
-      const snapshotsResult = db.getMany<{
-        id: number;
-        context_id: string;
-        session_id: string | null;
-        source: string | null;
-        created_at: string;
-      }>(
-        `SELECT id, context_id, session_id, source, created_at FROM context_snapshots ORDER BY julianday(created_at)`
-      );
-      if (snapshotsResult.success && snapshotsResult.data) {
-        for (const snapshot of snapshotsResult.data) {
-          if (since && storedTimeMs(snapshot.created_at) <= sinceMs) continue;
-          events.push({
-            type: 'snapshot_taken',
-            timestamp: snapshot.created_at,
-            data: {
-              snapshotId: snapshot.id,
-              contextId: snapshot.context_id,
-              sessionId: snapshot.session_id ?? '',
-              source: snapshot.source,
-            },
-          });
-          breakdown.snapshots++;
-        }
-      }
-
-      // Q3 dashboard-ingest gate (dashboard msg 03064b74; carry-forward #770):
-      // drop event types the dashboard PG mirror cannot ingest yet — pushing
-      // them on this event-replay path returns HTTP 400. The file-based sync
-      // path returns earlier and is unaffected (it uploads the whole SQLite
-      // file; the dashboard's sqlite-backfill endpoint decides what to ingest
-      // server-side). Suppression is surfaced as a warning below, never silent.
-      let suppressed = 0;
-      for (let i = events.length - 1; i >= 0; i--) {
-        if (DASHBOARD_UNSUPPORTED_EVENT_TYPES.has(events[i].type)) {
-          events.splice(i, 1);
-          suppressed++;
-        }
-      }
-      if (suppressed > 0) {
-        // Keep the large-delta guard honest: these counts are no longer pushed.
-        breakdown.nextSteps = 0;
-        breakdown.constraints = 0;
-        breakdown.snapshots = 0;
-        warnings.push(
-          `Suppressed ${suppressed} event(s) of types not yet in the dashboard ingest allowlist ` +
-            `(${[...DASHBOARD_UNSUPPORTED_EVENT_TYPES].join(', ')}). These are not part of the ` +
-            `sync drift; remove from DASHBOARD_UNSUPPORTED_EVENT_TYPES once the dashboard adds the mirror tables.`
-        );
-      }
-
-      // Sort chronologically, as instants (s93-m11): text order puts a space-spelled time before
-      // a later ISO one, and the cursor then skips rows it never pushed.
-      events.sort((a, b) => compareStoredTimes(a.timestamp, b.timestamp));
-      const totalEvents = events.length;
-
-      // Large-delta guard: skip push when any entity type exceeds threshold.
-      // Directs the user to re-upload the SQLite file instead.
-      // Bypassed when force=true — upserts are idempotent, large-batch replays are safe.
-      if (!params.dryRun && !params.force) {
-        const tableNames = Object.keys(breakdown) as (keyof typeof breakdown)[];
-        for (const table of tableNames) {
-          if (breakdown[table] > LARGE_DELTA_THRESHOLD) {
-            const dashUrl = resolveDashboardBaseUrl();
-            const slugResult = db.getOne<MetadataRow>(
-              `SELECT value FROM metadata WHERE key = 'dashboard_slug'`
-            );
-            const slug = (slugResult.success && slugResult.data?.value) || 'your-project';
-            const uploadPath = dashUrl ? `${dashUrl}/projects/${slug}` : 'your dashboard';
-            const warningMsg =
-              `Delta too large: ${breakdown[table]} ${table} records exceed threshold of ` +
-              `${LARGE_DELTA_THRESHOLD}. Re-upload your SQLite file at ${uploadPath} instead.`;
-            log(`[backfill] ${warningMsg}`);
-            return createSuccess<RbookDbBackfillResult>({
-              mode: 'backfill',
-              dryRun: false,
-              totalEvents,
-              pushed: 0,
-              failed: 0,
-              skipped: totalEvents,
-              deduped,
-              breakdown,
-              cursor: previousCursor,
-              previousCursor,
-              message: `Delta too large (${breakdown[table]} ${table} records). Re-upload your SQLite file at ${uploadPath} instead.`,
-              warnings: [warningMsg, ...(warnings.length > 0 ? warnings : [])],
-            });
-          }
-        }
-      }
-
-      if (params.dryRun) {
-        return createSuccess<RbookDbBackfillResult>({
+      const d = fileResult.data;
+      const counts = d.counts ?? {};
+      const total = Object.values(counts).reduce((a, b) => a + b, 0);
+      return attachWarnings(
+        createSuccess<RbookDbBackfillResult>({
           mode: 'backfill',
-          dryRun: true,
-          totalEvents,
-          pushed: 0,
-          failed: 0,
+          dryRun: false,
+          totalEvents: total,
+          pushed: total,
+          failed: d.errors.length,
           skipped: 0,
-          deduped,
-          breakdown,
-          cursor: previousCursor,
+          deduped: 0,
+          breakdown: {
+            sprints: counts['sprints'] ?? 0,
+            missions: counts['missions'] ?? 0,
+            sessions: counts['sessions'] ?? 0,
+            decisions: counts['decisions'] ?? 0,
+            learnings: counts['learnings'] ?? 0,
+            dependencies: counts['dependencies'] ?? 0,
+          },
+          cursor: null,
           previousCursor,
-          message: `Dry run: ${totalEvents} events would be pushed (${breakdown.sprints} sprint, ${breakdown.missions} mission, ${breakdown.sessions} session, ${breakdown.decisions} decision, ${breakdown.learnings} learning, ${breakdown.dependencies} dependency events)${deduped > 0 ? `. ${deduped} duplicate(s) skipped by content hash.` : ''}.`,
-          warnings: warnings.length > 0 ? warnings : undefined,
-        });
-      }
-
-      // Push events sequentially with per-request and overall timeouts
-      const getNow = params._getNow ?? Date.now;
-      const effectiveOverallTimeout = params.overallTimeoutMs ?? OVERALL_TIMEOUT_MS;
-      const wallClockStart = getNow();
-      let pushed = 0;
-      let failed = 0;
-      let latestTimestamp: string | null = null;
-      let timedOut = false;
-
-      for (const event of events) {
-        // Check wall-clock overall timeout before each push
-        if (getNow() - wallClockStart > effectiveOverallTimeout) {
-          timedOut = true;
-          const remaining = totalEvents - pushed - failed;
-          log(
-            `[backfill] Overall timeout (${effectiveOverallTimeout}ms) exceeded. ` +
-              `Aborted: ${pushed} pushed, ${failed} failed, ${remaining} remaining.`
-          );
-          break;
-        }
-
-        const envelope = buildSyncEnvelope(identity, event.type, event.timestamp, event.data);
-        const result = await dashboardClient.pushSyncEvent(
-          envelope as unknown as Record<string, unknown>
-        );
-
-        if (result.success) {
-          pushed++;
-          latestTimestamp = event.timestamp;
-        } else {
-          failed++;
-          log(`[backfill] Failed to push ${event.type}: ${result.error?.message}`);
-        }
-
-        // Progress logging every PROGRESS_LOG_INTERVAL events
-        const processed = pushed + failed;
-        if (processed % PROGRESS_LOG_INTERVAL === 0) {
-          const remaining = totalEvents - processed;
-          log(`[backfill] Progress: ${pushed} pushed, ${failed} failed, ${remaining} remaining`);
-        }
-      }
-
-      // Update cursor — only advance, never regress.
-      // A force=true run that times out early must not overwrite a previously-advanced
-      // cursor with an earlier timestamp, or the next run re-processes the same events.
-      // s93-m11: compared as instants, never as text.
-      if (
-        latestTimestamp &&
-        (!previousCursor || compareStoredTimes(latestTimestamp, previousCursor) > 0)
-      ) {
-        // s86-m02b: the `cursor` field returned below is read as "resume from here". A failed
-        // write means the next run resumes from the OLD cursor and replays these events —
-        // the answer must not report an advance the store never took.
-        checkWrite(
-          db.execute(`INSERT OR REPLACE INTO metadata (key, value) VALUES ('backfill_cursor', ?)`, [
-            latestTimestamp,
-          ]),
-          warnings,
-          'metadata.backfill_cursor advance'
-        );
-      }
-
-      const finalWarnings = warnings.length > 0 ? [...warnings] : [];
-      if (timedOut) {
-        const remaining = totalEvents - pushed - failed;
-        finalWarnings.push(
-          `Backfill timed out after ${effectiveOverallTimeout}ms. ` +
-            `${remaining} event(s) not pushed. Re-run to continue from cursor.`
-        );
-      }
-
-      return createSuccess<RbookDbBackfillResult>({
-        mode: 'backfill',
-        dryRun: false,
-        totalEvents,
-        pushed,
-        failed,
-        skipped: 0,
-        deduped,
-        breakdown,
-        cursor: latestTimestamp ?? previousCursor,
-        previousCursor,
-        message: `Backfill complete: ${pushed}/${totalEvents} events pushed${failed > 0 ? ` (${failed} failed)` : ''}${deduped > 0 ? ` (${deduped} duplicates skipped)` : ''}. ${breakdown.sprints} sprint, ${breakdown.missions} mission, ${breakdown.sessions} session, ${breakdown.decisions} decision, ${breakdown.learnings} learning, ${breakdown.dependencies} dependency events.`,
-        warnings: finalWarnings.length > 0 ? finalWarnings : undefined,
-      });
+          message:
+            `File-based sync complete (${d.durationMs}ms): ${total} record(s) synced` +
+            (d.errors.length > 0 ? `, ${d.errors.length} error(s)` : '') +
+            `. Sprints: ${counts['sprints'] ?? 0}, missions: ${counts['missions'] ?? 0}, sessions: ${counts['sessions'] ?? 0}, decisions: ${counts['decisions'] ?? 0}, learnings: ${counts['learnings'] ?? 0}.`,
+        }),
+        identity.warnings
+      );
     },
     { projectRoot: params.projectRoot, registerProject: false }
   );
-  return attachWarnings(result, migrationWarnings);
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -1584,6 +791,15 @@ export async function rbookDbPurge(params: {
 
   return withClientAsync(
     async (db) => {
+      // s96-m13 (design §s96-m13 item 3): the dashboard mirror is the owner's, so only the owner's
+      // copy of a shared record purges it.
+      if (isMembersCopy(db))
+        return createError<PurgeResult>({
+          code: REPLICA_ERROR_CODES.WRITE_REFUSED,
+          message:
+            "This is a member's copy of a shared record, and the dashboard mirror is the owner's, so it was not purged.",
+          suggestion: "Purge from the owner's copy, if the owner means to.",
+        });
       const identity = getProjectIdentity(db);
       const slug = deriveProjectSlug(identity.projectName);
 
@@ -1632,7 +848,12 @@ export function formatPurgeForLLM(result: RbookToolResult<PurgeResult>): string 
 
 export function formatBackfillForLLM(result: RbookToolResult<RbookDbBackfillResult>): string {
   if (!result.success) {
-    return `Backfill failed: ${result.error?.message ?? 'Unknown error'}`;
+    return [
+      `Backfill failed: ${result.error?.message ?? 'Unknown error'}`,
+      result.error?.suggestion,
+    ]
+      .filter(Boolean)
+      .join('\n');
   }
 
   const d = result.data!;

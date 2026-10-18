@@ -407,7 +407,8 @@ describe('rbook_review', () => {
         // Compact form drops the heavy fields (domain/category/etc) but keeps the
         // small `projectId` provenance tag (s83-m06) so the renderer can fence a
         // pull-merged FOREIGN decision as untrusted. s92-m04 adds `id`, so a capped text can be
-        // read in full with rbook_decisions(action="show").
+        // read in full with rbook_decisions(action="show"). s96-m02 adds `author` (ADR s96 §10)
+        // only for a decision with a recorded name; these seeded decisions have none.
         const keys = Object.keys(d).sort();
         expect(keys).toEqual(['createdAt', 'id', 'projectId', 'text']);
       }

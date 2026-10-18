@@ -14,6 +14,7 @@ import {
 } from './errors';
 import { ensureMissionTimestamps } from './schema-migrations';
 import { appendWarnings, attachWarnings } from './format-warnings';
+import { recordedExecute } from './record-changes';
 
 /**
  * Result of dropping a mission.
@@ -169,7 +170,8 @@ export function rbookMissionDropOnClient(
     ? `[Dropped] ${params.reason}`
     : `[Dropped] Removed from active queue`;
 
-  const updateResult = client.execute(
+  const updateResult = recordedExecute(
+    client,
     `UPDATE missions
      SET status = ?,
          domain_fields = ?,

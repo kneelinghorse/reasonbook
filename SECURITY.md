@@ -31,10 +31,10 @@ destructive, with no exemption for operational logs. Opening a project can also 
 upload scheduler pay upload debt from an earlier write. A configured upload may therefore follow
 a read; its destination is the user's bounded dashboard account.
 
-Only `rbook_message` and `rbook_sprint` advertise `openWorldHint: true`, because messaging and sprint
-`carry_forward` can send to other people's projects. Their hints apply to every action, including
-list and show. Access to the user's own bounded dashboard account alone does not make a tool
-open-world.
+`rbook_message`, `rbook_sprint` and `rbook_project` advertise `openWorldHint: true`: messaging and
+sprint `carry_forward` can send to other people's projects, and project `join` and `sync` can write
+another machine's shared copy over SSH. Their hints apply to every action, including reads. Access
+to the user's own bounded dashboard account alone does not make a tool open-world.
 
 These hints are different from [action-taxonomy.ts](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/action-taxonomy.ts),
 which governs a review agent's access to project records. A security-classified read can leave the
@@ -92,24 +92,21 @@ Reasonbook runtime and plugin installation make outbound requests in these situa
      project. An owed upload survives process exit in the per-user registry, and concurrent
      servers share one lease per project. Only explicit closes may register a new project.
      Upload results and failures appear in `rbook_status` and `rbook_review`; HTTP 401, 402 or 403
-     pauses automatic retries until an explicit close succeeds. Without a project slug an explicit
-     checkpoint can fall back to event replay;
-     a registered project's failed file upload has no replay fallback in that cycle, and a later
-     checkpoint retries. Implicit process-exit closes do not upload; explicitly completing an
+     pauses automatic retries until an explicit close succeeds. Event replay is retired: a missing project slug or a failed file upload never
+     falls back to replay. A later checkpoint can retry the file upload. Implicit process-exit closes do not upload; explicitly completing an
      implicit session through the tool does. Set
      **`RBOOK_CHECKPOINT_SYNC=off`** to disable these automatic upload paths
      (`triggerCheckpointBackfill` in [checkpoint-backfill.ts](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/checkpoint-backfill.ts)).
-   - **Calls you make.** Messaging, status and sync health, `rbook_db` sync actions (backfill, pull,
-     clone, purge), sprint carry-forward, and the onboard and review summaries of messages.
+   - **Calls you make.** Messaging, status and sync health, `rbook_db` dashboard actions (backfill and purge), sprint carry-forward, and the onboard and review summaries of messages.
    - **Startup key recovery**, when a registered project and a usable user-scoped credential exist
-     but the project's key is missing.
-   - **Shared-store propagation.** Credentialed collab stores lock, pull and push around mission
-     transitions, sprint status changes/completion, and project-identity name changes
-     ([sync-locks.ts](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/sync-locks.ts)).
-     `RBOOK_CHECKPOINT_SYNC=off` does not disable this propagation or explicit sync calls.
+     but the project's key is missing. Member copies of a shared record refuse recovery.
+   - **Retired dashboard collaboration.** The old lock, pull and mutable-push paths refuse
+     with `LEGACY_SYNC_RETIRED`; local updates on old collab-role stores report that warning.
+     Shared records exchange directly over configured SSH routes or carried bundle files
+     using `reasonbook sync`. `RBOOK_CHECKPOINT_SYNC=off` does not disable those exchanges.
 
-   Without a credential, ordinary local work sends nothing: the baked address alone does not make
-   any tool upload project data.
+   Without a dashboard credential, ordinary local work sends nothing to the dashboard: the baked
+   address alone does not make any tool upload project data.
 
 2. **HuggingFace (`huggingface.co`)**, only when the optional `@xenova/transformers` package is
    installed next to Reasonbook. The default install does not include it, and then Reasonbook never
@@ -138,6 +135,27 @@ Reasonbook runtime and plugin installation make outbound requests in these situa
    ([install-worker.mjs](https://github.com/kneelinghorse/reasonbook/blob/main/plugins/reasonbook/hooks/install-worker.mjs)).
    `pluginServer: "off"` disables the plugin's MCP server before package discovery or installation;
    enabled developer hooks can still need their runtime.
+
+4. **Shared-record exchanges over SSH.** Once a project is shared and copies have joined,
+   `reasonbook sync` exchanges their changes through the owner's copy. Saved routes also run at
+   session start and end where hooks run, detached so the hook does not wait for the network, and
+   every five minutes for shared projects a running server has opened. These paths need no dashboard
+   credential. **`RBOOK_SHARED_SYNC=off`** stops automatic exchanges where it reaches the hook and
+   server processes; explicit sync and bundle commands remain available. The dashboard-upload
+   switch is separate
+   ([record-sync-trigger.ts](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/record-sync-trigger.ts),
+   [record-sync-scheduler.ts](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/record-sync-scheduler.ts)).
+   SSH uses `BatchMode=yes` and configured remote runtime paths
+   ([record-ssh.ts](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/record-ssh.ts));
+   a bundle can instead be carried and imported explicitly.
+
+   A member's initial copy contains the full SQLite store, including history and stored proposals.
+   Owner/editor roles hold among honest copies using the supported protocol over SSH or bundles;
+   they do not defend against a member altering their store or software. Removal stops delivery of
+   new changes to that member and quarantines their changes beyond the removal cut, but cannot
+   retract data already copied. Re-inviting permits exchange of those quarantined changes
+   ([record-membership.ts](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/record-membership.ts)).
+   See [Trust](docs/trust.md#shared-copies) for the measured support scope and content boundary.
 
 ## Authentication model
 
@@ -199,16 +217,20 @@ surfaced as an `authTier` (the `AuthTier` type and `deriveAuthTier` in
 
 ## Untrusted / foreign content
 
-Text that Reasonbook did not author locally — inbound message bodies and summaries, project directory
-descriptions, and decision/learning rows synced from _other_ projects — is treated as **data, not
-instructions**. It is rendered inside a source-labeled, self-escaping "untrusted" fence and carries an
+Inbound message bodies and summaries, project directory descriptions, and decision/learning rows
+from _other_ projects are treated as **data, not instructions**. They are rendered inside a
+source-labeled, self-escaping "untrusted" fence and carry an
 additive `{source, trust:"foreign"}` descriptor
 ([provenance-frame.ts](https://github.com/kneelinghorse/reasonbook/blob/main/src/intelligence/provenance-frame.ts)), applied across the message list,
 onboarding, directory, and cross-store/pull-merged decision & learning renders. The `rbook_message` and
 `rbook_agent_onboard` tool descriptions state this contract to the calling agent.
 
-- **Decision & learning read surfaces framed:** after a `rbook_db pull`, the local
-  `strategic_decisions` / `learnings` tables can hold rows authored in another project. `project_id` is
+Editors' accepted rows in the **same shared project** keep that project's identity, so they reach
+the owner's agents as local content, without this foreign-source fence. Sharing grants trust in
+the editor's record content; an author name is attribution, not content validation.
+
+- **Decision & learning read surfaces framed:** a legacy store may already hold rows
+  from the retired dashboard pull; cross-store reads also reach rows from other projects. `project_id` is
   derived read-time (no migration; column-presence guarded so ancient stores degrade to `NULL` and
   render bare, never throw) and a foreign **decision or learning** row — its `project_id` ≠ the resolved
   local project — renders inside the untrusted fence, while local rows stay bare, at **every** surface
@@ -223,8 +245,8 @@ onboarding, directory, and cross-store/pull-merged decision & learning renders. 
 
   This closes the former mission-start "relevant decisions" limitation for decision/learning content.
 
-- **MISSION / SPRINT / SESSION read surfaces framed:** the same pull-merge path
-  stamps a foreign `project_id` onto pulled `missions` / `sprints` / `sessions` rows. Their
+- **MISSION / SPRINT / SESSION read surfaces framed:** legacy stores can retain foreign
+  `project_id` values on `missions` / `sprints` / `sessions` rows from the retired pull-merge path. Their
   name / objective / context / title / focus / summary fields are now derived read-time (same
   column-presence PRAGMA guard, so ancient stores degrade to `NULL` and render bare, never throw) and a
   foreign row — its `project_id` ≠ the resolved local project — renders inside the untrusted fence while
@@ -453,4 +475,4 @@ subagent type (e.g. the `Explore` agent) — that is a mitigation, not the machi
 
 ---
 
-_Last verified against the source for release 4.0.2._
+_Last verified against the source for release 4.1.0._

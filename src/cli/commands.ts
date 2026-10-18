@@ -18,6 +18,12 @@ import {
   type CliResolution,
 } from './core';
 import { previewText } from '../tools/rbook/text-preview';
+import {
+  conflictMark,
+  CONFLICT_POINTER,
+  markConflicts,
+  rawQuery,
+} from '../tools/rbook/record-conflict-marks';
 import { observeCliResult, observeInjected, observeRelevantIds } from './telemetry';
 import { captureToolCall } from '../tools/rbook/tool-call-context';
 
@@ -115,6 +121,7 @@ export interface RelevantItem {
   /** A preview of at most 300 characters. */
   readonly text: string;
   readonly truncated: boolean;
+  readonly conflicts?: readonly string[];
 }
 
 /** Words of three letters or more, quoted for FTS5 and joined with OR. Null when none. */
@@ -184,10 +191,13 @@ export function keywordRelevant(dbPath: string, query: string, limit: number): R
         visible.params
       );
     }
-    return rows
-      .sort((a, b) => a.score - b.score || a.kind.localeCompare(b.kind) || b.id - a.id)
-      .slice(0, limit)
-      .map(({ score: _score, ...item }) => item);
+    return markConflicts(
+      rawQuery(db),
+      rows
+        .sort((a, b) => a.score - b.score || a.kind.localeCompare(b.kind) || b.id - a.id)
+        .slice(0, limit)
+        .map(({ score: _score, ...item }) => item)
+    );
   } finally {
     db.close();
   }
@@ -215,9 +225,13 @@ async function relevant(
   if (items.length === 0) return 0;
   io.stdout(
     `${items
-      .map((item) => `#${item.id} ${item.kind} [${item.status}] — ${item.text}`)
+      .map(
+        (item) =>
+          `#${item.id} ${item.kind} [${item.status}] ${conflictMark(item.conflicts)}— ${item.text}`
+      )
       .join('\n')}\n` +
-      'Read one in full with rbook_decisions(action="show") or rbook_learnings(action="show").\n'
+      'Read one in full with rbook_decisions(action="show") or rbook_learnings(action="show").\n' +
+      (items.some((item) => item.conflicts) ? `${CONFLICT_POINTER}\n` : '')
   );
   return 0;
 }

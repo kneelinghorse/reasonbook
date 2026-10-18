@@ -19,7 +19,10 @@
 
 import { z } from 'zod';
 import * as path from 'path';
-import { withClientAsync } from './client';
+import { withClientAsync, type RbookDatabaseClient } from './client';
+import { peerHealth, syncsWith } from './record-peers';
+import { isRecordedStore } from './record-recording';
+import { mergeContext } from './record-standing';
 import type { RbookToolResult } from './types';
 import { createError, createSuccess } from './errors';
 import { findWrongTypedStringParam } from './param-type-guard';
@@ -46,6 +49,16 @@ export interface RbookStatusResult {
   last_sync_at: string | null;
   /** ISO timestamp of last successful message delivery; null if never. */
   last_delivery_observed_at: string | null;
+  /**
+   * s96-m13 (design §s96-m13 item 5): on a copy of a shared record only, each copy it syncs with:
+   * the last successful exchange, the changes it lacks, and the last error.
+   */
+  shared_sync?: Array<{
+    peer: string;
+    last_synced_at: string | null;
+    pending: number;
+    last_error: string | null;
+  }>;
 }
 
 export const rbookStatusSchema = z
@@ -131,6 +144,19 @@ async function resolveLastSyncAt(
   return null;
 }
 
+/** Each copy this shared copy syncs with, named as a person knows it. */
+function sharedSync(client: RbookDatabaseClient): NonNullable<RbookStatusResult['shared_sync']> {
+  const ctx = mergeContext(client);
+  return peerHealth(client)
+    .filter((peer) => syncsWith(ctx, peer.replicaId))
+    .map((peer) => ({
+      peer: peer.replicaId === ctx.authority ? "the owner's copy" : (peer.name ?? peer.replicaId),
+      last_synced_at: peer.lastOkAt,
+      pending: peer.pending,
+      last_error: peer.lastError,
+    }));
+}
+
 /**
  * Execute rbook_status. Always returns success=true with all 5 frozen fields
  * populated; the only error path is the underlying Reasonbook DB being absent
@@ -171,6 +197,7 @@ export async function rbookStatus(
         auth_tier: authState.authTier,
         last_sync_at,
         last_delivery_observed_at: authState.lastDeliveryObservedAt,
+        ...(isRecordedStore(client) ? { shared_sync: sharedSync(client) } : {}),
       };
 
       const upload = await readDashboardUploadStatus(path.resolve(client.path, '..', '..', '..'));
@@ -203,6 +230,15 @@ export function formatStatusForLLM(result: RbookToolResult<RbookStatusResult>): 
     `auth_tier:                 ${s.auth_tier}`,
     `last_sync_at:              ${s.last_sync_at ?? 'never'}`,
     `last_delivery_observed_at: ${s.last_delivery_observed_at ?? 'never'}`,
+    ...(s.shared_sync
+      ? [
+          `shared sync:               ${s.shared_sync.length ? '' : 'no copy has synced with this one yet'}`,
+          ...s.shared_sync.map(
+            (peer) =>
+              `  ${peer.peer}: last synced ${peer.last_synced_at ?? 'never'}, ${peer.pending} pending${peer.last_error ? `, last error: ${peer.last_error}` : ''}`
+          ),
+        ]
+      : []),
     s.auth_tier === 'none'
       ? '\nNo dashboard credentials configured. Run rbook_auth(action="login") to bootstrap, or sign up at https://reasonbook.ai/register.'
       : '',

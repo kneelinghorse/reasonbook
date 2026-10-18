@@ -12,6 +12,7 @@ import {
   ensureLearningsTable,
 } from './schema-migrations';
 import { ensureRecordLinks, materializeRecordLinks } from './record-links';
+import { ensureGenesisSchema } from './genesis-columns';
 
 export function prepareRecordLinkWrite(
   client: RbookDatabaseClient,
@@ -41,6 +42,16 @@ export function prepareRecordLinkWrite(
   }
   const firehose = ensureFirehoseEventColumns(client);
   warnings.push(...(firehose.warnings ?? []));
+  if (kind === 'learning') {
+    // This table can be created after the store-wide migration markers. Prepare its
+    // required columns before capture takes the lock for its record-and-link unit.
+    try {
+      ensureGenesisSchema(client, 'learnings');
+    } catch (error) {
+      warnings.push(error instanceof Error ? error.message : String(error));
+      return fail();
+    }
+  }
   // Author and learning ensures can report the same optional index collision.
   warnings.splice(0, warnings.length, ...new Set(warnings));
   const shape = ensureDecisionShapeColumns(client);

@@ -17,16 +17,15 @@ import { FIREHOSE_TABLES } from '../../../src/types/event-types';
 const SRC_ROOT = path.resolve(__dirname, '../../../src');
 
 /**
- * Files intentionally exempt from the genesis-stamp requirement, with rationale:
- *  - rbook-project-init.ts: initializes a fresh store via raw better-sqlite3 (not
- *    RbookDatabaseClient) where the genesis columns are still NULLABLE; its initial
- *    sprint/mission rows are backfilled by the lazy firehose migration on the
- *    first genesis write.
+ * Files intentionally exempt from the genesis-stamp requirement: none. s96-m01 removed the last,
+ * rbook-project-init.ts, which left its first sprint and missions for the lazy backfill; a store
+ * zipped before its first write then gave those rows a different stable id on every copy. It now
+ * stamps them through rawGenesisColumns (a `g.columns` splice, which the rule below reads).
  *
  * (Sprint 76 Great Deletion removed the former sqlite-client.ts exemption — the
  * dead legacy SQLiteClient was deleted in G2, so it no longer needs allowlisting.)
  */
-const ALLOWLIST = new Set([path.join('tools', 'rbook', 'rbook-project-init.ts')]);
+const ALLOWLIST = new Set<string>([]);
 
 const FIREHOSE_RE = FIREHOSE_TABLES.join('|');
 // An INSERT into a firehose table, capturing the column-list region up to VALUES/SELECT.
@@ -99,9 +98,7 @@ describe('event_type coverage (Sprint 69 m03)', () => {
   });
 
   it('keeps the allowlist tightly scoped (no silent additions)', () => {
-    expect([...ALLOWLIST].sort()).toEqual(
-      [path.join('tools', 'rbook', 'rbook-project-init.ts')].sort()
-    );
+    expect([...ALLOWLIST]).toEqual([]);
   });
 });
 
@@ -185,8 +182,8 @@ describe('mission_id coverage on mission-scoped inserts (s85-m04, #487)', () => 
   it('keeps its OWN allowlist empty and never touches the event_type one', () => {
     expect([...MISSION_ID_ALLOWLIST]).toEqual([]);
     // Byte-identical guard: if a future change widens the shared ALLOWLIST to satisfy this
-    // block, this assertion and the event_type block's own both fail loudly.
-    expect([...ALLOWLIST].sort()).toEqual([path.join('tools', 'rbook', 'rbook-project-init.ts')]);
+    // block, this assertion and the event_type block's own both fail loudly. s96-m01 emptied it.
+    expect([...ALLOWLIST]).toEqual([]);
   });
 });
 

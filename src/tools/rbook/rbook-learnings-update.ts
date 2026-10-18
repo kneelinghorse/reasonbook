@@ -13,6 +13,7 @@ import { createError, createSuccess, RbookErrors, RBOOK_ERROR_CODES } from './er
 import { ensureReviewTimestamps, ensureLearningsTable } from './schema-migrations';
 import { appendWarnings, attachWarnings } from './format-warnings';
 import { checkWrite } from './write-guard';
+import { recordedExecute } from './record-changes';
 
 const VALID_LEARNING_STATUSES = ['active', 'archived', 'superseded'];
 
@@ -116,7 +117,8 @@ export async function rbookLearningsUpdate(
       if (!statusChanged && !evergreenChanged) {
         // Idempotent set still counts as a review touch — bump the timestamp so
         // a reviewer can use update(status=current) as a tacit "still valid" ping.
-        const touchResult = client.execute(
+        const touchResult = recordedExecute(
+          client,
           'UPDATE learnings SET last_reviewed_at = ? WHERE id = ?',
           [nowIso, params.learningId]
         );
@@ -134,7 +136,8 @@ export async function rbookLearningsUpdate(
         );
       }
 
-      const updateResult = client.execute(
+      const updateResult = recordedExecute(
+        client,
         'UPDATE learnings SET status = ?, evergreen = ?, last_reviewed_at = ? WHERE id = ?',
         [newStatus, newEvergreen ? 1 : 0, nowIso, params.learningId]
       );

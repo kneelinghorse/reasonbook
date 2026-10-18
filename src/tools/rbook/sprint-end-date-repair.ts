@@ -5,6 +5,7 @@
 import type { RbookDatabaseClient } from './client';
 import { checkWrite, countWrite } from './write-guard';
 import { storedTimeMs } from './stored-time';
+import { isSharedStore } from './replica-identity';
 
 /**
  * WHY. Before 3.2.0 `rbook_sprint(complete)` wrote `end_date = COALESCE(end_date, ?)`, so a sprint
@@ -83,7 +84,8 @@ export function repairCompletedSprintEndDates(
   client: RbookDatabaseClient,
   ranAt: string = new Date().toISOString()
 ): SprintEndDateRepair | null {
-  if (endDateRepairHasRun(client)) return null;
+  // s96-m03 (ADR s96 §6): a shared record skips the repair, which rewrites recorded end dates.
+  if (isSharedStore(client) || endDateRepairHasRun(client)) return null;
 
   const rows = client.getMany<AnchorRow>(
     // s93-m11: the latest anchor by time (julianday), returned as stored, so the end_date the

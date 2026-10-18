@@ -11,6 +11,15 @@ import {
   modernRulesText,
   renderedRulesState,
 } from '../tools/rbook/rules-files';
+import {
+  escape,
+  migrateIdentifiers,
+  migrateJsonValues,
+  moveRecordLinks,
+  namesRecordMove,
+} from './migrate-rules';
+
+export { migrateIdentifiers } from './migrate-rules';
 
 export interface DocumentEdit {
   readonly file: string;
@@ -18,103 +27,11 @@ export interface DocumentEdit {
   readonly after: string;
   readonly mode: number;
 }
-function escape(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-/** The CLI's verbs (src/cli.ts usage): the old command is renamed only where it runs one. */
-const COMMAND_VERBS = [
-  'hook',
-  'review',
-  'relevant',
-  'decisions',
-  'capture',
-  'feedback',
-  'session',
-  'ambient',
-  'init',
-  'spin-out',
-  'migrate',
-  'profile',
-  'stats',
-  'drafts',
-  'serve',
-];
-const TOOL = new RegExp(
-  // s96-m11: never a file name, such as Meridian's cmos_context.py; the tool glob cmos_* is a tool.
-  `\\b${escape(LEGACY.toolPrefix)}(?=[a-z*])(?![\\w*]*\\.(?:py|mjs|cjs|js|tsx|ts|sh|json|md|ya?ml|sql|txt|toml)\\b)`,
-  'g'
-);
-const COMMAND = new RegExp(
-  `(?<![\\w/-])(?:(?<=\\bnpx\\s+(?:-\\S+\\s+)*)${escape(LEGACY.command)}(?![\\w/.-])|` +
-    `${escape(LEGACY.command)}(?=\\s+(?:${COMMAND_VERBS.join('|')})\\b|\\s+--?[a-z]))`,
-  'g'
-);
-
-/**
- * s96-m11 (#651): rename the old names a line still uses for the old tooling. A name stays when it
- * is history rather than use: after "formerly", or on a line that names its new form beside it (a
- * transition note), or as a host, file name or project slug. The command is renamed only where it
- * runs: after npx, or before one of its verbs or a flag. The cases are the lines 4.0.1 rewrote
- * wrongly in cmos-dashboard, aquex.ai and Meridian (tests/cli/migrate-docs-rules.test.ts).
- */
-function migrateLine(line: string, moved: boolean): string {
-  const kept: string[] = [];
-  const keep = (text: string): string => `${kept.push(text) - 1}`;
-  let updated = line.replace(
-    new RegExp(`\\bformerly\\s+[\`'"(]?[@\\w/]*cmos[\\w@./:-]*`, 'gi'),
-    keep
-  );
-  if (line.includes('rbook://'))
-    updated = updated.split(LEGACY.addressScheme).join(keep(LEGACY.addressScheme));
-  if (line.includes('@aquex/reasonbook'))
-    updated = updated.split(LEGACY.packageName).join(keep(LEGACY.packageName));
-  if (moved && /(?<![\w./-])rbook\/(?![\w.-])/.test(line))
-    updated = updated.replace(
-      new RegExp(`(?<![\\w./-])${escape(LEGACY.recordDirectory)}/(?![\\w.-])`, 'g'),
-      keep
-    );
-  updated = updated
-    .replace(TOOL, 'rbook_')
-    .replace(new RegExp(`\\b${escape(LEGACY.envPrefix)}(?=[A-Z])`, 'g'), 'RBOOK_')
-    .split(LEGACY.addressScheme)
-    .join('rbook://')
-    .split(LEGACY.packageName)
-    .join('@aquex/reasonbook')
-    .replace(COMMAND, 'reasonbook');
-  if (moved) {
-    updated = updated
-      .replace(new RegExp(`(?<![\\w.-])${escape(LEGACY.recordDirectory)}/(?!/)`, 'g'), 'rbook/')
-      .replace(new RegExp(`(?<![\\w.-])${escape(LEGACY.databaseFile)}\\b`, 'g'), 'rbook.sqlite');
-  }
-  return updated.replace(/(\d+)/g, (_whole, index: string) => kept[Number(index)]);
-}
-
-export function migrateIdentifiers(text: string, moved: boolean): string {
-  return text
-    .split('\n')
-    .map((line) => migrateLine(line, moved))
-    .join('\n');
-}
-
-/** s96-m11: .mcp.json values are renamed; server names are keys and stay, but for the one below. */
-function migrateJsonValues(value: unknown, moved: boolean): unknown {
-  if (typeof value === 'string')
-    return value === LEGACY.command ? 'reasonbook' : migrateIdentifiers(value, moved);
-  if (Array.isArray(value)) return value.map((item) => migrateJsonValues(item, moved));
-  if (value && typeof value === 'object')
-    return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [key, migrateJsonValues(item, moved)])
-    );
-  return value;
-}
-
 /** s96-m11: a checkout of the old package itself, whose documents describe that code. */
 function isOldPackageSource(root: string): boolean {
   try {
-    const manifest = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')) as {
-      name?: unknown;
-    };
+    const text = fs.readFileSync(path.join(root, 'package.json'), 'utf8').replace(/^\uFEFF/, '');
+    const manifest = JSON.parse(text) as { name?: unknown };
     return manifest.name === LEGACY.packageName;
   } catch {
     return false;
@@ -230,15 +147,19 @@ export function planDocumentEdits(
     const before = fs.readFileSync(file, 'utf8');
     if (oldPackageSource && path.dirname(file) === path.resolve(root)) {
       // Its names describe its own code (src/tools/cmos/, CMOS_PROJECT_ROOT), which no move renames.
+      // A Markdown link into the record folder only points at files, so it follows them (s96-m11).
+      const linked = moved ? moveRecordLinks(before) : before;
       const folder = new RegExp(`(?<![\\w./-])${escape(LEGACY.recordDirectory)}/`);
-      const lines = before.split('\n').filter((line) => folder.test(line)).length;
+      const lines = linked.split('\n').filter((line) => folder.test(line)).length;
       left.push(
-        `${file}: left unchanged, because this folder is the source of ${LEGACY.packageName}` +
-          ` and its documents describe that code.` +
+        `${file}: left unchanged${linked === before ? '' : ' but for its links into the record folder'}` +
+          `, because this folder is the source of ${LEGACY.packageName} and its documents describe that code.` +
           (moved && lines
             ? ` ${lines} line${lines === 1 ? ' names' : 's name'} the record folder; edit ${lines === 1 ? 'it' : 'them'} by hand.`
             : '')
       );
+      if (linked !== before)
+        edits.push({ file, before, after: linked, mode: fs.statSync(file).mode & 0o7777 });
       continue;
     }
     let after: string;
@@ -296,6 +217,16 @@ export function planDocumentEdits(
         }
       }
       left.push(...notes.map((note) => `${file}: ${note}`));
+      if (moved) {
+        const notesOfMove = after
+          .split('\n')
+          .map((line, index) => (namesRecordMove(line) ? index + 1 : 0))
+          .filter(Boolean);
+        if (notesOfMove.length)
+          left.push(
+            `${file}: ${notesOfMove.length === 1 ? 'line' : 'lines'} ${notesOfMove.join(', ')} ${notesOfMove.length === 1 ? 'names' : 'name'} the record folder by both its old and its new name, so the old name was left; if ${notesOfMove.length === 1 ? 'it describes' : 'a line describes'} the move as still to come, update it by hand.`
+          );
+      }
       const residual = after
         .split('\n')
         .filter(

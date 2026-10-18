@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // ABOUTME: Shared lease and consistent SQLite snapshot for explicit and automatic dashboard uploads;
-// ABOUTME: keeps pending work across failure or exit, and removes day-old copies a dead upload left.
+// ABOUTME: keeps pending work across failure or exit, and removes active or day-old abandoned copies.
 
 import { LEGACY, isUploadCopyName, resolveRecordPaths } from '../../intelligence/legacy-compat';
 import Database from 'better-sqlite3';
@@ -10,6 +10,8 @@ import * as path from 'path';
 import { ProjectGraphRegistry } from '../../intelligence/project-graph-registry';
 import type { UploadOutcome } from '../../intelligence/project-upload-state';
 import { isSameDirectory } from '../../intelligence/resolution-policy';
+import { RbookDatabaseClient } from './client';
+import { isMembersCopy } from './record-membership';
 
 export interface UploadProject {
   readonly projectId: string;
@@ -17,6 +19,34 @@ export interface UploadProject {
   readonly dbPath: string;
   readonly name: string;
   readonly registered: boolean;
+  /** s96-m13: a copy of a shared record, read from the raw file; isMembersStore says whose. */
+  readonly shared: boolean;
+}
+
+/**
+ * s96-m13 (design §s96-m13 item 3): whether this project's store is a member's copy of a shared
+ * record, which never uploads: the copy the authority chain names, after any handover or recovery
+ * (ADR s96 §8). An unshared store answers from the raw read alone. A shared one that cannot be read
+ * counts as a member's, so it stays quiet, and says so.
+ */
+export async function isMembersStore(project: UploadProject): Promise<boolean> {
+  if (!project.shared) return false;
+  const opened = await RbookDatabaseClient.create({
+    dbPath: project.dbPath,
+    registerProject: false,
+    replicaCheck: false,
+  });
+  if (!opened.success || !opened.data) {
+    uploadLog(
+      `Did not upload ${project.projectId}: its store could not be read to see whose copy it is (${opened.error?.message ?? 'unread'}).`
+    );
+    return true;
+  }
+  try {
+    return isMembersCopy(opened.data);
+  } finally {
+    opened.data.close();
+  }
 }
 
 export function uploadLog(message: string): void {
@@ -35,7 +65,7 @@ export function readUploadProject(projectRoot: string): UploadProject | null {
       (
         db
           .prepare(
-            "SELECT key,value FROM metadata WHERE key IN ('project_id','project_name','dashboard_registered')"
+            "SELECT key,value FROM metadata WHERE key IN ('project_id','project_name','dashboard_registered','replica_id')"
           )
           .all() as Array<{ key: string; value: string | null }>
       ).map((r) => [r.key, r.value])
@@ -48,6 +78,7 @@ export function readUploadProject(projectRoot: string): UploadProject | null {
       dbPath,
       name: values.get('project_name') ?? projectId,
       registered: values.get('dashboard_registered') === 'true',
+      shared: Boolean(values.get('replica_id')),
     };
   } finally {
     db.close();
@@ -55,6 +86,8 @@ export function readUploadProject(projectRoot: string): UploadProject | null {
 }
 
 const UPLOAD_COPY_PREFIX = 'rbook-dashboard-upload-';
+const activeUploadCopies = new Set<string>();
+let uploadsStopped = false;
 /** An upload runs for seconds and its lease lasts five minutes, so a day-old copy is no live upload's. */
 const STALE_UPLOAD_COPY_MS = 24 * 60 * 60 * 1000;
 
@@ -108,13 +141,28 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Remove only copies this process created; shutdown cannot await a stalled upload's finally. */
+export function cleanupActiveUploadCopies(): void {
+  uploadsStopped = true;
+  for (const directory of activeUploadCopies) {
+    try {
+      fs.rmSync(directory, { recursive: true, force: true });
+      activeUploadCopies.delete(directory);
+    } catch (error) {
+      uploadLog(`Could not remove the active upload copy ${directory}: ${errorText(error)}`);
+    }
+  }
+}
+
 export async function withUploadSnapshot<T>(
   dbPath: string,
   send: (file: string) => Promise<T>,
   sweep: UploadSweepOptions = {}
 ): Promise<T> {
+  if (uploadsStopped) throw new Error('Dashboard upload skipped: server is shutting down.');
   sweepStaleUploadCopies(sweep);
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), UPLOAD_COPY_PREFIX));
+  activeUploadCopies.add(directory);
   const file = path.join(directory, LEGACY.databaseFile);
   let db: Database.Database | undefined;
   try {
@@ -122,10 +170,12 @@ export async function withUploadSnapshot<T>(
     await db.backup(file);
     db.close();
     db = undefined;
+    if (uploadsStopped) throw new Error('Dashboard upload skipped: server is shutting down.');
     return await send(file);
   } finally {
     db?.close();
     fs.rmSync(directory, { recursive: true, force: true });
+    activeUploadCopies.delete(directory);
   }
 }
 

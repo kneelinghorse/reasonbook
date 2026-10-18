@@ -3,7 +3,7 @@
  *
  * Consolidated database admin tool with action parameter support.
  * Actions: health, snapshot, restore, backfill, reconcile, purge, identify_orphans, pull, clone,
- * prune_snapshots.
+ * prune_snapshots, conflicts, settle.
  * Routes to existing DB handlers without rewriting business logic.
  *
  * @module tools/rbook/rbook-db
@@ -12,55 +12,48 @@
 import { z } from 'zod';
 import { createError, RbookErrors } from './errors';
 import { findWrongTypedStringParam } from './param-type-guard';
-import { appendWarnings } from './format-warnings';
 import type { ActionParamMap, RbookToolResult } from './types';
 import {
   rbookDbHealth,
-  formatHealthForLLM,
   type RbookDbHealthParams,
   type RbookDbHealthResult,
 } from './rbook-db-health';
 import {
   rbookDbSnapshot,
-  formatDbSnapshotForLLM,
   type RbookDbSnapshotParams,
   type RbookDbSnapshotResult,
 } from './rbook-db-snapshot';
 import {
   rbookDbRestore,
-  formatDbRestoreForLLM,
   type RbookDbRestoreParams,
   type RbookDbRestoreResult,
 } from './rbook-db-restore';
 import {
   rbookDbBackfill,
-  formatBackfillForLLM,
   type RbookDbBackfillParams,
   type RbookDbBackfillResult,
 } from './rbook-db-backfill';
 import {
   rbookDbReconcile,
-  formatReconciliationForLLM,
   type ReconciliationResult,
   rbookDbPurge,
-  formatPurgeForLLM,
   type PurgeResult,
   identifyPgOrphans,
-  formatPgOrphanReportForLLM,
   type PgOrphanReport,
 } from './rbook-db-backfill';
-import { syncPull, formatSyncPullForLLM, type SyncPullResult } from './sync-pull';
-import {
-  syncBootstrap,
-  formatSyncBootstrapForLLM,
-  type SyncBootstrapResult,
-} from './sync-bootstrap';
+import { syncPull, type SyncPullResult } from './sync-pull';
+import { syncBootstrap, type SyncBootstrapResult } from './sync-bootstrap';
 import {
   rbookDbPruneSnapshots,
-  formatPruneSnapshotsForLLM,
   type RbookDbPruneSnapshotsParams,
   type RbookDbPruneSnapshotsResult,
 } from './rbook-db-prune-snapshots';
+import {
+  rbookDbConflicts,
+  rbookDbSettle,
+  type RbookDbConflictsResult,
+  type RbookDbSettleResult,
+} from './rbook-db-conflicts';
 
 export const RBOOK_DB_ACTIONS = [
   'health',
@@ -73,6 +66,8 @@ export const RBOOK_DB_ACTIONS = [
   'pull',
   'clone',
   'prune_snapshots',
+  'conflicts',
+  'settle',
 ] as const;
 
 export type RbookDbAction = (typeof RBOOK_DB_ACTIONS)[number];
@@ -97,6 +92,8 @@ export const RBOOK_DB_ACTION_PARAMS: ActionParamMap<RbookDbAction, RbookDbParams
     'keepLast',
     'projectRoot',
   ],
+  conflicts: ['action', 'projectRoot'],
+  settle: ['action', 'table', 'recordId', 'field', 'value', 'projectRoot'],
 };
 
 export type RbookDbResult =
@@ -109,34 +106,39 @@ export type RbookDbResult =
   | PgOrphanReport
   | SyncPullResult
   | SyncBootstrapResult
-  | RbookDbPruneSnapshotsResult;
+  | RbookDbPruneSnapshotsResult
+  | RbookDbConflictsResult
+  | RbookDbSettleResult;
 
 export const rbookDbSchema = z
   .object({
     action: z
       .enum(RBOOK_DB_ACTIONS)
       .describe(
-        'Database action: health | snapshot | restore | backfill | reconcile | purge | identify_orphans | pull | clone | prune_snapshots'
+        'Database action: health | snapshot | restore | backfill | reconcile | purge | identify_orphans | pull | clone | prune_snapshots | conflicts | settle'
       ),
+    // s96-m12: settle params
+    table: z.string().optional().describe('settle: the table, or "project" for the identity'),
+    recordId: z.string().optional().describe('settle: the row id as this copy shows it'),
+    field: z.string().optional().describe('settle: the conflicted field'),
+    value: z.unknown().optional().describe('settle: the value to keep'),
     // pull/clone params (Sprint 71 m02 PULL consumer + m03 clone-from-/state)
     slug: z
       .string()
       .optional()
-      .describe(
-        'Dashboard slug to pull/clone (for pull and clone actions; defaults to the registered slug)'
-      ),
+      .describe('Legacy pull/clone option; both actions are retired. Use reasonbook sync.'),
     limit: z
       .number()
       .int()
       .positive()
       .optional()
-      .describe('Per-page event limit for pull action (default 500, broker caps at 1000)'),
+      .describe('Legacy pull option; pull is retired. Use reasonbook sync.'),
     maxPages: z
       .number()
       .int()
       .positive()
       .optional()
-      .describe('Safety bound on the pull pagination loop (default 1000)'),
+      .describe('Legacy pull option; pull is retired. Use reasonbook sync.'),
     // snapshot params
     listOnly: z.boolean().optional().describe('List snapshots instead of creating one'),
     maxSnapshots: z
@@ -185,11 +187,11 @@ export const rbookDbSchema = z
     force: z
       .boolean()
       .optional()
-      .describe('Force full backfill, ignoring cursor (for backfill action)'),
+      .describe('Legacy backfill option; SQLite uploads already include the full store.'),
     dryRun: z
       .boolean()
       .optional()
-      .describe('Preview backfill without pushing (for backfill action)'),
+      .describe('Retired event-replay preview; returns LEGACY_SYNC_RETIRED. Use reasonbook sync.'),
     expectedSlug: z
       .string()
       .optional()
@@ -207,7 +209,9 @@ export const rbookDbToolDefinition = {
   name: 'rbook_db',
   description:
     'Consolidated database admin tool with action parameter support. ' +
-    'Actions: health, snapshot, restore, backfill, reconcile, purge, identify_orphans, pull, clone, prune_snapshots. ' +
+    'Actions: health, snapshot, restore, backfill, reconcile, purge, identify_orphans, pull, clone, prune_snapshots, conflicts, settle. ' +
+    'pull and clone are retired and return LEGACY_SYNC_RETIRED; use reasonbook sync. backfill retains registered owner SQLite upload; event replay and its dry run are retired. ' +
+    'On a shared project, conflicts lists each field that holds values from copies that had not seen each other, and settle keeps one value for it. ' +
     'prune_snapshots reclaims the content of automatic context-snapshot copies: a dry run unless confirm=true, which takes a database snapshot first and empties content without deleting any row; referenced snapshots, sprint milestones and snapshots someone named are always kept. ' +
     'Routes to the existing DB handlers without changing DB business logic.',
   inputSchema: {
@@ -217,8 +221,12 @@ export const rbookDbToolDefinition = {
         type: 'string',
         enum: [...RBOOK_DB_ACTIONS],
         description:
-          'Database action: health | snapshot | restore | backfill | reconcile | purge | identify_orphans | pull | clone | prune_snapshots',
+          'Database action: health | snapshot | restore | backfill | reconcile | purge | identify_orphans | pull | clone | prune_snapshots | conflicts | settle',
       },
+      table: { type: 'string', description: 'settle: the table, or "project" for the identity' },
+      recordId: { type: 'string', description: 'settle: the row id as this copy shows it' },
+      field: { type: 'string', description: 'settle: the conflicted field' },
+      value: { description: 'settle: the value to keep' },
       listOnly: { type: 'boolean', description: 'List snapshots instead of creating one' },
       maxSnapshots: {
         type: 'integer',
@@ -253,26 +261,32 @@ export const rbookDbToolDefinition = {
         description:
           'prune_snapshots: snapshots still holding content kept per context, newest first (default 30)',
       },
-      force: { type: 'boolean', description: 'Force full backfill, ignoring cursor' },
-      dryRun: { type: 'boolean', description: 'Preview backfill without pushing' },
+      force: {
+        type: 'boolean',
+        description: 'Legacy backfill option; SQLite uploads already include the full store.',
+      },
+      dryRun: {
+        type: 'boolean',
+        description:
+          'Retired event-replay preview; returns LEGACY_SYNC_RETIRED. Use reasonbook sync.',
+      },
       expectedSlug: {
         type: 'string',
         description: 'Expected project slug for guardrail checks on purge',
       },
       slug: {
         type: 'string',
-        description:
-          'Dashboard slug to pull/clone (for pull and clone actions; defaults to the registered slug)',
+        description: 'Legacy pull/clone option; both actions are retired. Use reasonbook sync.',
       },
       limit: {
         type: 'integer',
         minimum: 1,
-        description: 'Per-page event limit for pull action (default 500, broker caps at 1000)',
+        description: 'Legacy pull option; pull is retired. Use reasonbook sync.',
       },
       maxPages: {
         type: 'integer',
         minimum: 1,
-        description: 'Safety bound on the pull pagination loop (default 1000)',
+        description: 'Legacy pull option; pull is retired. Use reasonbook sync.',
       },
       projectRoot: {
         type: 'string',
@@ -368,61 +382,17 @@ export async function rbookDb(params: RbookDbParams): Promise<RbookToolResult<Rb
         keepLast: params.keepLast,
         projectRoot: params.projectRoot,
       } satisfies RbookDbPruneSnapshotsParams);
+    case 'conflicts':
+      return rbookDbConflicts({ projectRoot: params.projectRoot });
+    case 'settle':
+      return rbookDbSettle({
+        table: params.table,
+        recordId: params.recordId,
+        field: params.field,
+        value: params.value,
+        projectRoot: params.projectRoot,
+      });
   }
 }
 
-export function formatDbForLLM(
-  action: string | undefined,
-  result: RbookToolResult<RbookDbResult>
-): string {
-  if (!result.success && result.error?.code === 'INVALID_ACTION') {
-    const availableActions =
-      result.error.availableActions ??
-      result.error.available_actions ??
-      result.error.validValues ??
-      [];
-
-    const lines = ['❌ Failed to execute rbook_db', '', `Error: ${result.error.message}`];
-
-    if (availableActions.length > 0) {
-      lines.push('');
-      lines.push(`Available actions: ${availableActions.join(', ')}`);
-    }
-
-    if (result.error.suggestion) {
-      lines.push('');
-      lines.push(`Suggestion: ${result.error.suggestion}`);
-    }
-
-    return lines.join('\n');
-  }
-
-  switch (action) {
-    case 'health':
-      return formatHealthForLLM(result as RbookToolResult<RbookDbHealthResult>);
-    case 'snapshot':
-      return formatDbSnapshotForLLM(result as RbookToolResult<RbookDbSnapshotResult>);
-    case 'restore':
-      return formatDbRestoreForLLM(result as RbookToolResult<RbookDbRestoreResult>);
-    case 'backfill':
-      return formatBackfillForLLM(result as RbookToolResult<RbookDbBackfillResult>);
-    case 'reconcile':
-      return formatReconciliationForLLM(result as RbookToolResult<ReconciliationResult>);
-    case 'purge':
-      return formatPurgeForLLM(result as RbookToolResult<PurgeResult>);
-    case 'identify_orphans':
-      return formatPgOrphanReportForLLM(result as RbookToolResult<PgOrphanReport>);
-    case 'pull':
-      return formatSyncPullForLLM(result as RbookToolResult<SyncPullResult>);
-    case 'clone':
-      return formatSyncBootstrapForLLM(result as RbookToolResult<SyncBootstrapResult>);
-    case 'prune_snapshots':
-      return formatPruneSnapshotsForLLM(result as RbookToolResult<RbookDbPruneSnapshotsResult>);
-    default: {
-      if (!result.success) return '❌ Failed to execute rbook_db';
-      const lines = ['✓ Database action completed'];
-      appendWarnings(lines, result);
-      return lines.join('\n');
-    }
-  }
-}
+export { formatDbForLLM } from './rbook-db-format';

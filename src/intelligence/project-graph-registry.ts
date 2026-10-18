@@ -42,13 +42,14 @@ import {
 import Database from 'better-sqlite3';
 import { enableWal, processBusyTimeout } from '../tools/rbook/sqlite-busy';
 import { randomUUID } from 'crypto';
-import { existsSync, readFileSync, realpathSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from 'fs';
 import path from 'path';
 import { ensureDir } from '../utils/fs';
 import { isReadOnlyAgentSession } from '../tools/rbook/read-only-agent-guard';
 import { currentToolCallActionMode } from '../tools/rbook/tool-call-context';
 import { defaultEphemeralRoots, isEphemeralStorePath } from './resolution-policy';
 import * as uploads from './project-upload-state';
+import * as replicas from './replica-bindings';
 
 /**
  * s86-m01 — write the one diagnostic this module emits (the registration-collision
@@ -81,7 +82,22 @@ function physicalStorePath(storePath: string): string {
   }
 }
 
+/**
+ * s96-m01 (#629): one folder by its device and inode, so macOS's two spellings of it
+ * (/Users/… and /System/Volumes/Data/…) are one project; realpath does not fold the firmlink.
+ */
+function folderIdentity(storePath: string): string | null {
+  try {
+    const stat = statSync(path.resolve(storePath));
+    return `${stat.dev}:${stat.ino}`;
+  } catch {
+    return null;
+  }
+}
+
 function isSameStorePath(left: string, right: string): boolean {
+  const [a, b] = [folderIdentity(left), folderIdentity(right)];
+  if (a !== null && b !== null) return a === b;
   return physicalStorePath(left) === physicalStorePath(right);
 }
 
@@ -104,8 +120,10 @@ export const RBOOK_CONFIG_DIR_ENV = 'RBOOK_CONFIG_DIR';
  * register() INSERT that omits it still works).
  * v3 (s94-m10): additive upload debt, lease and outcome columns. New non-null counters have
  * defaults, so older processes' column-listed inserts remain compatible.
+ * v4 (s96-m01): the additive `replicas` table, binding each copy of a shared record to this machine
+ * (replica-bindings.ts). Older processes never read it.
  */
-export const PROJECT_GRAPH_SCHEMA_VERSION = 3;
+export const PROJECT_GRAPH_SCHEMA_VERSION = 4;
 
 /** Busy timeout (ms) so concurrent writers from sibling MCP processes wait. */
 const BUSY_TIMEOUT_MS = 5000;
@@ -176,6 +194,12 @@ export interface ProjectGraphRegisterInput {
   project_id: string;
   store_path: string;
   name: string;
+  /**
+   * s96-m01: this machine's binding confirmed the store as the live copy of a shared project, so
+   * it takes the row even from another folder that still holds the project: a stale copy, which
+   * its own check refuses (ADR s96 §9).
+   */
+  confirmedCopy?: boolean;
 }
 
 /** The folder a caller that names none asks for: `RBOOK_CONFIG_DIR`, else `~/.config/rbook`. */
@@ -234,6 +258,11 @@ export class ProjectGraphRegistry {
     this.registryPath = path.join(this.configDir, filename);
     this.now = options.now ?? Date.now;
     this.ephemeralRoots = options.ephemeralRoots;
+  }
+
+  /** s96-m03: the folder this graph keeps its files in; a copy's replay base is kept beside it. */
+  get configDirectory(): string {
+    return this.configDir;
   }
 
   /**
@@ -332,6 +361,7 @@ export class ProjectGraphRegistry {
     // an existing table, so a v1 registry would never gain the column without this).
     this.ensureLastSyncedColumn();
     uploads.ensureUploadColumns(db);
+    replicas.ensureReplicaTable(db);
   }
 
   /**
@@ -377,7 +407,7 @@ export class ProjectGraphRegistry {
     const resolvedPath = path.resolve(input.store_path);
     const incumbent = this.get(input.project_id);
 
-    if (incumbent && !isSameStorePath(incumbent.store_path, resolvedPath)) {
+    if (incumbent && !input.confirmedCopy && !isSameStorePath(incumbent.store_path, resolvedPath)) {
       // A different path is claiming an id that already has a row. Distinguish a
       // genuine collision (incumbent is still a live store holding this id) from
       // a legitimate move (incumbent path no longer resolves the id).
@@ -584,6 +614,57 @@ export class ProjectGraphRegistry {
   }
 
   /**
+   * s96-m01: this machine's binding of one copy of a shared record (replica-bindings.ts). A read
+   * of a registry not yet made finds no binding and makes nothing; a write makes the folder first.
+   */
+  replicaBinding(replicaId: string): replicas.ReplicaBinding | null {
+    if (!existsSync(this.registryPath)) return null;
+    return replicas.replicaBinding(this.connection(), replicaId);
+  }
+
+  liveReplicas(projectId: string): replicas.ReplicaBinding[] {
+    if (!existsSync(this.registryPath)) return [];
+    return replicas.liveReplicas(this.connection(), projectId);
+  }
+
+  bindReplica(input: replicas.BindReplicaInput): void {
+    replicas.bindReplica(this.writableConnection(), input, this.now());
+  }
+
+  rebindReplica(
+    replicaId: string,
+    storePath: string,
+    file: { readonly device: number; readonly inode: number }
+  ): void {
+    replicas.rebindReplica(
+      this.writableConnection(),
+      replicaId,
+      { storePath: path.resolve(storePath), device: file.device, inode: file.inode },
+      this.now()
+    );
+  }
+
+  advanceReplicaMark(replicaId: string, seq: number): void {
+    replicas.advanceReplicaMark(this.writableConnection(), replicaId, seq, this.now());
+  }
+
+  retireReplica(replicaId: string): void {
+    replicas.retireReplica(this.writableConnection(), replicaId, this.now());
+  }
+
+  /** The connection for a synchronous write, which may be the first use of this folder. */
+  private writableConnection(): Database.Database {
+    assertConfigDirectoryAvailable(this.configDir);
+    mkdirSync(this.configDir, { recursive: true });
+    return this.connection();
+  }
+
+  /** s96-m01 (#629): whether two paths name one folder, by device and inode where both exist. */
+  static isSameFolder(left: string, right: string): boolean {
+    return isSameStorePath(left, right);
+  }
+
+  /**
    * s79-m03 — archive every ACTIVE row whose store's `rbook/db/rbook.sqlite` no
    * longer exists on disk (operators delete project DBs without de-registering).
    * Archive (soft) rather than hard-delete keeps the row recoverable; a later
@@ -665,7 +746,12 @@ export class ProjectGraphRegistry {
    */
   registerStore(
     projectRoot: string,
-    opts: { name?: string; setAsDefault?: boolean; requireStoredIdentity?: boolean } = {}
+    opts: {
+      name?: string;
+      setAsDefault?: boolean;
+      requireStoredIdentity?: boolean;
+      confirmedCopy?: boolean;
+    } = {}
   ): ProjectGraphEntry {
     const resolved = path.resolve(projectRoot);
     const existingGraphId = this.getByStorePath(resolved);
@@ -699,7 +785,12 @@ export class ProjectGraphRegistry {
       (existingGraphId ? this.get(existingGraphId)?.name : undefined) ??
       identity?.name ??
       path.basename(resolved);
-    const entry = this.register({ project_id: projectId, store_path: resolved, name });
+    const entry = this.register({
+      project_id: projectId,
+      store_path: resolved,
+      name,
+      confirmedCopy: opts.confirmedCopy,
+    });
     if (entry.project_id !== projectId || !isSameStorePath(entry.store_path, resolved)) {
       throw new Error(
         `Project identity collision: '${projectId}' is already registered to ` +
@@ -980,6 +1071,8 @@ export function mintProjectId(storePath: string, preferredId?: string): string |
       | undefined;
     const existing = idRow?.value?.trim();
     if (existing) return existing; // never churn an existing id
+    // s96-m01: a copy of a shared record that lost its project id is damaged, never re-keyed (ADR s96 §4).
+    if (db.prepare("SELECT 1 FROM metadata WHERE key = 'replica_id'").get()) return null;
     const minted = preferredId ?? randomUUID();
     // One conditional UPSERT, rather than SELECT + unconditional REPLACE. Two MCP processes can
     // observe the same blank row concurrently; the first committed UUID wins and the second must

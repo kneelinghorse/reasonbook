@@ -243,6 +243,33 @@ describe('applyPendingBlobMigrations', () => {
     expect(result.blob).toHaveProperty('technical_context');
   });
 
+  it('discloses a missing snapshot table while persisting the legacy blob migration', () => {
+    expect(client.execute('DROP TABLE context_snapshots').success).toBe(true);
+    const raw = client.getOne<{ content: string }>(
+      "SELECT content FROM contexts WHERE id = 'master_context'"
+    ).data!.content;
+
+    const result = applyPendingBlobMigrations(client, 'master_context', raw, JSON.parse(raw));
+
+    expect(result.rewritten).toBe(true);
+    expect(result.warnings).toEqual([
+      expect.stringMatching(
+        /context_snapshots pre-migration snapshot.*failed:.*missing project_id/
+      ),
+    ]);
+    expect(
+      JSON.parse(
+        client.getOne<{ content: string }>(
+          "SELECT content FROM contexts WHERE id = 'master_context'"
+        ).data!.content
+      )
+    ).toEqual({ technical_context: {} });
+    expect(getBlobSchemaVersion(client)).toBe(BLOB_SCHEMA_VERSION);
+    expect(
+      client.getOne("SELECT name FROM sqlite_master WHERE name = 'context_snapshots'").data
+    ).toBeUndefined();
+  });
+
   it('returns migrated=false when version is already current', () => {
     // Manually set version to current
     client.execute('INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)', [
@@ -417,6 +444,46 @@ describe('rbook_context_view — auto-migration integration', () => {
     expect(stored).not.toHaveProperty('completed_missions');
     expect(stored).toHaveProperty('technical_context');
     expect(snapshots).toHaveLength(1);
+  });
+
+  it('first-write upkeep discloses a missing snapshot without claiming it was taken', async () => {
+    tempDir = makeTempDb({
+      completed_missions: [{ id: 'm01' }],
+      technical_context: { stack: 'Node.js' },
+    });
+    const dbPath = path.join(tempDir, 'rbook', 'db', 'rbook.sqlite');
+    const before = new Database(dbPath);
+    before.exec('DROP TABLE context_snapshots');
+    before.close();
+    resetFirstWriteMaintenance();
+
+    const notes = await runFirstWriteMaintenance(tempDir);
+
+    expect(notes).toContainEqual(
+      expect.stringMatching(/context_snapshots pre-migration snapshot.*failed:.*missing project_id/)
+    );
+    expect(notes).toContainEqual(expect.stringMatching(/Migrated the stored master_context/));
+    expect(notes.join('\n')).not.toMatch(/snapshot was taken/);
+    const db = new Database(dbPath, { readonly: true });
+    try {
+      expect(
+        JSON.parse(
+          (
+            db.prepare("SELECT content FROM contexts WHERE id = 'master_context'").get() as {
+              content: string;
+            }
+          ).content
+        )
+      ).toEqual({ technical_context: { stack: 'Node.js' } });
+      expect(
+        db.prepare('SELECT value FROM metadata WHERE key = ?').get(BLOB_SCHEMA_VERSION_KEY)
+      ).toEqual({ value: String(BLOB_SCHEMA_VERSION) });
+      expect(
+        db.prepare("SELECT name FROM sqlite_master WHERE name = 'context_snapshots'").get()
+      ).toBeUndefined();
+    } finally {
+      db.close();
+    }
   });
 
   it('a blob the migrations leave unchanged gets only its version stamp', async () => {

@@ -3,6 +3,7 @@
 // ABOUTME: boundary (add, status update, close), so no external runbook has to maintain it.
 
 import type { RbookDatabaseClient } from './client';
+import { isRecordedStore } from './record-recording';
 import { SPRINT_OPEN_STATUSES } from './terminal-status';
 import { checkWrite } from './write-guard';
 
@@ -24,13 +25,21 @@ export interface SprintPointer {
   focus: string | null;
 }
 
-/** The sprint with an open status (the single-current invariant keeps it to at most one). */
+/**
+ * The sprint with an open status (the single-current invariant keeps it to at most one). Two copies of
+ * a shared record can each open one (s96-m12): every copy then names the one created last by the
+ * record's clock, then by change id as the merge orders, as a solo store names the one it inserted last.
+ */
 export function openSprintPointer(client: RbookDatabaseClient): SprintPointer | null {
   const placeholders = SPRINT_OPEN_STATUSES.map(() => '?').join(', ');
+  const create = (column: string) =>
+    `(SELECT max(c.${column}) FROM record_changes c WHERE c.kind = 'create' AND c.entity = 'sprints'
+          AND c.entity_id = sprints.stable_event_id) DESC, `;
+  const created = isRecordedStore(client) ? create('hlc') + create('change_id') : '';
   const row = client.getOne<SprintPointer>(
     `SELECT id, title, status, focus FROM sprints
       WHERE status IN (${placeholders})
-      ORDER BY rowid DESC LIMIT 1`,
+      ORDER BY ${created}rowid DESC LIMIT 1`,
     [...SPRINT_OPEN_STATUSES]
   );
   if (!row.success)

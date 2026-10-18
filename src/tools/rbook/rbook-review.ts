@@ -56,6 +56,7 @@ import { withClientAsync } from './client';
 import { tableHasColumn } from './genesis-columns';
 import { findWrongTypedStringParam } from './param-type-guard';
 import { rbookAgentOnboard, type RbookAgentOnboardResult } from './rbook-agent-onboard';
+import { AUTHOR_BEFORE_RECORDED, AUTHOR_NOT_RECORDED, writerName } from './author-name';
 import type { SelfCaptureGap } from './self-capture-guard';
 import { rbookMissionStatus, type StatusMissionItem } from './rbook-mission-status';
 import { checkBuildFreshness, type BuildFreshnessReport } from './build-freshness';
@@ -216,6 +217,12 @@ export interface RbookReviewResult {
     text: string;
     createdAt: string;
     projectId: string | null;
+    /**
+     * s96-m02: the author's name, from onboard's own decision query, so the review issues no SQL
+     * for it. Present only when someone other than this writer wrote the decision; decision show
+     * and list carry every author and both readings for an unnamed one.
+     */
+    author?: string;
   }>;
 
   /**
@@ -502,6 +509,8 @@ export async function rbookReview(
     resolution: internalOpts.resolvedBy
       ? { projectRoot: projectRoot ?? null, resolvedBy: internalOpts.resolvedBy }
       : null,
+    // As a write would resolve it: a joined copy's invite name, else the user's (s96-m13, #671).
+    writer: writerName(projectRoot ?? null),
   });
 
   // Filter to auth + sync warnings only. Drop staleness/orphan/context-size
@@ -530,6 +539,8 @@ function buildDigest(
     }>;
     resolution: { projectRoot: string | null; resolvedBy: ResolvedBy } | null;
     reflagged?: { count: number; lastRestoredAt: string } | null;
+    /** s96-m02: the name this project's writes stamp now, whose decisions need no author. */
+    writer?: string | null;
   } = { registryDefault: null, resolution: null }
 ): RbookReviewResult {
   const sprintFocus = onboard.currentSprint?.focus
@@ -576,11 +587,18 @@ function buildDigest(
 
   // Recent decisions trimmed to compact form. rbook_agent_onboard already
   // ordered by created_at DESC and LIMIT 10 — we slice to 5 and drop domain.
+  // s96-m02: a decision names its author only when someone other than this writer wrote it. In
+  // a solo project that is never; in a shared one it is the name worth the digest's bytes.
   const recentDecisions = onboard.recentDecisions.slice(0, RECENT_DECISIONS_MAX).map((d) => ({
     id: d.id,
     text: truncate(d.decision, DECISION_TEXT_CAP_CHARS),
     createdAt: d.createdAt,
     projectId: d.projectId,
+    ...(d.author !== AUTHOR_BEFORE_RECORDED &&
+    d.author !== AUTHOR_NOT_RECORDED &&
+    d.author !== extras.writer
+      ? { author: d.author }
+      : {}),
   }));
 
   const freshness = {
@@ -1469,7 +1487,7 @@ export function formatReviewForLLM(result: RbookToolResult<RbookReviewResult>): 
       lines.push(
         `  • #${dec.id} ${
           isForeign ? frameForeignInline(dec.text, `proj:${dec.projectId}`) : dec.text
-        }`
+        }${dec.author ? ` — ${dec.author}` : ''}`
       );
     }
   }

@@ -16,11 +16,11 @@ Pick one:
 
 ```bash
 # Recommended: a global install of this release. It starts from disk, with no registry lookup.
-npm install -g @aquex/reasonbook@4.0.2
+npm install -g @aquex/reasonbook@4.1.0
 
 # Or run on demand via npx: pinned, and preferring the local cache. The first launch downloads
 # the package; later launches reuse the npm cache.
-npx --prefer-offline -y @aquex/reasonbook@4.0.2
+npx --prefer-offline -y @aquex/reasonbook@4.1.0
 ```
 
 If the former package is installed globally, run `npm uninstall -g @aquex/cmos-mcp` first. Version 4 provides only the `reasonbook` command; update scripts and MCP configurations that use the old command.
@@ -30,7 +30,7 @@ Verify it starts:
 ```bash
 reasonbook --version  # if globally installed
 # or
-npx --prefer-offline -y @aquex/reasonbook@4.0.2 --version
+npx --prefer-offline -y @aquex/reasonbook@4.1.0 --version
 ```
 
 Semantic (vector) search is optional: without it, retrieval is keyword-only and the install is about
@@ -44,7 +44,7 @@ Claude Code and Codex are verified; the other blocks follow each client's own MC
 ### Claude Code
 
 ```bash
-claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.0.2"]}'
+claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.1.0"]}'
 claude mcp list   # confirm it's registered
 ```
 
@@ -62,7 +62,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS), 
       "args": [
         "--prefer-offline",
         "-y",
-        "@aquex/reasonbook@4.0.2",
+        "@aquex/reasonbook@4.1.0",
         "--project-root",
         "/absolute/path/to/your/project"
       ]
@@ -85,7 +85,7 @@ Edit `~/.cursor/mcp.json`:
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.0.2"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.1.0"]
     }
   }
 }
@@ -100,7 +100,7 @@ Edit your Zed `settings.json`:
   "context_servers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.0.2"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.1.0"]
     }
   }
 }
@@ -121,7 +121,7 @@ your terminal PATH, so the terminal route needs the standalone Claude CLI.
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.0.2"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.1.0"]
     }
   }
 }
@@ -304,11 +304,87 @@ states each denominator and unavailable measure. Semantic duplicate and contradi
 and friction severity require review. Digest-off comparisons are observational and deferred until
 after G1.
 
+## Share a project's record
+
+Sharing is supported in the measured setup: two accounts operated by one person, on two machines
+in an owner/member star over SSH. A second person's collaboration and privacy experience remain
+unvalidated. Each member receives a full copy of the record, and editor content reaches the owner's
+agents as local project content. Read [Trust](trust.md#shared-copies) before sharing.
+
+Use a current Reasonbook installation on both machines; older servers cannot write a shared store.
+The store must be outside Git's tracked files. If sharing refuses because Git tracks it, follow the
+returned untracking remedy while keeping the local file. SSH must work without a password prompt
+(`BatchMode=yes`), and the remote account must be able to run Reasonbook.
+
+On the owner's machine, ask your agent to share the project and invite an editor. Replace the names
+and absolute paths in these examples with yours:
+
+```text
+rbook_project(action="share", projectRoot="/owner/project", authorName="alex")
+rbook_project(action="invite", projectRoot="/owner/project", name="sam", role="editor")
+```
+
+After sharing, make a consistent copy while the server can keep running:
+
+```bash
+reasonbook copy --project-root /owner/project --to /tmp/project-copy
+```
+
+Carry that folder securely to `/member/project` on the other machine. The command copies the store
+under `rbook/db/`, including its record contents; it does not copy the project's working files. Use
+an empty destination rather than overwriting an existing store. The new copy cannot accept writes
+until it joins. From the owner's machine:
+
+```bash
+reasonbook join --project-root /owner/project \
+  --ssh sam@member-machine --remote-root /member/project --member sam \
+  --node /absolute/path/to/node --bin /absolute/path/to/reasonbook
+reasonbook sync --project-root /owner/project
+```
+
+`--node` and `--bin` name the remote installation. With `--node`, `--bin` must point to Reasonbook's
+JavaScript entry (the installed `reasonbook` link or `dist/bin.js`). Omit both if the remote
+non-login shell can run `reasonbook` directly. Add `--config-dir` only for a nondefault remote
+Reasonbook config directory. Join saves the owner's route to the member; a sync over that route
+exchanges changes in both directions. A member initiating its own sync needs an SSH route back to
+the owner, set with `reasonbook sync --ssh … --remote-root …` and the corresponding runtime paths.
+
+Work locally on either copy, then run `reasonbook sync` to exchange changes. With a saved route,
+session-start and session-end hooks also start a detached exchange, and a running server exchanges
+every five minutes for shared projects it has opened. Set `RBOOK_SHARED_SYNC=off` in the hook and
+server environments to stop automatic exchanges. Explicit commands still work. Dashboard uploads
+have a separate switch, `RBOOK_CHECKPOINT_SYNC`.
+
+For a bundle carried by hand, export on the member and import on the owner:
+
+```bash
+reasonbook sync --project-root /member/project --bundle-out /tmp/member-changes.json
+# Carry member-changes.json to the owner's machine, then:
+reasonbook sync --project-root /owner/project --bundle-in /tmp/member-changes.json
+reasonbook sync --project-root /owner/project --bundle-out /tmp/owner-changes.json --for sam
+# Carry owner-changes.json back, then:
+reasonbook sync --project-root /member/project --bundle-in /tmp/owner-changes.json
+```
+
+When both copies change the same field before seeing each other, the record keeps the competing
+values. Ask `rbook_db(action="conflicts", projectRoot="/owner/project")` for their values and
+authors. Settle with the returned `table`, `recordId`, `field` and the value you choose:
+
+```text
+rbook_db(action="settle", projectRoot="/owner/project", table="missions", recordId="<mission id>", field="name", value="<chosen name>")
+```
+
+Sync again to carry the settlement. The owner's copy must settle project-identity and decision
+lineage conflicts. To remove a member, use
+`rbook_project(action="remove", projectRoot="/owner/project", name="sam")`. Removal stops new
+exchanges with that member; it cannot erase data their copy already holds. Re-inviting the same
+member resumes exchange, including changes held in quarantine after removal.
+
 ## Optional: connect the hosted dashboard
 
 The dashboard at [reasonbook.ai](https://reasonbook.ai) adds three things on top of local mode:
 
-- **Sync** — `rbook_db(action="backfill")` pushes pending events to a Postgres mirror so your state survives machine swaps.
+- **Dashboard mirror** — `rbook_db(action="backfill")` uploads a consistent snapshot of the whole SQLite file for the dashboard to display.
 - **Project registry** — addressable `rbook://you/project-name` URIs across all your machines.
 - **Messaging** — `rbook_message(action="send")` between your own projects.
 
@@ -342,9 +418,9 @@ This polls until the device is approved (or 30s, whichever comes first; agents r
 
 With a stored user-scoped dashboard key or legacy environment credentials, the next explicit `rbook_session(action="complete")` or `rbook_sprint(action="complete")` attempts to register the project, store its project-scoped key and upload the whole SQLite file in the background. Later explicit closes attempt another upload. For a registered project, an MCP tool call that actually writes its store also schedules an upload. It becomes due after 5 quiet minutes or 30 minutes of continuous writes, and starts within the next 60 seconds when no upload lease or failure backoff blocks it. Transfer time follows dispatch. A running server must have opened the project; an owed upload survives a short-lived process for the next server, and concurrent servers share one upload lease per project.
 
-Each upload sends a consistent snapshot of the whole SQLite file, including pending, declined and expired proposals: exclusion from event sync does not exclude a table from a whole-file checkpoint. `rbook_status` and `rbook_review` show the last upload result and any failure. HTTP 401, 402 or 403 pauses automatic retries until an explicit close succeeds. A failed upload does not fail the local write or close, and implicit process-exit closes do not upload.
+Each upload sends a consistent snapshot of the whole SQLite file, including pending, declined and expired proposals. There is no table-level exclusion from this whole-file upload. `rbook_status` and `rbook_review` show the last upload result and any failure. HTTP 401, 402 or 403 pauses automatic retries until an explicit close succeeds. A failed upload does not fail the local write or close, and implicit process-exit closes do not upload.
 
-Set `RBOOK_CHECKPOINT_SYNC=off` in the MCP server environment to disable automatic checkpoint uploads. It does not disable explicit sync, messaging, sign-in, status queries, shared-collaboration pushes or other requested network actions. (`rbook_project(action="register", projectRoot=…)` is different: it records the project in the local registry only.) See the [network disclosure](../SECURITY.md#outbound-network).
+Set `RBOOK_CHECKPOINT_SYNC=off` in the MCP server environment to disable automatic checkpoint uploads. It does not disable explicit sync, messaging, sign-in, status queries, shared-record exchanges or other requested network actions. (`rbook_project(action="register", projectRoot=…)` is different: it records the project in the local registry only.) See the [network disclosure](../SECURITY.md#outbound-network).
 
 ### Verify
 

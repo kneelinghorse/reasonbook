@@ -26,6 +26,8 @@ import { captureToolCall } from './tool-call-context';
 import { feedbackDigestLine } from './feedback-fleet';
 import { openDraftRuntime, startsSince } from './draft-runtime';
 import { clientRunner, isExpired, pendingDrafts } from './proposals';
+import { authorForWrite } from './author-name';
+import { sharedRecordReview } from './record-review';
 
 /** Distinct local/NULL source rows citing an explicit typed rule; repeated citations in one row count once. */
 export const DIGEST_RULE_CITATION_RULE =
@@ -57,6 +59,7 @@ interface RecordRow {
   createdAt: string;
   reviewedAt: string | null;
   projectId: string | null;
+  author: string | null;
 }
 
 function recordRows(
@@ -76,7 +79,8 @@ function recordRows(
     client,
     `SELECT id, ${table === 'strategic_decisions' ? 'decision_text' : 'content'} AS text,
     created_at AS createdAt, ${field(cols, 'last_reviewed_at')} AS reviewedAt,
-    ${field(cols, 'project_id')} AS projectId FROM ${table} WHERE COALESCE(status,'active') <> 'superseded'
+    ${field(cols, 'project_id')} AS projectId, ${field(cols, 'author_name')} AS author
+    FROM ${table} WHERE COALESCE(status,'active') <> 'superseded'
     ${cols.has('superseded_by') ? 'AND superseded_by IS NULL' : ''} ${predicate} AND ${visible.sql}`,
     visible.params
   );
@@ -94,11 +98,16 @@ function changedAt(row: RecordRow): number {
   return changed;
 }
 
+/**
+ * The week's records, newest first. On a shared record (`writer` given) each names its author when
+ * someone other than this copy's writer wrote it (s96-m12), as the structured review does (s96-m02).
+ */
 function recent(
   records: RecordRow[],
   kind: 'd' | 'l',
   max: number,
-  now: number
+  now: number,
+  writer?: string | null
 ): { rows: DigestRow[]; total: number } {
   const selected = records
     .map((row) => ({ row, changed: changedAt(row) }))
@@ -111,6 +120,9 @@ function recent(
       text: row.text,
       projectId: row.projectId,
       date: new Date(changed).toISOString().slice(0, 10),
+      ...(writer !== undefined && row.author && row.author !== writer
+        ? { author: row.author }
+        : {}),
     })),
   };
 }
@@ -250,6 +262,8 @@ function snapshot(
       work = [{ id: next.id, text: `[${next.status}] ${next.name}`, projectId: next.projectId }];
   }
   const localTasks = missions.filter((row) => !isForeignProject(row.projectId, local)).length;
+  const shared = sharedRecordReview(client);
+  const writer = shared ? authorForWrite(client).name : undefined;
   return {
     project: {
       name: metadata.get('project_name') || identity?.project_name || path.basename(root),
@@ -265,10 +279,11 @@ function snapshot(
           ? 'Consider Builder: at least 10 open tasks.'
           : null,
     rules: bindingRules(client, local, now),
-    decisions: recent(recordRows(client, 'strategic_decisions'), 'd', 8, now),
-    learnings: recent(recordRows(client, 'learnings'), 'l', 3, now),
+    decisions: recent(recordRows(client, 'strategic_decisions'), 'd', 8, now, writer),
+    learnings: recent(recordRows(client, 'learnings'), 'l', 3, now, writer),
     work,
     drafts: pendingUnexpired(client, env, now),
+    shared,
   };
 }
 

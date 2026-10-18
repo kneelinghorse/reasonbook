@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { withClient } from './client';
 import type { RbookToolResult, Session } from './types';
 import { createError, createSuccess } from './errors';
+import { authorNamesSince, authorReading } from './author-name';
 import { VALID_SESSION_TYPES, type SessionType } from './rbook-session-start';
 import { getProjectId, tableHasColumn } from './genesis-columns';
 import { frameInlineIfForeign, frameTextIfForeign } from '../../intelligence/provenance-frame';
@@ -48,6 +49,9 @@ export interface SessionListItem {
 
   /** Agent who ran the session */
   agent: string;
+
+  /** s96-m02 (ADR s96 §10): the person whose session it is, or the reading for a NULL author. */
+  author: string;
 
   /**
    * Session summary (if completed). s93-m11 (#602): a preview of at most PREVIEW_MAX_CHARS
@@ -286,10 +290,18 @@ export async function rbookSessionList(
       const projectIdExpr = tableHasColumn(client, 'sessions', 'project_id')
         ? 'project_id'
         : 'NULL AS project_id';
+      const authorExpr = tableHasColumn(client, 'sessions', 'author_name')
+        ? 'author_name'
+        : 'NULL AS author_name';
+      const occurredExpr = tableHasColumn(client, 'sessions', 'occurred_at')
+        ? 'occurred_at'
+        : 'NULL AS occurred_at';
+      const since = authorNamesSince(client);
 
       // Get sessions
       const sessionsResult = client.getMany<Session>(
-        `SELECT id, type, title, status, started_at, completed_at, agent, summary, captures, sprint_id, ${projectIdExpr}
+        `SELECT id, type, title, status, started_at, completed_at, agent, summary, captures, sprint_id, ${projectIdExpr},
+                ${authorExpr}, ${occurredExpr}
          FROM sessions
          ${whereClause}
          ORDER BY julianday(started_at) DESC
@@ -323,6 +335,11 @@ export async function rbookSessionList(
           startedAt: s.started_at,
           completedAt: s.completed_at,
           agent: s.agent,
+          author: authorReading(
+            (s as unknown as { author_name?: string | null }).author_name,
+            (s as unknown as { occurred_at?: number | null }).occurred_at,
+            since
+          ),
           ...summaryAsListed(s.summary, Boolean(params.sessionId)),
           captureCount,
           sprintId: s.sprint_id,
@@ -438,7 +455,9 @@ export function formatSessionListForLLM(result: RbookToolResult<RbookSessionList
     // inline; a local/NULL-project session renders byte-identical to 2.3.0.
     const title = frameInlineIfForeign(session.title, session.projectId, data.localProjectId);
     lines.push(`${icon} **${session.id}** - ${title}${captureInfo}`);
-    lines.push(`   Type: ${session.type} | Status: ${session.status} | Agent: ${session.agent}`);
+    lines.push(
+      `   Type: ${session.type} | Status: ${session.status} | Agent: ${session.agent} | Author: ${session.author}`
+    );
     if (session.captures) {
       // s93-m11: one session named by id is read in full, summary and every capture.
       if (session.summary) {

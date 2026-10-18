@@ -415,13 +415,13 @@ describe('s78-m05 foreign-content provenance framing', () => {
     const result = await rbookMessage({ action: 'get', messageId: msgId });
     expect(result.success).toBe(true);
     const m = (result.data as unknown as { message: Record<string, unknown> }).message;
-    // body-on-get: the FULL body is present, sourced from the populated senderProject.
+    // A legacy display name without a valid address part cannot identify the source.
     expect((m.payload as { body?: string })?.body).toBe(`BODY ${INJECTION}`);
-    expect(m.provenance).toEqual({ source: 'CMOS-MCP Pro', trust: 'foreign' });
+    expect(m.provenance).toEqual({ source: 'unknown source', trust: 'foreign' });
 
     // The render fences the body under the labeled sender.
     const text = formatMessageForLLM('get', result as never);
-    expect(text).toContain('⟪untrusted, from CMOS-MCP Pro⟫');
+    expect(text).toContain('⟪untrusted, from unknown source⟫');
   });
 
   it('get: a transient inbox-fetch failure does NOT hide a message in the sent tab (s80-m05 review)', async () => {
@@ -527,8 +527,8 @@ describe('s78-m05 foreign-content provenance framing', () => {
 
 // ─── s84-m01 sprint-47 cutover: version-tolerant NAME reads + identity UUIDs ──
 
-describe('s84-m01 version-tolerant NAME reads + identity UUIDs', () => {
-  it('list(inbox) PRE-cutover: senderProject=NAME (no *Name) still labels the NAME; no *Name/UUID keys added', async () => {
+describe('message attribution preserves display fields but labels validated address parts', () => {
+  it('list(inbox) PRE-cutover: a display name is preserved without claiming an address or inventing ids', async () => {
     const client = mockClient();
     client.listMessages.mockResolvedValueOnce(
       createSuccess({
@@ -552,10 +552,9 @@ describe('s84-m01 version-tolerant NAME reads + identity UUIDs', () => {
     expect(result.success).toBe(true);
     const msg = (result.data as unknown as { messages: Array<Record<string, unknown>> })
       .messages[0];
-    // Attribution reads the NAME from the pre-cutover senderProject (name ?? slug).
-    expect(msg.provenance).toEqual({ source: 'CMOS-MCP Pro', trust: 'foreign' });
+    expect(msg.provenance).toEqual({ source: 'unknown source', trust: 'foreign' });
     expect(msg.senderProject).toBe('CMOS-MCP Pro');
-    // Byte-identical to 2.3.0: no null-wall of absent additive keys on a lean row.
+    // Missing identity fields remain absent.
     expect('senderProjectName' in msg).toBe(false);
     expect('senderUserId' in msg).toBe(false);
     expect('senderProjectId' in msg).toBe(false);
@@ -563,10 +562,10 @@ describe('s84-m01 version-tolerant NAME reads + identity UUIDs', () => {
     expect('targetProjectId' in msg).toBe(false);
 
     const text = formatMessageForLLM('list', result as never);
-    expect(text).toContain('⟪untrusted, from CMOS-MCP Pro⟫');
+    expect(text).toContain('⟪untrusted, from unknown source⟫');
   });
 
-  it('list(inbox) POST-cutover: senderProject=slug + senderProjectName=NAME + UUIDs → NAME label, BOTH slug and name carried', async () => {
+  it('list(inbox) POST-cutover: a validated slug labels the source, with both display name and ids preserved', async () => {
     const client = mockClient();
     client.listMessages.mockResolvedValueOnce(
       createSuccess({
@@ -595,8 +594,7 @@ describe('s84-m01 version-tolerant NAME reads + identity UUIDs', () => {
     expect(result.success).toBe(true);
     const msg = (result.data as unknown as { messages: Array<Record<string, unknown>> })
       .messages[0];
-    // Label renders the NAME (senderProjectName preferred over the now-slug senderProject).
-    expect(msg.provenance).toEqual({ source: 'CMOS-MCP Pro', trust: 'foreign' });
+    expect(msg.provenance).toEqual({ source: 'cmos-mcp-pro', trust: 'foreign' });
     // MessageSummary carries BOTH the raw slug (addressable key) and the display name.
     expect(msg.senderProject).toBe('cmos-mcp-pro');
     expect(msg.senderProjectName).toBe('CMOS-MCP Pro');
@@ -607,12 +605,11 @@ describe('s84-m01 version-tolerant NAME reads + identity UUIDs', () => {
     expect(msg.targetProjectId).toBe('tproj-uuid-2');
 
     const text = formatMessageForLLM('list', result as never);
-    // The LLM fence labels the NAME, never the slug.
-    expect(text).toContain('⟪untrusted, from CMOS-MCP Pro⟫');
-    expect(text).not.toContain('from cmos-mcp-pro⟫');
+    expect(text).toContain('⟪untrusted, from cmos-mcp-pro⟫');
+    expect(text).not.toContain('from CMOS-MCP Pro⟫');
   });
 
-  it('list(sent) POST-cutover: targetProject=slug + targetProjectName=NAME → NAME label, both carried', async () => {
+  it('list(sent) POST-cutover: target slug labels the source, with both display name and ids preserved', async () => {
     const client = mockClient();
     client.listMessages.mockResolvedValueOnce(
       createSuccess({
@@ -638,14 +635,14 @@ describe('s84-m01 version-tolerant NAME reads + identity UUIDs', () => {
     expect(result.success).toBe(true);
     const msg = (result.data as unknown as { messages: Array<Record<string, unknown>> })
       .messages[0];
-    expect(msg.provenance).toEqual({ source: 'Forge', trust: 'foreign' });
+    expect(msg.provenance).toEqual({ source: 'forge', trust: 'foreign' });
     expect(msg.targetProject).toBe('forge');
     expect(msg.targetProjectName).toBe('Forge');
     expect(msg.senderProjectId).toBe('sproj-uuid-1');
     expect(msg.targetProjectId).toBe('tproj-uuid-2');
   });
 
-  it('get POST-cutover: FramedMessage frames the NAME and carries the identity UUIDs', async () => {
+  it('get POST-cutover: FramedMessage labels the slug and carries the identity UUIDs', async () => {
     const client = mockClient();
     const msgId = '33333333-4444-5555-6666-777777777777';
     client.listMessages.mockResolvedValue(
@@ -673,12 +670,12 @@ describe('s84-m01 version-tolerant NAME reads + identity UUIDs', () => {
     expect(result.success).toBe(true);
     const m = (result.data as unknown as { message: Record<string, unknown> }).message;
     // FramedMessage = raw row + provenance: the identity UUIDs ride the raw row unchanged.
-    expect(m.provenance).toEqual({ source: 'CMOS-MCP Pro', trust: 'foreign' });
+    expect(m.provenance).toEqual({ source: 'cmos-mcp-pro', trust: 'foreign' });
     expect(m.senderUserId).toBe('user-uuid-1');
     expect(m.senderProjectId).toBe('sproj-uuid-1');
 
     const text = formatMessageForLLM('get', result as never);
-    expect(text).toContain('⟪untrusted, from CMOS-MCP Pro⟫');
+    expect(text).toContain('⟪untrusted, from cmos-mcp-pro⟫');
   });
 });
 
@@ -696,6 +693,11 @@ describe('s84-m02 get: read-one endpoint + hardened fallback', () => {
         summary: 'hi',
         payload: { body: 'BODY' },
         senderProjectName: 'CMOS-MCP Pro',
+        senderProject: 'cmos-mcp-pro',
+        senderUserId: 'user-uuid-1',
+        senderProjectId: 'sproj-uuid-1',
+        targetUserId: 'user-uuid-2',
+        targetProjectId: 'tproj-uuid-2',
         status: 'pending',
         createdAt: 't',
       })
@@ -705,7 +707,7 @@ describe('s84-m02 get: read-one endpoint + hardened fallback', () => {
     expect(result.success).toBe(true);
     const m = (result.data as unknown as { message: Record<string, unknown> }).message;
     expect(m.id).toBe(MSG_ID);
-    expect(m.provenance).toEqual({ source: 'CMOS-MCP Pro', trust: 'foreign' });
+    expect(m.provenance).toEqual({ source: 'cmos-mcp-pro', trust: 'foreign' });
     // The fast path must not fall back to the paging scan.
     expect(client.getMessageById).toHaveBeenCalledTimes(1);
     expect(client.listMessages).not.toHaveBeenCalled();

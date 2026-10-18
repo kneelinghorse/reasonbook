@@ -31,7 +31,7 @@ const owners: Record<string, { sites: number; guard: string; caller: string }> =
   'tools/rbook/sync-merge.ts': {
     sites: 2,
     guard: 'requireRecordLinks(',
-    caller: 'standalone helper owns a transaction; pull/bootstrap own batch repair',
+    caller: 'retained standalone helper owns a transaction; legacy pull/bootstrap callers retired',
   },
 };
 
@@ -83,18 +83,16 @@ function violations(files: Map<string, string>): string[] {
   ]) {
     const source = files.get(`tools/rbook/${entry}.ts`) ?? '';
     // s96-m11: these writers own a write transaction, which takes the write lock at BEGIN.
-    if (!source.includes('prepareRecordLinkWrite(') || !source.includes('.writeTransaction('))
+    // s96-m03: recordedTransaction is that transaction, recorded on a shared record.
+    if (
+      !source.includes('prepareRecordLinkWrite(') ||
+      !(source.includes('.writeTransaction(') || source.includes('recordedTransaction('))
+    )
       failures.push(`${entry}: missing required unit`);
   }
-  for (const entry of ['sync-pull', 'sync-bootstrap']) {
-    const source = files.get(`tools/rbook/${entry}.ts`) ?? '';
-    if (
-      !source.includes('ensureRecordLinks(') ||
-      !source.includes('repairRecordLinksBatch(') ||
-      !source.includes('.transaction(')
-    )
-      failures.push(`${entry}: missing batch ownership`);
-  }
+  // s96-m08: pull and bootstrap now refuse before any row write; their retired batch
+  // repair/transaction obligations leave this inventory. The two retained sync-merge INSERTs
+  // remain governed by their required-links owner above, so the executable site count stays six.
   return failures;
 }
 
@@ -112,12 +110,24 @@ it('rejects an added writer, duplicate INSERT and removed required repair', () =
   const source = files.get('tools/rbook/decision-write.ts')!;
   files.set('tools/rbook/decision-write.ts', source + '\n' + sql);
   expect(violations(files)).toContain('tools/rbook/decision-write.ts: unclassified INSERT');
-  files.set(
-    'tools/rbook/decision-write.ts',
-    source.replace('requireRecordLinks(', 'bypassedRepair(')
-  );
+  const bypassed = source.replace('requireRecordLinks(', 'bypassedRepair(');
+  expect(bypassed).not.toBe(source);
+  files.set('tools/rbook/decision-write.ts', bypassed);
   expect(violations(files)).toContain('tools/rbook/decision-write.ts: missing required links');
-  const pull = files.get('tools/rbook/sync-pull.ts')!;
-  files.set('tools/rbook/sync-pull.ts', pull.replace('repairRecordLinksBatch(', 'bypassedBatch('));
-  expect(violations(files)).toContain('sync-pull: missing batch ownership');
+  const merge = files.get('tools/rbook/sync-merge.ts')!;
+  const bypassedMerge = merge.replace('requireRecordLinks(', 'bypassedRepair(');
+  expect(bypassedMerge).not.toBe(merge);
+  files.set('tools/rbook/sync-merge.ts', bypassedMerge);
+  expect(violations(files)).toContain('tools/rbook/sync-merge.ts: missing required links');
+});
+
+it('rejects a record writer back on a deferred transaction (s96-m11)', () => {
+  const files = sources();
+  const record = files.get('tools/rbook/rbook-decisions-record.ts')!;
+  const deferred = record
+    .replace(/\.writeTransaction\(/g, '.transaction(')
+    .replace(/recordedTransaction\(client, /g, 'client.transaction(');
+  expect(deferred).not.toBe(record);
+  files.set('tools/rbook/rbook-decisions-record.ts', deferred);
+  expect(violations(files)).toContain('rbook-decisions-record: missing required unit');
 });

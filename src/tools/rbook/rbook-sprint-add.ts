@@ -16,6 +16,7 @@ import { isOpenStatus } from './terminal-status';
 import { buildDemotionWarning, writeSingleCurrentSprint } from './sprint-current-invariant';
 import { appendWarnings, attachWarnings } from './format-warnings';
 import { syncSprintTracking } from './sprint-tracking';
+import { recordedWrite } from './record-changes';
 
 /**
  * Result type for rbook_sprint_add.
@@ -221,6 +222,15 @@ interface SprintInsertFields {
  * and the single-current-sprint transactional paths so both stamp identically.
  */
 function insertSprintRow(
+  client: RbookDatabaseClient,
+  fields: SprintInsertFields,
+  projectId: string
+): RbookToolResult<void> {
+  // s96-m01: on a shared store the create takes its sequence under the write lock (ADR s96 §3).
+  return recordedWrite(client, () => insertSprint(client, fields, projectId));
+}
+
+function insertSprint(
   client: RbookDatabaseClient,
   fields: SprintInsertFields,
   projectId: string

@@ -79,6 +79,7 @@ import { loadTierConfig, type TierConfig } from './tier-config';
 import { appendWarnings } from './format-warnings';
 import { LEASE_IDLE_WARN_DAYS, leaseState, readLeaseAges, type LeaseAge } from './next-step-lease';
 import { previewText } from './text-preview';
+import { authorNamesSince, authorReading } from './author-name';
 import { currentSessionOwner, EMPTY_AUTOMATIC_CLOSE_PATTERN } from './session-owner';
 import { levelName, levelOfTier, type ProjectLevel } from './rules-files';
 import { readProjectLevel, readProjectTier } from './project-level';
@@ -159,6 +160,9 @@ export interface RecentDecisionSummary {
   /** s92-m04: whether `decision` was cut, and the full text's length. */
   truncated: boolean;
   fullLength: number;
+
+  /** s96-m02 (ADR s96 §10): who wrote it, or the reading for a NULL author. */
+  author: string;
 
   /** Domain (e.g., 'ai-studio', 'general') */
   domain: string | null;
@@ -1248,8 +1252,13 @@ function getRecentDecisions(client: RbookDatabaseClient): RecentDecisionSummary[
     columns.has('superseded_by') ? 'superseded_by IS NULL' : '1=1',
   ].join(' AND ');
   const visible = prepareSpinOutRead(client).predicate('decision', 'strategic_decisions.id');
-  const result = client.getMany<StrategicDecisionRow & { id: number }>(
-    `SELECT id, decision_text, project_domain, created_at, ${projExpr} AS project_id
+  const authorExpr = columns.has('author_name') ? 'author_name' : 'NULL';
+  const occurredExpr = columns.has('occurred_at') ? 'occurred_at' : 'NULL';
+  const result = client.getMany<
+    StrategicDecisionRow & { id: number; author_name: string | null; occurred_at: number | null }
+  >(
+    `SELECT id, decision_text, project_domain, created_at, ${projExpr} AS project_id,
+            ${authorExpr} AS author_name, ${occurredExpr} AS occurred_at
        FROM strategic_decisions
       WHERE ${eligible} AND ${visible.sql}
       ORDER BY julianday(created_at) DESC
@@ -1261,6 +1270,7 @@ function getRecentDecisions(client: RbookDatabaseClient): RecentDecisionSummary[
     return [];
   }
 
+  const since = authorNamesSince(client);
   return result.data.map((d) => {
     const preview = previewText(d.decision_text);
     return {
@@ -1268,6 +1278,7 @@ function getRecentDecisions(client: RbookDatabaseClient): RecentDecisionSummary[
       decision: preview.preview,
       truncated: preview.truncated,
       fullLength: preview.fullLength,
+      author: authorReading(d.author_name, d.occurred_at, since),
       domain: d.project_domain,
       createdAt: d.created_at,
       projectId: d.project_id,

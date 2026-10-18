@@ -109,6 +109,7 @@ import {
   currentWrittenStores,
   projectIdentityDisclosuresForError,
   recordStoreUpkeepNote,
+  currentSharedStores,
   unwrapCapturedToolCallError,
 } from './tools/rbook/tool-call-context';
 import {
@@ -121,10 +122,13 @@ import {
   runFirstWriteMaintenance,
   storeNeedsFirstWriteMaintenance,
 } from './tools/rbook/first-write-maintenance';
+import { sharedRecordNoticesAt } from './tools/rbook/record-notices';
+import { observeSharedSync } from './tools/rbook/record-sync-scheduler';
 import {
   markDashboardUploadOwed,
   observeDashboardUploadProject,
 } from './tools/rbook/dashboard-upload-scheduler';
+import { cleanupActiveUploadCopies } from './tools/rbook/dashboard-upload';
 import { RBOOK_CHECKPOINT_SYNC_ENV } from './tools/rbook/checkpoint-backfill';
 import {
   RBOOK_TOOL_DEFINITIONS,
@@ -186,7 +190,7 @@ import type {
 } from './tools/rbook';
 import { findWrongTypedStringParam } from './tools/rbook/param-type-guard';
 import { classifySenderResolutionError } from './tools/rbook/sender-refusal';
-import { toWireDefinition } from './tools/rbook/wire-descriptions';
+import { toWireDefinition } from './tools/rbook/wire-definition';
 import { SERVER_INSTRUCTIONS } from './server-instructions';
 import { registerRbookPromptHandlers } from './server-prompts';
 import { closeOwnImplicitSessions } from './tools/rbook/implicit-session-lifecycle';
@@ -464,6 +468,8 @@ async function resolveToolSenderContext(
   setToolProjectResolution({ projectRoot: resolved.projectRoot, resolvedBy: resolved.source });
   noteTelemetryProject(resolved.projectRoot);
   await observeDashboardUploadProject(resolved.projectRoot);
+  // s96-m13: a copy of a shared record with a route syncs on its own timer, under its own switch.
+  observeSharedSync(resolved.projectRoot);
   return resolved;
 }
 
@@ -482,6 +488,16 @@ async function executeWithStoreUpkeep(
   context: MissionProtocolContext
 ): Promise<CallToolResult> {
   const result = await executeMissionProtocolTool(name, args, context);
+  // s96-m12: an answer from a copy of a shared record names its fields in conflict and any id two
+  // copies created (ADR s96 §3, §5), so no one acts on a provisional value unknowingly. The review's
+  // digest has its own shared-record section, and rbook_db conflicts lists the same, so neither
+  // says it twice.
+  if (
+    name !== 'rbook_review' &&
+    !(name === 'rbook_db' && (args as { action?: unknown } | null)?.action === 'conflicts')
+  )
+    for (const dbPath of currentSharedStores())
+      for (const note of await sharedRecordNoticesAt(dbPath, args)) recordStoreUpkeepNote(note);
   if (
     result.isError !== true &&
     name !== 'rbook_agent_onboard' &&
@@ -1749,11 +1765,9 @@ async function main(argv: readonly string[] = process.argv.slice(2)): Promise<vo
       { legacy: 'serve', onerror: (error) => console.error(`[WARN] MCP stdio: ${error.message}`) }
     );
 
-    // s92-m03: when the client goes away, close this process's implicit sessions. Best effort, and
-    // through the session handler, so nothing is uploaded on the way out; whatever is left open is
-    // closed by the next reconcile once this process is gone.
+    // A disconnected stdio client ends this server's lifetime, including any pending upload.
     process.stdin.once('end', () => {
-      void closeOwnImplicitSessions().catch(() => undefined);
+      void shutdownServer('stdin close');
     });
 
     debugLog(`[INFO] ${SERVER_CONFIG.name} MCP server running on stdio`);
@@ -1855,33 +1869,14 @@ export const __test__ = {
   },
 };
 
-// Handle graceful shutdown
-process.on('SIGINT', async () => {
-  debugLog(`[INFO] Received SIGINT, shutting down gracefully...`);
-  await closeOwnImplicitSessions().catch(() => undefined);
-  try {
-    await (stdioHandle ? stdioHandle.close() : server.close());
-  } catch (error) {
-    ErrorHandler.handle(
-      error,
-      'server.shutdown',
-      {
-        module: 'server',
-        data: {
-          signal: 'SIGINT',
-        },
-      },
-      {
-        rethrow: false,
-        userMessage: 'Graceful shutdown encountered an issue.',
-      }
-    );
-  }
-  process.exit(0);
-});
+let shuttingDown = false;
 
-process.on('SIGTERM', async () => {
-  debugLog(`[INFO] Received SIGTERM, shutting down gracefully...`);
+// Close only this process's sessions and upload copies, before its transport goes away.
+async function shutdownServer(signal: string): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  debugLog(`[INFO] Received ${signal}, shutting down gracefully...`);
+  cleanupActiveUploadCopies();
   await closeOwnImplicitSessions().catch(() => undefined);
   try {
     await (stdioHandle ? stdioHandle.close() : server.close());
@@ -1892,7 +1887,7 @@ process.on('SIGTERM', async () => {
       {
         module: 'server',
         data: {
-          signal: 'SIGTERM',
+          signal,
         },
       },
       {
@@ -1902,7 +1897,10 @@ process.on('SIGTERM', async () => {
     );
   }
   process.exit(0);
-});
+}
+
+process.on('SIGINT', () => shutdownServer('SIGINT'));
+process.on('SIGTERM', () => shutdownServer('SIGTERM'));
 
 /**
  * s93-m01 — start the MCP server (or answer a server flag) with these arguments. dist/bin.js, the

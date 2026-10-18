@@ -13,6 +13,9 @@ import type { RbookToolResult } from './types';
 import { createError, createSuccess, RbookErrors, RBOOK_ERROR_CODES } from './errors';
 import { appendWarnings } from './format-warnings';
 import { checkWrite } from './write-guard';
+import { recordedWrite } from './record-changes';
+import { isRecordedStore } from './record-guards';
+import { takeReplicaSeq } from './replica-identity';
 
 /**
  * Valid dependency types.
@@ -196,12 +199,20 @@ export async function rbookMissionDepends(
         });
       }
 
-      // Insert the dependency
-      const insertResult = client.execute(
-        `INSERT INTO mission_dependencies (from_id, to_id, type)
-         VALUES (?, ?, ?)`,
-        [fromId.trim(), toId.trim(), type]
-      );
+      // Insert the dependency; s96-m01: on a shared store the create takes its sequence under the
+      // write lock, so a failed insert rolls it back (ADR s96 §3).
+      const insertResult = recordedWrite(client, () => {
+        const inserted = client.execute(
+          `INSERT INTO mission_dependencies (from_id, to_id, type)
+           VALUES (?, ?, ?)`,
+          [fromId.trim(), toId.trim(), type]
+        );
+        if (!inserted.success) return inserted;
+        // s96-m03: on a recorded store the change helper takes the link's sequence.
+        if ((inserted.data?.changes ?? 0) > 0 && !isRecordedStore(client))
+          takeReplicaSeq(client, 'mission_dependencies');
+        return inserted;
+      });
 
       if (!insertResult.success) {
         return createError<MissionDependsResult>(

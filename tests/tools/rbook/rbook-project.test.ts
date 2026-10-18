@@ -174,8 +174,8 @@ describe('rbook_project', () => {
   });
 
   describe('RBOOK_PROJECT_ACTIONS', () => {
-    it('contains 8 actions', () => {
-      expect(RBOOK_PROJECT_ACTIONS).toHaveLength(8);
+    it('contains 14 actions: the registry and level ones, then the shared record (s96-m13)', () => {
+      expect(RBOOK_PROJECT_ACTIONS).toHaveLength(14);
       expect([...RBOOK_PROJECT_ACTIONS]).toEqual([
         'init',
         'register',
@@ -185,6 +185,12 @@ describe('rbook_project', () => {
         'prune',
         'update',
         'sweep',
+        'share',
+        'invite',
+        'join',
+        'members',
+        'remove',
+        'sync',
       ]);
     });
   });

@@ -2,7 +2,91 @@
 
 All notable changes to Reasonbook (published as `@aquex/cmos-mcp` before 4.0.0) are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [4.1.0] — 2026-10-18
+
+- **Shared records across machines.** An owner can share a project; members keep full copies,
+  write locally and exchange changes with the owner over SSH or bundle files. Conflicting
+  field values remain visible until explicitly settled. The logged acceptance run covers
+  two accounts operated by one person on a MacBook Air and Mac Studio in an SSH star.
+  It does not establish larger-team or multi-human support.
+- **Re-initializing a shared project preserves its identity.** Schema setup retains the original
+  creation timestamp and leaves absent optional identity metadata untouched.
+- **Restored copies report known losses precisely.** Re-identifying an admitted copy whose
+  authority has received none of its changes reports the exact lost range when the local
+  registry has the later sequence. Missing or stale registry evidence still yields an
+  explicitly unknown loss.
+- **Behavior change: the old dashboard event sync is retired.** `rbook_db` pull and
+  clone, event backfill replay, mutable pushes and dashboard lock hooks now refuse
+  with `LEGACY_SYNC_RETIRED` and direct callers to `reasonbook sync`. Local mission,
+  sprint and project-identity edits still succeed; old collaborative stores receive
+  a warning instead of a lock/pull/push. Whole-file dashboard uploads remain available.
+  The pull/clone action values remain until 5.0.0.
+- **Message reads preserve provenance.** `rbook_message get` reads the dashboard's
+  nested message response and recovers missing sender/target IDs from paged lists,
+  including messages older than the newest 100. Generated source labels use validated
+  addresses and escaped fences; sender/target email metadata is omitted.
+- **Interrupted uploads clean up their copies.** SIGTERM, SIGINT and closing stdin
+  remove this server's active temporary upload directories. Abrupt termination still
+  relies on the existing stale-copy sweep.
+- **Members cannot replace the owner's dashboard project keys.** Explicit rotation,
+  reissue and startup recovery check the shared record's current authority first.
+
+- **`reasonbook migrate` never writes `npx reasonbook`.** The unscoped `reasonbook` package on npm
+  belongs to someone else. 4.0.1 and 4.0.2 turned a document's `npx -y cmos-mcp` into
+  `npx -y reasonbook`, which runs that package. Migrate now writes `npx -y @aquex/reasonbook`, after
+  any package runner (`npx`, `bunx`, `pnpm dlx`, `yarn dlx`), its flags and a tag. In `.mcp.json` it
+  renames an exact `"cmos-mcp"` only as a command, or as the package an npx entry runs. No registered
+  project held such a line.
+- **`reasonbook migrate` tells history from use more closely.**
+  - It keeps:
+    - an old name beside its own new form on the line, as in a mapping table or a note on the old
+      setting name: a tool, setting, record path or folder, the package or the address;
+    - the old command on a line that also runs the new one;
+    - every old name in a parenthesis that opens with "formerly";
+    - the old package after an uninstall, or on a line about deprecation unless a plain install
+      names it;
+    - file and folder names, by a common extension or a following slash;
+    - a project slug an option names.
+  - It renames:
+    - the command only where it runs: at a line start, a prompt or a list marker, in backticks or
+      quotes, after `run`, `sudo`, a setting or a shell operator, or in a quoted server entry. Prose
+      such as "the cmos-mcp review cadence" stays;
+    - tool notation such as `cmos_session.capture`, and alternatives such as `cmos_review/cmos_status`;
+    - `./cmos`, and the record folder named in words ("from cmos root");
+    - setting names in an `.mcp.json` `env` block, as 4.0.1 did.
+  - In a checkout of the old package itself, it moves its documents' links into the record folder.
+  - It lists any line that keeps an old record path beside its new one, because such a line may
+    describe the move as still to come.
+- **The Stop hook keeps its drafts when another process writes.** The hook read the pending drafts
+  before inserting new ones. A commit by another process in between made SQLite refuse the insert,
+  and that turn's drafts were lost. When it has drafts to write, the hook now takes the store's write
+  lock before it reads.
+- **An embedding that could not be written says so.** When another process held the store's write
+  lock past the busy timeout, a new record was saved without its embedding and the answer said
+  nothing. The answer now carries a warning.
+- **Every record names who wrote it.** New decisions, learnings, missions, sprints, sessions, next
+  steps, constraints and context snapshots carry an author name, as git does.
+  - Set yours with `reasonbook config author <name>`; `reasonbook config author` shows where the
+    name comes from.
+  - When you set none and are signed in to the dashboard, your account's username is the name. It
+    is learned when you sign in, and kept for that sign-in only: signing out or revoking its key,
+    or pointing at another dashboard, stops its use. A project's own dashboard key names you as
+    the sign-in it was issued under; signing out leaves that key working, so it can keep naming
+    you until you revoke it. A sign-in from an earlier version is learned at each project's next
+    checkpoint, or at your next sign-in for a project without a key of its own.
+  - A name is one line with a visible character. Hidden marks are refused, except the joiners
+    some scripts and emoji need, and so are the two readings below.
+  - Decision show and list, mission show and session list show the author. An older record
+    reads "before authors were recorded", and a newer one written without a name reads "author
+    not recorded". The review shows a recent decision's author when it is not the name you
+    write as now.
+  - While you are signed in, a record also keeps your account's id.
+  - The name and id travel with the record, including the copy the dashboard upload sends. The
+    privacy page lists them.
+- **One folder under two spellings is one project.** On macOS a folder can be reached as
+  `/System/Volumes/Data/Users/…` as well as `/Users/…`, and resolving the path does not fold the two.
+  The project registry and the dashboard upload's folder checks now compare folders by device and
+  inode, so the second spelling no longer reads as a different folder.
 
 ## 4.0.2 — 2026-10-15
 
@@ -31,6 +115,15 @@ All notable changes to Reasonbook (published as `@aquex/cmos-mcp` before 4.0.0) 
   `@aquex/cmos-mcp` package itself, it leaves the root documents unchanged, because they describe
   that code, and reports how many lines name the record folder. It still renames the tool glob
   `cmos_*`.
+- _Correction, added after release:_ 4.0.2's migrate kept less than the entry above says.
+  - **Transition notes.** It kept an old form beside its new form only for `cmos://`, the package and a
+    bare `cmos/`.
+  - **File names.** It kept them only with 14 common extensions.
+  - **Slugs.** It renamed a slug that a flag followed.
+  - **`.mcp.json`.** It stopped renaming the setting names there, which 4.0.1 renamed.
+  - **npx.** It also wrote `npx -y reasonbook`, which runs another publisher's package.
+
+  The Unreleased entry fixes these.
 
 ## 4.0.1 — 2026-10-12
 

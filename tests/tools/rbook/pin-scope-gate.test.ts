@@ -75,6 +75,21 @@ const SINGLE_PROJECT_UPLOAD_STATE = new Set([
   'dashboard-upload-scheduler.ts',
 ]);
 
+// s96-m01: a copy of a shared record checks its own binding, and the same project's other copies on
+// this machine. They read the registry, and, to tell a live second copy from a move, the project id
+// of the folder a binding names (readStoreIdentity): only copies of this same project, never another
+// project's store or the cross-store queries. Unlike the upload helpers, they open that one sibling
+// file read-only; the exception permits the registry import and nothing more.
+// s96-m03: the share step binds the new copy in this machine's registry, and retires that binding
+// if its transaction fails; it reads no other project.
+const SINGLE_PROJECT_REPLICA = new Set([
+  'replica-identity.ts',
+  'replica-check.ts',
+  'record-share.ts',
+  // s96-m13: a recovery reads and retires this machine's binding of the lost owner copy (ADR s96 §8).
+  'record-recovery.ts',
+]);
+
 // Matches an import from the cross-store fan-out modules OR the project-graph registry —
 // the machinery a pin-only read would use to escape its sender scope.
 const CROSS_STORE_IMPORT =
@@ -83,7 +98,8 @@ const CROSS_STORE_QUERY_IMPORT = /from\s+['"][^'"]*\/(cross-store-query|cross-st
 
 function violatesScope(name: string, content: string): boolean {
   if (ALLOWLIST.has(name)) return false;
-  if (SINGLE_PROJECT_UPLOAD_STATE.has(name)) return CROSS_STORE_QUERY_IMPORT.test(content);
+  if (SINGLE_PROJECT_UPLOAD_STATE.has(name) || SINGLE_PROJECT_REPLICA.has(name))
+    return CROSS_STORE_QUERY_IMPORT.test(content);
   return CROSS_STORE_IMPORT.test(content);
 }
 
@@ -112,6 +128,11 @@ describe('pin-scope convergence gate (Sprint 80 m04)', () => {
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it('a replica module cannot gain portfolio queries under its registry-only exception', () => {
+    const fanOut = "import { queryAcrossStores } from '../../intelligence/cross-store-query';";
+    for (const name of SINGLE_PROJECT_REPLICA) expect(violatesScope(name, fanOut)).toBe(true);
   });
 
   it('an upload helper cannot gain portfolio queries under its registry-only exception', () => {

@@ -14,6 +14,7 @@ import { getProjectId } from '../tools/rbook/project-id';
 import type { RbookDatabaseClient, QueryParams } from '../tools/rbook/client';
 import type { RbookToolResult } from '../tools/rbook/types';
 import type { RecallItem, RecallResult } from '../tools/rbook/first-prompt-recall';
+import { markConflicts, rawQuery } from '../tools/rbook/record-conflict-marks';
 import { previewText } from '../tools/rbook/text-preview';
 
 export const LATER_MIN_KEYWORD_MATCHES = 3;
@@ -124,7 +125,12 @@ export function recallLaterPrompt(
       if (items.length === 3) break;
     }
     check();
-    return { items, localProjectId, warnings: [], available: true };
+    return {
+      items: markConflicts(rawQuery(db), items),
+      localProjectId,
+      warnings: [],
+      available: true,
+    };
   } catch (error) {
     const known = ['recall_deadline', 'recall_schema_missing', 'recall_index_missing'];
     const warning =

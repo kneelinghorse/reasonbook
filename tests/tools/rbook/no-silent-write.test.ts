@@ -136,6 +136,19 @@ const REPO_ROOT = path.resolve(__dirname, '../../..');
  * internal calls are the implementation of the envelope, not consumers of it.
  */
 const WRAPPER_RELATIVE = path.join('tools', 'rbook', 'client.ts');
+/**
+ * s96-m03: the change helper wraps the client's writes for a shared record, as the client wraps
+ * better-sqlite3's, so it is a wrapper too; its own writes throw on failure.
+ */
+const RECORD_HELPER_RELATIVE = path.join('tools', 'rbook', 'record-changes.ts');
+/**
+ * s96-m03: the change helper's calls that replaced `client.execute`, `client.writeTransaction`
+ * and, as `recordedChange`, a write that ran with no transaction at the converted sites return
+ * the same envelope, so their results are held to the same rule.
+ * `recordedWrite` replaced s96-m01's `sharedStoreWrite`, which the gate never tracked: the writes
+ * inside its callbacks are tracked where they run.
+ */
+const RECORD_HELPER_CALLS = new Set(['recordedExecute', 'recordedTransaction', 'recordedChange']);
 
 /**
  * ROLLBACK on an already-failing path. Derived from the SQL, never from a file list.
@@ -320,12 +333,17 @@ function walk(node: ts.Node, visit: (n: ts.Node) => void): void {
 
 /** Any receiver whose property name is an envelope-returning write method. */
 function isWriteEnvelopeCall(node: ts.Node): node is ts.CallExpression {
+  if (!ts.isCallExpression(node)) return false;
+  // s96-m03: a converted site writes through the change helper, and its result is held to the
+  // same rule as the `client.execute` it replaced.
+  if (ts.isIdentifier(node.expression)) return RECORD_HELPER_CALLS.has(node.expression.text);
   return (
-    ts.isCallExpression(node) &&
     ts.isPropertyAccessExpression(node.expression) &&
     (node.expression.name.text === 'execute' ||
       node.expression.name.text === 'raw' ||
-      node.expression.name.text === 'transaction')
+      node.expression.name.text === 'transaction' ||
+      // s96-m11: the record writers' transactions, which take the write lock at BEGIN.
+      node.expression.name.text === 'writeTransaction')
   );
 }
 
@@ -631,11 +649,17 @@ function collectWriteSites(
     // SQLite returns a transaction FUNCTION: its immediate invocation throws on failure.
     // A client transaction instead returns the result envelope this gate protects. Restrict the
     // distinction to callee position, so `ignore(client.transaction(...))` stays a violation.
+    // s96-m11: `.immediate()`, `.deferred()` and `.exclusive()` invoke the same factory.
+    const invokedMode =
+      ts.isPropertyAccessExpression(node.parent) &&
+      node.parent.expression === node &&
+      ['immediate', 'deferred', 'exclusive'].includes(node.parent.name.text) &&
+      ts.isCallExpression(node.parent.parent) &&
+      node.parent.parent.expression === node.parent;
     if (
       ts.isPropertyAccessExpression(node.expression) &&
       node.expression.name.text === 'transaction' &&
-      ts.isCallExpression(node.parent) &&
-      node.parent.expression === node
+      ((ts.isCallExpression(node.parent) && node.parent.expression === node) || invokedMode)
     ) {
       sites.push({
         file: relPath,
@@ -817,7 +841,7 @@ function collectDelegatedCallSites(
 function loadSrcFiles(): { rel: string; text: string }[] {
   return listTsFiles(SRC_ROOT)
     .map((full) => ({ rel: path.relative(SRC_ROOT, full), full }))
-    .filter(({ rel }) => rel !== WRAPPER_RELATIVE)
+    .filter(({ rel }) => rel !== WRAPPER_RELATIVE && rel !== RECORD_HELPER_RELATIVE)
     .map(({ rel, full }) => ({ rel, text: fs.readFileSync(full, 'utf8') }));
 }
 
@@ -892,7 +916,7 @@ describe('no-silent-write: every execute(), raw(), and transaction() result is i
     const counts = census(sites);
     const message = [
       '',
-      `Write-result census over src/ (excluding ${WRAPPER_RELATIVE}):`,
+      `Write-result census over src/ (excluding ${WRAPPER_RELATIVE} and ${RECORD_HELPER_RELATIVE}):`,
       JSON.stringify(counts, null, 2),
       '',
       'Violations:',
@@ -931,6 +955,19 @@ describe('no-silent-write: the rule bites on synthetic shapes', () => {
     `;
     expect(collectWriteSites('fixture.ts', source).map((site) => site.bucket)).toEqual([
       'invoked-transaction-factory',
+    ]);
+  });
+
+  it('treats a factory invoked through .immediate() as invoked, but not one only read', () => {
+    const source = `
+      export function f(db: any) {
+        db.transaction(() => db.prepare('INSERT INTO t VALUES (1)').run()).immediate();
+        const later = db.transaction(() => true).immediate;
+      }
+    `;
+    expect(collectWriteSites('fixture.ts', source).map((site) => site.bucket)).toEqual([
+      'invoked-transaction-factory',
+      'unclassified',
     ]);
   });
 

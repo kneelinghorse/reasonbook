@@ -75,6 +75,12 @@ export interface StrategicDecision {
 
   /** s69-m06: source project_id — present ONLY on cross-store (acrossProjects) results. */
   projectId?: string | null;
+
+  /**
+   * s96-m02 (ADR s96 §10): who wrote it, or "before authors were recorded" / "author not
+   * recorded". Absent on the portfolio list, which reads only the columns every store holds.
+   */
+  author?: string;
 }
 
 /** s93-m11 (#602): the list carries a preview of each decision, never the full body. */
@@ -276,6 +282,7 @@ export async function rbookDecisionsList(
           supersededBy: row.supersededBy,
           evidence: row.evidence,
           projectId: row.projectId,
+          author: row.author,
         }));
 
       return createSuccess<RbookDecisionsListResult>({
@@ -439,7 +446,8 @@ export function formatDecisionsListForLLM(
     const source = d.source === 'session_capture' ? ' [session capture]' : '';
     const category = d.category ? ` <${d.category}>` : '';
     const status = d.status && d.status !== 'active' ? ` [${d.status}]` : '';
-    const meta = `${project}${domain}${sprint}${mission}${category}${status}${source}`;
+    const author = d.author ? ` — ${d.author}` : '';
+    const meta = `${project}${domain}${sprint}${mission}${category}${status}${source}${author}`;
     // s78-m05: a decision from another project (pull-merged or cross-store) is foreign,
     // non-locally-authored content — frame its text as untrusted DATA rather than emitting it
     // as a bare bullet. localProjectId absent (portfolio view) → treat every tagged row as foreign.

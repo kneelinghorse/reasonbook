@@ -9,7 +9,12 @@ import {
   type RecordLink,
   type CitationDiscards,
 } from './record-link-extractor';
-import { requireLinkSuccess, type LinkInventory, type StoredLinkSource } from './record-link-store';
+import {
+  requireLinkSuccess,
+  withoutSelfLinks,
+  type LinkInventory,
+  type StoredLinkSource,
+} from './record-link-store';
 
 export function repairLinkSources(
   client: RbookDatabaseClient,
@@ -33,6 +38,7 @@ export function repairLinkSources(
       inventory.identities,
       inventory.localProjectId
     );
+    parsed.links = withoutSelfLinks(parsed.links, source);
     for (const key of Object.keys(discarded) as (keyof CitationDiscards)[])
       discarded[key] += parsed.discarded[key];
     const previous =

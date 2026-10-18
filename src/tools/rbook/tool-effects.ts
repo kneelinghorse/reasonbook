@@ -8,7 +8,8 @@ import type { ActionMode } from './action-taxonomy';
  * Rule: https://developers.openai.com/plugins/plugin-guidelines#correct-annotation
  * A read-only hint excludes ALL state changes, including bookkeeping. Overwrites (statuses
  * included), deletion, access revocation and sends are destructive even when undo is possible.
- * Only other-project messaging is open-world; the user's own dashboard account is bounded.
+ * Other-project messaging and a shared record's writes to a copy on another machine, over SSH, are
+ * open-world; the user's own dashboard account is bounded.
  * Nothing except an effect-free action is claimed idempotent by this table.
  *
  * `none` means no action-owned store/registry mutation on a prepared schema, not no wire effects.
@@ -31,7 +32,9 @@ export type ToolEffect =
   | 'overwrite'
   | 'delete'
   | 'access-revocation'
-  | 'message';
+  | 'message'
+  /** s96-m13: writes a copy of the shared record on another machine, over SSH. */
+  | 'remote-write';
 
 export interface ActionEffects {
   readonly mode: ActionMode;
@@ -149,6 +152,8 @@ export const TOOL_EFFECTS: Readonly<Record<string, ToolEffects>> = {
       pull: write('local-write', 'overwrite'),
       clone: write('local-write', 'overwrite'),
       prune_snapshots: write('local-write', 'overwrite', 'delete'), // content and backup retention
+      conflicts: read,
+      settle: write('local-write', 'overwrite'), // keeps one value; the others stay in the log
     },
   },
   rbook_project: {
@@ -162,6 +167,12 @@ export const TOOL_EFFECTS: Readonly<Record<string, ToolEffects>> = {
       prune: write('bookkeeping', 'overwrite'),
       update: write('local-write', 'overwrite'),
       sweep: write('bookkeeping'),
+      share: write('local-write', 'overwrite'), // identity and baseline; refuses a store git tracks
+      invite: write('local-write'),
+      join: write('local-write', 'remote-write'), // admits the far copy, then syncs with it over SSH
+      members: read,
+      remove: write('local-write', 'access-revocation'),
+      sync: write('local-write', 'overwrite', 'remote-write'), // other copies' changes, or a confirmed move
     },
   },
   rbook_learnings: {
@@ -232,7 +243,7 @@ export function deriveEffectAnnotations(
       ['overwrite', 'delete', 'access-revocation', 'message'].includes(effect)
     ),
     idempotentHint: unchanged,
-    openWorldHint: effects.includes('message'),
+    openWorldHint: effects.includes('message') || effects.includes('remote-write'),
   };
 }
 

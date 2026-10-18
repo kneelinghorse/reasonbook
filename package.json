@@ -1,6 +1,6 @@
 {
   "name": "@aquex/reasonbook",
-  "version": "4.0.2",
+  "version": "4.1.0",
   "description": "Reasonbook: decisions that survive the session, in a local record AI agents keep.",
   "mcpName": "ai.aquex/reasonbook",
   "repository": {

@@ -8,7 +8,7 @@
  * never propagate to the caller.
  *
  * Primary path: POST SQLite file to /api/sync/sqlite-backfill (file-based bulk sync).
- * Fallback path: event-replay via rbookDbBackfill when no project slug is available.
+ * An unregistered destination reports a failure; legacy event replay is retired.
  *
  * Auto-registers the project with the dashboard on first checkpoint if not
  * already registered (checks `dashboard_registered` metadata flag).
@@ -28,7 +28,12 @@ import { CredentialStore } from '../../intelligence/credential-store';
 import { checkAndRegister } from './checkpoint-registration';
 import { resolveSenderContext } from '../../intelligence/sender-context';
 import { isReadOnlyAgentSession } from './read-only-agent-guard';
-import { withUploadLease, withUploadSnapshot } from './dashboard-upload';
+import {
+  isMembersStore,
+  readUploadProject,
+  withUploadLease,
+  withUploadSnapshot,
+} from './dashboard-upload';
 import type { UploadOutcome } from '../../intelligence/project-upload-state';
 
 /**
@@ -126,7 +131,7 @@ export async function __drainCheckpointBackfill(): Promise<void> {
  * Trigger a checkpoint sync in a fire-and-forget manner.
  *
  * Primary path: file-based sync via POST /api/sync/sqlite-backfill (idempotent, bulk).
- * Fallback: event-replay backfill when no project slug is available (not yet registered).
+ * An unregistered destination reports a failure; legacy event replay is retired.
  *
  * On first checkpoint, auto-registers the project with the dashboard
  * before running the sync.
@@ -158,6 +163,16 @@ export function triggerCheckpointBackfill(options: {
     if (!hasApiKey && !hasCredentials && !(await hasResolvableUserScopedKey())) return;
     // Freeze resolution before detached work. Production dispatch always passes its resolved root.
     const projectRoot = options.projectRoot ?? (await resolveSenderContext({})).projectRoot;
+    // s96-m13 (design §s96-m13 item 3): a member's copy of a shared record never registers, names
+    // the dashboard project or uploads, at a checkpoint or on the timer; only the owner's copy does.
+    let membersCopy = false;
+    try {
+      const project = readUploadProject(projectRoot);
+      membersCopy = project ? await isMembersStore(project) : false;
+    } catch {
+      // A store the read cannot open is reported by the upload below, as before.
+    }
+    if (membersCopy) return;
     await withUploadLease(projectRoot, options.automatic !== true, async () => {
       const dashResult = await DashboardClient.fromEnvForProject(projectRoot);
       if (!dashResult.success || !dashResult.data) return uploadFailure(dashResult.error);
@@ -192,13 +207,15 @@ export function triggerCheckpointBackfill(options: {
         if (data.errors.length) return { success: false, error: data.errors.join('; ') };
         return { success: true };
       }
-      // Registration and event replay remain explicit-close-only. An automatic attempt must
+      // Registration remains explicit-close-only. Legacy event replay refuses. An automatic attempt must
       // never create/purge a dashboard project when registration disappeared between reads.
       if (options.automatic)
         return { success: false, error: 'Registered upload destination is unavailable.' };
       const result = await rbookDbBackfill({ projectRoot, force: options.force, dryRun: false });
       if (!result.success || !result.data) {
-        log(`Backfill failed: ${result.error?.message ?? 'unknown'}`);
+        log(
+          `Backfill failed: ${result.error?.code ?? 'UNKNOWN'}: ${result.error?.message ?? 'unknown'} ${result.error?.suggestion ?? ''}`
+        );
         return uploadFailure(result.error);
       }
       if (result.data.pushed || result.data.failed)

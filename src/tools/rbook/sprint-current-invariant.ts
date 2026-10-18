@@ -26,6 +26,8 @@ import type { RbookToolResult } from './types';
 import { ensureAuthorNamespaceColumns, ensureFirehoseEventColumns } from './schema-migrations';
 import { SPRINT_OPEN_STATUSES, statusInSql } from './terminal-status';
 import { attachWarnings } from './format-warnings';
+import { skipConflicted, skippedConflicts } from './record-conflict-skip';
+import { recordedExecute } from './record-changes';
 
 /** A sprint that was auto-demoted to 'Planned' to preserve the single-open invariant. */
 export interface DemotedSprint {
@@ -97,8 +99,18 @@ export function writeSingleCurrentSprint<T>(
     // Name the sprints we are about to demote (for the warning). BEGIN IMMEDIATE
     // holds the write lock, so no other writer can change the set between this
     // SELECT and the UPDATE below — the two predicates match identically.
+    // s96-m12: on a shared record, a sprint whose status is in conflict is skipped and named.
+    const skip = skipConflicted(client, 'sprints', ['status']);
+    const skipped = skippedConflicts(
+      client,
+      'sprints',
+      ['status'],
+      `${openStatusSql} AND id != ?`,
+      [keepSprintId]
+    );
+    if (skipped) warnings.push(skipped);
     const othersResult = client.getMany<DemotedSprint>(
-      `SELECT id, title FROM sprints WHERE ${openStatusSql} AND id != ?`,
+      `SELECT id, title FROM sprints WHERE ${openStatusSql} AND id != ?${skip}`,
       [keepSprintId]
     );
     if (!othersResult.success) {
@@ -112,8 +124,9 @@ export function writeSingleCurrentSprint<T>(
     const demoted = othersResult.data ?? [];
 
     if (demoted.length > 0) {
-      const demoteResult = client.execute(
-        `UPDATE sprints SET status = 'Planned' WHERE ${openStatusSql} AND id != ?`,
+      const demoteResult = recordedExecute(
+        client,
+        `UPDATE sprints SET status = 'Planned' WHERE ${openStatusSql} AND id != ?${skip}`,
         [keepSprintId]
       );
       if (!demoteResult.success) {

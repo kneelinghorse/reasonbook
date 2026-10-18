@@ -44,7 +44,7 @@ import * as path from 'path';
 import * as ts from 'typescript';
 
 import { RBOOK_TOOL_DEFINITIONS } from '../../src/tools/rbook';
-import { toWireDefinition } from '../../src/tools/rbook/wire-descriptions';
+import { toWireDefinition } from '../../src/tools/rbook/wire-definition';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 

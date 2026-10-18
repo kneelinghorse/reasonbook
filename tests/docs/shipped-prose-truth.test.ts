@@ -1319,8 +1319,9 @@ describePrivate('agents.md environment-variable block is derived, not maintained
     // number and the one the document carries. s92-m01 adds RBOOK_EPHEMERAL_PATHS (the extra
     // ephemeral store locations, resolution-policy.ts), making 18. s92-m07 adds RBOOK_DEBUG (the
     // stderr diagnostics gate, debug-log.ts), making 19. s93-m01 added RBOOK_AMBIENT (the hook
-    // CLI's per-session off switch, src/cli/core.ts), making 20.
-    expect(srcReads.size).toBe(20);
+    // CLI's per-session off switch, src/cli/core.ts), making 20. s96-m13 adds RBOOK_SHARED_SYNC
+    // (the shared record's own sync switch, record-sync-trigger.ts), making 21.
+    expect(srcReads.size).toBe(21);
     expect(agentsMdEnvSections().server.sort()).toEqual([...srcReads].sort());
   });
 

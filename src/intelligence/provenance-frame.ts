@@ -70,7 +70,7 @@ export function provenanceTag(rowProjectId: string | null | undefined): string {
 }
 
 function normalizeSource(source: string | null | undefined): string {
-  const s = (source ?? '').trim();
+  const s = escapeFence((source ?? '').replace(/\r\n?|\n|\u2028|\u2029/g, ' ⏎ ')).trim();
   return s.length > 0 ? s : 'unknown source';
 }
 

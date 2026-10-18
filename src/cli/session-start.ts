@@ -2,6 +2,7 @@
 // ABOUTME: s93-m01 — `hook session-start`: link the harness process to its session and inject the record's
 // ABOUTME: digest; in a git repo with no store, offer init until declined. The session opens at its first write.
 
+import { launchSync, sharedSyncEnabled, syncsOnItsOwn } from '../tools/rbook/record-sync-trigger';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -75,6 +76,9 @@ export async function run(ctx: HookVerbContext): Promise<string | HookDelivery |
         })
       : null;
   }
+  // s96-m13 (design §s96-m13 item 4): a shared copy with a route syncs at session start, detached,
+  // so the digest shows the previous sync and the hook never waits on the network.
+  if (sharedSyncEnabled() && syncsOnItsOwn(store.dbPath)) launchSync(store.projectRoot);
   // s93-m06: a session start counts toward a draft's expiry, outside the store, before any digest
   // choice: digest-off silences the digest, not the approval loop.
   if (rawId)

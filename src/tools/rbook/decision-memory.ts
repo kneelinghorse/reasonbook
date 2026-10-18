@@ -9,6 +9,7 @@
 
 import { prepareSpinOutRead } from './spin-out-read';
 import type { RbookDatabaseClient } from './client';
+import { authorNamesSince, authorReading } from './author-name';
 import { compareStoredTimes, storedTimeMs } from './stored-time';
 
 export type DecisionSource = 'strategic' | 'session_capture';
@@ -39,6 +40,8 @@ export interface DecisionRecord {
   /** s78-m05: the row's genesis project_id (null pre-migration / for local session captures).
    *  Compared against the local store id to frame pull-merged foreign rows as untrusted. */
   projectId: string | null;
+  /** s96-m02 (ADR s96 §10): who wrote it, or the reading for a NULL author. */
+  author: string;
 }
 
 export interface SprintDecisionCounts {
@@ -61,6 +64,8 @@ interface StrategicDecisionRow {
   superseded_by: number | null;
   evidence: string | null;
   project_id: string | null;
+  author_name: string | null;
+  occurred_at: number | null;
 }
 
 interface SessionDecisionRow {
@@ -68,6 +73,8 @@ interface SessionDecisionRow {
   sprint_id: string | null;
   activity_at: string | null;
   captures: string | null;
+  author_name: string | null;
+  occurred_at: number | null;
 }
 
 interface SessionCaptureDecision {
@@ -148,6 +155,8 @@ function loadStrategicDecisionRecords(
   const supersededByExpr = decisionColumns.has('superseded_by') ? 'sd.superseded_by' : 'NULL';
   const evidenceExpr = decisionColumns.has('evidence') ? 'sd.evidence' : 'NULL';
   const projectExpr = decisionColumns.has('project_id') ? 'sd.project_id' : 'NULL';
+  const authorExpr = decisionColumns.has('author_name') ? 'sd.author_name' : 'NULL';
+  const occurredExpr = decisionColumns.has('occurred_at') ? 'sd.occurred_at' : 'NULL';
   const sprintExprBase = decisionColumns.has('sprint_id') ? 'sd.sprint_id' : 'NULL';
 
   const missionJoin =
@@ -211,7 +220,9 @@ function loadStrategicDecisionRecords(
         ${statusExpr} AS status,
         ${supersededByExpr} AS superseded_by,
         ${evidenceExpr} AS evidence,
-        ${projectExpr} AS project_id
+        ${projectExpr} AS project_id,
+        ${authorExpr} AS author_name,
+        ${occurredExpr} AS occurred_at
        FROM strategic_decisions sd
        ${missionJoin}
        ${sessionJoin}
@@ -227,6 +238,7 @@ function loadStrategicDecisionRecords(
     return [];
   }
 
+  const since = authorNamesSince(client);
   return result.data.map((row, index) => ({
     id: normalizeRecordId(row.id, index + 1),
     decision: row.decision_text,
@@ -242,6 +254,7 @@ function loadStrategicDecisionRecords(
     supersededBy: row.superseded_by,
     evidence: row.evidence,
     projectId: row.project_id,
+    author: authorReading(row.author_name, row.occurred_at, since),
   }));
 }
 
@@ -269,12 +282,17 @@ function loadSessionFallbackDecisionRecords(
           ? 'started_at'
           : 'NULL';
 
+  const authorExpr = sessionColumns.has('author_name') ? 'author_name' : 'NULL';
+  const occurredExpr = sessionColumns.has('occurred_at') ? 'occurred_at' : 'NULL';
   const sessionRows = client.getMany<SessionDecisionRow>(
-    `SELECT id, sprint_id, ${activityExpr} AS activity_at, captures
+    `SELECT id, sprint_id, ${activityExpr} AS activity_at, captures,
+            ${authorExpr} AS author_name, ${occurredExpr} AS occurred_at
        FROM sessions
       WHERE sprint_id = ?`,
     [filters.sprintId]
   );
+  // A decision captured in a session was written by the session's author.
+  const since = authorNamesSince(client);
 
   if (!sessionRows.success || !sessionRows.data) {
     return [];
@@ -319,6 +337,7 @@ function loadSessionFallbackDecisionRecords(
         supersededBy: null,
         evidence: null,
         projectId: null, // local session capture — never foreign
+        author: authorReading(row.author_name, row.occurred_at, since),
       });
     }
   }
