@@ -556,7 +556,7 @@ function computeHealthMetrics(
   }
 
   // Recent sprint count. s93-m11: the sprints that have happened (Completed and the open one,
-  // case-insensitively), on the staleness clock's rule; a Planned sprint has not happened yet.
+  // case-insensitively); a Planned sprint has not happened yet.
   const recentSprints = client.getOne<{ count: number }>(
     `SELECT COUNT(*) AS count FROM sprints WHERE ${sprintCountsOnClockSql('status')}`,
     []

@@ -104,7 +104,10 @@ describe('reasonbook handover', () => {
       confirmed: { isAuthority: true },
     });
     const routes = await onCopy(fixture.tmp, next.copy, (client) =>
-      peerHealth(client).map((peer) => [peer.replicaId, peer.route?.host ?? null])
+      peerHealth(client).map((peer) => [
+        peer.replicaId,
+        peer.route && 'host' in peer.route ? peer.route.host : null,
+      ])
     );
     expect(routes).toEqual(expect.arrayContaining([[studio.copy.replicaId, 'studio']]));
     // The new owner copy reaches the member, which holds the move until it confirms.

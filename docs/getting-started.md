@@ -16,11 +16,11 @@ Pick one:
 
 ```bash
 # Recommended: a global install of this release. It starts from disk, with no registry lookup.
-npm install -g @aquex/reasonbook@4.1.0
+npm install -g @aquex/reasonbook@4.2.0
 
 # Or run on demand via npx: pinned, and preferring the local cache. The first launch downloads
 # the package; later launches reuse the npm cache.
-npx --prefer-offline -y @aquex/reasonbook@4.1.0
+npx --prefer-offline -y @aquex/reasonbook@4.2.0
 ```
 
 If the former package is installed globally, run `npm uninstall -g @aquex/cmos-mcp` first. Version 4 provides only the `reasonbook` command; update scripts and MCP configurations that use the old command.
@@ -30,7 +30,7 @@ Verify it starts:
 ```bash
 reasonbook --version  # if globally installed
 # or
-npx --prefer-offline -y @aquex/reasonbook@4.1.0 --version
+npx --prefer-offline -y @aquex/reasonbook@4.2.0 --version
 ```
 
 Semantic (vector) search is optional: without it, retrieval is keyword-only and the install is about
@@ -44,7 +44,7 @@ Claude Code and Codex are verified; the other blocks follow each client's own MC
 ### Claude Code
 
 ```bash
-claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.1.0"]}'
+claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.2.0"]}'
 claude mcp list   # confirm it's registered
 ```
 
@@ -62,7 +62,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS), 
       "args": [
         "--prefer-offline",
         "-y",
-        "@aquex/reasonbook@4.1.0",
+        "@aquex/reasonbook@4.2.0",
         "--project-root",
         "/absolute/path/to/your/project"
       ]
@@ -85,7 +85,7 @@ Edit `~/.cursor/mcp.json`:
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.1.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.2.0"]
     }
   }
 }
@@ -100,7 +100,7 @@ Edit your Zed `settings.json`:
   "context_servers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.1.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.2.0"]
     }
   }
 }
@@ -121,7 +121,7 @@ your terminal PATH, so the terminal route needs the standalone Claude CLI.
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.1.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.2.0"]
     }
   }
 }
@@ -306,18 +306,70 @@ after G1.
 
 ## Share a project's record
 
-Sharing is supported in the measured setup: two accounts operated by one person, on two machines
-in an owner/member star over SSH. A second person's collaboration and privacy experience remain
-unvalidated. Each member receives a full copy of the record, and editor content reaches the owner's
-agents as local project content. Read [Trust](trust.md#shared-copies) before sharing.
+Sharing is supported in the measured setup: two accounts operated by one person, on two machines,
+either through reasonbook.ai or in an owner/member star over SSH. A second person's collaboration
+and privacy experience remain unvalidated. Each member receives a full copy of the record, and
+editor content reaches the owner's agents as local project content. Read
+[Trust](trust.md#shared-copies) before sharing.
 
 Use a current Reasonbook installation on both machines; older servers cannot write a shared store.
 The store must be outside Git's tracked files. If sharing refuses because Git tracks it, follow the
-returned untracking remedy while keeping the local file. SSH must work without a password prompt
-(`BatchMode=yes`), and the remote account must be able to run Reasonbook.
+returned untracking remedy while keeping the local file.
 
-On the owner's machine, ask your agent to share the project and invite an editor. Replace the names
-and absolute paths in these examples with yours:
+There are two ways to share. Through reasonbook.ai, the dashboard keeps the project's referee copy,
+and nobody needs SSH. Directly, the owner's copy is the referee, over SSH or with bundles carried by
+hand. Replace the names and absolute paths in these examples with yours.
+
+### Through reasonbook.ai
+
+Each person signs in to reasonbook.ai on their own machine, once:
+`rbook_auth(action="login_init")`, then `rbook_auth(action="login_complete", deviceCode=...)`, as
+[Connect the hosted dashboard](#optional-connect-the-hosted-dashboard) describes. Sharing through the
+dashboard is on by default; `RBOOK_DASHBOARD_SHARING=off` where Reasonbook runs turns it off on that
+machine. It is the person's setting, not an agent's.
+
+On the owner's machine, ask your agent to share the project through the dashboard. It first lists
+what would go up (the shared record) and what stays on the machine, and sends nothing until you
+confirm:
+
+```text
+rbook_project(action="share", via="dashboard", projectRoot="/owner/project")
+rbook_project(action="share", via="dashboard", confirm=true, projectRoot="/owner/project")
+```
+
+A project reaches reasonbook.ai at its first upload. If sharing says the project is not on the
+dashboard yet, start and close a session on that machine, which uploads it, and share again a few
+seconds later:
+
+```text
+rbook_session(action="start", type="custom", title="Share through the dashboard", projectRoot="/owner/project")
+rbook_session(action="complete", summary="Uploaded to share it", projectRoot="/owner/project")
+```
+
+On reasonbook.ai, open the project and share it with the editor. "Can push" makes them an editor
+with a copy of their own; "Read only" lets them see the project's pages without a copy. The editor
+then opens the project's page, which shows a sentence to give their agent. In an empty folder for
+the project, the editor's agent joins with it:
+
+```text
+rbook_project(action="join", via="dashboard", project="rbook://alex/project", projectRoot="/member/project")
+```
+
+From the command line, the same steps are `reasonbook share --dashboard` (`--yes` to send) and
+`reasonbook join --dashboard rbook://alex/project --into /member/project`.
+
+Every copy then syncs with the dashboard at session start and end where hooks run, every five
+minutes while a server that opened it is running, and when asked:
+`rbook_project(action="sync", projectRoot="/member/project")`. A change counts for everyone once the
+dashboard accepts it, and each copy keeps working offline until its next sync. The project's pages on
+reasonbook.ai show every accepted change under its author, its members and its open conflicts.
+Conflicts are settled through an agent, as below. The owner removes a member on the dashboard, from
+the project's sharing page. Moving a project back off reasonbook.ai is not available yet.
+
+### Directly over SSH
+
+SSH must work without a password prompt (`BatchMode=yes`), and the remote account must be able to
+run Reasonbook. On the owner's machine, ask your agent to share the project and invite an editor:
 
 ```text
 rbook_project(action="share", projectRoot="/owner/project", authorName="alex")
@@ -355,7 +407,7 @@ every five minutes for shared projects it has opened. Set `RBOOK_SHARED_SYNC=off
 server environments to stop automatic exchanges. Explicit commands still work. Dashboard uploads
 have a separate switch, `RBOOK_CHECKPOINT_SYNC`.
 
-For a bundle carried by hand, export on the member and import on the owner:
+For bundles carried by hand, after joining, export on the member and import on the owner:
 
 ```bash
 reasonbook sync --project-root /member/project --bundle-out /tmp/member-changes.json
@@ -365,6 +417,25 @@ reasonbook sync --project-root /owner/project --bundle-out /tmp/owner-changes.js
 # Carry owner-changes.json back, then:
 reasonbook sync --project-root /member/project --bundle-in /tmp/owner-changes.json
 ```
+
+### Join by bundle
+
+Where SSH cannot reach the member's machine, the join itself can travel by hand. Make the copy with
+`reasonbook copy` as above and carry it to the member's machine, then:
+
+```bash
+# On the member's machine: write a join request.
+reasonbook join --project-root /member/project --request-out /tmp/join-request.json
+# Carry join-request.json to the owner's machine, then answer it for the invited member:
+reasonbook join --project-root /owner/project --answer /tmp/join-request.json --member sam \
+  --out /tmp/join-answer.json
+# Carry join-answer.json back, then apply it on the member's machine:
+reasonbook join --project-root /member/project --apply /tmp/join-answer.json
+```
+
+The copies then exchange changes with bundles, as above.
+
+### Conflicts and removal
 
 When both copies change the same field before seeing each other, the record keeps the competing
 values. Ask `rbook_db(action="conflicts", projectRoot="/owner/project")` for their values and

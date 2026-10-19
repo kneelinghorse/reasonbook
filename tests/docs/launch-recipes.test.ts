@@ -14,6 +14,7 @@
  */
 
 import { describe, expect, it } from '@jest/globals';
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -24,6 +25,41 @@ const PKG_VERSION = (
 ).version;
 
 const read = (rel: string): string => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
+
+/**
+ * s97-m13 (#701): the pages a person copies a launch from are not only the two above. A recipe line
+ * holds a pinned spec (`@aquex/reasonbook@…`), runs or installs the package (npx, bunx, pnpm dlx or
+ * add, yarn dlx or add, bun add, npm exec, x, install, i or add), or names it in a JSON args array;
+ * a subpath such as `@aquex/reasonbook/referee` is an import, not a launch.
+ * SCOPE: every tracked Markdown page that holds one, found from `git ls-files`, so a new page is
+ * read without editing a list. FALSE NEGATIVES, NAMED: the project's own records under rbook/ (plans,
+ * probes, and the release runbook, whose commands take the version from variables) and CHANGELOG.md
+ * (what each release said) are left by design; a command split across lines, a launcher not named
+ * above, and a recipe outside Markdown are not read.
+ */
+const RECIPE_LINE =
+  /@aquex\/reasonbook@|\b(?:npx|bunx|pnpm\s+(?:dlx|add)|yarn\s+(?:dlx|(?:global\s+)?add)|bun\s+add|npm\s+(?:exec|x|install|i|add))\b[^\n]*@aquex\/reasonbook(?!\/)|"args":\s*\[[^\]]*"@aquex\/reasonbook/;
+
+function recipePages(): string[] {
+  return execFileSync('git', ['ls-files', '-z', '--', '*.md'], { cwd: REPO_ROOT, encoding: 'utf8' })
+    .split('\0')
+    .filter((rel) => rel && !rel.startsWith('rbook/') && rel !== 'CHANGELOG.md')
+    .filter((rel) =>
+      read(rel)
+        .split('\n')
+        .some((line) => RECIPE_LINE.test(line))
+    );
+}
+
+/** Every recipe line of every recipe page, as `page:line: text`. */
+function recipeLines(): Array<{ where: string; text: string }> {
+  return recipePages().flatMap((page) =>
+    read(page)
+      .split('\n')
+      .map((text, i) => ({ where: `${page}:${i + 1}`, text }))
+      .filter(({ text }) => RECIPE_LINE.test(text))
+  );
+}
 
 /** Package specs in commands and configs; the badge and npm page URLs are links, not launches. */
 function packageSpecs(text: string): string[] {
@@ -159,6 +195,45 @@ describe('s92-m07 — launch recipes', () => {
         ahead: true,
       });
     }
+  });
+
+  it('reads every tracked page with a launch recipe (s97-m13)', () => {
+    const pages = recipePages();
+    // Non-vacuity: the pages the sprint-96 review found outside the two above are read.
+    for (const page of [
+      ...DOCS,
+      'docs/harnesses.md',
+      'docs/migrating-from-cmos.md',
+      'docs/trust.md',
+      'plugins/reasonbook/README.md',
+    ])
+      expect({ page, read: pages.includes(page) }).toEqual({ page, read: true });
+    expect(RECIPE_LINE.test('Import it from `@aquex/reasonbook/referee`.')).toBe(false);
+    expect(RECIPE_LINE.test('| npm package | `@aquex/cmos-mcp` | `@aquex/reasonbook` |')).toBe(
+      false
+    );
+  });
+
+  it('pin this release, exactly, in every recipe line of those pages (s97-m13)', () => {
+    const preparing = /^## Unreleased\b/m.test(read('CHANGELOG.md'));
+    const off = recipeLines().flatMap(({ where, text }) =>
+      packageSpecs(text)
+        .filter((spec) => !spec.startsWith('@aquex/reasonbook/'))
+        .filter((spec) => {
+          if (!isExactPackageSpec(spec)) return true;
+          const pin = spec.split('@').pop()!;
+          return pin !== PKG_VERSION && !(preparing && compareSemver(pin, PKG_VERSION) > 0);
+        })
+        .map((spec) => `${where}: ${spec}`)
+    );
+    expect(off).toEqual([]);
+  });
+
+  it('run npx with --prefer-offline in every recipe line of those pages (s97-m13)', () => {
+    const offenders = recipeLines()
+      .filter(({ text }) => /\bnpx\b/.test(text) && !text.includes('--prefer-offline'))
+      .map(({ where, text }) => `${where}: ${text.trim()}`);
+    expect(offenders).toEqual([]);
   });
 
   it('recommend the global install as well', () => {

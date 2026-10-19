@@ -259,6 +259,17 @@ export function markReplaced(run: SqlRunner, id: number, by: number, at: string)
   ).changes;
 }
 
+/**
+ * s97-m12: a line revising a draft the operator plainly approved links it, and the approved draft
+ * stays pending: from then on it records only in its own words (evaluateDraft).
+ */
+export function markRevisedAfterApproval(run: SqlRunner, id: number, by: number): number {
+  return run.run(
+    `UPDATE proposals SET replaced_by = ? WHERE outcome = 'pending' AND id = ? AND replaced_by IS NULL`,
+    [by, id]
+  ).changes;
+}
+
 /** A direct record (no fromDraft) answered these drafts; they never reappear (B12). */
 export function markAnswered(
   run: SqlRunner,
@@ -267,11 +278,13 @@ export function markAnswered(
   at: string
 ): number {
   if (!ids.length) return 0;
-  return run.run(
+  const changed = run.run(
     `UPDATE proposals SET outcome = 'answered', record_id = ?, answered_at = ?
      WHERE outcome = 'pending' AND id IN (${placeholders(ids)})`,
     [recordId, at, ...ids]
   ).changes;
+  if (changed) settleRevised(run, ids, at);
+  return changed;
 }
 
 /** Guarded by `outcome = 'pending'`: two racing records approve one draft once. Returns changes. */
@@ -280,11 +293,43 @@ export function markApproved(
   id: number,
   approval: { readonly recordId: string; readonly mode: ApprovalMode; readonly at: string }
 ): number {
-  return run.run(
+  const changed = run.run(
     `UPDATE proposals SET outcome = 'approved', record_id = ?, approval_mode = ?, answered_at = ?
      WHERE outcome = 'pending' AND id = ?`,
     [approval.recordId, approval.mode, approval.at, id]
   ).changes;
+  if (changed) settleRevised(run, [id], approval.at);
+  return changed;
+}
+
+/**
+ * s97-m12 (critic rounds 2 and 3): a recorded revision settles every approved draft its chain
+ * revised, however many revisions back, which stayed pending only so it could still be recorded
+ * in its own words.
+ */
+export function settleRevised(run: SqlRunner, ids: readonly number[], at: string): void {
+  if (!ids.length) return;
+  run.run(
+    `WITH RECURSIVE earlier(id) AS (
+       SELECT id FROM proposals WHERE replaced_by IN (${placeholders(ids)})
+       UNION
+       SELECT proposals.id FROM proposals JOIN earlier ON proposals.replaced_by = earlier.id
+     )
+     UPDATE proposals SET outcome = 'replaced', answered_at = ?
+     WHERE outcome = 'pending' AND id IN (SELECT id FROM earlier)`,
+    [...ids, at]
+  );
+}
+
+/** The newest draft in a chain of revisions from `id`: the one no later line replaced. */
+export function latestRevision(run: SqlRunner, id: number): number {
+  let current = id;
+  for (let step = 0; step < 32; step += 1) {
+    const next = getDraft(run, current)?.replacedBy;
+    if (!next || next === current) return current;
+    current = next;
+  }
+  return current;
 }
 
 /**

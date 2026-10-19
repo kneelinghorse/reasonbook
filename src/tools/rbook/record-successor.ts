@@ -17,6 +17,7 @@ import {
   type MergeContext,
 } from './record-standing';
 import { reidentifyReplica } from './replica-check';
+import { confirmedAuthorityChanges } from './record-authority';
 import { COPY_KEYS, moveReplicaBlock, writeCopyKey } from './replica-copy-keys';
 import {
   blockRange,
@@ -27,7 +28,15 @@ import {
 import type { RbookToolResult } from './types';
 
 /** Why a copy takes a successor: what its exchange with the authority found. */
-export type SuccessorReason = 'restored' | 'whole-machine' | 'cut' | 'unseen' | 'slot' | 'block';
+export type SuccessorReason =
+  | 'restored'
+  | 'whole-machine'
+  | 'cut'
+  | 'unseen'
+  | 'slot'
+  | 'block'
+  /** s97-m11: the owner's copy taking the record back from the dashboard's referee. */
+  | 'move-back';
 
 /** The identity or block the authority admitted for a copy. */
 export interface Successor {
@@ -201,6 +210,24 @@ export function takeSuccessor(
       'SELECT max(replica_seq) AS last FROM record_changes WHERE replica_id = ?',
       [old.replicaId]
     )[0]?.last;
+    // s97-m11: a move back takes the old identity's place only where the referee holds every change
+    // it made. One written since the move's last sync, read here under the write lock, keeps the old
+    // identity: the move syncs it to the referee, which takes it by role, and asks again (critics,
+    // round 2). Its successor would judge an identity edit among them as no owner's copy, and refuse it.
+    if (input.reason === 'move-back' && (ownSeq ?? 0) > (input.cut ?? 0))
+      return { ahead: (ownSeq ?? 0) - (input.cut ?? 0) };
+    // s97-m11: the moves this copy's chain applies stay applied under its new identity. A copy
+    // applies a move it confirmed or wrote itself, and those its old identity wrote, such as an owner
+    // copy's own handover, are no longer its own: they are kept as confirmed instead.
+    const applied = mergeContext(client).terms.flatMap((term) =>
+      term.change ? [term.change.change_id] : []
+    );
+    if (applied.length)
+      writeCopyKey(
+        client,
+        COPY_KEYS.confirmedMoves,
+        JSON.stringify([...new Set([...confirmedAuthorityChanges(client), ...applied])])
+      );
     const { lost } = reidentifyReplica(client, {
       block: successor.block,
       authorityReceived: input.authorityReceived,
@@ -244,6 +271,14 @@ export function takeSuccessor(
           new Set()
         );
       }
+      if (input.reason === 'move-back')
+        // s97-m11: the old identity ends where the referee holds every change it made (above).
+        return {
+          count: 0,
+          summary: `This copy took a new identity, in block ${successor.block}, to move the project back from the dashboard; the referee held every change its old identity made.`,
+          moved: 0,
+          renumbered,
+        };
       if (input.reason === 'cut' || input.reason === 'unseen') {
         const cut = input.cut ?? 0;
         const count = Math.max(0, (ownSeq ?? 0) - cut);
@@ -269,6 +304,13 @@ export function takeSuccessor(
     });
   });
   if (!done.success || !done.data) return createError(done.error!);
+  if ('ahead' in done.data)
+    return refuse({
+      code: REPLICA_ERROR_CODES.WRITE_REFUSED,
+      message: `This copy wrote ${plural(done.data.ahead, 'change')} after the dashboard's last mark of it, so it took no new identity.`,
+      suggestion:
+        'Sync (reasonbook sync), then move the project back again: the dashboard takes those changes first.',
+    });
   const taken: SuccessorTaken = {
     from: old.replicaId,
     to: successor.replicaId,

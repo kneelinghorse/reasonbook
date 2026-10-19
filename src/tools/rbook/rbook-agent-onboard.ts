@@ -83,6 +83,8 @@ import { authorNamesSince, authorReading } from './author-name';
 import { currentSessionOwner, EMPTY_AUTOMATIC_CLOSE_PATTERN } from './session-owner';
 import { levelName, levelOfTier, type ProjectLevel } from './rules-files';
 import { readProjectLevel, readProjectTier } from './project-level';
+import { isMembersCopy } from './record-membership';
+import { orderByRequires } from './work-queue-order';
 
 /**
  * Project identity from master context.
@@ -142,6 +144,9 @@ export interface PendingMissionSummary {
 
   /** s84-m03: the mission's own project_id (guarded read). Foreign → name framed untrusted. */
   projectId?: string | null;
+
+  /** s97-m13: a queued mission's Requires targets that are not Completed; absent when none. */
+  waitsOn?: string[];
 }
 
 /**
@@ -817,6 +822,7 @@ export async function rbookAgentOnboard(
         staleServer,
         dashboardInUse: await dashboardInUse(onboardRoot),
         localProjectId: getProjectId(client),
+        membersCopy: isMembersCopy(client),
       });
 
       // s80-m07 — surface the self-capture gap as a priority-2 action when it fires,
@@ -918,26 +924,32 @@ export function getProjectType(client: RbookDatabaseClient): string {
  */
 function getProjectIdentity(client: RbookDatabaseClient): ProjectIdentity {
   const projectType = getProjectType(client);
+  // s97-m14: a member's copy of a shared record holds no master_context content, but the project's
+  // name is in its metadata, as the digest reads it (the live test's agent saw the generic name).
+  const stored = client.getOne<{ value: string }>('SELECT value FROM metadata WHERE key = ?', [
+    'project_name',
+  ]);
+  const fallbackName = (stored.success && stored.data?.value) || 'Reasonbook Project';
 
   const result = client.getOne<{ content: string }>('SELECT content FROM contexts WHERE id = ?', [
     'master_context',
   ]);
 
   if (!result.success || !result.data) {
-    return { name: 'Reasonbook Project', description: null, status: null, projectType };
+    return { name: fallbackName, description: null, status: null, projectType };
   }
 
   try {
     const content = JSON.parse(result.data.content);
     const projectIdentity = content.project_identity || content.project || {};
     return {
-      name: projectIdentity.name || content.project?.name || 'Reasonbook Project',
+      name: projectIdentity.name || content.project?.name || fallbackName,
       description: projectIdentity.description || content.project?.description || null,
       status: projectIdentity.status || content.project?.status || null,
       projectType,
     };
   } catch {
-    return { name: 'Reasonbook Project', description: null, status: null, projectType };
+    return { name: fallbackName, description: null, status: null, projectType };
   }
 }
 
@@ -1170,8 +1182,7 @@ function getPendingMissions(
           WHEN 'In Progress' THEN 0
           WHEN 'Current' THEN 1
           ELSE 2
-        END, rowid
-        LIMIT 5`
+        END, CASE WHEN status = 'Queued' THEN id END, rowid`
     : `SELECT id, name, status, sprint_id, ${projExpr}
          FROM missions
         WHERE status IN ('In Progress', 'Current', 'Queued')
@@ -1179,8 +1190,7 @@ function getPendingMissions(
           WHEN 'In Progress' THEN 0
           WHEN 'Current' THEN 1
           ELSE 2
-        END, rowid
-        LIMIT 5`;
+        END, CASE WHEN status = 'Queued' THEN id END, rowid`;
   const params = activeSprintId ? [activeSprintId] : [];
 
   const result = client.getMany<Mission & { project_id?: string | null }>(query, params);
@@ -1189,12 +1199,24 @@ function getPendingMissions(
     return [];
   }
 
-  return result.data.map((m) => ({
+  // s97-m13 (#662): queued missions in Requires order, ties by id, each with what it waits on, so
+  // the review's fallback names the first that is ready; then the first five, as before.
+  const open = result.data.filter((m) => m.status !== 'Queued');
+  const queued = orderByRequires(
+    client,
+    result.data.filter((m) => m.status === 'Queued')
+  ).missions;
+  const rows: Array<Mission & { project_id?: string | null; waitsOn?: string[] }> = [
+    ...open,
+    ...queued,
+  ];
+  return rows.slice(0, 5).map((m) => ({
     id: m.id,
     name: m.name,
     status: m.status,
     sprintId: m.sprint_id,
     projectId: m.project_id ?? null,
+    ...(m.waitsOn ? { waitsOn: m.waitsOn } : {}),
   }));
 }
 
@@ -2044,6 +2066,8 @@ function generateSuggestedActions(state: {
   staleServer?: { ownProject: boolean; restartScript: string | null } | null;
   /** s93-m11 (#606 a): whether the dashboard is part of this user's setup. */
   dashboardInUse?: boolean;
+  /** s97-m14: a copy of a shared record that is not the authority's; it never registers or uploads. */
+  membersCopy?: boolean;
   /** s84-m03: the querying store's own project_id, so a foreign (pull-merged) mission's
    *  name is dropped from the action text (id-only) rather than embedded unfenced. These
    *  actions also feed the byte-capped rbook_review digest, so id-only (not a fence). */
@@ -2121,7 +2145,9 @@ function generateSuggestedActions(state: {
       state.projectRootSupplied &&
       state.authState.identitySource !== 'none' &&
       state.authState.projectKey === null &&
-      state.authState.userScopedKey !== null
+      state.authState.userScopedKey !== null &&
+      // s97-m14: a member's copy never registers, so it has no project key to mint.
+      !state.membersCopy
     ) {
       actions.push({
         action:

@@ -20,7 +20,7 @@ import { recordOwnChanges } from './record-changes';
 import { SYNC_PROTOCOL } from './record-exchange';
 import { freshBlock, memberNamed } from './record-membership';
 import { forgetPeers } from './record-peers';
-import { mergeContext, REPLICA_ENTITY } from './record-standing';
+import { BASELINE_QUERY, mergeContext, REPLICA_ENTITY } from './record-standing';
 import { replicaWriteRefusal, secondCopyOnJoin } from './replica-check';
 import { COPY_KEYS, writeCopyKey } from './replica-copy-keys';
 import {
@@ -103,9 +103,7 @@ export function requestJoin(client: RbookDatabaseClient): RbookToolResult<JoinRe
       message: 'This copy failed its integrity check, so it was not joined.',
       suggestion: "Make a new copy on the owner's machine with reasonbook copy, and join that one.",
     });
-  const baseline = client.getOne<{ change_id: string }>(
-    "SELECT change_id FROM record_changes WHERE kind = 'baseline' LIMIT 1"
-  );
+  const baseline = client.getOne<{ change_id: string }>(BASELINE_QUERY);
   if (!baseline.success || !baseline.data)
     return refuse({
       code: REPLICA_ERROR_CODES.WRITE_REFUSED,

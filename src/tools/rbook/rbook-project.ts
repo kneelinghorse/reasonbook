@@ -64,6 +64,7 @@ import {
   rbookProjectRemove,
   rbookProjectShare,
   rbookProjectSync,
+  rbookProjectMove,
   SHARED_PROJECT_ACTION_PARAMS,
   sharedProjectProperties,
   sharedProjectZodFields,
@@ -86,6 +87,7 @@ export const RBOOK_PROJECT_ACTIONS = [
   'members',
   'remove',
   'sync',
+  'move',
 ] as const;
 
 export type RbookProjectAction = (typeof RBOOK_PROJECT_ACTIONS)[number];
@@ -155,7 +157,7 @@ export const rbookProjectSchema = z
     action: z
       .enum(RBOOK_PROJECT_ACTIONS)
       .describe(
-        'Project action: init | register | list | unregister | validate | prune | update | sweep | share | invite | join | members | remove | sync'
+        'Project action: init | register | list | unregister | validate | prune | update | sweep | share | invite | join | members | remove | sync | move'
       ),
     projectRoot: z.string().optional().describe('Project root directory'),
     // init params
@@ -224,16 +226,18 @@ export const rbookProjectToolDefinition = {
   name: 'rbook_project',
   description:
     'Consolidated project tool with action parameter support. ' +
-    'Actions: init, register, list, unregister, validate, prune, update, sweep, share, invite, join, members, remove, sync. ' +
+    'Actions: init, register, list, unregister, validate, prune, update, sweep, share, invite, join, members, remove, sync, move. ' +
     'The list action supports an optional validate flag. ' +
     'The prune action removes registry entries where the local Reasonbook database no longer exists on disk. ' +
     'The update action sets the level (project_type: general/managed/build) and writes the files ' +
     'the new level uses that the project lacks; it removes no file and overwrites no edited one. ' +
     'The sweep action returns all open missions and active sessions across registered instances. ' +
-    "The shared-record actions: share makes this copy the owner's of a record others join; invite " +
-    "and remove manage its members; join admits a member's copy over SSH; members lists them; and " +
-    'sync exchanges with every copy this one has a route to, or with confirmOwner confirms a move ' +
-    "of the owner's copy.",
+    "The shared-record actions: share makes this copy the owner's of a record others join, or with " +
+    'via=dashboard shares it through the dashboard after a dry run; invite and remove manage its ' +
+    "members; join admits a member's copy over SSH, or with via=dashboard joins a project shared " +
+    'through the dashboard by its address; members lists them; sync exchanges with every copy this ' +
+    "one has a route to, or with confirmOwner confirms a move of the owner's copy; and move with " +
+    "to=owner moves a project shared through the dashboard back to the owner's copy.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -241,7 +245,7 @@ export const rbookProjectToolDefinition = {
         type: 'string',
         enum: [...RBOOK_PROJECT_ACTIONS],
         description:
-          'Project action: init | register | list | unregister | validate | prune | update | sweep | share | invite | join | members | remove | sync',
+          'Project action: init | register | list | unregister | validate | prune | update | sweep | share | invite | join | members | remove | sync | move',
       },
       projectRoot: { type: 'string', description: 'Project root directory' },
       projectName: { type: 'string', description: 'Project name for init action' },
@@ -427,6 +431,8 @@ export async function rbookProject(
       return rbookProjectShare({
         projectRoot: params.projectRoot,
         authorName: params.authorName,
+        via: params.via,
+        confirm: params.confirm,
       });
     case 'invite':
       return rbookProjectInvite({
@@ -443,6 +449,8 @@ export async function rbookProject(
         remoteNode: params.remoteNode,
         remoteBin: params.remoteBin,
         remoteConfigDir: params.remoteConfigDir,
+        via: params.via,
+        project: params.project,
       });
     case 'members':
       return rbookProjectMembers({ projectRoot: params.projectRoot });
@@ -453,6 +461,8 @@ export async function rbookProject(
         projectRoot: params.projectRoot,
         confirmOwner: params.confirmOwner,
       });
+    case 'move':
+      return rbookProjectMove({ projectRoot: params.projectRoot, to: params.to });
   }
 }
 
@@ -508,6 +518,7 @@ export function formatProjectForLLM(
     case 'members':
     case 'remove':
     case 'sync':
+    case 'move':
       return formatSharedProjectForLLM(
         action as SharedProjectAction,
         result as RbookToolResult<SharedProjectResult>

@@ -432,8 +432,10 @@ describe('pre-dispatch published-string guard scope (s90-m04)', () => {
           `\n  PREFLIGHT_PARAMS = ${JSON.stringify(real.preflightParams)}`
       );
 
-      expect(preDispatchKeys(real)).toEqual(['acrossProjects', 'action', 'projectRoot']);
-      expect(preDispatchKeys(real, 'safe-enum-discriminant')).toEqual(['action']);
+      // s97-m11: rbook_project's `via` joins them, read to take a join through the dashboard's folder
+      // literally; a published enum under a strict comparison, so it needs no preflight.
+      expect(preDispatchKeys(real)).toEqual(['acrossProjects', 'action', 'projectRoot', 'via']);
+      expect(preDispatchKeys(real, 'safe-enum-discriminant')).toEqual(['action', 'via']);
       expect(preDispatchKeys(real, 'non-string-schema')).toEqual(['acrossProjects']);
       expect(preDispatchKeys(real, 'requires-preflight')).toEqual(['projectRoot']);
       expect(real.preflightParams).toEqual(['projectRoot']);

@@ -167,12 +167,13 @@ export const TOOL_EFFECTS: Readonly<Record<string, ToolEffects>> = {
       prune: write('bookkeeping', 'overwrite'),
       update: write('local-write', 'overwrite'),
       sweep: write('bookkeeping'),
-      share: write('local-write', 'overwrite'), // identity and baseline; refuses a store git tracks
+      share: write('local-write', 'overwrite', 'dashboard-write'), // identity and baseline; via the dashboard, the upload and handover
       invite: write('local-write'),
-      join: write('local-write', 'remote-write'), // admits the far copy, then syncs with it over SSH
+      join: write('local-write', 'remote-write', 'dashboard-write'), // admits the far copy over SSH; via the dashboard, its join there
       members: read,
       remove: write('local-write', 'access-revocation'),
       sync: write('local-write', 'overwrite', 'remote-write'), // other copies' changes, or a confirmed move
+      move: write('local-write', 'overwrite', 'dashboard-write'), // a new identity, the record moved back, the referee archived
     },
   },
   rbook_learnings: {

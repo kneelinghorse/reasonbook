@@ -15,7 +15,13 @@ import {
 } from '../../../src/tools/rbook/record-membership';
 import { handOverRoute } from '../../../src/tools/rbook/record-move-routes';
 import { confirmOwner } from '../../../src/tools/rbook/record-moves';
-import { forgetPeers, peerHealth, rememberPeer } from '../../../src/tools/rbook/record-peers';
+import {
+  forgetPeers,
+  peerHealth,
+  recordExchanged,
+  rememberPeer,
+} from '../../../src/tools/rbook/record-peers';
+import { exchangeText } from '../../../src/cli/sync-moves';
 import { joinRoute, syncAndRoute, syncPeers } from '../../../src/tools/rbook/record-sync';
 import {
   __resetSharedSyncScheduler,
@@ -153,6 +159,89 @@ describe("a copy's routes are its own", () => {
     expect(syncsOnItsOwn(dbOf(owner.root))).toBe(true);
   }, 240000);
 
+  // s97-m14 (critics, round 1): the removal belongs to the member's copy. The owner's own sync with
+  // that copy said "This copy's member was removed" on the owner's copy, and the member's note of
+  // the exchange erased the member's own record of its removal.
+  it("an owner's sync with a removed member's copy names that copy, and leaves its own note of the removal", async () => {
+    const { owner, joined } = await owned([['studio', 'Darryl']]);
+    const { ssh } = standinSsh(path.join(fixture.tmp, 'bin'));
+    // The member's copy was told of its removal at an earlier sync of its own.
+    const noted = await onCopy(
+      fixture.tmp,
+      joined.studio,
+      (client) => {
+        recordExchanged(client, owner.replicaId, { marks: {}, removed: true });
+        return peerHealth(client).find((peer) => peer.replicaId === owner.replicaId)!.removedAt;
+      },
+      { replicaCheck: false }
+    );
+    expect(noted).toEqual(expect.any(String));
+    await onCopy(fixture.tmp, owner, (client) => removeMember(client, 'Darryl'));
+    useMachine(fixture.tmp, owner.machine);
+    const route = routeTo(joined.studio.root, configOf(joined.studio.machine), 'studio');
+    const synced = await syncAndRoute(opener(owner) as never, route, {
+      ssh,
+      unchecked: opener(owner, false) as never,
+    });
+    expect(synced.success).toBe(true);
+    expect(synced.data).toMatchObject({ removed: true, removedCopy: 'remote' });
+    expect(exchangeText(synced.data!)).toMatch(/^That copy's member was removed from the project/);
+    const removedAt = (copy: Copy, of: string) =>
+      read<{ removed_at: string | null }>(
+        copy,
+        'SELECT removed_at FROM record_peers WHERE replica_id = ?',
+        [of]
+      )[0]?.removed_at ?? null;
+    expect({
+      memberKeeps: removedAt(joined.studio, owner.replicaId),
+      ownerNotes: removedAt(owner, joined.studio.replicaId),
+    }).toEqual({ memberKeeps: noted, ownerNotes: null });
+
+    // The member's own sync at the terminal exits 0, as the removal is a state the owner can undo,
+    // says what is set aside, and keeps when the copy was first told.
+    const toOwner = routeTo(owner.root, configOf(owner.machine), 'air');
+    let stdout = '';
+    const stderr: string[] = [];
+    const path0 = process.env.PATH;
+    process.env.PATH = `${path.dirname(ssh)}:${path0 ?? ''}`;
+    useMachine(fixture.tmp, joined.studio.machine);
+    try {
+      const code = await runCli(
+        [
+          'sync',
+          '--ssh',
+          'air',
+          '--remote-root',
+          toOwner.root,
+          '--node',
+          toOwner.node!,
+          '--bin',
+          toOwner.bin!,
+          '--config-dir',
+          toOwner.configDir!,
+          '--project-root',
+          joined.studio.root,
+        ],
+        {
+          env: { ...process.env },
+          cwd: fixture.tmp,
+          readStdin: async () => '',
+          stdout: (text) => {
+            stdout += text;
+          },
+          stderr: (line) => {
+            stderr.push(line);
+          },
+        }
+      );
+      expect({ code, stderr }).toEqual({ code: 0, stderr: [] });
+    } finally {
+      process.env.PATH = path0;
+    }
+    expect(stdout).toMatch(/This copy's member was removed from the project/);
+    expect(removedAt(joined.studio, owner.replicaId)).toBe(noted);
+  }, 240000);
+
   it('a route that reaches the successor its copy took moves to it, and the old identity is forgotten', async () => {
     const { owner, joined, ssh } = await owned([['studio', 'Darryl']]);
     const studio = joined.studio;
@@ -216,9 +305,12 @@ describe("a copy's routes are its own", () => {
       process.env.PATH = path0;
     }
     expect(stdout).toMatch(/studio-moved:/);
-    expect((await routed(owner)).map((peer) => [peer.replicaId, peer.route?.host])).toEqual([
-      [joined.studio.replicaId, 'studio-moved'],
-    ]);
+    expect(
+      (await routed(owner)).map((peer) => [
+        peer.replicaId,
+        peer.route && 'host' in peer.route ? peer.route.host : undefined,
+      ])
+    ).toEqual([[joined.studio.replicaId, 'studio-moved']]);
   }, 360000);
 });
 
@@ -233,9 +325,11 @@ describe('a copy that cannot be reached', () => {
       ssh,
       unchecked: opener(owner, false) as never,
     });
+    // s97-m10: the one copy this sync tried answers its own refusal, with its own remedy.
     expect(synced.error).toMatchObject({
       code: 'RECORD_EXCHANGE_REFUSED',
-      message: expect.stringMatching(/^No copy could be synced: Darryl: /),
+      message: expect.stringMatching(/^studio could not be reached: /),
+      suggestion: expect.stringMatching(/Remote Login/),
     });
     const [peer] = await onCopy(fixture.tmp, owner, (client) => peerHealth(client));
     expect(peer).toMatchObject({

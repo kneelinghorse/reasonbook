@@ -194,6 +194,44 @@ describe("the review of a shared copy (rbook_review's digest, the session-start 
     expect(text).toContain(SHORT_FORM);
   });
 
+  // s97-m14 (critics, round 1): a removal leads the sync line, so the 300-character cut keeps it,
+  // and the short form names it before any count.
+  it("a member's removal leads the sync line, and the short form names it first", () => {
+    const removed =
+      "the dashboard: said this copy's member was removed (first said 3 min ago): what this copy sends is set aside, and counts only if the owner shares the project with it again; synced 3 min ago, 0 pending; failing since 2 min ago (2 tries); last error: " +
+      'e'.repeat(160);
+    const shared = {
+      conflicts: [],
+      states: [],
+      waiting: [],
+      waitingTotal: 0,
+      started: [],
+      peers: [removed],
+      syncErrors: 1,
+      removed: true,
+    };
+    const base = fullModel();
+    const roomy = renderDigestV2({
+      ...base,
+      rules: [],
+      decisions: { rows: [], total: 0 },
+      learnings: { rows: [], total: 0 },
+      work: [],
+      profile: null,
+      shared,
+    }).text;
+    expect(roomy).toContain(
+      "• Sync: the dashboard: said this copy's member was removed (first said 3 min ago)"
+    );
+    const tight = renderDigestV2({
+      ...base,
+      shared: { ...base.shared!, peers: shared.peers, syncErrors: 1, removed: true },
+    }).text;
+    expect(tight).toContain(
+      "Shared record: this copy's member was removed from the project, 9 field(s) in conflict"
+    );
+  });
+
   it('with drafts pending too, both show, and the recent decisions give up the room', () => {
     // rbook_review's answer carries no shared-record notice, so its digest must not leave the
     // section out; nor may the section push out the drafts the operator's answer needs.

@@ -116,6 +116,12 @@ export interface RbookDatabaseClientOptions {
    * re-identify it (s96-m13's sync does the same). Every other client opened to write is checked.
    */
   replicaCheck?: boolean;
+
+  /**
+   * s97-m09: false for a client that never searches, such as the referee library's (design §R1),
+   * so its connection loads no sqlite-vec. Every other client loads it, as vec0 tables need it.
+   */
+  loadVec?: boolean;
 }
 
 /**
@@ -219,6 +225,7 @@ export class RbookDatabaseClient {
       timeout: options.timeout ?? processBusyTimeout() ?? 5000,
       readonly: options.readonly ?? false,
       verbose: options.verbose ?? false,
+      loadVec: options.loadVec ?? true,
     };
   }
 
@@ -545,7 +552,7 @@ export class RbookDatabaseClient {
       // Load sqlite-vec extension so vec0 virtual tables created by
       // ensureVectorStorage (and queried by the hybrid retriever) are available.
       // Idempotent per connection — see vec-loader.ts.
-      loadVecExtension(this.db);
+      if (this.options.loadVec) loadVecExtension(this.db);
 
       return createSuccess(undefined);
     } catch (error) {

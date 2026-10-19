@@ -6,6 +6,10 @@
  * written back as status='stale'. A status changes only through an explicit act: supersede,
  * archive, or an explicit status update, which stamps `last_reviewed_at`.
  *
+ * s97-m13 (#703): the age counts sprints that closed, by close time ({@link STALENESS_COUNTING_RULE}).
+ * Until then it subtracted sprint labels, and labels are names: this store ran sprint-99 before
+ * sprint-96, so every row read three sprints older than the sprints that had closed.
+ *
  * Until 3.3.0 the session opener ran a flagger here that wrote status='stale' on every call, on a
  * clock that counted Planned sprints (so it ran ahead while the next sprints were seeded) and under
  * the read-only review role too. {@link repairFlaggerStaleness} restores the rows that flagger
@@ -20,7 +24,6 @@ import { sprintIdOrderSql } from './sprint-ordering';
 import { SPRINT_OPEN_STATUSES, statusInSql } from './terminal-status';
 import { previewText } from './text-preview';
 import { checkWrite } from './write-guard';
-import { storedTimeMs } from './stored-time';
 import { isSharedStore } from './replica-identity';
 
 /** A sprint's length on the wall clock (~14 days), used where a row carries no sprint tag. */
@@ -42,14 +45,47 @@ const STALENESS_THRESHOLD_ENV = 'RBOOK_STALENESS_THRESHOLD_SPRINTS';
 export const FLAGGER_MIN_THRESHOLD = 10;
 
 /**
- * The sprints that count on the clock: Completed sprints and the open one, matched
- * case-insensitively. A Planned sprint has not happened yet, so it never moves the clock.
+ * The sprints that have happened: Completed sprints and the open one, matched case-insensitively.
+ * A Planned sprint has not happened yet. The review age counts only the closes among them
+ * ({@link STALENESS_COUNTING_RULE}).
  */
 export const SPRINT_CLOCK_STATUSES = [...SPRINT_OPEN_STATUSES, 'Completed'] as const;
 
-/** SQL predicate over a sprints row's status: true for a sprint that counts on the clock. */
+/** SQL predicate over a sprints row's status: true for a sprint that has happened. */
 export function sprintCountsOnClockSql(statusExpr = 'status'): string {
   return statusInSql(statusExpr, SPRINT_CLOCK_STATUSES);
+}
+
+/**
+ * s97-m13 (#703, decision #1038's rule: the counting rule beside the number). Published wherever a
+ * review age or a due count is shown.
+ */
+export const STALENESS_COUNTING_RULE =
+  "review age = Completed sprints whose recorded end_date, the actual close time, is in the past and later than the close of the row's own sprint or, while that sprint is open or the row names none, than the row's created_at. Sprint labels never count, so a sprint run out of label order adds one close; a Planned sprint, a Completed sprint with no recorded end_date and a close dated in the future count as none. Due = active, at or past the review age, not reviewed within the review window, and without evidence and not a supersession target (decisions) or not evergreen (learnings)";
+
+/** A Completed sprint whose recorded end_date, its actual close time, is in the past. */
+function closedSql(alias: string): string {
+  return (
+    `${statusInSql(`${alias}.status`, ['Completed'])} AND ${alias}.end_date IS NOT NULL ` +
+    `AND ${alias}.end_date <> '' AND julianday(${alias}.end_date) <= julianday('now')`
+  );
+}
+
+/**
+ * The review age of the current row of `table`, a correlated subquery: the closes after its own
+ * sprint's close, or after the row was made while that sprint is open or when it names none. A
+ * store whose sprints carry no end_date column records no close, so every age there reads 0
+ * (every shipped schema has had the column since its first).
+ */
+function closesSinceSql(client: RbookDatabaseClient, table: string, hasSprintId: boolean): string {
+  if (!getTableColumns(client, 'sprints').has('end_date')) return '0';
+  const ownClose = hasSprintId
+    ? `(SELECT o.end_date FROM sprints o WHERE o.id = ${table}.sprint_id AND ${closedSql('o')}), `
+    : '';
+  return (
+    `(SELECT COUNT(*) FROM sprints c WHERE ${closedSql('c')} AND julianday(c.end_date) > ` +
+    `julianday(COALESCE(${ownClose}${table}.created_at)))`
+  );
 }
 
 /**
@@ -64,21 +100,19 @@ export interface StalenessRead {
   dueDecisions: number;
   /** Active learnings (not evergreen) at or past the review age, computed now. */
   dueLearnings: number;
-  /** The review age in sprints. */
+  /** The review age in sprints closed. */
   threshold: number;
-  /** The clock: the highest Completed or open canonical sprint number, or null. */
-  currentSprintNumber: number | null;
-  /** Rows in sprints at or below this number are at or past the review age. */
-  cutoffSprintNumber: number | null;
+  /** How the age is counted ({@link STALENESS_COUNTING_RULE}). */
+  countingRule: string;
   /** Reads that failed, so a zero is never mistaken for a clean count. */
   warnings: string[];
 }
 
 /**
  * Compute staleness for the opener and the context view. Read-only: it runs no migration and
- * writes no row, under any role. Rows the review age applies to: active, in a canonical sprint at
- * or below the cutoff, never reviewed since the review window opened, without evidence and not the
- * target of a supersession (decisions), and not evergreen (learnings).
+ * writes no row, under any role. Rows the review age applies to: active, at or past the review age
+ * ({@link STALENESS_COUNTING_RULE}), never reviewed since the review window opened, without evidence
+ * and not the target of a supersession (decisions), and not evergreen (learnings).
  */
 export function readStaleness(
   client: RbookDatabaseClient,
@@ -86,8 +120,6 @@ export function readStaleness(
 ): StalenessRead {
   const threshold = resolveThreshold(options?.threshold);
   const warnings: string[] = [];
-  const currentSprintNumber = getCurrentSprintNumber(client);
-  const cutoffSprintNumber = currentSprintNumber === null ? null : currentSprintNumber - threshold;
 
   const storedStaleDecisions = countRows(
     client,
@@ -104,17 +136,13 @@ export function readStaleness(
     warnings
   );
 
-  let dueDecisions = 0;
-  let dueLearnings = 0;
-  if (cutoffSprintNumber !== null && cutoffSprintNumber >= 1) {
-    const due = dueForReviewPredicates(client, cutoffSprintNumber);
-    dueDecisions = due.decisions
-      ? countRows(client, 'strategic_decisions', due.decisions.sql, warnings, due.decisions.params)
-      : 0;
-    dueLearnings = due.learnings
-      ? countRows(client, 'learnings', due.learnings.sql, warnings, due.learnings.params)
-      : 0;
-  }
+  const due = dueForReviewPredicates(client, threshold);
+  const dueDecisions = due.decisions
+    ? countRows(client, 'strategic_decisions', due.decisions.sql, warnings, due.decisions.params)
+    : 0;
+  const dueLearnings = due.learnings
+    ? countRows(client, 'learnings', due.learnings.sql, warnings, due.learnings.params)
+    : 0;
 
   return {
     storedStaleDecisions,
@@ -122,8 +150,7 @@ export function readStaleness(
     dueDecisions,
     dueLearnings,
     threshold,
-    currentSprintNumber,
-    cutoffSprintNumber,
+    countingRule: STALENESS_COUNTING_RULE,
     warnings,
   };
 }
@@ -161,16 +188,18 @@ interface Predicate {
 
 function dueForReviewPredicates(
   client: RbookDatabaseClient,
-  cutoffSprintNumber: number
+  threshold: number
 ): { decisions: Predicate | null; learnings: Predicate | null } {
   const reviewCutoffIso = computeReviewCutoffIso();
-  const inOldSprint = canonicalSprintAtMostSql('sprint_id');
 
   const decisionColumns = getTableColumns(client, 'strategic_decisions');
   let decisions: Predicate | null = null;
-  if (decisionColumns.has('status') && decisionColumns.has('sprint_id')) {
-    const clauses = ["status = 'active'", inOldSprint];
-    const params: unknown[] = [cutoffSprintNumber];
+  if (decisionColumns.has('status') && decisionColumns.has('created_at')) {
+    const clauses = [
+      "status = 'active'",
+      `${closesSinceSql(client, 'strategic_decisions', decisionColumns.has('sprint_id'))} >= ?`,
+    ];
+    const params: unknown[] = [threshold];
     if (decisionColumns.has('last_reviewed_at')) {
       clauses.push('(last_reviewed_at IS NULL OR julianday(last_reviewed_at) < julianday(?))');
       params.push(reviewCutoffIso);
@@ -188,9 +217,12 @@ function dueForReviewPredicates(
 
   const learningColumns = getTableColumns(client, 'learnings');
   let learnings: Predicate | null = null;
-  if (learningColumns.has('status') && learningColumns.has('sprint_id')) {
-    const clauses = ["status = 'active'", inOldSprint];
-    const params: unknown[] = [cutoffSprintNumber];
+  if (learningColumns.has('status') && learningColumns.has('created_at')) {
+    const clauses = [
+      "status = 'active'",
+      `${closesSinceSql(client, 'learnings', learningColumns.has('sprint_id'))} >= ?`,
+    ];
+    const params: unknown[] = [threshold];
     if (learningColumns.has('last_reviewed_at')) {
       clauses.push('(last_reviewed_at IS NULL OR julianday(last_reviewed_at) < julianday(?))');
       params.push(reviewCutoffIso);
@@ -200,14 +232,6 @@ function dueForReviewPredicates(
   }
 
   return { decisions, learnings };
-}
-
-/** A canonical `sprint-N` id whose N is at most the bound parameter. */
-function canonicalSprintAtMostSql(column: string): string {
-  return (
-    `(${column} GLOB 'sprint-[0-9]*' AND SUBSTR(${column}, 8) NOT GLOB '*[^0-9]*' ` +
-    `AND CAST(SUBSTR(${column}, 8) AS INTEGER) <= ?)`
-  );
 }
 
 /**
@@ -222,7 +246,7 @@ export interface StaleDecisionDetail {
   status: string;
   /** Sprint ID the decision belongs to */
   sprintId: string | null;
-  /** Sprint age: how many sprints ago this decision was made */
+  /** Sprints closed since ({@link STALENESS_COUNTING_RULE}) */
   sprintAge: number;
   /** Staleness score: 0 (fresh) to 1.0 (very stale) */
   stalenessScore: number;
@@ -248,7 +272,7 @@ export interface ReviewLearningDetail {
   text: string;
   status: string;
   sprintId: string | null;
-  /** Sprints since its own, on the review clock; null for a sprint id that is not sprint-N. */
+  /** Sprints closed since ({@link STALENESS_COUNTING_RULE}); null where none can be read. */
   sprintAge: number | null;
   suggestedAction: 'reaffirm' | 'review';
   suggestedReason: string;
@@ -269,7 +293,7 @@ export interface DecisionReviewResult {
   totalActive: number;
   /** Total stale decisions */
   totalStale: number;
-  /** Current sprint number */
+  /** The open sprint's number, else the number of the sprint that closed last (display only). */
   currentSprintNumber: number | null;
   /** Staleness threshold in sprints */
   threshold: number;
@@ -289,24 +313,15 @@ export function reviewDecisionStaleness(
 
   const totalActive = countByStatus(client, 'strategic_decisions', 'active');
   const totalStale = countByStatus(client, 'strategic_decisions', 'stale');
-  const learnings = reviewLearnings(client, threshold, currentSprintNumber);
-
-  if (currentSprintNumber === null) {
-    return {
-      decisions: [],
-      learnings,
-      totalActive,
-      totalStale,
-      currentSprintNumber: null,
-      threshold,
-    };
-  }
+  const learnings = reviewLearnings(client, threshold);
 
   // Get referenced decision IDs (supersession targets)
   const referencedIds = getReferencedDecisionIds(client);
 
   // Load candidates: stale + active decisions. s91-m08: untagged rows are candidates too — they
   // used to be filtered out by `sprint_id IS NOT NULL` and could never be flagged, however old.
+  // s97-m13: every row ages on one clock, the closes since its sprint's close or its making; an
+  // untagged row no longer ages on a 14-day wall clock, nor a row of a non-canonical sprint not at all.
   const statusFilter = includeApproaching ? `status IN ('stale', 'active')` : `status = 'stale'`;
 
   const result = client.getMany<{
@@ -316,9 +331,10 @@ export function reviewDecisionStaleness(
     sprint_id: string | null;
     category: string | null;
     evidence: string | null;
-    created_at: string | null;
+    closes: number;
   }>(
-    `SELECT id, decision_text, status, sprint_id, category, evidence, created_at
+    `SELECT id, decision_text, status, sprint_id, category, evidence,
+            ${closesSinceSql(client, 'strategic_decisions', true)} AS closes
      FROM strategic_decisions
      WHERE ${statusFilter}
      ORDER BY sprint_id IS NULL, ${sprintIdOrderSql('sprint_id', 'ASC')}, id ASC`,
@@ -331,20 +347,9 @@ export function reviewDecisionStaleness(
 
   const decisions: StaleDecisionDetail[] = [];
 
-  const now = Date.now();
   for (const row of result.data) {
-    let sprintAge: number;
-    if (row.sprint_id === null) {
-      // s91-m08: an untagged decision ages on wall-clock time, one sprint per MS_PER_SPRINT.
-      const created = storedTimeMs(row.created_at);
-      if (Number.isNaN(created)) continue;
-      sprintAge = Math.floor((now - created) / MS_PER_SPRINT);
-    } else {
-      const sprintNum = extractSprintNumber(row.sprint_id);
-      if (sprintNum === null) continue;
-      sprintAge = currentSprintNumber - sprintNum;
-    }
-    if (sprintAge < 1) continue; // Skip current sprint decisions
+    const sprintAge = row.closes;
+    if (sprintAge < 1) continue; // No sprint has closed since: nothing to review yet
 
     // Only include decisions beyond half the threshold (approaching) or already stale
     if (includeApproaching && sprintAge < Math.floor(threshold / 2) && row.status !== 'stale') {
@@ -400,31 +405,26 @@ export function reviewDecisionStaleness(
  * s93-m11 — the learnings readStaleness counts: stored 'stale', or at or past the review age by the
  * same predicate, never evergreen. Oldest sprint first. Read-only.
  */
-function reviewLearnings(
-  client: RbookDatabaseClient,
-  threshold: number,
-  currentSprintNumber: number | null
-): ReviewLearningDetail[] {
+function reviewLearnings(client: RbookDatabaseClient, threshold: number): ReviewLearningDetail[] {
   const columns = getTableColumns(client, 'learnings');
-  if (!columns.has('status') || !columns.has('sprint_id')) return [];
+  if (!columns.has('status') || !columns.has('sprint_id') || !columns.has('created_at')) return [];
   const notEvergreen = columns.has('evergreen') ? ' AND evergreen = 0' : '';
   const clauses = [`(status = 'stale'${notEvergreen})`];
   const params: unknown[] = [];
-  const cutoff = currentSprintNumber === null ? null : currentSprintNumber - threshold;
-  if (cutoff !== null && cutoff >= 1) {
-    const due = dueForReviewPredicates(client, cutoff).learnings;
-    if (due) {
-      clauses.push(`(${due.sql})`);
-      params.push(...due.params);
-    }
+  const due = dueForReviewPredicates(client, threshold).learnings;
+  if (due) {
+    clauses.push(`(${due.sql})`);
+    params.push(...due.params);
   }
   const rows = client.getMany<{
     id: number;
     content: string;
     status: string;
     sprint_id: string | null;
+    closes: number | null;
   }>(
-    `SELECT id, content, status, sprint_id FROM learnings
+    `SELECT id, content, status, sprint_id, ${closesSinceSql(client, 'learnings', true)} AS closes
+       FROM learnings
       WHERE ${clauses.join(' OR ')}
       ORDER BY ${sprintIdOrderSql('sprint_id', 'ASC')}, id ASC`,
     params
@@ -432,11 +432,7 @@ function reviewLearnings(
   if (!rows.success || !rows.data) return [];
 
   return rows.data.map((row) => {
-    const sprintNumber = row.sprint_id === null ? null : extractSprintNumber(row.sprint_id);
-    const sprintAge =
-      sprintNumber === null || currentSprintNumber === null
-        ? null
-        : currentSprintNumber - sprintNumber;
+    const sprintAge = row.closes;
     const stale = row.status === 'stale';
     return {
       id: row.id,
@@ -836,24 +832,33 @@ function countIdsStaleUnreviewed(
   return result.success ? (result.data?.n ?? 0) : 0;
 }
 
-// ─── The clock ─────────────────────────────────────────────────────────────────────────────────
+// ─── The current sprint, for display ───────────────────────────────────────────────────────────
 
 /**
- * The clock: the highest canonical sprint number among Completed sprints and the open one,
- * case-insensitively. A Planned sprint never counts (until 3.3.0 the fallback took the highest
- * sprint of any status, so seeding sprints 93-98 moved the cutoff six sprints ahead). Ids that are
- * not `sprint-N` are skipped, as they always were.
+ * The sprint the review stands in, for display only (s97-m13): the open sprint with the highest
+ * number, else the sprint that closed last by close time. Ages never read it: they count closes
+ * ({@link STALENESS_COUNTING_RULE}). A Planned sprint never counts; ids that are not `sprint-N` are
+ * skipped.
  */
 export function getCurrentSprintNumber(client: RbookDatabaseClient): number | null {
-  const result = client.getMany<{ id: string }>(
-    `SELECT id FROM sprints WHERE ${sprintCountsOnClockSql('status')}
+  const open = client.getMany<{ id: string }>(
+    `SELECT id FROM sprints WHERE ${statusInSql('status', SPRINT_OPEN_STATUSES)}
      ORDER BY ${sprintIdOrderSql('id', 'DESC')}`,
     []
   );
-  if (!result.success || !result.data) return null;
-  for (const row of result.data) {
-    const num = extractSprintNumber(row.id);
-    if (num !== null) return num;
+  const closed = getTableColumns(client, 'sprints').has('end_date')
+    ? client.getMany<{ id: string }>(
+        `SELECT id FROM sprints s WHERE ${closedSql('s')} ORDER BY julianday(s.end_date) DESC, s.rowid DESC`,
+        []
+      )
+    : null;
+  for (const result of [open, closed]) {
+    if (!result) continue;
+    if (!result.success || !result.data) continue;
+    for (const row of result.data) {
+      const num = extractSprintNumber(row.id);
+      if (num !== null) return num;
+    }
   }
   return null;
 }

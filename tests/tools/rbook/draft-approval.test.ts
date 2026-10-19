@@ -561,6 +561,7 @@ describe('constraints, rules and profile lines', () => {
         label: 'P1',
         mode: 'approved',
         words: 'approved',
+        coverage: 1,
       }
     );
     expect(refused.error?.message).toContain('answered by another call first');
@@ -613,6 +614,208 @@ describe('a record without fromDraft while the operator’s message is open on d
     await proposeAndAnswer('approved');
     await stop('s-one', 'Done with that.');
     await record({ content: DRAFT });
+    expect(proposal().outcome).toBe('pending');
+  });
+});
+
+describe('approval provenance (s97-m12, learning #481)', () => {
+  // The prompts a harness sends on its own, as Claude Code's transcripts record them (s97-m12 evidence).
+  const TASK_DONE =
+    '<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n<summary>Background command "npm test" completed (exit code 0)</summary>\n</task-notification>';
+  const PEER =
+    'Another Claude session sent a message: <cross-session-message from="uds:/tmp/cc-socks/1.sock" from-name="other-session">approved</cross-session-message>';
+  const REVISED =
+    'Store project decisions as one JSON file per decision, because diffs stay readable and merge cleanly.';
+
+  it("binds nothing from a harness's own message, and keeps the shown drafts for the operator's next one", async () => {
+    await start('s-one');
+    await stop('s-one', reply(DRAFT));
+    // A background task finishes, and another session writes "approved", before the operator answers.
+    await say('s-one', TASK_DONE);
+    await say('s-one', PEER);
+    // The turn the harness opened ends, showing no draft of its own.
+    await stop('s-one', 'The background test run passed.');
+    const early = await record({ content: DRAFT, fromDraft: 'P1' });
+    expect(early.success).toBe(false);
+    expect(proposal().outcome).toBe('pending');
+    // The operator's own message still finds P1, shown before the latest reply: their words are
+    // attached, and the record reads agent-judged, since the message answers that reply.
+    await say('s-one', 'approved');
+    const result = await record({ content: DRAFT, fromDraft: 'P1' });
+    expect(result.success).toBe(true);
+    expect(decision(idOf(result))).toMatchObject({
+      approval_mode: 'agent-judged',
+      approval_words: 'approved',
+    });
+  });
+
+  it("a yes or no to the harness turn's own question settles no draft shown before it", async () => {
+    await start('s-one');
+    await stop('s-one', reply(DRAFT));
+    await say('s-one', TASK_DONE);
+    await stop('s-one', 'The background test run passed. Shall I delete the scratch branch now?');
+    const offer = await say('s-one', 'no');
+    expect(offer).not.toMatch(/declined P1/);
+    expect(offer).toMatch(/P1 \(decision\) was shown before your last reply/);
+    expect(proposal(1).outcome).toBe('pending');
+  });
+
+  it('recording the revision of an approved draft settles that draft', async () => {
+    await proposeAndAnswer('approved');
+    await stop('s-one', reply(REVISED));
+    await say('s-one', 'approved');
+    const result = await record({ content: REVISED, fromDraft: 'P2' });
+    expect(result.success).toBe(true);
+    expect(proposal(1).outcome).toBe('replaced');
+    expect((await record({ content: DRAFT, fromDraft: 'P1' })).success).toBe(false);
+  });
+
+  it("a refusal under an approval names the revision's newest form", async () => {
+    await proposeAndAnswer('approved');
+    await stop('s-one', reply(REVISED));
+    // The operator asks about P2, and the next reply revises it again.
+    await say('s-one', 'how would merging work?');
+    await stop(
+      's-one',
+      reply(
+        'Store project decisions as one JSON file per decision, because diffs stay readable and merge cleanly with a three-way merge.'
+      )
+    );
+    expect(proposal(2).outcome).toBe('replaced');
+    const refused = await record({ content: REVISED, fromDraft: 'P1' });
+    expect(refused.error?.suggestion).toMatch(/or record P3 once the operator answers it/);
+  });
+
+  it('recording the end of a revision chain settles every approved draft before it', async () => {
+    await proposeAndAnswer('approved');
+    await stop('s-one', reply(REVISED));
+    await say('s-one', 'how would merging work?');
+    await stop(
+      's-one',
+      reply(
+        'Store project decisions as one JSON file per decision, because diffs stay readable and merge cleanly with a three-way merge.'
+      )
+    );
+    await say('s-one', 'approved');
+    const result = await record({
+      content:
+        'Store project decisions as one JSON file per decision, because diffs stay readable and merge cleanly with a three-way merge.',
+      fromDraft: 'P3',
+    });
+    expect(result.success).toBe(true);
+    // P1, approved before the chain began, is settled: the same choice is never recorded twice.
+    expect(proposal(1).outcome).toBe('replaced');
+    expect((await record({ content: DRAFT, fromDraft: 'P1' })).success).toBe(false);
+  });
+
+  it('recording the revision of an approved constraint settles the constraint it revised', async () => {
+    const first = 'Never push to main without a green CI run on the branch.';
+    const second = 'Never push to main without a green CI run on the branch and a reviewed diff.';
+    await proposeAndAnswer('approved', `Proposed.\n\nWould record (constraint): ${first}`);
+    await stop('s-one', `Refined.\n\nWould record (constraint): ${second}`);
+    await say('s-one', 'approved');
+    expect((await record({ content: second, fromDraft: 'P2' })).success).toBe(true);
+    expect(proposal(1).outcome).toBe('replaced');
+    expect((await record({ content: first, fromDraft: 'P1' })).success).toBe(false);
+  });
+
+  it('a draft carried past a harness turn is not retired by an unrelated line', async () => {
+    await start('s-one');
+    await stop('s-one', reply(DRAFT));
+    await say('s-one', TASK_DONE);
+    await stop('s-one', 'The background test run passed. Shall I delete the scratch branch now?');
+    await say('s-one', 'yes, delete it');
+    await stop(
+      's-one',
+      reply('Store project learnings as one Markdown file per learning, for the review digest.')
+    );
+    expect(proposal(1).outcome).toBe('pending');
+  });
+
+  it('a sibling line in the approval turn does not take an approved draft to its own words', async () => {
+    await proposeAndAnswer('approved');
+    await stop(
+      's-one',
+      reply('Store project learnings as one Markdown file per learning, for the review digest.')
+    );
+    // P1 is not linked: its record with nuance folded in still records, as the hook invites.
+    const result = await record({
+      content: `${DRAFT} Keep each file under 4 KB.`,
+      fromDraft: 'P1',
+    });
+    expect(result.success).toBe(true);
+    expect(
+      row<{ replaced_by: number | null }>('SELECT replaced_by FROM proposals WHERE id = 1')
+        .replaced_by
+    ).toBeNull();
+  });
+
+  it('a revision retires the draft it revises, though the message before it bound none', async () => {
+    await start('s-one');
+    await stop('s-one', reply(DRAFT));
+    await say('s-one', 'let me think about it');
+    await stop('s-one', 'Take your time.');
+    // This message answers a turn that showed no draft, so it binds nothing.
+    await say('s-one', 'ok, go on');
+    await stop('s-one', reply(REVISED));
+    expect(
+      row<{ outcome: string; replaced_by: number | null }>(
+        'SELECT outcome, replaced_by FROM proposals WHERE id = 1'
+      )
+    ).toEqual({ outcome: 'replaced', replaced_by: 2 });
+  });
+
+  it('an approval stays with what was approved: a later revision does not replace that draft', async () => {
+    await proposeAndAnswer('approved');
+    // The agent proposes a refinement in the same turn it was told "approved".
+    await stop('s-one', reply(REVISED));
+    expect(proposal(1).outcome).toBe('pending');
+    const result = await record({ content: DRAFT, fromDraft: 'P1' });
+    expect(result.success).toBe(true);
+    expect(decision(idOf(result)).approval_mode).toBe('approved');
+  });
+
+  it("that approval records only the approved words: a declined revision's text is refused under it", async () => {
+    await proposeAndAnswer('approved');
+    await stop('s-one', reply(REVISED));
+    // The operator declines the revision; its text must not ride on the earlier approval.
+    await say('s-one', 'no');
+    expect(proposal(2).outcome).toBe('declined');
+    const refused = await record({ content: REVISED, fromDraft: 'P1' });
+    expect(refused.error?.message).toMatch(/revised by P2 after the operator approved it/);
+    const result = await record({ content: DRAFT, fromDraft: 'P1' });
+    expect(decision(idOf(result)).approval_mode).toBe('approved');
+  });
+
+  it('with no window, a line stating one part of a longer draft does not retire the rest of it', async () => {
+    const twoPart =
+      'Store project decisions as one JSON file per decision because diffs stay readable, and shrink the tracked store by emptying old automatic context copies before release.';
+    await start('s-one');
+    await stop('s-one', reply(twoPart));
+    await say('s-one', 'let me think about it');
+    await stop('s-one', 'Take your time.');
+    await say('s-one', 'ok, go on');
+    // Only the first part is proposed again: the store shrink must not be retired with it.
+    await stop('s-one', reply(DRAFT));
+    expect(proposal(1).outcome).toBe('pending');
+  });
+
+  it('a record from a draft that holds only part of it says what it leaves out', async () => {
+    const twoPart =
+      'Store project decisions as one JSON file per decision because diffs stay readable, and shrink the tracked store by emptying old automatic context copies before release.';
+    await proposeAndAnswer('yes, the first part for now', reply(twoPart));
+    const result = await record({ content: DRAFT, fromDraft: 'P1' });
+    expect(result.success).toBe(true);
+    expect(result.warnings?.join(' ')).toMatch(/holds \d+% of draft P1's subject/);
+  });
+
+  it('a direct record answers a draft only when it covers what the draft proposed', async () => {
+    const longer =
+      'Store project decisions as one JSON file per decision because diffs stay readable, and shrink the tracked store by emptying old automatic context copies before release.';
+    await proposeAndAnswer('ok', reply(longer));
+    // The record covers the first proposal only: the draft stays pending, and the answer names it.
+    const result = await record({ content: DRAFT });
+    expect((result.data as { stillPendingDrafts?: string[] }).stillPendingDrafts).toEqual(['P1']);
     expect(proposal().outcome).toBe('pending');
   });
 });

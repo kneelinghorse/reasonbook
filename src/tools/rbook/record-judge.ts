@@ -64,13 +64,17 @@ export function judge(
       verdict: 'quarantined',
       reason: `${member.cutReason ?? 'its member was removed'}, and it comes after the cut at change ${member.cut}`,
     };
+  // s97-m11 (design §Owner-role authoring): a dashboard's referee accepts the project identity and a
+  // lineage settle from an owner-role copy too; every other authority, from its own copy alone.
+  const byRole = member.role === 'owner' && refereeStore(client);
   const owned = changes.find(
     (change) =>
       OWNER_ONLY_KINDS.has(change.kind) ||
-      change.entity === PROJECT_ENTITY ||
-      (change.kind === 'settle' &&
-        change.entity === 'strategic_decisions' &&
-        change.field === 'superseded_by')
+      (!byRole &&
+        (change.entity === PROJECT_ENTITY ||
+          (change.kind === 'settle' &&
+            change.entity === 'strategic_decisions' &&
+            change.field === 'superseded_by')))
   );
   if (owned)
     return {
@@ -98,6 +102,14 @@ export function judge(
         waits ??= `it depends on ${stable}, whose create is quarantined`;
     }
   return waits ? { verdict: null, reason: waits } : { verdict: 'accepted', reason: null };
+}
+
+/** s97-m11: whether this store is a dashboard's referee, which the referee library alone makes. */
+function refereeStore(client: RbookDatabaseClient): boolean {
+  const found = client.getOne<{ present: number }>(
+    "SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'referee_state'"
+  );
+  return Boolean(found.success && found.data);
 }
 
 /**

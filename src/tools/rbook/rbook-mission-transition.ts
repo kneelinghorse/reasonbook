@@ -67,7 +67,7 @@ export const RBOOK_MISSION_TRANSITION_ACTION_PARAMS: ActionParamMap<
   RbookMissionTransitionAction,
   RbookMissionTransitionParams
 > = {
-  start: ['action', 'missionId', 'notes', 'projectRoot'],
+  start: ['action', 'missionId', 'notes', 'targetStatus', 'projectRoot'],
   complete: ['action', 'missionId', 'notes', 'decisions', 'agentFeedback', 'projectRoot'],
   block: ['action', 'missionId', 'reason', 'blockers', 'projectRoot'],
   unblock: ['action', 'missionId', 'resolution', 'targetStatus', 'projectRoot'],
@@ -103,7 +103,9 @@ export const rbookMissionTransitionSchema = z
     targetStatus: z
       .enum(['In Progress', 'Current'])
       .optional()
-      .describe('Target status after unblock (default: In Progress)'),
+      .describe(
+        'unblock: the status after it (default In Progress); start: Current promotes without starting'
+      ),
     deferUntil: z
       .string()
       .optional()
@@ -170,7 +172,8 @@ export const rbookMissionTransitionToolDefinition = {
       targetStatus: {
         type: 'string',
         enum: ['In Progress', 'Current'],
-        description: 'Target status after unblock (default: In Progress)',
+        description:
+          'unblock: the status after it (default In Progress); start: Current promotes without starting',
       },
       deferUntil: {
         type: 'string',
@@ -234,6 +237,7 @@ export async function rbookMissionTransition(
       let started = await rbookMissionStart({
         missionId: params.missionId,
         notes: params.notes,
+        targetStatus: params.targetStatus,
         projectRoot: params.projectRoot,
       });
       if (started.success && started.data?.activatedSprintId) {

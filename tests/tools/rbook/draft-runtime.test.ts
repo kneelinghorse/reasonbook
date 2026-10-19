@@ -10,6 +10,7 @@ import * as path from 'path';
 import {
   bindWindow,
   bumpOffers,
+  carryShown,
   closeWindow,
   draftRuntimePath,
   endDraftSession,
@@ -23,6 +24,7 @@ import {
   sessionStartedAt,
   setShown,
   startsSince,
+  takeKept,
   takeShown,
   type DraftRuntime,
 } from '../../../src/tools/rbook/draft-runtime';
@@ -99,6 +101,42 @@ describe('session starts', () => {
     expect(offerCounts(runtime, S1).get(4)).toBeUndefined();
     expect(readExcerpt(runtime, S1, 4, now + 2)).toBeNull();
     expect(openWindow(runtime, S1, now + 2)).toEqual([]);
+  });
+});
+
+describe('drafts kept from an earlier reply (s97-m12, critic round 2)', () => {
+  it('keeps the drafts no operator message took, with their first showing, and never refreshes it', () => {
+    const runtime = open();
+    const shownAt = Date.now();
+    setShown(runtime, S1, [4], shownAt);
+    // Harness turns end: each Stop carries what was shown, and shows nothing of its own.
+    carryShown(runtime, S1, shownAt + 1000);
+    setShown(runtime, S1, [], shownAt + 1000);
+    carryShown(runtime, S1, shownAt + EXCERPT_TTL_MS - 1000);
+    setShown(runtime, S1, [], shownAt + EXCERPT_TTL_MS - 1000);
+    // Two hours after it was first shown it is gone, however many Stops carried it.
+    expect(takeKept(runtime, S1, shownAt + EXCERPT_TTL_MS + 1)).toEqual([]);
+  });
+
+  it("an operator message takes the kept drafts with the latest reply's, once", () => {
+    const runtime = open();
+    const now = Date.now();
+    setShown(runtime, S1, [4], now);
+    carryShown(runtime, S1, now + 10);
+    setShown(runtime, S1, [7], now + 10);
+    expect(takeShown(runtime, S1, now + 20)).toEqual([7]);
+    expect(takeKept(runtime, S1, now + 20)).toEqual([4]);
+    expect(takeKept(runtime, S1, now + 30)).toEqual([]);
+  });
+
+  it('binds kept drafts only as words the agent judges, never as a plain answer', () => {
+    const runtime = open();
+    const now = Date.now();
+    bindWindow(runtime, S1, [7], 'no', 'decline', now, [4]);
+    expect(readExcerpt(runtime, S1, 7, now)).toMatchObject({ reply: 'decline', windowSize: 1 });
+    expect(readExcerpt(runtime, S1, 4, now)).toMatchObject({ reply: 'other' });
+    // They are not the operator's window: a later line retires them only at the coverage rule.
+    expect(openWindow(runtime, S1, now)).toEqual([7]);
   });
 });
 

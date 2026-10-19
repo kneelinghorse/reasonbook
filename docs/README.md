@@ -4,7 +4,7 @@ Reasonbook is the project record your agents keep: what was decided, why, what w
 learned, and what remains. It lives in the project, in `rbook/db/rbook.sqlite`, so the next session
 can pick up from it, even in another tool. No dashboard account is required.
 
-[See it work](demo/README.md): a 75-second replay of recorded runs in Claude Code and Codex.
+[See it work](https://github.com/kneelinghorse/reasonbook/blob/main/docs/demo/README.md): a 75-second replay of recorded runs in Claude Code and Codex.
 
 ## Install
 
@@ -24,7 +24,7 @@ can pick up from it, even in another tool. No dashboard account is required.
 In Claude Code, `/reasonbook:init` asks which level a new record should start at. With the CLI, run
 `reasonbook init --level ledger`, `planner` or `builder` in the project folder. [The method](method.md)
 explains what Reasonbook does at each level and how to move up, and the
-[starter templates](../templates/) hold the files each level starts with.
+[starter templates](https://github.com/kneelinghorse/reasonbook/tree/main/templates) hold the files each level starts with.
 
 ## Trust
 

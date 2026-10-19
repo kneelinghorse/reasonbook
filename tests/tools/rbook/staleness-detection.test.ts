@@ -20,10 +20,12 @@ import {
   repairFlaggerStaleness,
   reviewDecisionStaleness,
   DEFAULT_STALENESS_THRESHOLD,
+  STALENESS_COUNTING_RULE,
 } from '../../../src/tools/rbook/staleness-detection';
 import { RbookDetector } from '../../../src/intelligence/rbook-detector';
 import { withClient, type RbookDatabaseClient } from '../../../src/tools/rbook/client';
 import { createSuccess } from '../../../src/tools/rbook/errors';
+import { seedRbookDb } from '../../helpers/seedRbookDb';
 
 describe('staleness-detection', () => {
   let tempDir: string;
@@ -145,14 +147,20 @@ describe('staleness-detection', () => {
     return captured!;
   }
 
+  /** Close time of a sprint `i` of `count`, in label order, two weeks apart, the last a day ago. */
+  const closedAt = (i: number, count: number): string =>
+    new Date(Date.now() - ((count - i) * 14 + 1) * 24 * 60 * 60 * 1000).toISOString();
+
+  /** sprint-1..sprint-count, closed in label order (s97-m13: ages count closes), one left open. */
   function seedSprints(count: number, activeSprintNum?: number): void {
     const db = new Database(dbPath);
     for (let i = 1; i <= count; i++) {
-      const status = i === (activeSprintNum ?? count) ? 'Active' : 'Completed';
-      db.prepare(`INSERT INTO sprints (id, title, status) VALUES (?, ?, ?)`).run(
+      const open = i === (activeSprintNum ?? count);
+      db.prepare(`INSERT INTO sprints (id, title, status, end_date) VALUES (?, ?, ?, ?)`).run(
         `sprint-${i}`,
         `Sprint ${i}`,
-        status
+        open ? 'Active' : 'Completed',
+        open ? null : closedAt(i, count)
       );
     }
     db.close();
@@ -240,8 +248,6 @@ describe('staleness-detection', () => {
 
     expect(result.dueDecisions).toBe(1);
     expect(result.storedStaleDecisions).toBe(0);
-    expect(result.currentSprintNumber).toBe(totalSprints);
-    expect(result.cutoffSprintNumber).toBe(totalSprints - DEFAULT_STALENESS_THRESHOLD);
     // The point of Q10: a read computes the age; it never writes it back as status='stale'.
     expect(statuses()).toBe(before);
   });
@@ -253,35 +259,40 @@ describe('staleness-detection', () => {
       historicalStatus: 'Completed',
     },
     { branch: 'active-sprint query', currentStatus: 'Active', historicalStatus: 'Current' },
-  ])('uses the highest canonical sprint in the $branch after a historical insert', async (row) => {
+  ])('reads the $branch by close time after a historical insert', async (row) => {
     const currentSprint = DEFAULT_STALENESS_THRESHOLD + 5;
     const db = new Database(dbPath);
-    const insertSprint = db.prepare(`INSERT INTO sprints (id, title, status) VALUES (?, ?, ?)`);
+    const insertSprint = db.prepare(
+      `INSERT INTO sprints (id, title, status, end_date) VALUES (?, ?, ?, ?)`
+    );
+    const ended = (sprint: number, status: string): string | null =>
+      status === 'Completed' ? closedAt(sprint, currentSprint) : null;
     for (let sprint = 1; sprint <= currentSprint; sprint += 1) {
       if (sprint === 3) continue;
-      insertSprint.run(
-        `sprint-${sprint}`,
-        `Sprint ${sprint}`,
-        sprint === currentSprint ? row.currentStatus : 'Completed'
-      );
+      const status = sprint === currentSprint ? row.currentStatus : 'Completed';
+      insertSprint.run(`sprint-${sprint}`, `Sprint ${sprint}`, status, ended(sprint, status));
     }
     // A backfilled historical row has the newest rowid but is not the newest sprint.
-    insertSprint.run('sprint-3', 'Sprint 3', row.historicalStatus);
+    insertSprint.run('sprint-3', 'Sprint 3', row.historicalStatus, ended(3, row.historicalStatus));
     db.close();
 
     seedDecisions([{ text: 'Old decision', sprintId: 'sprint-2' }]);
 
-    const result = await runWithClient((client) =>
+    const read = await runWithClient((client) =>
       readStaleness(client, { threshold: DEFAULT_STALENESS_THRESHOLD })
     );
+    const review = await runWithClient((client) =>
+      reviewDecisionStaleness(client, { threshold: DEFAULT_STALENESS_THRESHOLD })
+    );
 
+    // The closes after sprint-2's: sprint-3..25 when all closed, sprint-4..24 when 3 and 25 are open.
     expect({
-      currentSprintNumber: result.currentSprintNumber,
-      cutoffSprintNumber: result.cutoffSprintNumber,
-      dueDecisions: result.dueDecisions,
+      currentSprintNumber: review.currentSprintNumber,
+      sprintAge: review.decisions[0]?.sprintAge,
+      dueDecisions: read.dueDecisions,
     }).toEqual({
       currentSprintNumber: currentSprint,
-      cutoffSprintNumber: currentSprint - DEFAULT_STALENESS_THRESHOLD,
+      sprintAge: row.currentStatus === 'Completed' ? 23 : 21,
       dueDecisions: 1,
     });
   });
@@ -291,33 +302,40 @@ describe('staleness-detection', () => {
   it('never counts a Planned sprint on the clock, in any letter case', async () => {
     seedSprints(DEFAULT_STALENESS_THRESHOLD + 5, 0); // all Completed
     const db = new Database(dbPath);
-    const insert = db.prepare(`INSERT INTO sprints (id, title, status) VALUES (?, ?, ?)`);
+    const insert = db.prepare(
+      `INSERT INTO sprints (id, title, status, end_date) VALUES (?, ?, ?, ?)`
+    );
+    // Planned dates that have already passed, as seeded sprints carry them.
+    const past = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
     for (let n = 1; n <= 6; n++) {
-      insert.run(`sprint-${DEFAULT_STALENESS_THRESHOLD + 5 + n}`, `Planned ${n}`, 'Planned');
+      insert.run(`sprint-${DEFAULT_STALENESS_THRESHOLD + 5 + n}`, `Planned ${n}`, 'Planned', past);
     }
-    insert.run(`sprint-${DEFAULT_STALENESS_THRESHOLD + 40}`, 'lower-case planned', 'planned');
+    insert.run(`sprint-${DEFAULT_STALENESS_THRESHOLD + 40}`, 'lower-case planned', 'planned', past);
     db.close();
-    // The old clock took sprint-(T+45) and flagged this; on the real clock it is 3 sprints short.
+    // 17 closes after sprint-8's: three short. A clock counting the planned sprints flags it.
     seedDecisions([{ text: 'Not yet due', sprintId: 'sprint-8' }]);
 
     const result = await runWithClient((client) =>
       readStaleness(client, { threshold: DEFAULT_STALENESS_THRESHOLD })
     );
+    const review = await runWithClient((client) => reviewDecisionStaleness(client));
 
-    expect(result.currentSprintNumber).toBe(DEFAULT_STALENESS_THRESHOLD + 5);
+    expect(review.currentSprintNumber).toBe(DEFAULT_STALENESS_THRESHOLD + 5);
     expect(result.dueDecisions).toBe(0);
   });
 
   it('reads a lower-case completed or active sprint on the clock', async () => {
     const db = new Database(dbPath);
-    const insert = db.prepare(`INSERT INTO sprints (id, title, status) VALUES (?, ?, ?)`);
-    insert.run('sprint-1', 'One', 'completed');
-    insert.run('sprint-2', 'Two', 'active');
+    const insert = db.prepare(
+      `INSERT INTO sprints (id, title, status, end_date) VALUES (?, ?, ?, ?)`
+    );
+    insert.run('sprint-1', 'One', 'completed', closedAt(1, 2));
+    insert.run('sprint-2', 'Two', 'active', null);
     db.close();
 
-    const result = await runWithClient((client) => readStaleness(client));
+    const review = await runWithClient((client) => reviewDecisionStaleness(client));
 
-    expect(result.currentSprintNumber).toBe(2);
+    expect(review.currentSprintNumber).toBe(2);
   });
 
   it('does not count a decision reviewed inside the review window', async () => {
@@ -411,7 +429,6 @@ describe('staleness-detection', () => {
     );
 
     expect(result.dueDecisions).toBe(0);
-    expect(result.cutoffSprintNumber).toBe(seedCount - DEFAULT_STALENESS_THRESHOLD);
   });
 
   it('reports rows stored as stale beside the computed ones, and counts non-active rows as neither', async () => {
@@ -672,5 +689,221 @@ describe('staleness-detection', () => {
       expect(again.restoredDecisionIds).toEqual([]);
       expect(again.ledgerWritten).toBe(false);
     });
+  });
+
+  // s97-m13 (#703): a review age is the number of sprints that closed after the row's sprint closed
+  // (after the row was made, while its sprint is open or when it names none), by close time. Sprint
+  // ids are labels: this store ran sprint-99 before sprint-96, and the label clock then read every
+  // row three sprints older than the sprints that had actually closed.
+  describe('the clock counts closes, not labels (s97-m13)', () => {
+    const daysAgo = (days: number): string =>
+      new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+    function seedClosed(rows: Array<[id: string, status: string, endDate: string | null]>): void {
+      const db = new Database(dbPath);
+      const insert = db.prepare(
+        'INSERT INTO sprints (id, title, status, end_date) VALUES (?, ?, ?, ?)'
+      );
+      for (const [id, status, endDate] of rows) insert.run(id, id, status, endDate);
+      db.close();
+    }
+
+    function seedRows(
+      table: 'strategic_decisions' | 'learnings',
+      rows: Array<[text: string, sprintId: string | null, createdAt: string]>
+    ): number[] {
+      const db = new Database(dbPath);
+      const insert =
+        table === 'strategic_decisions'
+          ? db.prepare(
+              `INSERT INTO strategic_decisions (decision_text, created_at, sprint_id, status)
+               VALUES (?, ?, ?, 'active')`
+            )
+          : db.prepare(
+              `INSERT INTO learnings (content, created_at, sprint_id, status) VALUES (?, ?, ?, 'active')`
+            );
+      const ids = rows.map(([text, sprintId, createdAt]) =>
+        Number(insert.run(text, createdAt, sprintId).lastInsertRowid)
+      );
+      db.close();
+      return ids;
+    }
+
+    /** sprint-1..sprint-22 closed ten days apart, then sprint-99, run out of label order; sprint-23 open. */
+    function seedOutOfOrder(): void {
+      seedClosed([
+        ...Array.from({ length: 22 }, (_, i): [string, string, string] => [
+          `sprint-${i + 1}`,
+          'Completed',
+          daysAgo(400 - (i + 1) * 10),
+        ]),
+        ['sprint-99', 'Completed', daysAgo(170)],
+        ['sprint-23', 'Active', null],
+      ]);
+    }
+
+    it('a sprint numbered out of order adds one close, not a jump of the clock', async () => {
+      seedOutOfOrder();
+      // sprint-3 closed 370 days ago: 19 closes of sprint-4..22 and sprint-99's after it, 20.
+      // sprint-4 closed 360 days ago: 19 after it. The label clock read them 96 and 95 sprints old.
+      const [third, fourth] = seedRows('strategic_decisions', [
+        ['Made in sprint-3', 'sprint-3', daysAgo(375)],
+        ['Made in sprint-4', 'sprint-4', daysAgo(365)],
+      ]);
+      seedRows('learnings', [
+        ['Learned in sprint-3', 'sprint-3', daysAgo(375)],
+        ['Learned in sprint-4', 'sprint-4', daysAgo(365)],
+      ]);
+
+      const read = await runWithClient((client) =>
+        readStaleness(client, { threshold: DEFAULT_STALENESS_THRESHOLD })
+      );
+      const review = await runWithClient((client) =>
+        reviewDecisionStaleness(client, { threshold: DEFAULT_STALENESS_THRESHOLD })
+      );
+
+      expect({ decisions: read.dueDecisions, learnings: read.dueLearnings }).toEqual({
+        decisions: 1,
+        learnings: 1,
+      });
+      expect(
+        [third, fourth].map((id) => review.decisions.find((d) => d.id === id)?.sprintAge)
+      ).toEqual([20, 19]);
+      expect(review.learnings.map((l) => [l.text, l.sprintAge])).toEqual([
+        ['Learned in sprint-3', 20],
+      ]);
+    });
+
+    it('a row whose sprint is open, or that names none, ages from when it was made', async () => {
+      seedOutOfOrder();
+      const [untaggedOld, untaggedNew, open] = seedRows('strategic_decisions', [
+        ['Untagged, made before every close', null, daysAgo(500)],
+        ['Untagged, made after every close', null, daysAgo(5)],
+        ['Made in the open sprint', 'sprint-23', daysAgo(5)],
+      ]);
+
+      const read = await runWithClient((client) =>
+        readStaleness(client, { threshold: DEFAULT_STALENESS_THRESHOLD })
+      );
+      const review = await runWithClient((client) =>
+        reviewDecisionStaleness(client, { threshold: DEFAULT_STALENESS_THRESHOLD })
+      );
+
+      // 23 closes after the old untagged row (a 14-day wall clock read it 35 sprints old).
+      expect(read.dueDecisions).toBe(1);
+      expect(review.decisions.find((d) => d.id === untaggedOld)?.sprintAge).toBe(23);
+      expect(review.decisions.some((d) => d.id === untaggedNew || d.id === open)).toBe(false);
+    });
+
+    it('only recorded closes in the past count: never a planned sprint, an undated close or a future one', async () => {
+      seedClosed([
+        ['sprint-1', 'Completed', daysAgo(400)],
+        // Planned dates already passed, closes with no recorded time, and one dated next week.
+        ...Array.from({ length: 25 }, (_, i): [string, string, string] => [
+          `sprint-${i + 2}`,
+          'Planned',
+          daysAgo(300 - i),
+        ]),
+        ...Array.from({ length: 25 }, (_, i): [string, string, null] => [
+          `sprint-${i + 27}`,
+          'Completed',
+          null,
+        ]),
+        ['sprint-52', 'Completed', daysAgo(-7)],
+        // A close in any letter case counts.
+        ['sprint-53', 'completed', daysAgo(100)],
+      ]);
+      const [first] = seedRows('strategic_decisions', [
+        ['Made in sprint-1', 'sprint-1', daysAgo(405)],
+      ]);
+
+      const read = await runWithClient((client) =>
+        readStaleness(client, { threshold: DEFAULT_STALENESS_THRESHOLD })
+      );
+      const review = await runWithClient((client) =>
+        reviewDecisionStaleness(client, { threshold: 2 })
+      );
+
+      expect(read.dueDecisions).toBe(0);
+      expect(review.decisions.find((d) => d.id === first)?.sprintAge).toBe(1);
+    });
+
+    it('a store whose sprints carry no end_date column reads every age as 0, and no count fails', async () => {
+      const db = new Database(dbPath);
+      db.exec('ALTER TABLE sprints DROP COLUMN end_date');
+      const insert = db.prepare('INSERT INTO sprints (id, title, status) VALUES (?, ?, ?)');
+      for (let n = 1; n <= 25; n += 1) insert.run(`sprint-${n}`, `Sprint ${n}`, 'Completed');
+      db.close();
+      seedRows('strategic_decisions', [['Made in sprint-2', 'sprint-2', daysAgo(400)]]);
+
+      const read = await runWithClient((client) => readStaleness(client));
+      const review = await runWithClient((client) => reviewDecisionStaleness(client));
+
+      expect({ due: read.dueDecisions, warnings: read.warnings, listed: review.decisions }).toEqual(
+        {
+          due: 0,
+          warnings: [],
+          listed: [],
+        }
+      );
+    });
+
+    it('publishes the counting rule beside the counts', async () => {
+      seedOutOfOrder();
+      const read = await runWithClient((client) => readStaleness(client));
+      expect(read.countingRule).toBe(STALENESS_COUNTING_RULE);
+      // The rule names what it counts, from when, and what it never reads.
+      for (const claim of [
+        /recorded end_date/,
+        /close of the row's own sprint/,
+        /labels never count/,
+      ])
+        expect(STALENESS_COUNTING_RULE).toMatch(claim);
+    });
+  });
+});
+
+// s97-m13: the same clock on the schema a real store carries (seedRbookDb), not a hand-built one,
+// so a wrong column or table in the clock's SQL fails here (the 6-path checklist's positive fire).
+describe('the close-time clock on a real store (s97-m13)', () => {
+  it('fires on a row twenty closes old and not on one nineteen closes old', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rbook-staleness-real-'));
+    try {
+      const dbPath = seedRbookDb(root, { projectName: 'staleness-real' });
+      const daysAgo = (days: number): string =>
+        new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+      const db = new Database(dbPath);
+      const sprint = db.prepare(
+        'INSERT INTO sprints (id, title, status, end_date) VALUES (?, ?, ?, ?)'
+      );
+      for (let n = 1; n <= 21; n += 1)
+        sprint.run(`sprint-${n}`, `Sprint ${n}`, 'Completed', daysAgo(300 - n * 10));
+      // Run after sprint-21 under a higher label: the label clock read both rows below as due.
+      sprint.run('sprint-99', 'Sprint 99', 'Completed', daysAgo(80));
+      const decision = db.prepare(
+        `INSERT INTO strategic_decisions (decision_text, created_at, sprint_id, status)
+         VALUES (?, ?, ?, 'active')`
+      );
+      decision.run('Twenty closes after sprint-2', daysAgo(285), 'sprint-2');
+      decision.run('Nineteen closes after sprint-3', daysAgo(275), 'sprint-3');
+      db.close();
+      RbookDetector.resetInstance();
+
+      let read: ReturnType<typeof readStaleness> | undefined;
+      await withClient(
+        (client) => {
+          read = readStaleness(client, { threshold: DEFAULT_STALENESS_THRESHOLD });
+          return createSuccess(null);
+        },
+        { projectRoot: root }
+      );
+
+      expect({ due: read?.dueDecisions, warnings: read?.warnings }).toEqual({
+        due: 1,
+        warnings: [],
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });

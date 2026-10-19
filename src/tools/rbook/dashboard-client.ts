@@ -17,8 +17,11 @@ import {
 } from '../../intelligence/legacy-compat';
 import { getSetting } from '../../intelligence/legacy-compat';
 import { rememberDashboardIdentity } from '../../intelligence/user-author';
-import { readFileSync } from 'fs';
+import { createReadStream, createWriteStream, readFileSync, rmSync, statSync } from 'fs';
 import path from 'path';
+import { Readable } from 'stream';
+import { pipeline } from 'stream/promises';
+import { gzipSync } from 'zlib';
 import type { RbookToolResult } from './types';
 import { createError, createSuccess, RbookErrors } from './errors';
 import {
@@ -498,6 +501,30 @@ function normalizeProjectListResult<
     projects,
     totalCount: data.totalCount ?? projects.length,
   };
+}
+
+/** s97-m10: a peer call's request is gzip-compressed past this size; small ones go as they are. */
+const RELAY_GZIP_FROM_BYTES = 64 * 1024;
+/** s97-m10: how long one peer call may take: a page can hold the dashboard's whole request limit. */
+const RELAY_TIMEOUT_MS = 120_000;
+/** s97-m11: an upload or a first copy moves a whole store, so it may take longer than a page. */
+const RELAY_UPLOAD_TIMEOUT_MS = 15 * 60 * 1000;
+/** s97-m11: the largest first copy this machine takes from a dashboard. */
+const FIRST_COPY_MAX_BYTES = 4 * 1024 * 1024 * 1024;
+/** s97-m10: the most one peer call's answer may hold, after decompression; a page is far smaller. */
+const RELAY_MAX_RESPONSE_BYTES = 256 * 1024 * 1024;
+
+/** A response's text, or null once it holds more than `max` bytes; reading stops there. */
+async function boundedText(response: Response, max: number): Promise<string | null> {
+  if (!response.body) return '';
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
+    size += chunk.byteLength;
+    if (size > max) return null;
+    chunks.push(Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks).toString('utf8');
 }
 
 /** Row count for a single PG mirror table. */
@@ -1623,6 +1650,258 @@ export class DashboardClient {
           : 'Unknown network error';
       return createError(RbookErrors.dashboardUnreachable(this.baseUrl, message));
     }
+  }
+
+  /**
+   * s97-m10 (design §R2, contract v1 D2): one call on a dashboard-shared project's peer route. Any
+   * JSON body in the engine's answer shape is the referee's answer whatever the status, so the body
+   * comes back with the status for the caller to read. A large request goes gzip-compressed, since
+   * the dashboard's request limit applies after decompression.
+   */
+  async relayPeerCall(
+    projectId: string,
+    request: { readonly method: string; readonly params?: unknown; readonly replicaId: string },
+    options: { readonly timeoutMs?: number; readonly maxResponseBytes?: number } = {}
+  ): Promise<RbookToolResult<{ status: number; body: unknown }>> {
+    const tokenResult = await this.getAuthToken();
+    if (!tokenResult.success) return createError(tokenResult.error!);
+    const text = JSON.stringify(request);
+    const zipped = Buffer.byteLength(text) > RELAY_GZIP_FROM_BYTES;
+    const controller = new AbortController();
+    const timeoutMs = options.timeoutMs ?? RELAY_TIMEOUT_MS;
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(
+        `${this.baseUrl}/api/relay/projects/${encodeURIComponent(projectId)}/peer`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${tokenResult.data!}`,
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            ...(zipped ? { 'Content-Encoding': 'gzip' } : {}),
+          },
+          body: zipped ? gzipSync(text) : text,
+          signal: controller.signal,
+          // A redirect is answered as it stands: this machine's key goes to no other address.
+          redirect: 'manual',
+        }
+      );
+      const raw = await boundedText(response, options.maxResponseBytes ?? RELAY_MAX_RESPONSE_BYTES);
+      if (raw === null) {
+        controller.abort();
+        return createError(
+          RbookErrors.dashboardError(
+            `the dashboard answered more than ${options.maxResponseBytes ?? RELAY_MAX_RESPONSE_BYTES} bytes to one call, so this copy stopped reading`
+          )
+        );
+      }
+      let body: unknown = raw;
+      try {
+        body = raw ? JSON.parse(raw) : null;
+      } catch {
+        // Not JSON, such as a proxy's page: the caller reads the status.
+      }
+      return createSuccess({ status: response.status, body });
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error
+          ? error.name === 'AbortError'
+            ? `Request timed out after ${timeoutMs}ms`
+            : error.message
+          : 'Unknown network error';
+      return createError(RbookErrors.dashboardUnreachable(this.baseUrl, message));
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  /**
+   * s97-m11 (contract v1 D2, D6, #1494): a call on a dashboard-shared project's referee route —
+   * the owner's upload at handover in, the join answer, or a discard — with the same reading as a
+   * peer call: an engine-shaped body is the referee's answer whatever the status. No redirect is
+   * followed, and the answer is read up to a bound.
+   */
+  async relayRefereeCall(
+    projectId: string,
+    call:
+      | { readonly kind: 'upload'; readonly file: string }
+      | { readonly kind: 'answer'; readonly answer: unknown }
+      | { readonly kind: 'discard' }
+  ): Promise<RbookToolResult<{ status: number; body: unknown }>> {
+    const tokenResult = await this.getAuthToken();
+    if (!tokenResult.success) return createError(tokenResult.error!);
+    const base = `${this.baseUrl}/api/relay/projects/${encodeURIComponent(projectId)}/referee`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), RELAY_UPLOAD_TIMEOUT_MS);
+    try {
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${tokenResult.data!}`,
+        Accept: 'application/json',
+      };
+      const init: RequestInit & { duplex?: 'half' } =
+        call.kind === 'upload'
+          ? {
+              method: 'POST',
+              headers: {
+                ...headers,
+                'Content-Type': 'application/octet-stream',
+                'Content-Length': String(statSync(call.file).size),
+              },
+              body: Readable.toWeb(createReadStream(call.file)) as unknown as RequestInit['body'],
+              duplex: 'half',
+            }
+          : call.kind === 'answer'
+            ? {
+                method: 'POST',
+                headers: { ...headers, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ answer: call.answer }),
+              }
+            : { method: 'DELETE', headers };
+      const response = await fetch(call.kind === 'answer' ? `${base}/answer` : base, {
+        ...init,
+        signal: controller.signal,
+        redirect: 'manual',
+      });
+      const raw = await boundedText(response, RELAY_MAX_RESPONSE_BYTES);
+      if (raw === null) {
+        controller.abort();
+        return createError(
+          RbookErrors.dashboardError(
+            `the dashboard answered more than ${RELAY_MAX_RESPONSE_BYTES} bytes to one call, so this copy stopped reading`
+          )
+        );
+      }
+      let body: unknown = raw;
+      try {
+        body = raw ? JSON.parse(raw) : null;
+      } catch {
+        // Not JSON, such as a proxy's page: the caller reads the status.
+      }
+      return createSuccess({ status: response.status, body });
+    } catch (error: unknown) {
+      return createError(
+        RbookErrors.dashboardUnreachable(
+          this.baseUrl,
+          error instanceof Error ? error.message : 'Unknown network error'
+        )
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  /**
+   * s97-m11 (contract v1 D5): stream a dashboard-shared project's first copy to `destPath`, never
+   * past `maxBytes`; a body that is not the copy (an error) comes back as the status and the answer.
+   */
+  async downloadFirstCopy(
+    projectId: string,
+    destPath: string,
+    maxBytes: number = FIRST_COPY_MAX_BYTES
+  ): Promise<RbookToolResult<{ status: number; body: unknown; bytes: number }>> {
+    const tokenResult = await this.getAuthToken();
+    if (!tokenResult.success) return createError(tokenResult.error!);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), RELAY_UPLOAD_TIMEOUT_MS);
+    try {
+      const response = await fetch(
+        `${this.baseUrl}/api/relay/projects/${encodeURIComponent(projectId)}/first-copy`,
+        {
+          headers: { Authorization: `Bearer ${tokenResult.data!}` },
+          signal: controller.signal,
+          redirect: 'manual',
+        }
+      );
+      if (response.status !== 200 || !response.body) {
+        const raw = await boundedText(response, RELAY_MAX_RESPONSE_BYTES);
+        let body: unknown = raw;
+        try {
+          body = raw ? JSON.parse(raw) : null;
+        } catch {
+          // The status says it.
+        }
+        return createSuccess({ status: response.status, body, bytes: 0 });
+      }
+      let bytes = 0;
+      const bounded = async function* (source: AsyncIterable<Uint8Array>) {
+        for await (const chunk of source) {
+          bytes += chunk.byteLength;
+          if (bytes > maxBytes) throw new Error(`the first copy is larger than ${maxBytes} bytes`);
+          yield chunk;
+        }
+      };
+      // Only a file this call created is taken away again: 'wx' refuses one already there.
+      const out = createWriteStream(destPath, { flags: 'wx' });
+      let created = false;
+      out.once('open', () => {
+        created = true;
+      });
+      try {
+        await pipeline(response.body as unknown as AsyncIterable<Uint8Array>, bounded, out);
+      } catch (error) {
+        if (created) rmSync(destPath, { force: true });
+        throw error;
+      }
+      return createSuccess({ status: 200, body: null, bytes });
+    } catch (error: unknown) {
+      return createError(
+        RbookErrors.dashboardUnreachable(
+          this.baseUrl,
+          error instanceof Error ? error.message : 'Unknown network error'
+        )
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  /**
+   * s97-m11 (contract v1 D9): whether the dashboard lists a project for this account, and whether it
+   * still shares it through itself (`dashboardShared`).
+   */
+  async dashboardSharing(
+    projectId: string
+  ): Promise<RbookToolResult<{ readonly listed: boolean; readonly shared: boolean | null }>> {
+    const me = await this.request<{
+      projects?: Array<{ id?: unknown; dashboardShared?: unknown }>;
+    }>('GET', '/api/projects/me');
+    if (!me.success) return createError(me.error!);
+    const project = (me.data?.projects ?? []).find((entry) => entry.id === projectId);
+    return createSuccess({
+      listed: project !== undefined,
+      shared: typeof project?.dashboardShared === 'boolean' ? project.dashboardShared : null,
+    });
+  }
+
+  /**
+   * s97-m11 (contract v1 D9): the record protocol the dashboard's referee library speaks for a
+   * project, or null when it names none.
+   */
+  async refereeProtocol(projectId: string): Promise<RbookToolResult<number | null>> {
+    const me = await this.request<{
+      projects?: Array<{ id?: unknown; referee?: { protocol?: { record?: unknown } } | null }>;
+    }>('GET', '/api/projects/me');
+    if (!me.success) return createError(me.error!);
+    const record = (me.data?.projects ?? []).find((project) => project.id === projectId)?.referee
+      ?.protocol?.record;
+    return createSuccess(typeof record === 'number' && Number.isInteger(record) ? record : null);
+  }
+
+  /**
+   * s97-m10 (contract v1 D9): the request limit the dashboard publishes for a shared project, or null
+   * when it names none. Read from the raw project list, whose normalised rows keep no capability.
+   */
+  async refereeRequestLimit(projectId: string): Promise<RbookToolResult<number | null>> {
+    const me = await this.request<{
+      projects?: Array<{ id?: unknown; referee?: { requestLimit?: unknown } | null }>;
+    }>('GET', '/api/projects/me');
+    if (!me.success) return createError(me.error!);
+    const limit = (me.data?.projects ?? []).find((project) => project.id === projectId)?.referee
+      ?.requestLimit;
+    return createSuccess(
+      typeof limit === 'number' && Number.isFinite(limit) && limit > 0 ? limit : null
+    );
   }
 
   /**

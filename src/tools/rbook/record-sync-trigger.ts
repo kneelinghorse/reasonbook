@@ -69,7 +69,7 @@ export function launchSync(projectRoot: string, bin: string = process.argv[1] ??
   }
   if (path.basename(entry) !== 'bin.js' || !fs.existsSync(path.join(path.dirname(entry), 'cli.js')))
     return false;
-  const child = spawn(process.execPath, [entry, 'sync', '--project-root', projectRoot], {
+  const child = spawn(process.execPath, [entry, 'sync', '--project-root', projectRoot, '--auto'], {
     detached: true,
     stdio: 'ignore',
     env: process.env,

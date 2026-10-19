@@ -43,14 +43,14 @@ export interface MissionStartResult {
   /** Previous status before transition */
   previousStatus: MissionStatus;
 
-  /** Current status after transition (always 'In Progress') */
+  /** Current status after transition: In Progress, or Current when promoted (s97-m13) */
   currentStatus: MissionStatus;
 
   /** Human-readable message */
   message: string;
 
-  /** Timestamp when mission was started */
-  startedAt: string;
+  /** Timestamp when mission was started; absent when it was promoted to Current, not started */
+  startedAt?: string;
 
   /** Active decisions relevant to this mission's objective (0-5 items) */
   relevantDecisions?: RelevantDecision[];
@@ -72,6 +72,12 @@ export const rbookMissionStartSchema = z.object({
 
   /** Optional notes about starting this mission */
   notes: z.string().optional().describe('Optional notes about why this mission is being started'),
+
+  /** s97-m13 (#662): Current promotes a Queued or Deferred mission without starting its clock */
+  targetStatus: z
+    .enum(['In Progress', 'Current'])
+    .optional()
+    .describe('In Progress (the default) starts it; Current promotes it without starting it'),
 
   /** Optional: explicit project root to search from */
   projectRoot: z
@@ -132,7 +138,10 @@ export async function rbookMissionStart(
   }
 
   const missionId = params.missionId.trim();
-  const targetStatus: MissionStatus = 'In Progress';
+  const targetStatus: MissionStatus = params.targetStatus ?? 'In Progress';
+  // s97-m13 (#662): a promotion makes a mission the next to start; its clock (started_at), its
+  // sprint's activation and its start event wait for the start itself.
+  const promotion = targetStatus === 'Current';
 
   const warnings: string[] = [];
   const result = await withClientAsync(
@@ -157,10 +166,11 @@ export async function rbookMissionStart(
       if (currentStatus === targetStatus) {
         return createError<MissionStartResult>({
           code: RBOOK_ERROR_CODES.MISSION_INVALID_STATE,
-          message: `Mission '${missionId}' is already In Progress`,
+          message: `Mission '${missionId}' is already ${targetStatus}`,
           currentState: currentStatus,
-          suggestion:
-            'Use rbook_mission_transition(action="complete") to mark it done or rbook_mission_transition(action="block") if blocked',
+          suggestion: promotion
+            ? `Start it with rbook_mission_transition(action="start", missionId="${missionId}")`
+            : 'Use rbook_mission_transition(action="complete") to mark it done or rbook_mission_transition(action="block") if blocked',
         });
       }
 
@@ -203,7 +213,14 @@ export async function rbookMissionStart(
       let updateQuery: string;
       let updateParams: (string | null)[];
 
-      if (params.notes) {
+      if (promotion) {
+        updateQuery = params.notes
+          ? `UPDATE missions SET status = ?, notes = COALESCE(notes || ' | ', '') || ?, updated_at = ? WHERE id = ?`
+          : `UPDATE missions SET status = ?, updated_at = ? WHERE id = ?`;
+        updateParams = params.notes
+          ? [targetStatus, `[Promoted] ${params.notes}`, now, missionId]
+          : [targetStatus, now, missionId];
+      } else if (params.notes) {
         updateQuery = `
           UPDATE missions
           SET status = ?,
@@ -246,7 +263,9 @@ export async function rbookMissionStart(
       };
 
       let activatedSprintId: string | undefined;
-      const sprintActivationResult = shouldActivateParentSprint(client, mission.sprint_id);
+      const sprintActivationResult = promotion
+        ? { success: true as const, data: false }
+        : shouldActivateParentSprint(client, mission.sprint_id);
       if (!sprintActivationResult.success) {
         rollbackTransaction();
         return createError<MissionStartResult>({
@@ -328,13 +347,14 @@ export async function rbookMissionStart(
       const eventResult = client.execute(
         `
         INSERT INTO session_events (ts, agent, mission, action, status, summary, raw_event)
-        VALUES (?, 'mcp-tool', ?, 'start', ?, ?, ?)
+        VALUES (?, 'mcp-tool', ?, ?, ?, ?, ?)
       `,
         [
           now,
           missionId,
+          promotion ? 'promote' : 'start',
           targetStatus,
-          params.notes ?? `Started mission ${missionId}`,
+          params.notes ?? `${promotion ? 'Promoted' : 'Started'} mission ${missionId}`,
           JSON.stringify({
             tool: 'rbook_mission_start',
             missionId,
@@ -374,8 +394,10 @@ export async function rbookMissionStart(
           missionId,
           previousStatus: currentStatus,
           currentStatus: targetStatus,
-          message: `Mission '${missionId}' is now In Progress`,
-          startedAt: now,
+          message: promotion
+            ? `Mission '${missionId}' is now Current: next to start, not started`
+            : `Mission '${missionId}' is now In Progress`,
+          ...(promotion ? {} : { startedAt: now }),
           ...(activatedSprintId ? { activatedSprintId } : {}),
           relevantDecisions,
           localProjectId: getProjectId(client),
@@ -523,12 +545,18 @@ export function formatMissionStartForLLM(result: RbookToolResult<MissionStartRes
   }
 
   const data = result.data;
-  const lines: string[] = [
-    `✓ Mission '${data.missionId}' started`,
-    '',
-    `Status: ${data.previousStatus} → ${data.currentStatus}`,
-    `Started at: ${data.startedAt}`,
-  ];
+  const lines: string[] = data.startedAt
+    ? [
+        `✓ Mission '${data.missionId}' started`,
+        '',
+        `Status: ${data.previousStatus} → ${data.currentStatus}`,
+        `Started at: ${data.startedAt}`,
+      ]
+    : [
+        `✓ Mission '${data.missionId}' promoted, not started`,
+        '',
+        `Status: ${data.previousStatus} → ${data.currentStatus}`,
+      ];
 
   if (data.relevantDecisions && data.relevantDecisions.length > 0) {
     lines.push('');

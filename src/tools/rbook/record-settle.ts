@@ -15,7 +15,7 @@ import {
 import { isRecordedStore } from './record-guards';
 import { decodeValue } from './record-materialize';
 import { appendsCoveredBy, entityState } from './record-merge';
-import { mergeContext } from './record-standing';
+import { mergeContext, writesAsOwner } from './record-standing';
 import { underApplyToken } from './record-token';
 import { recordedProjectId, REPLICA_ERROR_CODES, ReplicaRefusal } from './replica-identity';
 
@@ -207,7 +207,7 @@ export function settleField(client: RbookDatabaseClient, input: SettleInput): Op
         'Write the field as usual, or list what is in conflict with rbook_db(action="conflicts").',
     });
   const ctx = mergeContext(client);
-  if (conflict.ownerOnly && ctx.ownReplica !== ctx.authority)
+  if (conflict.ownerOnly && !writesAsOwner(client, ctx))
     throw new ReplicaRefusal({
       code: REPLICA_ERROR_CODES.WRITE_REFUSED,
       message: `Only the owner's copy settles ${project ? 'the project identity' : 'a decision lineage fork'}.`,

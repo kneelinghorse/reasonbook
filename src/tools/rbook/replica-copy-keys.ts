@@ -15,6 +15,8 @@ export const COPY_KEYS = {
   confirmedMoves: 'replica_owner_confirmed',
   successor: 'replica_reidentified',
   author: REPLICA_KEYS.author,
+  /** s97-m11: the join answer this copy gave a dashboard's referee, kept until the referee applies it. */
+  dashboardShare: 'replica_dashboard_share',
 } as const;
 export type CopyKey = (typeof COPY_KEYS)[keyof typeof COPY_KEYS];
 

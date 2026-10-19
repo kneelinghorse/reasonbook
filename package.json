@@ -1,6 +1,6 @@
 {
   "name": "@aquex/reasonbook",
-  "version": "4.1.0",
+  "version": "4.2.0",
   "description": "Reasonbook: decisions that survive the session, in a local record AI agents keep.",
   "mcpName": "ai.aquex/reasonbook",
   "repository": {
@@ -22,7 +22,19 @@
       "require": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./referee": {
+      "types": "./dist/referee/index.d.ts",
+      "require": "./dist/referee/index.js",
+      "default": "./dist/referee/index.js"
+    },
     "./package.json": "./package.json"
+  },
+  "typesVersions": {
+    "*": {
+      "referee": [
+        "dist/referee/index.d.ts"
+      ]
+    }
   },
   "bin": {
     "reasonbook": "./dist/bin.js"
@@ -43,7 +55,10 @@
     "TOOL_REFERENCE.md",
     "docs/getting-started.md",
     "docs/harnesses.md",
-    "docs/migrating-from-cmos.md"
+    "docs/migrating-from-cmos.md",
+    "docs/trust.md",
+    "docs/method.md",
+    "docs/privacy.md"
   ],
   "engines": {
     "node": ">=20"

@@ -5,7 +5,7 @@
 import fs from 'fs';
 import { parseArgs, resolveCliProject, type CliIo } from './core';
 import type { RbookDatabaseClient } from '../tools/rbook/client';
-import type { ExchangeReport } from '../tools/rbook/record-exchange';
+import { removalNote, type ExchangeReport } from '../tools/rbook/record-exchange';
 import { handOverRoute, recoverRoutes } from '../tools/rbook/record-move-routes';
 import { confirmOwner, type Confirmed } from '../tools/rbook/record-moves';
 import { rememberPeer } from '../tools/rbook/record-peers';
@@ -42,7 +42,9 @@ export function exchangeText(report: ExchangeReport): string {
   const parts: string[] = [];
   if (report.caughtUp)
     parts.push(
-      `${report.caughtUp.copy === 'local' ? 'This copy' : 'That copy'} took in a move of the owner's copy to ${report.caughtUp.authority}; confirm it ${report.caughtUp.copy === 'local' ? 'here' : 'there'} with reasonbook sync --confirm-owner, then sync the two copies again.`
+      report.caughtUp.confirmed
+        ? `${report.caughtUp.copy === 'local' ? 'This copy' : 'That copy'} took in a move of the owner's copy to ${report.caughtUp.authority} and confirmed it itself.`
+        : `${report.caughtUp.copy === 'local' ? 'This copy' : 'That copy'} took in a move of the owner's copy to ${report.caughtUp.authority}; confirm it ${report.caughtUp.copy === 'local' ? 'here' : 'there'} with reasonbook sync --confirm-owner, then sync the two copies again.`
     );
   if (report.reidentified)
     parts.push(
@@ -50,8 +52,9 @@ export function exchangeText(report: ExchangeReport): string {
     );
   for (const moved of report.reblocked ?? [])
     parts.push(`Replica ${moved.replicaId} moved to block ${moved.block} after a block clash.`);
+  const removal = report.caughtUp ? null : removalNote(report);
   parts.push(
-    `${report.caughtUp ? `The copy behind took in ${report.received}` : `The owner's copy took in ${report.sent}, and the member's took in ${report.received}`}${report.conflicts ? `; ${report.conflicts} field(s) in conflict` : ''}.`
+    `${report.caughtUp ? `The copy behind took in ${report.received}` : removal ? removal.charAt(0).toUpperCase() + removal.slice(1) : `The owner's copy took in ${report.sent}, and the member's took in ${report.received}`}${report.conflicts ? `; ${report.conflicts} field(s) in conflict` : ''}.`
   );
   return parts.join(' ');
 }

@@ -21,12 +21,13 @@ import type { RbookToolResult, Mission, MissionStatus, Sprint } from './types';
 import { createError, createSuccess } from './errors';
 import { resolveCurrentSprintId } from './current-sprint';
 import { getProjectId } from './genesis-columns';
-import { frameInlineIfForeign } from '../../intelligence/provenance-frame';
+import { frameInlineIfForeign, isForeignProject } from '../../intelligence/provenance-frame';
 import { activeMissionsAcrossProjects } from '../../intelligence/cross-store-queries';
 import type { CrossStoreError, CrossStoreQueryResult } from '../../intelligence/cross-store-query';
 import type { ProjectGraphRegistry } from '../../intelligence/project-graph-registry';
 import { appendWarnings } from './format-warnings';
 import { sprintIdOrderSql } from './sprint-ordering';
+import { firstReady, orderByRequires } from './work-queue-order';
 
 /**
  * Mission item with sprint context for the status view.
@@ -58,6 +59,12 @@ export interface StatusMissionItem {
 
   /** s84-m03: the mission's own project_id (guarded read). Foreign → name/objective framed. */
   projectId?: string | null;
+
+  /**
+   * s97-m13: a queued mission's Requires targets that are not Completed; absent when it waits on
+   * none (work-queue-order.ts).
+   */
+  waitsOn?: string[];
 }
 
 /**
@@ -251,8 +258,7 @@ export async function rbookMissionStatus(
       let queuedMissions: Mission[] = [];
       if (activeSprintInfo && activeSprintInfo.isComplete) {
         const queuedResult = client.getMany<Mission>(
-          "SELECT * FROM missions WHERE status = 'Queued' AND sprint_id IS NULL ORDER BY id ASC LIMIT ?",
-          [queuedLimit]
+          "SELECT * FROM missions WHERE status = 'Queued' AND sprint_id IS NULL ORDER BY id ASC"
         );
         if (!queuedResult.success)
           return createError<RbookMissionStatusResult>({
@@ -264,8 +270,8 @@ export async function rbookMissionStatus(
       } else if (activeSprintInfo) {
         // Scope queued to active sprint only
         const queuedResult = client.getMany<Mission>(
-          `SELECT * FROM missions WHERE status = 'Queued' AND (sprint_id = ? OR sprint_id IS NULL) ORDER BY id ASC LIMIT ?`,
-          [activeSprintInfo.sprint.id, queuedLimit]
+          `SELECT * FROM missions WHERE status = 'Queued' AND (sprint_id = ? OR sprint_id IS NULL) ORDER BY id ASC`,
+          [activeSprintInfo.sprint.id]
         );
         if (!queuedResult.success) {
           return createError<RbookMissionStatusResult>(
@@ -279,8 +285,7 @@ export async function rbookMissionStatus(
       } else {
         // No active sprint - show all queued as fallback
         const queuedResult = client.getMany<Mission>(
-          `SELECT * FROM missions WHERE status = 'Queued' ORDER BY ${sprintIdOrderSql('sprint_id', 'DESC')}, id ASC LIMIT ?`,
-          [queuedLimit]
+          `SELECT * FROM missions WHERE status = 'Queued' ORDER BY ${sprintIdOrderSql('sprint_id', 'DESC')}, id ASC`
         );
         if (!queuedResult.success) {
           return createError<RbookMissionStatusResult>(
@@ -317,7 +322,14 @@ export async function rbookMissionStatus(
         parseMissionWithContext(m, sprintsMap)
       );
       const current = (currentResult.data ?? []).map((m) => parseMissionWithContext(m, sprintsMap));
-      const queued = queuedMissions.map((m) => parseMissionWithContext(m, sprintsMap));
+      // s97-m13 (#662): the whole queue in Requires order, then the limit; the next action reads
+      // the whole of it, so a ready mission past the limit is still the one named.
+      const ordered = orderByRequires(client, queuedMissions);
+      const queue = ordered.missions.map((m) => ({
+        ...parseMissionWithContext(m, sprintsMap),
+        ...(m.waitsOn ? { waitsOn: m.waitsOn } : {}),
+      }));
+      const queued = queue.slice(0, queuedLimit);
 
       // Calculate summary
       const activeCount = inProgress.length + current.length;
@@ -328,25 +340,29 @@ export async function rbookMissionStatus(
       const nextAction = determineNextAction(
         inProgress,
         current,
-        queued,
+        queue,
         blockedMissions,
-        activeSprintInfo
+        activeSprintInfo,
+        getProjectId(client)
       );
 
-      return createSuccess({
-        activeSprint,
-        inProgress,
-        current,
-        queued,
-        blocked: blockedMissions,
-        summary: {
-          activeCount,
-          queuedCount,
-          blockedCount,
-          nextAction,
+      return createSuccess(
+        {
+          activeSprint,
+          inProgress,
+          current,
+          queued,
+          blocked: blockedMissions,
+          summary: {
+            activeCount,
+            queuedCount,
+            blockedCount,
+            nextAction,
+          },
+          localProjectId: getProjectId(client),
         },
-        localProjectId: getProjectId(client),
-      });
+        ordered.warning ? [ordered.warning] : undefined
+      );
     },
     { projectRoot: params.projectRoot }
   );
@@ -482,7 +498,8 @@ function determineNextAction(
   current: StatusMissionItem[],
   queued: StatusMissionItem[],
   blocked: StatusMissionItem[] | null,
-  activeSprintInfo: ActiveSprintInfo | null
+  activeSprintInfo: ActiveSprintInfo | null,
+  local: string | null
 ): string {
   // If there's work in progress, continue it
   if (inProgress.length > 0) {
@@ -497,9 +514,16 @@ function determineNextAction(
     return `Start the current mission: ${current[0].id}: ${current[0].name}`;
   }
 
-  // If there are queued missions, promote the first one
+  // If there are queued missions, promote the first whose Requires targets are complete (s97-m13).
+  // The mission named need not be the queue's first, where the review fences a foreign name
+  // (s84-m03), so a mission pulled in from another project is named by its id alone.
   if (queued.length > 0) {
-    return `No active mission. Promote and start ${queued[0].id}: ${queued[0].name}`;
+    const foreign = (m: StatusMissionItem): boolean => isForeignProject(m.projectId, local);
+    const ready = firstReady(queued);
+    if (ready)
+      return `No active mission. Promote and start ${ready.id}${foreign(ready) ? '' : `: ${ready.name}`}`;
+    const first = queued[0];
+    return `No active mission. No queued mission is ready: ${first.id}${foreign(first) ? '' : ` (${first.name})`} waits on ${first.waitsOn?.join(', ')}.`;
   }
 
   // Sprint completion: active sprint has no remaining work
@@ -752,6 +776,7 @@ export function formatMissionStatusForLLM(
     lines.push('**Queued (Upcoming):**');
     for (const m of data.queued) {
       lines.push(`  ${m.id}: ${frameInlineIfForeign(m.name, m.projectId, local)}`);
+      if (m.waitsOn?.length) lines.push(`    waits on ${m.waitsOn.join(', ')}`);
       if (m.sprint) {
         lines.push(`    [${m.sprint.id}]`);
       }

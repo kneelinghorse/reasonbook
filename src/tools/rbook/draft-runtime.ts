@@ -49,6 +49,8 @@ CREATE TABLE IF NOT EXISTS excerpts (session TEXT NOT NULL, draft_id INTEGER NOT
 CREATE TABLE IF NOT EXISTS windows (session TEXT PRIMARY KEY, draft_ids TEXT NOT NULL,
   open INTEGER NOT NULL, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS shown (session TEXT PRIMARY KEY, draft_ids TEXT NOT NULL, at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS kept (session TEXT NOT NULL, draft_id INTEGER NOT NULL, at INTEGER NOT NULL,
+  PRIMARY KEY (session, draft_id));
 CREATE TABLE IF NOT EXISTS scans (session TEXT NOT NULL, file TEXT NOT NULL, scanned INTEGER NOT NULL,
   outside INTEGER, PRIMARY KEY (session, file));`;
 
@@ -58,6 +60,7 @@ const SESSION_TABLES = [
   'excerpts',
   'windows',
   'shown',
+  'kept',
   'scans',
 ] as const;
 
@@ -147,7 +150,7 @@ export function recordSessionStart(runtime: DraftRuntime, session: string, now: 
         'DELETE FROM starts WHERE rowid NOT IN (SELECT rowid FROM starts ORDER BY at DESC LIMIT ?)'
       )
       .run(STARTS_KEPT);
-    for (const table of ['offers', 'excerpts', 'windows', 'shown'])
+    for (const table of ['offers', 'excerpts', 'windows', 'shown', 'kept'])
       runtime.db.prepare(`DELETE FROM ${table} WHERE session = ?`).run(session);
     runtime.db
       .prepare(
@@ -231,7 +234,9 @@ export function bindWindow(
   ids: readonly number[],
   message: string,
   reply: string,
-  now: number
+  now: number,
+  /** s97-m12: drafts shown before the latest reply: the words bind them only as 'other'. */
+  earlier: readonly number[] = []
 ): void {
   const words = message.slice(0, EXCERPT_MAX);
   const keep = runtime.db.prepare(
@@ -242,6 +247,8 @@ export function bindWindow(
   runtime.db.transaction(() => {
     runtime.db.prepare('DELETE FROM excerpts WHERE at <= ?').run(now - EXCERPT_TTL_MS);
     for (const id of ids) keep.run(session, id, words, reply, ids.length, now);
+    for (const id of earlier)
+      keep.run(session, id, words, 'other', ids.length + earlier.length, now);
     runtime.db
       .prepare(
         `INSERT INTO windows (session, draft_ids, open, at) VALUES (?, ?, 1, ?)
@@ -343,11 +350,46 @@ export function setShown(
 
 /** Take (read and clear) what the latest reply showed: one message answers one reply. */
 export function takeShown(runtime: DraftRuntime, session: string, now: number): number[] {
+  const ids = peekShown(runtime, session, now);
+  if (has(runtime, 'shown')) runtime.db.prepare('DELETE FROM shown WHERE session = ?').run(session);
+  return ids;
+}
+
+/**
+ * s97-m12 (learning #481; critic round 2): a reply's drafts that no operator message took, as when
+ * the harness's own prompt opened the next turn, are kept, each with the time it was first shown,
+ * when the next reply's Stop replaces the shown set. They expire with that time, never refreshed.
+ */
+export function carryShown(runtime: DraftRuntime, session: string, now: number): void {
+  if (!has(runtime, 'shown') || !has(runtime, 'kept')) return;
+  const row = runtime.db.prepare('SELECT at FROM shown WHERE session = ?').get(session) as
+    | { at: number }
+    | undefined;
+  const keep = runtime.db.prepare(
+    'INSERT INTO kept (session, draft_id, at) VALUES (?, ?, ?) ON CONFLICT(session, draft_id) DO NOTHING'
+  );
+  runtime.db.transaction(() => {
+    runtime.db.prepare('DELETE FROM kept WHERE at <= ?').run(now - EXCERPT_TTL_MS);
+    if (row) for (const id of peekShown(runtime, session, now)) keep.run(session, id, row.at);
+  })();
+}
+
+/** Take (read and clear) the drafts kept from earlier replies, while their first showing is young. */
+export function takeKept(runtime: DraftRuntime, session: string, now: number): number[] {
+  if (!has(runtime, 'kept')) return [];
+  const rows = runtime.db
+    .prepare('SELECT draft_id, at FROM kept WHERE session = ?')
+    .all(session) as Array<{ draft_id: number; at: number }>;
+  runtime.db.prepare('DELETE FROM kept WHERE session = ?').run(session);
+  return rows.filter((row) => row.at > now - EXCERPT_TTL_MS).map((row) => row.draft_id);
+}
+
+/** What the latest reply showed, read without taking it. */
+export function peekShown(runtime: DraftRuntime, session: string, now: number): number[] {
   if (!has(runtime, 'shown')) return [];
   const row = runtime.db
     .prepare('SELECT draft_ids, at FROM shown WHERE session = ?')
     .get(session) as { draft_ids: string; at: number } | undefined;
-  runtime.db.prepare('DELETE FROM shown WHERE session = ?').run(session);
   if (!row || row.at <= now - EXCERPT_TTL_MS) return [];
   try {
     const ids = JSON.parse(row.draft_ids) as unknown;
@@ -382,7 +424,7 @@ export function pruneAllRuntimes(env: NodeJS.ProcessEnv, now: number): number {
       if (!stat.isFile() || stat.nlink !== 1 || !safeDestination(file)) continue;
       db = new Database(file, { fileMustExist: true, timeout: 50 });
       const cutoff = now - EXCERPT_TTL_MS;
-      for (const table of ['excerpts', 'windows', 'shown']) {
+      for (const table of ['excerpts', 'windows', 'shown', 'kept']) {
         const present = db
           .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
           .get(table);

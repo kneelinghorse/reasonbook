@@ -35,9 +35,17 @@ beforeEach(() => {
   const db = new Database(dbPath);
   try {
     db.exec('ALTER TABLE learnings ADD COLUMN last_reviewed_at TEXT');
-    const sprint = db.prepare('INSERT INTO sprints (id, title, status) VALUES (?, ?, ?)');
+    // s97-m13: sprint-1..30 closed in label order, two weeks apart; review ages count the closes.
+    const sprint = db.prepare(
+      'INSERT INTO sprints (id, title, status, end_date) VALUES (?, ?, ?, ?)'
+    );
     for (let n = 1; n <= 31; n++)
-      sprint.run(`sprint-${n}`, `S${n}`, n === 31 ? 'Active' : 'Completed');
+      sprint.run(
+        `sprint-${n}`,
+        `S${n}`,
+        n === 31 ? 'Active' : 'Completed',
+        n === 31 ? null : new Date(Date.now() - ((31 - n) * 14 + 1) * 86400_000).toISOString()
+      );
     const learning = db.prepare(
       `INSERT INTO learnings (id, content, created_at, sprint_id, status)
        VALUES (?, ?, '2026-01-01T00:00:00Z', ?, ?)`
@@ -80,10 +88,10 @@ describe('s93-m11 — the review shows the learnings the advisory counts', () =>
     expect(review.isError).not.toBe(true);
     expect(text).toContain('**📚 Learnings (2)**');
     expect(text).toContain(
-      '#1 [sprint-3] active, 28 sprints old — Old learning nobody has reviewed.'
+      '#1 [sprint-3] active, 27 sprints old — Old learning nobody has reviewed.'
     );
     expect(text).toContain(
-      '#2 [sprint-29] stale, 2 sprints old — A learning someone marked stale.'
+      '#2 [sprint-29] stale, 1 sprints old — A learning someone marked stale.'
     );
     expect(text).not.toContain('A recent learning.');
     expect(text).toContain('rbook_learnings(action="reaffirm", learningId=…)');
@@ -91,8 +99,8 @@ describe('s93-m11 — the review shows the learnings the advisory counts', () =>
       data: { learnings: Array<{ id: number; sprintAge: number; suggestedAction: string }> };
     };
     expect(structured.data.learnings.map((l) => [l.id, l.sprintAge, l.suggestedAction])).toEqual([
-      [1, 28, 'reaffirm'],
-      [2, 2, 'review'],
+      [1, 27, 'reaffirm'],
+      [2, 1, 'review'],
     ]);
   });
 

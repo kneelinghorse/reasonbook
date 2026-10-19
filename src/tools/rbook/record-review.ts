@@ -8,6 +8,7 @@ import { crossRecordFindings } from './record-checks';
 import { isRecordedStore } from './record-guards';
 import { clientQuery } from './record-conflict-marks';
 import { peerHealth, syncsWith } from './record-peers';
+import { dashboardName, isDashboardRoute } from './record-dashboard-route';
 import { openConflicts } from './record-settle';
 import { mergeContext } from './record-standing';
 import { COPY_KEYS } from './replica-copy-keys';
@@ -34,6 +35,8 @@ export interface SharedRecordReview {
   readonly moves?: readonly string[];
   /** A move of the owner copy waits for this copy's confirmation. */
   readonly movePending?: boolean;
+  /** s97-m14: a copy this one syncs with says this copy's member was removed (ADR s96 §8). */
+  readonly removed?: boolean;
 }
 
 /** How long ago a time was, as a person says it. */
@@ -48,23 +51,39 @@ function ago(iso: string, nowMs: number = Date.now()): string {
  * Each copy this copy syncs with, said as the review shows it (design §s96-m13 item 5): a former
  * owner copy's rows for the members, which it syncs with no more, are not shown.
  */
-function peerLines(client: RbookDatabaseClient): { lines: string[]; errors: number } {
+function peerLines(client: RbookDatabaseClient): {
+  lines: string[];
+  errors: number;
+  removed: boolean;
+} {
   const ctx = mergeContext(client);
   const blocks = knownBlocks(client);
   const health = peerHealth(client).filter((peer) => syncsWith(ctx, peer.replicaId));
   return {
     lines: health.map((peer) => {
-      const who =
-        peer.replicaId === ctx.authority
+      const who = isDashboardRoute(peer.route)
+        ? dashboardName(peer.route)
+        : peer.replicaId === ctx.authority
           ? "the owner's copy"
           : peer.name
             ? `${peer.name}'s copy`
             : `the copy in block ${blocks[peer.replicaId] ?? '?'}`;
       const last = peer.lastOkAt ? `synced ${ago(peer.lastOkAt)}` : 'never synced';
+      // s97-m10: a sync that keeps failing says since when, and how many tries.
+      const failing =
+        peer.failures > 0 && peer.failingSince
+          ? `; failing since ${ago(peer.failingSince)} (${peer.failures} ${peer.failures === 1 ? 'try' : 'tries'})`
+          : '';
       const error = peer.lastError ? `; last error: ${peer.lastError.slice(0, 160)}` : '';
-      return `${who}: ${last}, ${peer.pending} pending${error}`;
+      // s97-m14 (ADR s96 §8): a removal stays in the review until a sync says otherwise. It leads,
+      // so a long error never cuts it from the digest's line (critics, round 1).
+      const removed = peer.removedAt
+        ? `said this copy's member was removed (first said ${ago(peer.removedAt)}): what this copy sends is set aside, and counts only if the owner shares the project with it again; `
+        : '';
+      return `${who}: ${removed}${last}, ${peer.pending} pending${failing}${error}`;
     }),
     errors: health.filter((peer) => peer.lastError).length,
+    removed: health.some((peer) => peer.removedAt),
   };
 }
 
@@ -187,6 +206,7 @@ export function sharedRecordReview(client: RbookDatabaseClient): SharedRecordRev
     waitingTotal,
     started,
     ...(peers.lines.length ? { peers: peers.lines, syncErrors: peers.errors } : {}),
+    ...(peers.removed ? { removed: true } : {}),
     ...(moves.length ? { moves, movePending: Boolean(mergeContext(client).pending) } : {}),
   };
 }

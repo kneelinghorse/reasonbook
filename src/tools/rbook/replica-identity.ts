@@ -37,6 +37,10 @@ export const REPLICA_ERROR_CODES = {
   BLOCK_CLASH: 'RECORD_BLOCK_CLASH',
   /** s96-m13 (ADR s96 §7, §8): the authority's own stream differs between two copies. */
   AUTHORITY_DIFFERS: 'RECORD_AUTHORITY_DIFFERS',
+  /** s97-m10 (design §R2): one transaction larger than a dashboard takes in one request. */
+  TRANSACTION_TOO_LARGE: 'RECORD_TRANSACTION_TOO_LARGE',
+  /** s97-m11: the dashboard no longer shares the project, as after its owner moved it back. */
+  ROUTE_ENDED: 'RECORD_ROUTE_ENDED',
 } as const;
 const REPLICA_CODES: ReadonlySet<string> = new Set(Object.values(REPLICA_ERROR_CODES));
 
@@ -53,6 +57,8 @@ export class ReplicaRefusal extends Error {
 
 /** The refusal a thrown error carries, if it is one of the shared record's; duck-typed across realms. */
 export function carriedRefusal(error: unknown): RbookToolError | null {
+  // s97-m10: a refusal thrown on purpose keeps its code whatever it is, such as the referee's.
+  if (error instanceof ReplicaRefusal) return error.refusal;
   const refusal = (error as { refusal?: RbookToolError } | null)?.refusal;
   return refusal && REPLICA_CODES.has(refusal.code) ? refusal : null;
 }

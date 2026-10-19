@@ -1155,7 +1155,7 @@ exports[`Tool definitions contract registered tool schema stays stable 1`] = `
       "openWorldHint": true,
       "readOnlyHint": false,
     },
-    "description": "Projects on this machine: init, register, unregister, list, validate, prune, update the level (adding the new level's files), and sweep open work across all of them. A shared record: share, invite, join a copy over SSH, members, remove, and sync.",
+    "description": "Projects on this machine: init, register, unregister, list, validate, prune, update the level (adding the new level's files), and sweep open work across all of them. A shared record: share, invite, join a copy over SSH, members, remove, sync, and move back.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -1175,11 +1175,16 @@ exports[`Tool definitions contract registered tool schema stays stable 1`] = `
             "members",
             "remove",
             "sync",
+            "move",
           ],
           "type": "string",
         },
         "authorName": {
           "type": "string",
+        },
+        "confirm": {
+          "description": "The person's word on the dry run",
+          "type": "boolean",
         },
         "confirmOwner": {
           "type": "boolean",
@@ -1264,6 +1269,10 @@ exports[`Tool definitions contract registered tool schema stays stable 1`] = `
         "name": {
           "type": "string",
         },
+        "project": {
+          "description": "Its rbook:// address",
+          "type": "string",
+        },
         "projectId": {
           "type": "string",
         },
@@ -1314,11 +1323,23 @@ exports[`Tool definitions contract registered tool schema stays stable 1`] = `
           },
           "type": "array",
         },
+        "to": {
+          "enum": [
+            "owner",
+          ],
+          "type": "string",
+        },
         "tracelabProjectId": {
           "type": "string",
         },
         "validate": {
           "type": "boolean",
+        },
+        "via": {
+          "enum": [
+            "dashboard",
+          ],
+          "type": "string",
         },
       },
       "required": [

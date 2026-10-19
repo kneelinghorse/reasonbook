@@ -505,6 +505,9 @@ async function executeWithStoreUpkeep(
     !isReadOnlyAgentSession()
   ) {
     for (const dbPath of currentWrittenStores()) {
+      // A file the call wrote and no longer has, such as one a fresh copy was built in before it
+      // was renamed or sent, is no project's store (s97-m14 live test).
+      if (!fs.existsSync(dbPath)) continue;
       // <root>/rbook/db/rbook.sqlite → <root>
       const root = path.resolve(dbPath, '..', '..', '..');
       if (storeNeedsFirstWriteMaintenance(root)) {
@@ -1280,8 +1283,12 @@ export async function executeMissionProtocolTool(
       // would substitute the caller's own project: before s92-m01 an unregister of a deleted
       // project fell through to the cwd project and unregistered THAT. The action handlers
       // validate the path themselves and reject empty/missing input.
+      // s97-m11: a join through the dashboard names the empty folder it joins into, likewise.
       const isLiteralPathAction =
-        params.action === 'init' || params.action === 'register' || params.action === 'unregister';
+        params.action === 'init' ||
+        params.action === 'register' ||
+        params.action === 'unregister' ||
+        (params.action === 'join' && params.via === 'dashboard');
       // list/validate/prune/sweep read or tidy the registry itself and never open a project store,
       // so they do not need — and must not refuse for lack of — a resolvable local project.
       const isRegistryAction =

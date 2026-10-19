@@ -6,6 +6,7 @@ import Database from 'better-sqlite3';
 import { replicaMarks } from '../../../src/tools/rbook/record-apply';
 import { importBundle, writeBundle } from '../../../src/tools/rbook/record-bundle';
 import { exchange } from '../../../src/tools/rbook/record-exchange';
+import { exchangeText } from '../../../src/cli/sync-moves';
 import {
   isMembersCopy,
   listMembers,
@@ -213,7 +214,11 @@ describe('around a move (s96-m13 build-time critics)', () => {
     await decide(next, 'After the move, on the new owner copy.');
     // ADR s96 §8, §11: a removed member receives nothing new, across a move as within one.
     const caught = await exchange(copyPeer(fixture.tmp, erin), copyPeer(fixture.tmp, next));
-    expect(caught.data).toMatchObject({ removed: true, received: 0 });
+    expect(caught.data).toMatchObject({ removed: true, removedCopy: 'local', received: 0 });
+    // s97-m14 (critics, round 2): she is a removed member, not a copy that is no member at all.
+    expect(exchangeText(caught.data!)).toMatch(
+      /^This copy's member was removed from the project: anything the owner's copy did not hold when it removed the member is set aside/
+    );
     for (const text of [
       'After the removal, on the owner copy.',
       'After the move, on the new owner copy.',

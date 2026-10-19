@@ -1320,8 +1320,9 @@ describePrivate('agents.md environment-variable block is derived, not maintained
     // ephemeral store locations, resolution-policy.ts), making 18. s92-m07 adds RBOOK_DEBUG (the
     // stderr diagnostics gate, debug-log.ts), making 19. s93-m01 added RBOOK_AMBIENT (the hook
     // CLI's per-session off switch, src/cli/core.ts), making 20. s96-m13 adds RBOOK_SHARED_SYNC
-    // (the shared record's own sync switch, record-sync-trigger.ts), making 21.
-    expect(srcReads.size).toBe(21);
+    // (the shared record's own sync switch, record-sync-trigger.ts), making 21. s97-m11 adds
+    // RBOOK_DASHBOARD_SHARING (dashboard sharing's switch, record-dashboard-share.ts), making 22.
+    expect(srcReads.size).toBe(22);
     expect(agentsMdEnvSections().server.sort()).toEqual([...srcReads].sort());
   });
 
@@ -1546,6 +1547,20 @@ describePrivate(
             }
           : entry
       );
+    // 2026-10-19: the operator turned GitHub Actions off (agents.md, "No GitHub Actions"). The line
+    // said CI enforced the scratch loop; the loop now runs locally, and the obligation the line
+    // carried, nothing merges that fails the loop, stays in its replacement. No other line changes.
+    const localGateLines = (entries: ProtectedLine[]): ProtectedLine[] =>
+      entries.map((entry) =>
+        entry.home === PRIVATE.relativePaths.agents &&
+        createHash('sha256').update(entry.text).digest('hex') ===
+          '9af2f481982f4d51b9e0f316cdc4f437e61fd2753637e9c47b68b2d55880e699'
+          ? {
+              ...entry,
+              text: "The scratch loop is the whole bar, run locally: if it doesn't pass, it doesn't merge.",
+            }
+          : entry
+      );
     // s99-m07 translates names and m09 follows the moved record while retaining every obligation
     // and the original sealed ledger. Operator-owned repository names retain their identity.
     const currentRuleNames = (text: string): string => {
@@ -1584,7 +1599,7 @@ describePrivate(
       return current;
     };
     const currentPreservationLines = (entries: ProtectedLine[]): ProtectedLine[] =>
-      practice8Lines(entries).map((entry) => ({
+      localGateLines(practice8Lines(entries)).map((entry) => ({
         ...entry,
         home:
           entry.home === `${LEGACY.recordDirectory}/docs/build-session-prompt.md`
@@ -1639,6 +1654,15 @@ describePrivate(
       expect(missingLines(currentPreservationLines(original), homes())).toEqual([]);
       const unrelated = { ...previous, text: `${previous.text} changed original` };
       expect(practice8Lines([unrelated])).toEqual([unrelated]);
+    });
+
+    it('replaces only the CI line, keeping its obligation, once GitHub Actions were turned off', () => {
+      const original = readLedger().protected;
+      const current = localGateLines(original);
+      const changed = current.filter((entry, index) => entry.text !== original[index].text);
+      expect(changed).toHaveLength(1);
+      expect(changed[0].text).toMatch(/if it doesn't pass, it doesn't merge\.$/);
+      expect(missingLines(currentPreservationLines(original), homes())).toEqual([]);
     });
 
     it.each([

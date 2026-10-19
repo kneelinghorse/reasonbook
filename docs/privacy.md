@@ -72,10 +72,42 @@ quarantines their changes beyond the removal cut. It cannot retract data their c
 the holder must delete that copy. Re-inviting the member resumes exchange, including quarantined
 changes.
 
-The measured support scope is two accounts operated by one person, on two machines in an
-owner/member star over SSH. A second person's collaboration and privacy experience remain
-unvalidated. See the [sharing steps](getting-started.md#share-a-projects-record) and
-[trust boundary](trust.md#shared-copies).
+The measured support scope is two accounts operated by one person, on two machines, sharing either
+in an owner/member star over SSH or through reasonbook.ai. A second person's collaboration and
+privacy experience remain unvalidated. See the [sharing steps](getting-started.md#share-a-projects-record)
+and [trust boundary](trust.md#shared-copies).
+
+## Sharing through reasonbook.ai
+
+**What goes up.** Sharing a project through the dashboard uploads a copy holding only the shared
+record: missions, sprints, decisions, learnings, sessions, next steps and constraints with the links
+between them, every value ever recorded (replaced text included), and the authors' names. Session
+events, agent feedback, telemetry, context snapshots and documents, proposals, the search index,
+routes to other copies and credentials stay on your machine. Every member's machine keeps its own
+full copy of the shared record.
+
+**What reasonbook.ai keeps.** The dashboard keeps that copy as the project's referee copy, with
+daily snapshots of it for 7 days. It builds the project's pages from it (missions, sprints,
+decisions, learnings and the activity feed, each change under its author) and refreshes them after
+each change it accepts. A member's first copy is built when they join, sent, and deleted.
+
+**Who can see it.** The owner and everyone the project is shared with, read-only shares included,
+see its pages and activity on the dashboard. Editors' copies exchange changes with the referee copy;
+a read-only share holds no copy. Other accounts see nothing of the project. Members appear by
+display name and username.
+
+**Removal and deletion.**
+
+- Removing a member deletes nothing: their later changes stop counting and they receive nothing
+  new, but what their copy holds and what the project's pages already show remain.
+- Deleting the project deletes the dashboard's copy and its snapshots, but not the mirror of its
+  pages or its activity events. Every member keeps their own copy.
+- Deleting your account deletes the dashboard's copies of the projects you own. In projects shared
+  with you, your username and your changes remain in their record.
+- Moving a project back off reasonbook.ai is not available yet.
+
+Sharing through reasonbook.ai was measured with two accounts operated by one person, on two
+machines.
 
 ## Installing from npm
 
@@ -117,9 +149,10 @@ account discovery and communication between its members. This is its intended de
 organization-membership check: registration does not require an invitation or verify organization
 membership, and accounts are not separated into organization tenants.
 
-- Signed-in accounts can see other registered users' email addresses and display names in the
-  message composer. Project owners also see them when choosing collaborators. Resolving a project
-  address through the messaging API returns its owner's email address.
+- Signed-in accounts see other users by display name and username, never by their email address:
+  in the message composer, when an owner chooses collaborators, and in a project's members.
+  Resolving a project address through the messaging API returns no email address. Your own email
+  address is shown to you; the service operator's people page lists every account's.
 - The authenticated project-discovery directory exposes project names, identifiers, slugs, owner
   usernames and display names, addresses, creation times, latest mirror activity times and archive
   markers across accounts. That directory does not include email addresses. Its name includes

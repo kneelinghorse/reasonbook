@@ -829,8 +829,10 @@ function verifyRecordEmbeddingCarrier(
 
 /**
  * s96-m01: the sharing preconditions' migration warnings ride SharingReadiness.warnings. s96-m13's
- * share and s96-m14's import are their two callers: each pushes them into a sink that its answer's
- * attachWarnings boundary returns, the share's refusal included.
+ * share and s96-m14's import are two of their callers, and s97-m09 adds two: a fresh copy's schema
+ * preparation (record-fresh-copy.ts, whose answer the referee library's own answers carry) and the
+ * referee library's migrate. Each pushes them into a sink that its answer's attachWarnings boundary
+ * returns, a refusal included.
  */
 function verifySharingCarrier(
   site: MigrationCallSite,
@@ -846,7 +848,7 @@ function verifySharingCarrier(
   );
   const calls = callsToFunction(program, helper, checker);
   return (
-    calls.length === 2 &&
+    calls.length === 4 &&
     calls.every((call) => {
       const callerSink = warningSinkForCall(call, checker);
       return Boolean(callerSink && reachesAttachBoundary(call, callerSink, checker));

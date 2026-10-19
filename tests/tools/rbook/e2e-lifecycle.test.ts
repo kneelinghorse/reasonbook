@@ -402,15 +402,19 @@ describe('E2E Lifecycle Integration', () => {
       // is far enough past sprint-1 to make it stale, but sprint-(total-N) is not.
       const totalSprints = DEFAULT_STALENESS_THRESHOLD + 5;
       const recentSprintNum = totalSprints; // Active sprint, won't be stale.
+      // s97-m13: closed in label order, two weeks apart; review ages count the closes.
       for (let i = 1; i <= totalSprints; i++) {
         db.prepare(
-          `INSERT INTO sprints (id, title, status, start_date)
-           VALUES (?, ?, ?, ?)`
+          `INSERT INTO sprints (id, title, status, start_date, end_date)
+           VALUES (?, ?, ?, ?, ?)`
         ).run(
           `sprint-${i}`,
           `Sprint ${i}`,
           i < totalSprints ? 'Completed' : 'Active',
-          `2025-01-${String(Math.min(i, 28)).padStart(2, '0')}`
+          `2025-01-${String(Math.min(i, 28)).padStart(2, '0')}`,
+          i < totalSprints
+            ? new Date(Date.now() - ((totalSprints - i) * 14 + 1) * 86400_000).toISOString()
+            : null
         );
       }
 
@@ -420,11 +424,15 @@ describe('E2E Lifecycle Integration', () => {
          VALUES ('Old decision from sprint 1', '2025-01-01T00:00:00Z', 'sprint-1', 'active')`
       ).run();
 
-      // Add recent decision (current sprint, should NOT be stale)
+      // Add recent decision (current sprint, should NOT be stale): made after the last close.
       db.prepare(
         `INSERT INTO strategic_decisions (decision_text, created_at, sprint_id, status)
-         VALUES (?, '2025-01-15T00:00:00Z', ?, 'active')`
-      ).run(`Recent decision from sprint ${recentSprintNum}`, `sprint-${recentSprintNum}`);
+         VALUES (?, ?, ?, 'active')`
+      ).run(
+        `Recent decision from sprint ${recentSprintNum}`,
+        new Date(Date.now() - 3600_000).toISOString(),
+        `sprint-${recentSprintNum}`
+      );
 
       const result = await callWithDb(dbPath, (client: any) => {
         return readStaleness(client, { threshold: DEFAULT_STALENESS_THRESHOLD });

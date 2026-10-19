@@ -36,6 +36,8 @@ import type { RbookToolResult } from './types';
 export const PROTOCOL_VERSION = 1;
 /** Per-copy metadata: this copy's hybrid logical clock, `<13-digit ms>-<6-digit counter>`. */
 export const HLC_KEY = 'replica_hlc';
+/** The largest count a reading's six digits hold. */
+const HLC_COUNT_MAX = 999_999;
 
 const mintId = monotonicFactory();
 /** The transaction id of each client's current SQLite transaction, by its serial. */
@@ -210,8 +212,11 @@ function transactionHlc(client: RbookDatabaseClient, txnId: string): string {
       .map(Number);
     const now = Date.now();
     const ms = Number.isFinite(lastMs) && lastMs >= now ? lastMs : now;
-    const count = ms === lastMs && Number.isFinite(lastCount) ? lastCount + 1 : 0;
-    hlc = `${String(ms).padStart(13, '0')}-${String(count).padStart(6, '0')}`;
+    const next = ms === lastMs && Number.isFinite(lastCount) ? lastCount + 1 : 0;
+    // s97-m09: past six digits the count carries into the milliseconds, so every reading keeps its
+    // width and orders alike as text and as numbers on every copy (critics, round 2).
+    const [at, count] = next > HLC_COUNT_MAX ? [ms + 1, 0] : [ms, next];
+    hlc = `${String(at).padStart(13, '0')}-${String(count).padStart(6, '0')}`;
     clocks.set(client, { txnId, hlc });
   }
   // A literal key, so the schema-version census reads it as a clock and never as the label.

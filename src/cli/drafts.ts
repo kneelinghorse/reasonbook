@@ -84,7 +84,7 @@ export function listDrafts(
 function line(draft: ListedDraft): string {
   const outcome =
     draft.state === 'pending'
-      ? `pending${draft.offeredAt ? ', offered' : ''}`
+      ? `pending${draft.offeredAt ? ', offered' : ''}${draft.replacedBy ? `, revised by ${draft.replacedBy} after its approval` : ''}`
       : draft.state === 'replaced'
         ? `replaced by ${draft.replacedBy}`
         : draft.state === 'approved' || draft.state === 'answered'

@@ -207,6 +207,14 @@ function sharedSection(
   return short && short.length <= cap ? section([{ text: short }]) : null;
 }
 
+/**
+ * s97-m14: the shared section's text, or its short form past the cap, for the review's structured
+ * answer: Claude Code hands its model that answer, not this digest's text (the live test's join).
+ */
+export function sharedRecordText(review: SharedRecordReview | null | undefined): string | null {
+  return sharedSection(review, SHARED_SECTION_CAP)?.text ?? null;
+}
+
 /** The shared section's short form, a count of each part it has, whose room the digest keeps. */
 function sharedShortForm(review: SharedRecordReview | null | undefined): string | null {
   if (!review) return null;
@@ -225,6 +233,8 @@ function sharedShortForm(review: SharedRecordReview | null | undefined): string 
   const settle = conflicts.length || states.length;
   const syncErrors = review.syncErrors ?? 0;
   const counts = [
+    // s97-m14: a removal leads, so the short form never drops it (critics, round 1).
+    review.removed ? "this copy's member was removed from the project" : '',
     review.movePending
       ? "a move of the owner's copy to confirm (reasonbook sync --confirm-owner)"
       : '',

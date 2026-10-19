@@ -174,8 +174,8 @@ describe('rbook_project', () => {
   });
 
   describe('RBOOK_PROJECT_ACTIONS', () => {
-    it('contains 14 actions: the registry and level ones, then the shared record (s96-m13)', () => {
-      expect(RBOOK_PROJECT_ACTIONS).toHaveLength(14);
+    it('contains 15 actions: the registry and level ones, then the shared record (s96-m13) and its move back (s97-m11)', () => {
+      expect(RBOOK_PROJECT_ACTIONS).toHaveLength(15);
       expect([...RBOOK_PROJECT_ACTIONS]).toEqual([
         'init',
         'register',
@@ -191,6 +191,7 @@ describe('rbook_project', () => {
         'members',
         'remove',
         'sync',
+        'move',
       ]);
     });
   });

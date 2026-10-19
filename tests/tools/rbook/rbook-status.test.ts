@@ -256,6 +256,32 @@ describe('rbookStatus', () => {
 
   // ─── formatStatusForLLM ─────────────────────────────────────────────────
 
+  // s97-m14 (critics, round 2): the removal is this copy's, so the line says what this copy sends.
+  it("formatStatusForLLM names a member's removal on its shared-sync line", () => {
+    const formatted = formatStatusForLLM({
+      success: true,
+      data: {
+        rbook_address: 'rbook://local/x',
+        dashboard_url: 'https://reasonbook.ai',
+        auth_tier: 'none',
+        last_sync_at: null,
+        last_delivery_observed_at: null,
+        shared_sync: [
+          {
+            peer: "the owner's copy",
+            last_synced_at: '2026-10-19T09:00:00.000Z',
+            pending: 0,
+            last_error: null,
+            removed_at: '2026-10-19T08:00:00.000Z',
+          },
+        ],
+      },
+    } as never);
+    expect(formatted).toContain(
+      "  the owner's copy: said this copy's member was removed (first said 2026-10-19T08:00:00.000Z), so what this copy sends is set aside; last synced 2026-10-19T09:00:00.000Z, 0 pending"
+    );
+  });
+
   it('formatStatusForLLM renders all 5 fields and a sign-up nudge in local-only mode', async () => {
     const result = await rbookStatus({ projectRoot: tempDir });
     const formatted = formatStatusForLLM(result);

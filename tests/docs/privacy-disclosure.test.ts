@@ -41,6 +41,25 @@ describe('public privacy disclosure', () => {
     expect(text).toContain('known authorization limitations');
     expect(text).toContain('Diagnostic views can expose sync-request contents across accounts');
     expect(text).toContain('contents of rejected unauthenticated requests');
+    // Since the dashboard's 2026-10-13 change, other accounts see names, never email addresses.
+    expect(text).toContain('never by their email address');
+    expect(text).not.toContain("can see other registered users' email addresses");
+    expect(text).not.toContain("returns its owner's email address");
+  });
+
+  it('says what reasonbook.ai keeps for a project shared through it, and what deletion leaves', () => {
+    const text = privacy();
+    expect(text).toContain('Sharing through reasonbook.ai');
+    // What goes up, what stays, and the snapshots' retention the dashboard enforces.
+    expect(text).toContain('a copy holding only the shared record');
+    expect(text).toContain('authors');
+    expect(text).toContain('daily snapshots of it for 7 days');
+    // Who can see it: every share holder, read-only included, and no other account.
+    expect(text).toContain('read-only shares included');
+    // Removal deletes nothing already held; project deletion leaves the pages' mirror and activity.
+    expect(text).toContain('Removing a member deletes nothing');
+    expect(text).toContain('but not the mirror of its pages or its activity');
+    expect(text).toContain('two accounts operated by one person, on two machines');
   });
 
   it('gives current removal controls without promising deletion from every copy', () => {

@@ -32,6 +32,8 @@ export const CLI_VERBS: ReadonlySet<string> = new Set([
   'copy',
   'handover',
   'recover',
+  'share',
+  'move',
 ]);
 
 export type BinRoute =

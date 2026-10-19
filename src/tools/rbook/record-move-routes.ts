@@ -34,7 +34,7 @@ export async function handOverRoute(
   }>
 > {
   const local = options.unchecked ?? open;
-  const reached = await reach(route, [...HANDOVER_SERVE], options);
+  const reached = await reach(route, [...HANDOVER_SERVE], options, local);
   if (!reached.success || !reached.data) return createError(reached.error!);
   const far = reached.data;
   let handover: Handover;
@@ -96,7 +96,7 @@ export async function recoverRoutes(
   const peers: Array<{ readonly peer: WirePeer; readonly route: SshRoute }> = [];
   try {
     for (const route of routes) {
-      const reached = await reach(route, undefined, options);
+      const reached = await reach(route, undefined, options, options.unchecked ?? self);
       if (!reached.success || !reached.data)
         return createError({
           ...reached.error!,

@@ -2,6 +2,158 @@
 
 All notable changes to Reasonbook (published as `@aquex/cmos-mcp` before 4.0.0) are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.0] — 2026-10-19
+
+Share a project through reasonbook.ai. The dashboard keeps the project's referee copy, every member's
+copy syncs with it over HTTPS, and the dashboard shows the project, its members and each member's
+changes. Sharing directly over SSH or with bundles stays as in 4.1.0. Sharing through reasonbook.ai
+is on by default after its live test on real hardware, with two accounts operated by one person on
+two machines. Its limits are below. This section lists what changed since 4.2.0-rc.3. The 4.2.0-rc.3
+and 4.2.0-rc.2 sections below list the rest since 4.1.0: approval provenance, the instruments, a
+removed member told so, and the transport, sharing and joining through the dashboard.
+
+### Changed
+
+- **Sharing through reasonbook.ai is on by default.** Its live test passed on real hardware against
+  the deployed reasonbook.ai, with two accounts operated by one person on two machines:
+  - 3 of 3 fresh agents joined from the dashboard's join sentence alone.
+  - No change was lost over 20 interleaved sessions, 5 of them with the owner's machine offline.
+  - 5 of 5 conflicts were kept, shown and settled.
+  - A removed member was cut off and told so.
+  - Nothing was lost with reasonbook.ai unreachable for 10 minutes.
+  - An independent audit re-derived every count from the raw logs.
+
+  `RBOOK_DASHBOARD_SHARING=off` where Reasonbook runs turns it off on a machine. The limits:
+  - Moving a project back off reasonbook.ai waits for the dashboard to deploy it.
+  - The dashboard's activity feed shows 100 events a page and its decisions page 20.
+  - A project the dashboard does not know yet needs an explicit session start and close before its
+    first share.
+
+### Fixed
+
+- **Sharing a project reasonbook.ai does not know yet says how to put it there.** The refusal told
+  the agent to register the project and share again, which was refused again: registering records
+  the project on this machine only, and the project reaches reasonbook.ai at its first upload from an
+  explicit close. It now names an explicit session start and close, with the fields each requires.
+- **The privacy page says what accounts see today.** Other accounts see a user's display name and
+  username, never their email address, and resolving a project address returns no email address.
+- **Links in the installed package lead somewhere.** The trust, method and privacy pages now ship in
+  the package, and links to pages it leaves out (the demo, the templates, a test and a source file)
+  point at the public repository.
+
+### Added
+
+- **Sharing through reasonbook.ai in the user docs.** The README, getting started, method, trust and
+  privacy pages cover the prerequisites, sharing, inviting, joining, syncing and removal; what the
+  dashboard keeps, for how long and who sees it; what stays on each machine; the measured scope (two
+  accounts operated by one person, on two machines) and the limits, moving back included. Joining by
+  bundle is documented.
+
+## [4.2.0-rc.3] — 2026-10-19
+
+Sprint 97's second published candidate, the one the live test through reasonbook.ai runs. It adds
+approval provenance, the instruments, and the fix for what the dashboard's own live test on
+production found: a removed member was told nothing. Sharing through the dashboard is still off by
+default: it works only where `RBOOK_DASHBOARD_SHARING=on` is set, until that live test passes.
+
+### Fixed
+
+- **A removed member is told so.** Its sync says that everything the owner's copy did not hold when
+  it removed the member is set aside, what it made before the removal and had not synced included,
+  and counts only if the owner shares the project with it again; its review, the session digest and
+  `rbook_status` show the removal until it is a member again.
+- **A share or a join through the dashboard no longer warns about a file it built.** Each answered
+  that its record "could not be checked for conflicts" at the file its copy was built in, already
+  renamed into place, and the share also said its upkeep was skipped; an agent read the join as
+  failed. An answer now checks only the copies still there when it answers.
+- **A member who joins through the dashboard is told what it has.** The join no longer says its
+  upkeep was skipped because the server, which had looked the folder up before the join, still
+  remembered it holding no store. A member's review names the project rather than "Reasonbook
+  Project", says the copy is shared and how it syncs in the structured answer Claude Code's model
+  reads, and no longer asks a member's copy, which never registers, to mint a project key.
+- **Approval provenance.**
+  - A message the harness sends itself is no longer read as the operator's answer: a background
+    task's notification, another session's message, a compaction summary, an injected context item,
+    or a scheduled wakeup binds no draft, and the shown drafts wait for the operator's next message.
+    Drafts a harness turn left unanswered bind to that message only as words the agent judges.
+  - A revision retires the draft it revises even when the operator's last message answered none,
+    once it holds three quarters of the old draft's subject; one part of a longer draft no longer
+    retires the rest.
+  - An approval stays with what was approved: a plainly approved draft that is revised stays
+    recordable in its own words, and recording its revision, or a later one, settles it. A record
+    without `fromDraft` answers a draft only when it holds 0.85 of the draft's own subject, and a
+    record of part of a draft says what it leaves out.
+- **The work queue follows Requires edges.** Queued missions are listed in dependency order and each
+  names what it waits on; mission status, the review and the session-start digest name the first
+  mission whose prerequisites are complete. `rbook_mission_transition(action="start",
+targetStatus="Current")` promotes a mission without starting it.
+- **The review age counts sprints that closed.** A decision's or learning's age is the number of
+  sprints closed after its own sprint closed, by close time, never sprint labels; the counting rule
+  is published beside the counts.
+- **Every documented launch line pins this release** (`docs/harnesses.md`,
+  `docs/migrating-from-cmos.md`, `docs/trust.md` and the plugin README besides the README and
+  getting-started), and the launch-recipe check now reads every page that holds one.
+
+### Changed (answer shapes)
+
+- `rbook_mission(action="status")` queued items and `rbook_agent_onboard`'s pending missions gain an
+  optional `waitsOn`, the prerequisites not yet Completed. Additive.
+- `rbook_mission_transition(action="start")`'s `startedAt` is absent when `targetStatus="Current"`
+  promotes the mission without starting it. Not additive, for that new path only.
+- An exchange report (the `rbook_project` sync, join and share answers) gains an optional
+  `removedCopy`, naming whose member was removed, and `rbook_status`'s `shared_sync` rows an optional
+  `removed_at`. Additive.
+- The `rbook_project` answers for a share through the dashboard, its dry run and a join name the
+  dashboard's id for the project `dashboardProjectId`, not `projectId`, which every other answer
+  uses for the store's own project id. Not additive, for those answers only.
+- `rbook_review` gains an optional `sharedRecord` on a copy of a shared record: the digest's
+  shared-record lines, or their short form. Additive.
+- `reasonbook stats`' staleness read drops `currentSprintNumber` and `cutoffSprintNumber` and carries
+  its `countingRule`; `rbook_decisions(action="review")`'s `currentSprintNumber` is now the open
+  sprint's number, for display.
+
+## [4.2.0-rc.2] — 2026-10-18
+
+Sprint 97 "Shared Through the Dashboard", first published release candidate, for the dashboard to
+deploy against. 4.2.0-rc.1 was tagged but never published: its publish run failed a timing-dependent
+installer test, now repaired.
+Sharing through the dashboard is off by default in this candidate: it works only where
+`RBOOK_DASHBOARD_SHARING=on` is set, until its live test through reasonbook.ai passes. Approval
+provenance, the instruments, the live test and the sharing docs follow in 4.2.0.
+
+### Added
+
+- **Sharing through the dashboard, behind `RBOOK_DASHBOARD_SHARING`.**
+  - An owner shares a project with `rbook_project(action="share", via="dashboard")` or
+    `reasonbook share --dashboard`. A dry run first lists what goes up and what stays on the
+    machine; nothing is sent without `confirm=true` or `--yes`.
+  - The dashboard then holds the project's referee copy. A member joins by the project's address,
+    without SSH: `rbook_project(action="join", via="dashboard", project="rbook://…")` or
+    `reasonbook join --dashboard <address>`. The first copy is rebuilt on the member's machine with
+    this version's schema.
+  - Copies sync with the dashboard over HTTPS, in pages of whole transactions within the limit it
+    publishes, and an automatic sync waits out a failing dashboard.
+  - The owner moves a project back to their own copy in one step:
+    `rbook_project(action="move", to="owner")` or `reasonbook move --to owner`. The dashboard
+    archives its copy only after the owner's copy holds the record and has synced again; members'
+    copies then hear that the dashboard no longer shares the project.
+- **The referee library, `@aquex/reasonbook/referee`.** The engine the dashboard runs to host a
+  project's referee copy: a published table of who may call what, an intake that refuses a forged
+  or malformed delivery whole, membership and roles by dashboard account (`setRole`), first copies,
+  snapshots and migrations.
+- **Owner-role copies edit the project identity of a dashboard-shared project.** The dashboard's
+  referee accepts the project identity, and identity and lineage settles, from any copy with the
+  owner role. A directly shared project keeps 4.1.0's rule. A role set on the dashboard is the role
+  each of that member's copies writes with.
+
+### Fixed
+
+- **A former owner copy that takes a new identity keeps following its own handover.** Before, the
+  handover it had written turned pending under its new identity, and the copy read itself as the
+  owner's copy again.
+- **Every copy goes by the first baseline it holds whose value names the replica that wrote it**,
+  so a member's forged baseline changes no copy's owner copy, move or owner name.
+
 ## [4.1.0] — 2026-10-18
 
 - **Shared records across machines.** An owner can share a project; members keep full copies,
@@ -1890,7 +2042,7 @@ Patch release. Triages an OODS-Foundry-MCP intel report (2026-05-15) covering th
 
 ### Fixed
 
-- **`cmos_agent_onboard` cascade now trusts real activity over `sprints.end_date`.** When no Active/In Progress sprint exists (the steady-state for fork-and-forget projects), the cascade previously fell back to a status-and-`end_date` ordering. But `end_date` is admin-editable and frequently drifts later than the sprint's actual activity — closeout scripts and post-hoc backfills can write a date-only string (`'2026-05-14'`) that sorts after a younger sprint's ISO timestamp (`'2026-05-08T...'`). The result: `currentSprint` could surface a much older Completed sprint instead of the genuinely most-recent one. New Step 5 in `getCurrentSprint` queries `MAX(missions.completed_at, sessions.completed_at)` per non-Archived sprint and picks the highest, falling back to the legacy status-and-`end_date` ordering only when no activity rows exist. See [`src/tools/cmos/cmos-agent-onboard.ts`](src/tools/cmos/cmos-agent-onboard.ts) — `getCurrentSprint` + `getMostRecentlyActiveSprintIdIncludingCompleted`.
+- **`cmos_agent_onboard` cascade now trusts real activity over `sprints.end_date`.** When no Active/In Progress sprint exists (the steady-state for fork-and-forget projects), the cascade previously fell back to a status-and-`end_date` ordering. But `end_date` is admin-editable and frequently drifts later than the sprint's actual activity — closeout scripts and post-hoc backfills can write a date-only string (`'2026-05-14'`) that sorts after a younger sprint's ISO timestamp (`'2026-05-08T...'`). The result: `currentSprint` could surface a much older Completed sprint instead of the genuinely most-recent one. New Step 5 in `getCurrentSprint` queries `MAX(missions.completed_at, sessions.completed_at)` per non-Archived sprint and picks the highest, falling back to the legacy status-and-`end_date` ordering only when no activity rows exist. See `src/tools/cmos/cmos-agent-onboard.ts` — `getCurrentSprint` + `getMostRecentlyActiveSprintIdIncludingCompleted`.
 
 ### Verified (no code change)
 

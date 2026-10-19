@@ -122,6 +122,7 @@ Consolidated mission state-machine tool with action parameter support. Actions: 
 | `action` | string | yes | Transition action: start \| complete \| block \| unblock \| drop \| defer |
 | `missionId` | string | yes | The mission ID to transition |
 | `notes` | string | no | Notes for start/complete actions |
+| `targetStatus` | string | no | unblock: the status after it (default In Progress); start: Current promotes without starting |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
 
 ### rbook_mission_transition(action="complete")
@@ -152,7 +153,7 @@ Consolidated mission state-machine tool with action parameter support. Actions: 
 | `action` | string | yes | Transition action: start \| complete \| block \| unblock \| drop \| defer |
 | `missionId` | string | yes | The mission ID to transition |
 | `resolution` | string | no | Resolution notes for unblock action |
-| `targetStatus` | string | no | Target status after unblock (default: In Progress) |
+| `targetStatus` | string | no | unblock: the status after it (default In Progress); start: Current promotes without starting |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
 
 ### rbook_mission_transition(action="drop")
@@ -647,15 +648,15 @@ Consolidated database admin tool with action parameter support. Actions: health,
 
 ## rbook_project
 
-Consolidated project tool with action parameter support. Actions: init, register, list, unregister, validate, prune, update, sweep, share, invite, join, members, remove, sync. The list action supports an optional validate flag. The prune action removes registry entries where the local Reasonbook database no longer exists on disk. The update action sets the level (project_type: general/managed/build) and writes the files the new level uses that the project lacks; it removes no file and overwrites no edited one. The sweep action returns all open missions and active sessions across registered instances. The shared-record actions: share makes this copy the owner's of a record others join; invite and remove manage its members; join admits a member's copy over SSH; members lists them; and sync exchanges with every copy this one has a route to, or with confirmOwner confirms a move of the owner's copy.
+Consolidated project tool with action parameter support. Actions: init, register, list, unregister, validate, prune, update, sweep, share, invite, join, members, remove, sync, move. The list action supports an optional validate flag. The prune action removes registry entries where the local Reasonbook database no longer exists on disk. The update action sets the level (project_type: general/managed/build) and writes the files the new level uses that the project lacks; it removes no file and overwrites no edited one. The sweep action returns all open missions and active sessions across registered instances. The shared-record actions: share makes this copy the owner's of a record others join, or with via=dashboard shares it through the dashboard after a dry run; invite and remove manage its members; join admits a member's copy over SSH, or with via=dashboard joins a project shared through the dashboard by its address; members lists them; sync exchanges with every copy this one has a route to, or with confirmOwner confirms a move of the owner's copy; and move with to=owner moves a project shared through the dashboard back to the owner's copy.
 
-**Actions:** `init`, `register`, `list`, `unregister`, `validate`, `prune`, `update`, `sweep`, `share`, `invite`, `join`, `members`, `remove`, `sync`
+**Actions:** `init`, `register`, `list`, `unregister`, `validate`, `prune`, `update`, `sweep`, `share`, `invite`, `join`, `members`, `remove`, `sync`, `move`
 
 ### rbook_project(action="init")
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync |
+| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync \| move |
 | `projectRoot` | string | no | Project root directory |
 | `projectName` | string | no | Project name for init action |
 | `projectId` | string | no | Project ID for init action |
@@ -679,7 +680,7 @@ Consolidated project tool with action parameter support. Actions: init, register
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync |
+| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync \| move |
 | `projectRoot` | string | no | Project root directory |
 | `name` | string | no | register: the display name; invite and remove: the member's name |
 | `setAsDefault` | boolean | no | register: make this the default for calls with no project context (no projectRoot, no MCP roots, cwd of /, $HOME or the install root) |
@@ -688,34 +689,34 @@ Consolidated project tool with action parameter support. Actions: init, register
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync |
+| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync \| move |
 | `validate` | boolean | no | Run validation on list action (routes to validate handler) |
 
 ### rbook_project(action="unregister")
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync |
+| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync \| move |
 | `projectRoot` | string | no | Project root directory |
 
 ### rbook_project(action="validate")
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync |
+| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync \| move |
 | `prune` | boolean | no | validate: archive the registry entries whose store is missing, stale or ephemeral |
 
 ### rbook_project(action="prune")
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync |
+| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync \| move |
 
 ### rbook_project(action="update")
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync |
+| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync \| move |
 | `projectRoot` | string | no | Project root directory |
 | `projectType` | string | no | The level of record for init and update: general (decisions and lessons), managed (also next steps, as tasks in cycles) or build (sprints and missions); a new project defaults to general, or to the level its folder AGENTS.md already names, and init keeps an existing project level unless one is passed |
 
@@ -723,7 +724,7 @@ Consolidated project tool with action parameter support. Actions: init, register
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync |
+| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync \| move |
 | `instances` | array | no | Restrict sweep to these registry names only |
 | `statusFilter` | array | no | Restrict sweep to these mission/session statuses |
 | `itemType` | string | no | Restrict sweep to missions or sessions only |
@@ -732,15 +733,17 @@ Consolidated project tool with action parameter support. Actions: init, register
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync |
+| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync \| move |
 | `projectRoot` | string | no | Project root directory |
 | `authorName` | string | no | share: the author name the owner goes by, set here when this machine has none |
+| `via` | string | no | share, join: dashboard, to share or join through the dashboard, which referees the project; leave it out for SSH and bundles |
+| `confirm` | boolean | no | share via the dashboard: true sends the project after the dry run; without it, only the dry run |
 
 ### rbook_project(action="invite")
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync |
+| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync \| move |
 | `projectRoot` | string | no | Project root directory |
 | `name` | string | no | register: the display name; invite and remove: the member's name |
 | `role` | string | no | invite: editor (the default), or owner for another copy of your own |
@@ -749,7 +752,7 @@ Consolidated project tool with action parameter support. Actions: init, register
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync |
+| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync \| move |
 | `projectRoot` | string | no | Project root directory |
 | `member` | string | no | join: the invited member the joining copy is for |
 | `host` | string | no | join: the SSH host the joining copy is on |
@@ -757,19 +760,21 @@ Consolidated project tool with action parameter support. Actions: init, register
 | `remoteNode` | string | no | join: the node binary on that host, when a non-login SSH command's PATH lacks it |
 | `remoteBin` | string | no | join: the Reasonbook entry on that host, when its PATH lacks reasonbook |
 | `remoteConfigDir` | string | no | join: the Reasonbook config folder on that host, when it is not the user's |
+| `via` | string | no | share, join: dashboard, to share or join through the dashboard, which referees the project; leave it out for SSH and bundles |
+| `project` | string | no | join via the dashboard: the project's rbook:// address, which its owner shared with you |
 
 ### rbook_project(action="members")
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync |
+| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync \| move |
 | `projectRoot` | string | no | Project root directory |
 
 ### rbook_project(action="remove")
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync |
+| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync \| move |
 | `projectRoot` | string | no | Project root directory |
 | `name` | string | no | register: the display name; invite and remove: the member's name |
 
@@ -777,9 +782,17 @@ Consolidated project tool with action parameter support. Actions: init, register
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync |
+| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync \| move |
 | `projectRoot` | string | no | Project root directory |
 | `confirmOwner` | boolean | no | sync: confirm the move of the owner's copy this copy holds, as your word |
+
+### rbook_project(action="move")
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `action` | string | yes | Project action: init \| register \| list \| unregister \| validate \| prune \| update \| sweep \| share \| invite \| join \| members \| remove \| sync \| move |
+| `projectRoot` | string | no | Project root directory |
+| `to` | string | no | move: owner, to move a project shared through the dashboard back to the owner's copy, run on that copy |
 
 ## rbook_learnings
 

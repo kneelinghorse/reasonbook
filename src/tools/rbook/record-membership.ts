@@ -11,7 +11,13 @@ import { forgetPeers } from './record-peers';
 import { canonicalJson } from './record-capture';
 import { recordOwnChanges } from './record-changes';
 import { isRecordedStore } from './record-recording';
-import { mergeContext, REPLICA_ENTITY, termReach, type LoggedChange } from './record-standing';
+import {
+  BASELINE_QUERY,
+  mergeContext,
+  REPLICA_ENTITY,
+  termReach,
+  type LoggedChange,
+} from './record-standing';
 import { REPLICA_ERROR_CODES } from './replica-identity';
 import type { RbookToolResult } from './types';
 
@@ -45,10 +51,7 @@ const json = (text: string | null): Record<string, unknown> =>
 /** Every member, the owner first, as each authority's term records them (ADR s96 §8). */
 export function listMembers(client: RbookDatabaseClient): MemberView[] {
   const ctx = mergeContext(client);
-  const [baseline] = rows<LoggedChange>(
-    client,
-    "SELECT * FROM record_changes WHERE kind = 'baseline' ORDER BY replica_seq LIMIT 1"
-  );
+  const [baseline] = rows<LoggedChange>(client, BASELINE_QUERY);
   const members = new Map<string, { name: string; role: string; replicas: Map<string, number> }>([
     [
       OWNER_MEMBER,
@@ -99,7 +102,7 @@ export function listMembers(client: RbookDatabaseClient): MemberView[] {
  * and presentation selectors the name rule lets a name keep left out, since they show little or
  * nothing (s96-m13, #671).
  */
-function readsAs(name: string): string {
+export function readsAs(name: string): string {
   return name
     .normalize('NFKC')
     .replace(/[\p{Join_Control}\p{Variation_Selector}]/gu, '')
@@ -248,6 +251,66 @@ function readmit(
   const decided = decideTransactions(client, quarantinedOf(client, member), 'accepted', 're-added');
   if (!decided.success) return createError(decided.error!);
   return createSuccess({ ...member, role, invited: true, accepted: decided.data ?? 0 });
+}
+
+/**
+ * s97-m11 (design §R1): change a member's role, from the authority's copy: an editor made an owner, or
+ * back. The owner's own role never changes, a removed member is invited again instead, and the role is
+ * one an invite gives.
+ */
+export function setMemberRole(
+  client: RbookDatabaseClient,
+  name: string,
+  role: string
+): RbookToolResult<MemberView> {
+  const ctx = mergeContext(client);
+  if (ctx.ownReplica !== ctx.authority)
+    return refuse({
+      code: REPLICA_ERROR_CODES.WRITE_REFUSED,
+      message: "Only the owner's copy changes a member's role.",
+      suggestion: "Change the role from the owner's copy.",
+    });
+  if (!(INVITE_ROLES as readonly string[]).includes(role))
+    return refuse({
+      code: REPLICA_ERROR_CODES.WRITE_REFUSED,
+      message: `A shared record gives write access, so no member can be a ${role}: a member is an editor or an owner.`,
+      suggestion: 'Name editor or owner.',
+    });
+  const member = memberNamed(client, name);
+  if (!member)
+    return refuse({
+      code: REPLICA_ERROR_CODES.WRITE_REFUSED,
+      message: `${name} is not a member of this project.`,
+      suggestion: 'List the members with rbook_project(action="members").',
+    });
+  if (member.memberId === OWNER_MEMBER)
+    return refuse({
+      code: REPLICA_ERROR_CODES.WRITE_REFUSED,
+      message:
+        "The owner's role does not change: the owner is the person the project was shared by.",
+      suggestion:
+        "Make another member an owner instead, if they should edit the project's identity.",
+    });
+  if (member.role === 'removed')
+    return refuse({
+      code: REPLICA_ERROR_CODES.WRITE_REFUSED,
+      message: `${member.name} was removed, so they hold no role to change.`,
+      suggestion: 'Invite them again with the role they should have.',
+    });
+  if (member.role === role) return createSuccess(member);
+  const done = client.writeTransaction(() =>
+    recordOwnChanges(client, [
+      {
+        kind: 'member',
+        entity: MEMBER_ENTITY,
+        entityId: member.memberId,
+        field: null,
+        value: canonicalJson({ name: member.name, role }),
+      },
+    ])
+  );
+  if (!done.success) return createError(done.error!);
+  return createSuccess({ ...member, role });
 }
 
 /**

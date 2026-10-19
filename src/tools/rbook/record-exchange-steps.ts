@@ -48,6 +48,8 @@ export async function catchUp(
       conflicts: 0,
       findings: 0,
       removed: true,
+      // s97-m14 (critics, round 2): the copy behind is a removed member, not a copy that is no member.
+      removedCopy: localAhead ? 'remote' : 'local',
       digest: { mark: 0, hash: null },
       applied: { authority: null, member: null },
       local: { replicaId: ours.replicaId, marks: ours.marks },
@@ -75,6 +77,8 @@ export async function catchUp(
         copy: localAhead ? 'remote' : 'local',
         epoch: aheadHello.epoch,
         authority: aheadHello.authority,
+        // s97-m10: a copy that confirms the move itself, as a dashboard's referee does, needs no word.
+        ...(after.pending === null && after.epoch === aheadHello.epoch ? { confirmed: true } : {}),
       },
     },
     applied.warnings ?? []

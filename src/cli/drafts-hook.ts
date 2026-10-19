@@ -7,9 +7,11 @@ import * as fs from 'fs';
 
 import {
   classifyReply,
+  draftCoverage,
   keywordOverlap,
   proseLines,
   readDraftReply,
+  REVISION_COVERAGE,
   REVISION_OVERLAP,
   SINGLE_REVISION_FLOOR,
   type DraftLine,
@@ -23,13 +25,16 @@ import {
   offerCounts,
   openDraftRuntime,
   openWindow,
+  carryShown,
   pruneAllRuntimes,
+  readExcerpt,
   readScans,
   recordSessionStart,
   saveScan,
   sessionStartedAt,
   setShown,
   startsSince,
+  takeKept,
   takeShown,
   type DraftRuntime,
   type ScanState,
@@ -43,6 +48,7 @@ import {
   markDeclined,
   markOffered,
   markReplaced,
+  markRevisedAfterApproval,
   pendingDrafts,
   proposalsTableExists,
   rawRunner,
@@ -257,20 +263,34 @@ function scanSession(
  * Which window draft each line revises (B3, folded): when the operator's last message answered one
  * draft of a kind, the reply's best line of that kind revises it if they share a subject (an
  * amendment may flip its key term, which the 0.5 overlap missed); among several of a kind, only a
- * line at the full overlap threshold. A line about something else leaves the draft pending.
+ * line at the full overlap threshold. A line about something else leaves the draft pending. Without
+ * a window (s97-m12), a line must hold REVISION_COVERAGE of the draft's own subject instead: no
+ * operator message names the draft, so a line on a neighbouring subject, or one part of a longer
+ * draft, does not retire it.
  */
 function revisions(
   lines: readonly DraftLine[],
-  window: readonly DraftRow[]
+  candidates: readonly DraftRow[],
+  /**
+   * s97-m12: whether a draft is one the operator's last message answered, other than by a plain
+   * approval; any other candidate (none answered, kept from an earlier reply, or approved, which a
+   * link limits to its own words) is revised only at the coverage rule.
+   */
+  answered: (draft: DraftRow) => boolean
 ): Map<number, DraftRow> {
   const assigned = new Map<number, DraftRow>();
-  for (const draft of window) {
-    const ofKind = window.filter((row) => row.kind === draft.kind).length;
+  for (const draft of candidates) {
+    const ofKind = candidates.filter((row) => row.kind === draft.kind && answered(row)).length;
+    const covered = !answered(draft);
     let best = -1;
-    let bestScore = (ofKind === 1 ? SINGLE_REVISION_FLOOR : REVISION_OVERLAP) - Number.EPSILON;
+    let bestScore =
+      (covered ? REVISION_COVERAGE : ofKind === 1 ? SINGLE_REVISION_FLOOR : REVISION_OVERLAP) -
+      Number.EPSILON;
     lines.forEach((line, index) => {
       if (line.kind !== draft.kind || assigned.has(index)) return;
-      const score = keywordOverlap(draft.text, line.text);
+      const score = covered
+        ? draftCoverage(draft.text, line.text)
+        : keywordOverlap(draft.text, line.text);
       if (score > bestScore) {
         best = index;
         bestScore = score;
@@ -368,9 +388,21 @@ export function onStop(options: {
               if (!shown.includes(repeated.id)) shown.push(repeated.id);
             } else fresh.push(line);
           }
+          // s97-m12 (learning #481): a line revises a draft the operator's last message answered at
+          // the window's floors, and any other pending draft of this session at the coverage rule,
+          // so a revision never leaves what it revises pending. A draft the operator plainly
+          // approved keeps that approval: its revision is linked, and it stays pending, to be
+          // recorded only in its own words. Window drafts are matched first.
+          const approved = (row: DraftRow): boolean =>
+            runtime !== null && readExcerpt(runtime, session, row.id, now)?.reply === 'approval';
+          const candidates = [
+            ...window,
+            ...live.filter((row) => row.sourceSession === session && !windowIds.includes(row.id)),
+          ].filter((row) => !shown.includes(row.id));
           const revised = revisions(
             fresh,
-            window.filter((row) => !shown.includes(row.id))
+            candidates,
+            (row) => windowIds.includes(row.id) && !approved(row)
           );
           const at = new Date(now).toISOString();
           fresh.forEach((line, position) => {
@@ -386,7 +418,8 @@ export function onStop(options: {
             createdIds.push(id);
             shown.push(id);
             const old = revised.get(position);
-            if (old) replaced += markReplaced(run, old.id, id, at);
+            if (old && approved(old)) markRevisedAfterApproval(run, old.id, id);
+            else if (old) replaced += markReplaced(run, old.id, id, at);
           });
           for (const id of namedDrafts(reply, unexpired(runtime, pendingDrafts(run), now)))
             if (!shown.includes(id)) shown.push(id);
@@ -401,6 +434,9 @@ export function onStop(options: {
       }
     }
     if (runtime) {
+      // s97-m12: drafts an earlier reply showed that no operator message took, as when the harness
+      // opened this turn itself, are kept apart from this reply's (learning #481; critic round 2).
+      carryShown(runtime, session, now);
       setShown(runtime, session, shown, now);
       if (options.transcriptPath) {
         const outside = scanSession(
@@ -451,6 +487,16 @@ function fullOffer(draft: DraftRow): string {
     text +=
       ' This session read outside content (web pages or other projects’ records) before it was drafted.';
   return text;
+}
+
+/**
+ * s97-m12 (critic round 2): a draft shown before the latest reply. The operator's message answers
+ * that reply, so a plain yes or no to it settles nothing here, and a record of this draft reads
+ * agent-judged.
+ */
+function earlierOffer(draft: DraftRow): string {
+  const label = draftLabel(draft.id);
+  return `Reasonbook draft ${label} (${draft.kind}) was shown before your last reply and not answered since: "${cut(draft.text, FULL_TEXT_MAX)}". Record it with fromDraft="${label}" only if the operator's message plainly speaks to it (it reads agent-judged); a yes or no to your last reply settles nothing about it.`;
 }
 
 function instruction(reply: ReplyClass, bound: readonly DraftRow[]): string {
@@ -514,15 +560,20 @@ export function prepareOffer(options: {
   const runtime = openDraftRuntime(options.dbPath, options.env, { timeoutMs: storeTimeout() });
   if (!runtime) return NO_OFFER;
   try {
-    // One message answers one reply: what it showed is taken now, whether or not it binds.
+    // One message answers one reply: what it showed is taken now, whether or not it binds. Drafts
+    // an earlier reply showed, kept when the harness opened a turn itself, are taken with it, and
+    // bind only as words the agent judges: this message answers the latest reply (s97-m12).
     const shown = takeShown(runtime, session, now);
+    const earlier = takeKept(runtime, session, now).filter((id) => !shown.includes(id));
     const startedAtMs = sessionStartedAt(runtime, session);
     const counts = offerCounts(runtime, session);
     const live = unexpired(runtime, pending, now);
     const bound = live.filter((draft) => shown.includes(draft.id));
+    const carried = live.filter((draft) => earlier.includes(draft.id));
     const reminders: Array<{ draft: DraftRow; later: boolean }> = [];
     for (const draft of live) {
-      if (bound.includes(draft)) continue;
+      // A draft approved and then revised waits to be recorded in its own words, not for an answer.
+      if (bound.includes(draft) || carried.includes(draft) || draft.replacedBy !== null) continue;
       const createdMs = storedTimeMs(draft.createdAt);
       const count = counts.get(draft.id) ?? 0;
       const thisStart =
@@ -531,15 +582,16 @@ export function prepareOffer(options: {
       if ((thisStart && count < OFFERS_PER_START) || (later && count === 0))
         reminders.push({ draft, later: !thisStart });
     }
-    if (!bound.length && !reminders.length) return NO_OFFER;
+    if (!bound.length && !carried.length && !reminders.length) return NO_OFFER;
     checkDeadline(options.deadlineAtMs);
     const boundIds = bound.map((draft) => draft.id);
+    const carriedIds = carried.map((draft) => draft.id);
     const labels = bound.map((draft) => draftLabel(draft.id));
-    const reply = bound.length ? classifyReply(options.message) : null;
+    const reply = bound.length ? classifyReply(options.message) : carried.length ? 'other' : null;
     const lines: string[] = [];
     // Persist a decline before touching the store: a locked store must not leave an older
     // approval usable after the shown set was consumed. The record path checks these words.
-    if (reply) bindWindow(runtime, session, boundIds, options.message, reply, now);
+    if (reply) bindWindow(runtime, session, boundIds, options.message, reply, now, carriedIds);
     if (reply === 'decline') {
       const writer = openStore(options.dbPath, false);
       try {
@@ -550,16 +602,18 @@ export function prepareOffer(options: {
       lines.push(
         `The operator declined ${labels.join(', ')}; ${labels.length === 1 ? 'it is' : 'they are'} not recorded.`
       );
-    } else if (reply) {
+    } else if (reply && bound.length) {
       // The instruction leads, so the 1,000-character cut can only shorten offers (the build
       // critic, N5).
       lines.push(instruction(reply, bound), ...bound.map(fullOffer));
     }
+    lines.push(...carried.map(earlierOffer));
     lines.push(...reminders.map((item) => reminder(item.draft, item.later)));
     let text = lines.join('\n');
     if (text.length > OFFER_TEXT_MAX) text = `${text.slice(0, OFFER_TEXT_MAX - 1).trimEnd()}…`;
     const offeredIds = [
       ...(reply === 'decline' ? [] : boundIds),
+      ...carriedIds,
       ...reminders.map((item) => item.draft.id),
     ];
     return {

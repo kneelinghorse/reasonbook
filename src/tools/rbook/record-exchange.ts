@@ -5,6 +5,7 @@
 import type { RbookDatabaseClient } from './client';
 import { createError, createSuccess } from './errors';
 import { changesSince, replicaMarks, type ApplyReport } from './record-apply';
+import { PROTOCOL_VERSION } from './record-changes';
 import { applyAndEmbed } from './record-apply-embed';
 import { chainClashes, chainsAt, commonMarks, knownBlocks } from './record-chain';
 import { catchUp, settleBlocks, settleIdentity } from './record-exchange-steps';
@@ -28,6 +29,8 @@ export const SYNC_PROTOCOL = 1;
 /** What each side says about itself before anything moves. */
 export interface Hello {
   readonly protocol: number;
+  /** s97-m10 (design §Versions): the record protocol this copy writes; a 4.1.0 copy says none, and writes 1. */
+  readonly recordProtocol?: number;
   readonly projectId: string;
   readonly replicaId: string;
   readonly block: number;
@@ -103,6 +106,11 @@ export interface ExchangeReport {
    * refused, and nothing came back (ADR s96 §8).
    */
   readonly removed: boolean;
+  /**
+   * s97-m14: which side's member the owner's copy lists as removed, when one is: this copy, or the
+   * one it exchanged with. Absent for a copy that is no member at all, whose changes are refused.
+   */
+  readonly removedCopy?: 'local' | 'remote';
   /** Each side's identity and marks after the exchange: what each records of the other. */
   readonly local: { readonly replicaId: string; readonly marks: Readonly<Record<string, number>> };
   readonly remote: { readonly replicaId: string; readonly marks: Readonly<Record<string, number>> };
@@ -111,6 +119,8 @@ export interface ExchangeReport {
     readonly copy: 'local' | 'remote';
     readonly epoch: number;
     readonly authority: string;
+    /** s97-m10: the copy behind confirmed the move itself, as the dashboard's referee does. */
+    readonly confirmed?: boolean;
   };
   /** s96-m13: the member took a new identity or block, and what its review now says. */
   readonly reidentified?: SuccessorTaken;
@@ -125,6 +135,7 @@ export function hello(client: RbookDatabaseClient): Hello {
   const refused = replicaWriteRefusal(client);
   return {
     protocol: SYNC_PROTOCOL,
+    recordProtocol: PROTOCOL_VERSION,
     projectId: recordedProjectId(client),
     replicaId: ctx.ownReplica,
     block: ctx.ownBlock,
@@ -277,6 +288,28 @@ export function clashRefusal(
 }
 
 /**
+ * s97-m14 (the dashboard's live test; critics, round 1): what an exchange that names a removed
+ * member says, as a clause. The cut is where the owner's copy stood in the member's stream when it
+ * removed the member (ADR s96 §8), so everything the owner's copy did not hold then is set aside:
+ * what the member made after the removal, and what it made before and had not synced. Null when
+ * the report names no removal; a copy that is no member at all is said plainly.
+ */
+export function removalNote(
+  report: Pick<ExchangeReport, 'sent' | 'removedCopy'> & { readonly removed?: boolean }
+): string | null {
+  if (!report.removedCopy)
+    return report.removed
+      ? "the owner's copy lists this exchange's member copy as no member of the project, so what it sent is refused and it is sent nothing"
+      : null;
+  const whose = report.removedCopy === 'local' ? "this copy's" : "that copy's";
+  const what =
+    report.sent > 0
+      ? `the ${report.sent} change(s) it sent, and anything else the owner's copy did not hold when it removed the member, are set aside and count`
+      : "anything the owner's copy did not hold when it removed the member is set aside and counts";
+  return `${whose} member was removed from the project: ${what} only if the owner shares the project with it again, and nothing new is sent to it`;
+}
+
+/**
  * Exchange what each copy lacks, in a star: one side must be the authority's copy (ADR s96 §7). A
  * copy behind an epoch only catches up. Otherwise the member's identity is put right first, then
  * any block two replicas hold; the member's changes reach the authority, and the verdicts it records
@@ -341,12 +374,20 @@ export async function exchange(
   const [authorityHello, memberHello] = localJudges ? [ours, theirs] : [theirs, ours];
   const sent = await member.changesSince(authorityHello.marks);
   const judged = await authority.apply(sent);
-  if (!judged.success || !judged.data) return createError<ExchangeReport>(judged.error!);
+  // s97-m10: a transaction too large for the dashboard stays on its copy, which still takes in the
+  // stream; the exchange then answers that refusal, so the copy's review shows it (critics, round 1).
+  const heldBack =
+    !judged.success && judged.error?.code === REPLICA_ERROR_CODES.TRANSACTION_TOO_LARGE
+      ? judged.error
+      : null;
+  if (!heldBack && (!judged.success || !judged.data))
+    return createError<ExchangeReport>(judged.error!);
   // A removed member's changes go in, quarantined past its cut, and it receives nothing new (ADR §8);
   // a copy that is no member receives nothing at all.
+  const listedRemoved = authorityHello.removed.includes(memberHello.replicaId);
   const removed =
-    authorityHello.removed.includes(memberHello.replicaId) ||
-    !(await authority.hello()).members.includes(memberHello.replicaId);
+    listedRemoved || !(await authority.hello()).members.includes(memberHello.replicaId);
+  const removedCopy = listedRemoved ? (localJudges ? 'remote' : 'local') : undefined;
   let adopted: ApplyReport | null = null;
   let adoptedWarnings: readonly string[] | undefined;
   if (!removed) {
@@ -356,6 +397,16 @@ export async function exchange(
     adopted = applied.data;
     adoptedWarnings = applied.warnings;
   }
+  // s97-m14 (critics, rounds 1 and 2): a held-back transaction must not hide a removal from its
+  // member. The removal leads, so the review's 160-character slice of the error keeps it.
+  if (heldBack && removedCopy) {
+    const note = removalNote({ sent: 0, removedCopy })!;
+    return createError<ExchangeReport>({
+      ...heldBack,
+      message: `${note.charAt(0).toUpperCase()}${note.slice(1)}. ${heldBack.message}`,
+    });
+  }
+  if (heldBack || !judged.data) return createError<ExchangeReport>(heldBack ?? judged.error!);
   const mark = common[ours.authority] ?? 0;
   return createSuccess<ExchangeReport>(
     {
@@ -365,6 +416,7 @@ export async function exchange(
       conflicts: (adopted ?? judged.data).conflicts,
       findings: (adopted ?? judged.data).checks,
       removed,
+      ...(removedCopy ? { removedCopy } : {}),
       digest: {
         mark,
         hash: mark ? (await local.chains({ [ours.authority]: mark }))[ours.authority] : null,

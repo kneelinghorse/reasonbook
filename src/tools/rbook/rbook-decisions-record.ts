@@ -32,6 +32,7 @@ import {
   type DraftEvaluation,
 } from './draft-approval';
 import { clientRunner, draftLabel, markAnswered, markApproved } from './proposals';
+import { ANSWER_COVERAGE } from './draft-grammar';
 import { findExistingDecisionId, insertDecisionRow, followDecisionInsert } from './decision-write';
 import { applyLearningReaffirm, sanitizeLearningIds } from './learning-reaffirm';
 import type { SupersessionCandidate } from './supersession-detection';
@@ -418,6 +419,11 @@ export async function rbookDecisionsRecord(
       if (missionId) answer.missionId = missionId;
       if (caller.session?.implicit) answer.implicitSession = { opened: caller.session.opened };
       if (draft && existingId === undefined) answer.approval = approvalEcho(draft);
+      // s97-m12: a record holding part of its draft says so, rather than retiring the rest unseen.
+      if (draft && existingId === undefined && draft.coverage < ANSWER_COVERAGE)
+        warnings.push(
+          `This decision holds ${Math.round(draft.coverage * 100)}% of draft ${draft.label}'s subject; anything ${draft.label} proposed beyond it is not recorded.`
+        );
       if (draft && existingId !== undefined) {
         answer.message = `Decision #${decisionId} was already recorded directly with this text; draft ${draft.label} is marked answered by it.`;
       }

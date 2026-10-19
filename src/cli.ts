@@ -335,6 +335,10 @@ async function dispatchCli(
       return (await import('./cli/sync-moves')).runHandover(rest, io);
     case 'recover':
       return (await import('./cli/sync-moves')).runRecover(rest, io);
+    case 'share':
+      return (await import('./cli/dashboard')).runShare(rest, io);
+    case 'move':
+      return (await import('./cli/dashboard')).runMove(rest, io);
     case 'import':
       return (await import('./cli/import')).runImport(rest, io);
     case 'drafts':

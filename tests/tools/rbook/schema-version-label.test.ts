@@ -23,10 +23,13 @@
  *    fully dynamic key and a sync payload remain indirect routes; this syntax gate cannot prove
  *    values obtained through those routes are not branched on.
  * 3. “Monotonic” is closed over the six logical setters classified below, and both mutable paths
- *    atomically re-check the current row before replacement. The sixteen variable-key metadata
- *    writer statements (fifteen INSERT forms and one UPDATE) and their 46 current
+ *    atomically re-check the current row before replacement. The seventeen variable-key metadata
+ *    writer statements (sixteen INSERT forms and one UPDATE) and their 46 current
  *    declaration/call-site key roles (s96-m13's copy-key writer and block move added two) are a
- *    point-in-time enumeration; a changed ledger forces their keys to be re-audited.
+ *    point-in-time enumeration; a changed ledger forces their keys to be re-audited. The key
+ *    ledger cannot read s97-m09's fresh-copy writer, which runs a prepared statement on a plain
+ *    connection: its keys are the fixed METADATA_KEYS list in record-fresh-copy.ts, which names
+ *    no label, and only this statement census sees it.
  * 4. The label heal runs only on the retrieval path. A store that never performs retrieval does
  *    not heal its label, which is harmless because the label is not a control input.
  *
@@ -400,26 +403,29 @@ const EXPECTED_WRITER_KEYS: readonly WriterKeySite[] = sortSourceSites([
   // s96-m01: a copy's replica identity, written through one helper with each key named.
   // s96-m03: down four lines (the change log's refusal codes). s96-m12: five more (the slot
   // clash and field-in-conflict codes, and the peer-sessions import). s96-m13: nine more (three
-  // exchange refusal codes, and this helper's comment naming its one other caller).
+  // exchange refusal codes, and this helper's comment naming its one other caller). s97-m10: four
+  // more (the oversized-transaction code, and carrying a refusal thrown on purpose whatever its code).
+  // s97-m11: two more (the route-ended code).
   {
     file: 'tools/rbook/replica-identity.ts',
-    line: 194,
+    line: 200,
     role: 'writeReplicaKey',
     callee: 'metadata.execute',
     key: 'key',
   },
   ...['REPLICA_KEYS.id', 'REPLICA_KEYS.block', 'REPLICA_KEYS.seq'].map((key, index) => ({
     file: 'tools/rbook/replica-identity.ts',
-    line: 203 + index,
+    line: 209 + index,
     role: 'writeIdentity',
     callee: 'writeReplicaKey',
     key,
   })),
   // s96-m13: a copy's own keys besides its identity, through writeCopyKey, whose key is a CopyKey:
   // the join it asked for, the moves it confirmed, its last new identity and its invite's name.
+  // s97-m11: down two (the dashboard share's pending answer, a new copy key).
   {
     file: 'tools/rbook/replica-copy-keys.ts',
-    line: 27,
+    line: 29,
     role: 'writeCopyKey',
     callee: 'writeReplicaKey',
     key: 'key',
@@ -427,17 +433,18 @@ const EXPECTED_WRITER_KEYS: readonly WriterKeySite[] = sortSourceSites([
   // s96-m13: a copy that lost a block clash moves to a new block under its replica id.
   {
     file: 'tools/rbook/replica-copy-keys.ts',
-    line: 39,
+    line: 41,
     role: 'moveReplicaBlock',
     callee: 'writeReplicaKey',
     key: 'REPLICA_KEYS.block',
   },
   // s96-m01 (fold): the copy's sequence, raised in one variable-key UPDATE; never the label.
   // s96-m12: down eight lines (the five above, and establishReplica marking the open sessions a
-  // copy brought, at its first identity only). s96-m13: down nine (the lines above).
+  // copy brought, at its first identity only). s96-m13: down nine (the lines above). s97-m10: four.
+  // s97-m11: two.
   {
     file: 'tools/rbook/replica-identity.ts',
-    line: 317,
+    line: 323,
     role: 'takeReplicaSeq',
     callee: 'metadata.update',
     key: 'KEYS.seq',
@@ -542,8 +549,9 @@ const EXPECTED_WRITER_KEYS: readonly WriterKeySite[] = sortSourceSites([
   {
     // s93-m11: the first-write staleness repair's ledger — a constant key, never the label.
     // s96-m03: down three lines (a shared record skips the restore).
+    // s97-m13: up four (the close-time clock replaced the label cutoff).
     file: 'tools/rbook/staleness-detection.ts',
-    line: 781,
+    line: 777,
     role: 'writeStalenessRepairLedger',
     callee: 'metadata.execute',
     key: 'STALENESS_REPAIR_LEDGER_KEY',
@@ -690,6 +698,9 @@ const EXPECTED_VARIABLE_WRITER_FILES = [
   'tools/rbook/owner-resolution.ts',
   'tools/rbook/rbook-project-init.ts',
   'tools/rbook/rbook-project-update.ts',
+  // s97-m09: a fresh copy of a shared record copies the fixed METADATA_KEYS list from its source
+  // (the project's keys, the copy's identity, clock, moves and author marker); never the label.
+  'tools/rbook/record-fresh-copy.ts',
   // s94-m06: atomic citation-schema creation/backfill stamps only RECORD_LINKS_MARKER.
   'tools/rbook/record-link-migration.ts',
   // s96-m12: a merge writes the recorded metadata identity keys its live changes give; only the
@@ -877,7 +888,7 @@ describe('schema_version static contract', () => {
       'cannot say WHICH migrations ran',
       'project_identity` view',
       'six logical setters',
-      'sixteen variable-key',
+      'seventeen variable-key',
       'retrieval path',
     ]) {
       expect(header).toContain(phrase);

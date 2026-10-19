@@ -3,6 +3,7 @@
 // ABOUTME: so it is never adopted, written or closed here; a copy that joins marks the sessions it brought along.
 
 import type { RbookDatabaseClient } from './client';
+import { BASELINE_QUERY } from './record-baseline';
 
 /**
  * s96-m12: a session another copy of a shared record started carries this owner key on every other
@@ -29,9 +30,7 @@ export function markPeerSessions(client: RbookDatabaseClient, ownReplica: string
   );
   if (!log.success) throw new Error(log.error?.message ?? 'the change log could not be found');
   if (!log.data) return 0;
-  const baseline = client.getOne<{ value: string }>(
-    "SELECT value FROM record_changes WHERE kind = 'baseline' ORDER BY replica_seq LIMIT 1"
-  );
+  const baseline = client.getOne<{ value: string }>(BASELINE_QUERY);
   if (!baseline.success)
     throw new Error(baseline.error?.message ?? 'the baseline could not be read');
   if (!baseline.data) return 0;

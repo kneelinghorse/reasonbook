@@ -58,6 +58,8 @@ export interface RbookStatusResult {
     last_synced_at: string | null;
     pending: number;
     last_error: string | null;
+    /** s97-m14: when that copy first said this copy's member was removed; absent while a member. */
+    removed_at?: string;
   }>;
 }
 
@@ -154,6 +156,7 @@ function sharedSync(client: RbookDatabaseClient): NonNullable<RbookStatusResult[
       last_synced_at: peer.lastOkAt,
       pending: peer.pending,
       last_error: peer.lastError,
+      ...(peer.removedAt ? { removed_at: peer.removedAt } : {}),
     }));
 }
 
@@ -235,7 +238,7 @@ export function formatStatusForLLM(result: RbookToolResult<RbookStatusResult>): 
           `shared sync:               ${s.shared_sync.length ? '' : 'no copy has synced with this one yet'}`,
           ...s.shared_sync.map(
             (peer) =>
-              `  ${peer.peer}: last synced ${peer.last_synced_at ?? 'never'}, ${peer.pending} pending${peer.last_error ? `, last error: ${peer.last_error}` : ''}`
+              `  ${peer.peer}: ${peer.removed_at ? `said this copy's member was removed (first said ${peer.removed_at}), so what this copy sends is set aside; ` : ''}last synced ${peer.last_synced_at ?? 'never'}, ${peer.pending} pending${peer.last_error ? `, last error: ${peer.last_error}` : ''}`
           ),
         ]
       : []),

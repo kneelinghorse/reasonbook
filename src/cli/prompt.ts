@@ -17,6 +17,7 @@ import { captureToolCall } from '../tools/rbook/tool-call-context';
 import { deliverPromptRecall } from './recall-runtime';
 import { recallLaterPrompt, skipLaterPrompt } from './later-prompt-recall';
 import type { PreparedOffer } from './drafts-hook';
+import { harnessPrompt } from './prompt-origin';
 import { observeDrafts } from './telemetry';
 
 /** The recalled decisions within the cap, their conflict marks naming a field where that fits. */
@@ -91,27 +92,30 @@ export async function run(ctx: HookVerbContext): Promise<string | HookDelivery |
   const deadlineAtMs = ctx.deadlineAtMs ?? Date.now() + 800;
   const drafts = await import('./drafts-hook');
   let offer: PreparedOffer = drafts.NO_OFFER;
-  try {
-    // The prompt hook runs as a read; its draft step writes (a decline, a first-offer time) to the
-    // carve-out proposals table, so it is classified as the write it is (the plan critic, N8).
-    offer = (
-      await captureToolCall('write', async () =>
-        drafts.prepareOffer({
-          dbPath: store.dbPath,
-          rawSessionId,
-          message: ctx.input.prompt ?? '',
-          env: ctx.io.env,
-          deadlineAtMs,
-        })
-      )
-    ).value;
-  } catch (error) {
-    // Drafts that cannot be read must not take recall down with them; the hook's one stderr line
-    // says so (it is held and printed once, after the output).
-    process.stderr.write(
-      `drafts unavailable: ${error instanceof Error ? error.message : String(error)}\n`
-    );
-  }
+  // s97-m12: a prompt the harness sent itself binds no draft and takes no shown set; the operator's
+  // next message finds the drafts still shown (decision #1511).
+  if (!harnessPrompt(ctx.input.prompt ?? '', ctx.input.transcript_path))
+    try {
+      // The prompt hook runs as a read; its draft step writes (a decline, a first-offer time) to the
+      // carve-out proposals table, so it is classified as the write it is (the plan critic, N8).
+      offer = (
+        await captureToolCall('write', async () =>
+          drafts.prepareOffer({
+            dbPath: store.dbPath,
+            rawSessionId,
+            message: ctx.input.prompt ?? '',
+            env: ctx.io.env,
+            deadlineAtMs,
+          })
+        )
+      ).value;
+    } catch (error) {
+      // Drafts that cannot be read must not take recall down with them; the hook's one stderr line
+      // says so (it is held and printed once, after the output).
+      process.stderr.write(
+        `drafts unavailable: ${error instanceof Error ? error.message : String(error)}\n`
+      );
+    }
   observeDrafts(ctx.io, {
     draftsOffered: offer.offered,
     ...(offer.reply ? { draftReply: offer.reply } : {}),

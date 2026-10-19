@@ -67,12 +67,14 @@ describe('rbook_decisions review & batch_update', () => {
       );
     `);
 
-    // Insert sprints: sprint-1 through sprint-36
+    // Insert sprints: sprint-1 through sprint-36. s97-m13: 1-35 closed in label order, two weeks
+    // apart, as review ages count the closes after a decision's sprint closed.
     for (let i = 1; i <= 36; i++) {
-      db.prepare('INSERT INTO sprints (id, title, status) VALUES (?, ?, ?)').run(
+      db.prepare('INSERT INTO sprints (id, title, status, end_date) VALUES (?, ?, ?, ?)').run(
         `sprint-${i}`,
         `Sprint ${i}`,
-        i <= 34 ? 'Completed' : i === 35 ? 'Completed' : 'Active'
+        i <= 35 ? 'Completed' : 'Active',
+        i <= 35 ? new Date(Date.now() - ((36 - i) * 14 + 1) * 86400_000).toISOString() : null
       );
     }
 
@@ -82,7 +84,7 @@ describe('rbook_decisions review & batch_update', () => {
        VALUES (?, ?, ?, ?, ?, ?, ?)`
     );
 
-    // Old decision (sprint-5, age=31) — should be "archive"
+    // Old decision (sprint-5, 30 closes after it) — should be "archive"
     insertDecision.run(
       'Use REST API for all endpoints',
       '2025-01-01T00:00:00Z',
@@ -216,7 +218,7 @@ describe('rbook_decisions review & batch_update', () => {
       expect(oldDecision).toBeDefined();
       expect(oldDecision.suggestedAction).toBe('archive');
       expect(oldDecision.stalenessScore).toBe(1); // Capped at 1.0
-      expect(oldDecision.sprintAge).toBe(31);
+      expect(oldDecision.sprintAge).toBe(30);
     });
 
     it('suggests confirm for decisions with evidence', async () => {

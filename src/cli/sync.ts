@@ -32,10 +32,10 @@ import {
   syncPeers,
 } from '../tools/rbook/record-sync';
 import { withSyncLock } from '../tools/rbook/record-sync-trigger';
-import { serveSync } from '../tools/rbook/record-wire';
+import { bundleRefusal, serveSync } from '../tools/rbook/record-wire';
 import { confirmOwner } from '../tools/rbook/record-moves';
 import { confirmedText, exchangeText, handoverMethods } from './sync-moves';
-import { REPLICA_ERROR_CODES } from '../tools/rbook/replica-identity';
+import { REPLICA_ERROR_CODES, storeFolder } from '../tools/rbook/replica-identity';
 import type { RbookToolResult } from '../tools/rbook/types';
 
 const SYNC_USAGE = [
@@ -46,9 +46,11 @@ const SYNC_USAGE = [
   '  --ssh <host> --remote-root <folder> [--node <path>] [--bin <path>] [--config-dir <dir>]:',
   '      sync with the copy there, and remember that route for it, as when its machine moved.',
   "  --serve [--join]: answer a sync (or a join) on this process's stdin and stdout; SSH runs it.",
+  '  --auto: a sync a hook or the timer started, which waits out a dashboard that keeps failing.',
 ].join('\n');
 
 const JOIN_USAGE = [
+  'reasonbook join --dashboard <address> [--into <folder>]: join a project shared through the dashboard.',
   "reasonbook join, on the owner's machine: --ssh <host> --remote-root <folder> --member <name>",
   '  [--node <path>] [--bin <path>] [--config-dir <dir>]: join that copy over SSH, then sync.',
   'By bundle: --request-out <file> on the joining copy; --answer <file> --member <name> --out <file>',
@@ -121,6 +123,13 @@ export async function runSync(argv: readonly string[], io: CliIo): Promise<numbe
       confirmOwner(client)
     );
     return report(io, confirmed, confirmedText);
+  }
+  // s97-m10: a project the dashboard referees moves only through it, never by bundle (critics, round 1).
+  if (flags['bundle-out'] || flags['bundle-in']) {
+    const refused = await storeOpener(dbPath, { replicaCheck: false })((client) =>
+      bundleRefusal(client)
+    );
+    if (refused) return report(io, createError(refused), () => '');
   }
   if (flags['bundle-out']) {
     const written = await answered(
@@ -198,13 +207,17 @@ export async function runSync(argv: readonly string[], io: CliIo): Promise<numbe
     }
     return report(io, routed, (data) => `${route.host}:${route.root}: ${exchangeText(data)}`);
   }
-  if (Object.keys(flags).some((flag) => flag !== 'project-root')) {
+  if (Object.keys(flags).some((flag) => flag !== 'project-root' && flag !== 'auto')) {
     io.stderr(SYNC_USAGE);
     return 1;
   }
   // Two triggers at once, such as a session end and the timer, run one sync; the second says so.
   const synced = await withSyncLock(dbPath, () =>
-    syncPeers(open, { unchecked: storeOpener(dbPath, { replicaCheck: false }) })
+    syncPeers(open, {
+      unchecked: storeOpener(dbPath, { replicaCheck: false }),
+      projectRoot: storeFolder(dbPath),
+      auto: flags['auto'] === 'true',
+    })
   );
   if (!synced) {
     io.stdout('A sync of this copy is already running, so this one did nothing.\n');
@@ -214,7 +227,13 @@ export async function runSync(argv: readonly string[], io: CliIo): Promise<numbe
     data.peers
       .map(
         (peer) =>
-          `${peer.name ?? peer.replicaId}: ${peer.report ? exchangeText(peer.report) : peer.error}`
+          `${peer.name ?? peer.replicaId}: ${
+            peer.report
+              ? exchangeText(peer.report)
+              : peer.nextTryAt
+                ? `not tried, since its last syncs failed; next try after ${peer.nextTryAt}`
+                : peer.error
+          }`
       )
       .join('\n')
   );
@@ -233,6 +252,17 @@ function readJoinFile<T>(io: CliIo, file: string, what: string): T | null {
 }
 
 export async function runJoin(argv: readonly string[], io: CliIo): Promise<number> {
+  // s97-m11: a join through the dashboard runs on the joining machine, into a folder with no store.
+  const asked = parseArgs(argv);
+  if (asked.flags['dashboard'] !== undefined) {
+    const address =
+      asked.flags['dashboard'] !== 'true' ? asked.flags['dashboard'] : asked.positional[0];
+    if (!address) {
+      io.stderr(JOIN_USAGE);
+      return 1;
+    }
+    return (await import('./dashboard')).runJoinDashboard(address, asked.flags, io);
+  }
   const { flags } = parseArgs(argv);
   const dbPath = storeOf(flags, io, 'join');
   if (!dbPath) return 1;

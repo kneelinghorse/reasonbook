@@ -8,12 +8,15 @@ import type { RbookDatabaseClient } from './client';
 import { changesSince } from './record-apply';
 import { applyAndEmbed } from './record-apply-embed';
 import { chainsAt } from './record-chain';
+import { dashboardName, isDashboardRoute, type DashboardRoute } from './record-dashboard-route';
 import { hello, SYNC_PROTOCOL, type Peer } from './record-exchange';
-import { recordExchangeFailed } from './record-peers';
+import { recordExchangeFailed, routeTo } from './record-peers';
+import { mergeContext } from './record-standing';
 import { admitSuccessor } from './record-admit-successor';
 import { reblockSelf, takeSuccessor } from './record-successor';
 import type { LoggedChange } from './record-standing';
-import type { RbookToolResult } from './types';
+import { REPLICA_ERROR_CODES } from './replica-identity';
+import type { RbookToolError, RbookToolResult } from './types';
 
 /** The far end's first line: who it is and the protocol it speaks, before any request. */
 export const WIRE_BANNER = 'reasonbook-sync';
@@ -32,6 +35,48 @@ function send(output: Writable, message: unknown): void {
 type Opener = <T>(step: (client: RbookDatabaseClient) => T) => Promise<Awaited<T>>;
 
 /**
+ * s97-m10: the dashboard that referees this copy's project, or null: the route this copy keeps to its
+ * owner's copy is a dashboard's. A copy that is no copy of a shared record has none.
+ */
+export function refereeingDashboard(client: RbookDatabaseClient): DashboardRoute | null {
+  let authority: string;
+  try {
+    authority = mergeContext(client).authority;
+  } catch {
+    return null;
+  }
+  const route = routeTo(client, authority);
+  return isDashboardRoute(route) ? route : null;
+}
+
+/**
+ * s97-m10 (design §Versions): why this copy answers no sync over SSH, or null. A project the
+ * dashboard referees syncs through that dashboard, so a copy reaching this one over SSH, a 4.1.0
+ * copy included, is told how to sync instead.
+ */
+export function sshRefusal(client: RbookDatabaseClient): string | null {
+  const route = refereeingDashboard(client);
+  return route
+    ? `This project is shared through ${dashboardName(route)}, so this copy does not sync over SSH. Install Reasonbook 4.2.0 or later where you are syncing from, then sync through the dashboard there: reasonbook sync.`
+    : null;
+}
+
+/**
+ * s97-m10: why this copy writes or takes in no bundle, or null. A bundle carries changes past the
+ * dashboard's checks, so a project it referees moves only through it (critics, round 1).
+ */
+export function bundleRefusal(client: RbookDatabaseClient): RbookToolError | null {
+  const route = refereeingDashboard(client);
+  return route
+    ? {
+        code: REPLICA_ERROR_CODES.EXCHANGE_REFUSED,
+        message: `This project is shared through ${dashboardName(route)}, so its copies carry no bundles: a bundle would pass the dashboard's checks by.`,
+        suggestion: 'Sync through the dashboard instead: reasonbook sync.',
+      }
+    : null;
+}
+
+/**
  * The far end of a sync: answer each request against this copy, one line each, until the input
  * ends. `open` runs each step against a client opened for it, and `unchecked` against one its copy
  * check does not refuse, for the steps that put a refused copy right (s96-m13). `extra` adds methods,
@@ -47,6 +92,13 @@ export async function serveSync(
   // The near end going away ends this far end; a write it can no longer take must not crash it.
   output.on('error', () => undefined);
   send(output, { banner: WIRE_BANNER, protocol: SYNC_PROTOCOL });
+  // A store this far end cannot read answers no request anyway; it says why rather than hiding it.
+  const refused = await unchecked((client) => sshRefusal(client)).catch((error: unknown) => {
+    process.stderr.write(
+      `[SYNC] Could not tell whether a dashboard referees this project: ${error instanceof Error ? error.message : String(error)}\n`
+    );
+    return null;
+  });
   const methods: Readonly<Record<string, (params: unknown) => Promise<unknown>>> = {
     // Reads open without the check: a refused copy still says who it is and what it holds.
     hello: () => unchecked((client) => hello(client)),
@@ -82,6 +134,10 @@ export async function serveSync(
       request = JSON.parse(line) as Request;
     } catch {
       send(output, { id: null, error: { message: 'A request was not one line of JSON.' } });
+      continue;
+    }
+    if (refused) {
+      send(output, { id: request.id, error: { message: refused } });
       continue;
     }
     const method = methods[request.method];

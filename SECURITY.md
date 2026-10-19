@@ -33,7 +33,8 @@ a read; its destination is the user's bounded dashboard account.
 
 `rbook_message`, `rbook_sprint` and `rbook_project` advertise `openWorldHint: true`: messaging and
 sprint `carry_forward` can send to other people's projects, and project `join` and `sync` can write
-another machine's shared copy over SSH. Their hints apply to every action, including reads. Access
+another machine's shared copy over SSH, or the dashboard's copy of a project shared through it.
+Their hints apply to every action, including reads. Access
 to the user's own bounded dashboard account alone does not make a tool open-world.
 
 These hints are different from [action-taxonomy.ts](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/action-taxonomy.ts),
@@ -103,7 +104,8 @@ Reasonbook runtime and plugin installation make outbound requests in these situa
    - **Retired dashboard collaboration.** The old lock, pull and mutable-push paths refuse
      with `LEGACY_SYNC_RETIRED`; local updates on old collab-role stores report that warning.
      Shared records exchange directly over configured SSH routes or carried bundle files
-     using `reasonbook sync`. `RBOOK_CHECKPOINT_SYNC=off` does not disable those exchanges.
+     using `reasonbook sync`, or with the dashboard's copy of a project shared through it
+     (item 5). `RBOOK_CHECKPOINT_SYNC=off` does not disable those exchanges.
 
    Without a dashboard credential, ordinary local work sends nothing to the dashboard: the baked
    address alone does not make any tool upload project data.
@@ -156,6 +158,40 @@ Reasonbook runtime and plugin installation make outbound requests in these situa
    retract data already copied. Re-inviting permits exchange of those quarantined changes
    ([record-membership.ts](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/record-membership.ts)).
    See [Trust](docs/trust.md#shared-copies) for the measured support scope and content boundary.
+
+5. **Sharing through the dashboard, on unless `RBOOK_DASHBOARD_SHARING=off`.** This release ships
+   it switched on, after its live test through reasonbook.ai. The setting is read only from the
+   environment Reasonbook runs in; `off` (or `0`) refuses starting a share or a join on that machine,
+   and nothing the dashboard reports changes it
+   ([record-dashboard-share.ts](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/record-dashboard-share.ts)).
+   With it on:
+   - **Sharing** (`rbook_project(action="share", via="dashboard")`, `reasonbook share --dashboard`)
+     first lists what would go up, and sends nothing without `confirm=true` or `--yes`. It then
+     uploads a fresh copy, built with Reasonbook's own schema, that holds the shared record only:
+     the recorded tables' rows, the change log (every value ever recorded, replaced text
+     included) with the engine's tables beside it (conflicts, heads, roots and aliases), the
+     project identity and the metadata the engine needs. Session
+     events, agent feedback, telemetry, context snapshots and documents, proposals, prompt
+     mappings, the sync queue, the search index, routes to other copies and credentials stay on
+     the machine. The dashboard then holds the project's referee copy.
+   - **Joining** by the project's address downloads a first copy over HTTPS into a private
+     temporary folder and builds the member's store from it with this version's schema, checking
+     every change, so nothing the downloaded file holds runs on the member's machine
+     ([record-dashboard-join.ts](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/record-dashboard-join.ts)).
+   - **Syncing** exchanges changes with the dashboard's copy over HTTPS, in pages within the limit
+     the dashboard publishes, on the triggers of item 4; `RBOOK_SHARED_SYNC=off` stops the automatic
+     ones. A copy shared through the dashboard exchanges with it alone: no SSH or bundle in or out.
+   - **Moving back** (`rbook_project(action="move", to="owner")`, `reasonbook move --to owner`)
+     hands the record to the owner's copy, and the dashboard archives its copy once the owner's
+     copy holds the record and has synced again.
+
+   These calls sign with this machine's dashboard credentials for the project, resolved as other
+   dashboard calls are, and go only to the configured dashboard address, over HTTPS unless that
+   address is this machine, never with a password and following no redirect
+   ([record-dashboard-peer.ts](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/record-dashboard-peer.ts)).
+   The dashboard's copy runs Reasonbook's own engine (`@aquex/reasonbook/referee`), which binds
+   each copy to its account and refuses, whole, a delivery that breaks the record's rules or
+   claims another member's changes.
 
 ## Authentication model
 
@@ -475,4 +511,4 @@ subagent type (e.g. the `Explore` agent) — that is a mitigation, not the machi
 
 ---
 
-_Last verified against the source for release 4.1.0._
+_Last verified against the source for release 4.2.0._

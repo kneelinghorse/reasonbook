@@ -17,11 +17,18 @@ import {
 import { confirmOwner, type Confirmed } from './record-moves';
 import { isRecordedStore } from './record-recording';
 import { shareProject, type ShareResult } from './record-share-action';
-import type { ExchangeReport } from './record-exchange';
+import { removalNote, type ExchangeReport } from './record-exchange';
 import { answered, joinRoute, storeOpener, syncPeers, type PeerOutcome } from './record-sync';
 import { observeSharedSync } from './record-sync-scheduler';
 import { withSyncLock } from './record-sync-trigger';
 import type { JoinApplied } from './record-join';
+import { joinThroughDashboard, type DashboardJoined } from './record-dashboard-join';
+import { moveBackFromDashboard, type MovedBack } from './record-dashboard-move';
+import {
+  shareThroughDashboard,
+  type DashboardShared,
+  type DashboardSharePlan,
+} from './record-dashboard-share';
 import { REPLICA_ERROR_CODES } from './replica-identity';
 import type { RbookDatabaseClient } from './client';
 import type { RbookToolResult } from './types';
@@ -33,12 +40,13 @@ export const SHARED_PROJECT_ACTIONS = [
   'members',
   'remove',
   'sync',
+  'move',
 ] as const;
 export type SharedProjectAction = (typeof SHARED_PROJECT_ACTIONS)[number];
 
 /** Which published parameter each action takes (s86-m04's action-params contract). */
 export const SHARED_PROJECT_ACTION_PARAMS = {
-  share: ['action', 'projectRoot', 'authorName'],
+  share: ['action', 'projectRoot', 'authorName', 'via', 'confirm'],
   invite: ['action', 'projectRoot', 'name', 'role'],
   join: [
     'action',
@@ -49,10 +57,13 @@ export const SHARED_PROJECT_ACTION_PARAMS = {
     'remoteNode',
     'remoteBin',
     'remoteConfigDir',
+    'via',
+    'project',
   ],
   members: ['action', 'projectRoot'],
   remove: ['action', 'projectRoot', 'name'],
   sync: ['action', 'projectRoot', 'confirmOwner'],
+  move: ['action', 'projectRoot', 'to'],
 } as const;
 
 const DESCRIPTIONS = {
@@ -65,6 +76,12 @@ const DESCRIPTIONS = {
   remoteBin: 'join: the Reasonbook entry on that host, when its PATH lacks reasonbook',
   remoteConfigDir: "join: the Reasonbook config folder on that host, when it is not the user's",
   confirmOwner: "sync: confirm the move of the owner's copy this copy holds, as your word",
+  via: 'share, join: dashboard, to share or join through the dashboard, which referees the project; leave it out for SSH and bundles',
+  confirm:
+    'share via the dashboard: true sends the project after the dry run; without it, only the dry run',
+  project:
+    "join via the dashboard: the project's rbook:// address, which its owner shared with you",
+  to: "move: owner, to move a project shared through the dashboard back to the owner's copy, run on that copy",
 } as const;
 
 export const sharedProjectZodFields = {
@@ -77,6 +94,10 @@ export const sharedProjectZodFields = {
   remoteBin: z.string().optional().describe(DESCRIPTIONS.remoteBin),
   remoteConfigDir: z.string().optional().describe(DESCRIPTIONS.remoteConfigDir),
   confirmOwner: z.boolean().optional().describe(DESCRIPTIONS.confirmOwner),
+  via: z.enum(['dashboard']).optional().describe(DESCRIPTIONS.via),
+  confirm: z.boolean().optional().describe(DESCRIPTIONS.confirm),
+  project: z.string().optional().describe(DESCRIPTIONS.project),
+  to: z.enum(['owner']).optional().describe(DESCRIPTIONS.to),
 };
 
 export const sharedProjectProperties = {
@@ -89,6 +110,10 @@ export const sharedProjectProperties = {
   remoteBin: { type: 'string', description: DESCRIPTIONS.remoteBin },
   remoteConfigDir: { type: 'string', description: DESCRIPTIONS.remoteConfigDir },
   confirmOwner: { type: 'boolean', description: DESCRIPTIONS.confirmOwner },
+  via: { type: 'string', enum: ['dashboard'], description: DESCRIPTIONS.via },
+  confirm: { type: 'boolean', description: DESCRIPTIONS.confirm },
+  project: { type: 'string', description: DESCRIPTIONS.project },
+  to: { type: 'string', enum: ['owner'], description: DESCRIPTIONS.to },
 } as const;
 
 export type SharedProjectResult =
@@ -99,7 +124,11 @@ export type SharedProjectResult =
   | (MemberView & { readonly cuts: Readonly<Record<string, number>> })
   | { readonly peers: readonly PeerOutcome[] }
   | Confirmed
-  | { readonly busy: true };
+  | { readonly busy: true }
+  | { readonly plan: DashboardSharePlan }
+  | DashboardShared
+  | DashboardJoined
+  | MovedBack;
 
 /** A refusal, its remedy named where it is authored. */
 function refuse<T>(refusal: {
@@ -160,9 +189,22 @@ const missing = (store: SharedStore | RbookToolResult<never>): store is RbookToo
 export async function rbookProjectShare(params: {
   readonly projectRoot?: string;
   readonly authorName?: string;
+  readonly via?: 'dashboard';
+  readonly confirm?: boolean;
 }): Promise<RbookToolResult<SharedProjectResult>> {
   const store = sharedStore('share', params.projectRoot);
   if (missing(store)) return store;
+  // s97-m11: through the dashboard, the dry run first; the project goes up only with confirm.
+  if (params.via === 'dashboard') {
+    const shared = await answered(
+      shareThroughDashboard(store.open, store.unchecked, store.dbPath, {
+        confirm: params.confirm === true,
+        authorName: params.authorName,
+      })
+    );
+    if (shared.success && params.confirm) observeSharedSync(store.projectRoot, { recheck: true });
+    return shared;
+  }
   return store.unchecked((client) =>
     shareProject(client, store.projectRoot, { authorName: params.authorName })
   );
@@ -219,7 +261,24 @@ export async function rbookProjectJoin(params: {
   readonly remoteNode?: string;
   readonly remoteBin?: string;
   readonly remoteConfigDir?: string;
+  readonly via?: 'dashboard';
+  readonly project?: string;
 }): Promise<RbookToolResult<SharedProjectResult>> {
+  // s97-m11: through the dashboard, on the joining machine, into a folder that holds no store yet.
+  if (params.via === 'dashboard') {
+    if (!params.projectRoot || !params.project)
+      return createError({
+        code: 'INVALID_PARAMETER',
+        message:
+          "A join through the dashboard names the folder to join into and the project's address.",
+        suggestion: 'Pass projectRoot (an empty folder) and project (its rbook:// address).',
+      });
+    const joined = await answered(
+      joinThroughDashboard({ folder: params.projectRoot, address: params.project })
+    );
+    if (joined.success) observeSharedSync(params.projectRoot, { recheck: true });
+    return joined;
+  }
   const store = sharedStore('join', params.projectRoot);
   if (missing(store)) return store;
   if (!params.host || !params.remoteRoot || !params.member)
@@ -246,6 +305,23 @@ export async function rbookProjectJoin(params: {
   return joined;
 }
 
+/** move: a project shared through the dashboard, back to the owner's copy this runs on (s97-m11). */
+export async function rbookProjectMove(params: {
+  readonly projectRoot?: string;
+  readonly to?: 'owner';
+}): Promise<RbookToolResult<SharedProjectResult>> {
+  const store = sharedStore('move', params.projectRoot);
+  if (missing(store)) return store;
+  if (params.to !== 'owner')
+    return createError({
+      code: 'INVALID_PARAMETER',
+      message: "A move names where the project goes: to the owner's copy, the one it runs on.",
+      suggestion: 'Pass to="owner" on the owner\'s copy.',
+    });
+  if (!(await store.unchecked((client) => isRecordedStore(client)))) return unshared();
+  return answered(moveBackFromDashboard(store.open, store.unchecked, store.dbPath));
+}
+
 /** sync: exchange with every copy this one has a route to, or confirm a move of the owner's copy. */
 export async function rbookProjectSync(params: {
   readonly projectRoot?: string;
@@ -256,7 +332,7 @@ export async function rbookProjectSync(params: {
   if (params.confirmOwner) return store.unchecked(sharedOnly((client) => confirmOwner(client)));
   if (!(await store.unchecked((client) => isRecordedStore(client)))) return unshared();
   const synced = await withSyncLock(store.dbPath, () =>
-    syncPeers(store.open, { unchecked: store.unchecked })
+    syncPeers(store.open, { unchecked: store.unchecked, projectRoot: store.projectRoot })
   );
   return synced ?? createSuccess({ busy: true as const });
 }
@@ -264,7 +340,9 @@ export async function rbookProjectSync(params: {
 const exchangeLine = (report: ExchangeReport): string =>
   [
     report.caughtUp
-      ? `took in a move of the owner's copy to ${report.caughtUp.authority}, to confirm with rbook_project(action="sync", confirmOwner=true) on the copy behind`
+      ? report.caughtUp.confirmed
+        ? `took in a move of the owner's copy to ${report.caughtUp.authority}, which the copy behind confirmed itself`
+        : `took in a move of the owner's copy to ${report.caughtUp.authority}, to confirm with rbook_project(action="sync", confirmOwner=true) on the copy behind`
       : '',
     report.reidentified
       ? `took a new identity: ${report.reidentified.summary.replace(/\.$/, '')}`
@@ -272,7 +350,8 @@ const exchangeLine = (report: ExchangeReport): string =>
     ...(report.reblocked ?? []).map((moved) => `${moved.replicaId} moved to block ${moved.block}`),
     report.caughtUp
       ? `the copy behind took in ${report.received}`
-      : `the owner's copy took in ${report.sent}, and the member's took in ${report.received}`,
+      : (removalNote(report) ??
+        `the owner's copy took in ${report.sent}, and the member's took in ${report.received}`),
     report.conflicts ? `${report.conflicts} field(s) in conflict` : '',
   ]
     .filter(Boolean)
@@ -295,9 +374,37 @@ export function formatSharedProjectForLLM(
   const lines: string[] = [];
   switch (action) {
     case 'share': {
+      const rows = (counts: Readonly<Record<string, number>>) =>
+        Object.entries(counts)
+          .map(([table, n]) => `${table} ${n}`)
+          .join(', ') || 'nothing';
+      if ('refereeReplica' in data) {
+        const shared = data as unknown as DashboardShared;
+        lines.push(
+          `✓ Shared through ${shared.dashboard}: its copy holds the record from move ${shared.handover.epoch}, and this copy is the owner's member copy, syncing through it. Share it with people on the dashboard.`,
+          `It sent the shared record: ${rows(shared.plan.up)}.`
+        );
+        break;
+      }
+      if ('plan' in data) {
+        const { plan } = data as unknown as { plan: DashboardSharePlan };
+        lines.push(
+          `Dry run: sharing through ${plan.dashboard} sends the shared record: ${rows(plan.up)}${'record_changes' in plan.up ? '' : ', with the change log sharing starts for it'}.`,
+          `It stays on this machine: ${rows(plan.stays)}, and the search index and context documents.`,
+          'Nothing was sent. Show this to the person; send it with rbook_project(action="share", via="dashboard", confirm=true) only on their word.'
+        );
+        break;
+      }
       const shared = data as unknown as ShareResult;
       lines.push(
         `✓ Shared: ${shared.owner} owns the record, in block ${shared.block}. Invite a member with rbook_project(action="invite", name=...).`
+      );
+      break;
+    }
+    case 'move': {
+      const moved = data as unknown as MovedBack;
+      lines.push(
+        `✓ Moved back from ${moved.dashboard}: this copy holds the record again (move ${moved.epoch}), and the dashboard archived its copy. Members sync with this copy directly from now on, over SSH or bundles.`
       );
       break;
     }
@@ -316,6 +423,13 @@ export function formatSharedProjectForLLM(
       break;
     }
     case 'join': {
+      if ('dashboard' in data) {
+        const joined = data as unknown as DashboardJoined;
+        lines.push(
+          `✓ Joined through ${joined.dashboard} as ${joined.joined.member}, in block ${joined.joined.block}${joined.sync ? `, and synced: ${exchangeLine(joined.sync)}` : '; sync once more to finish'}.`
+        );
+        break;
+      }
       const joined = data as unknown as { joined: JoinApplied; sync: ExchangeReport };
       lines.push(
         `✓ Joined ${joined.joined.member}'s copy in block ${joined.joined.block}, and synced: ${exchangeLine(joined.sync)}.`

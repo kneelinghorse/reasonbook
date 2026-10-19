@@ -26,7 +26,8 @@ function makeTempDb(): { tempDir: string; dbPath: string } {
     CREATE TABLE sprints (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
-      status TEXT
+      status TEXT,
+      end_date TEXT
     );
 
     CREATE TABLE learnings (
@@ -105,11 +106,15 @@ describe('staleness respects last_reviewed_at', () => {
       // (threshold + 5) sprints, last is active. Learning in sprint-2 is past the review age.
       const totalSprints = DEFAULT_STALENESS_THRESHOLD + 5;
       const db = new Database(dbPath);
+      // s97-m13: closed in label order, two weeks apart; review ages count the closes.
       for (let i = 1; i <= totalSprints; i++) {
-        db.prepare(`INSERT INTO sprints (id, title, status) VALUES (?, ?, ?)`).run(
+        db.prepare(`INSERT INTO sprints (id, title, status, end_date) VALUES (?, ?, ?, ?)`).run(
           `sprint-${i}`,
           `Sprint ${i}`,
-          i === totalSprints ? 'Active' : 'Completed'
+          i === totalSprints ? 'Active' : 'Completed',
+          i === totalSprints
+            ? null
+            : new Date(Date.now() - ((totalSprints - i) * 14 + 1) * 86400_000).toISOString()
         );
       }
       const oldCreated = new Date(Date.now() - 365 * 86400_000).toISOString();
@@ -154,11 +159,15 @@ describe('staleness respects last_reviewed_at', () => {
     try {
       const totalSprints = DEFAULT_STALENESS_THRESHOLD + 5;
       const db = new Database(dbPath);
+      // s97-m13: closed in label order, two weeks apart; review ages count the closes.
       for (let i = 1; i <= totalSprints; i++) {
-        db.prepare(`INSERT INTO sprints (id, title, status) VALUES (?, ?, ?)`).run(
+        db.prepare(`INSERT INTO sprints (id, title, status, end_date) VALUES (?, ?, ?, ?)`).run(
           `sprint-${i}`,
           `Sprint ${i}`,
-          i === totalSprints ? 'Active' : 'Completed'
+          i === totalSprints ? 'Active' : 'Completed',
+          i === totalSprints
+            ? null
+            : new Date(Date.now() - ((totalSprints - i) * 14 + 1) * 86400_000).toISOString()
         );
       }
       const oldCreated = new Date(Date.now() - 365 * 86400_000).toISOString();

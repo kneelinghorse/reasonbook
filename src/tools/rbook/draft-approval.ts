@@ -8,10 +8,10 @@ import type { RbookDatabaseClient } from './client';
 import { withClientAsync } from './client';
 import { rbookSessionCapture } from './rbook-session-capture';
 import {
+  ANSWER_COVERAGE,
   CONTENT_FLOOR,
-  keywordOverlap,
+  draftCoverage,
   recordStatesDraft,
-  REVISION_OVERLAP,
   type DraftKind,
   type ReplyClass,
 } from './draft-grammar';
@@ -23,7 +23,9 @@ import {
   draftLabel,
   getDraft,
   isExpired,
+  latestRevision,
   parseDraftId,
+  settleRevised,
   pendingDrafts,
   proposalsTableExists,
   type ApprovalMode,
@@ -48,6 +50,8 @@ export interface DraftEvaluation {
   readonly mode: ApprovalMode;
   /** The operator's message, for approved and agent-judged. */
   readonly words: string | null;
+  /** s97-m12: the share of the draft's own subject the content holds (draftCoverage). */
+  readonly coverage: number;
 }
 
 export interface ApprovalEcho {
@@ -144,7 +148,24 @@ export function evaluateDraft(
           suggestion: 'Propose the choice again with a Would record line if it still matters.',
         },
       };
-    if (keywordOverlap(draft.text, content) < CONTENT_FLOOR)
+    // s97-m12: a revision shown after the operator plainly approved this draft leaves that approval
+    // with this draft's own words only (learning #481).
+    if (draft.replacedBy !== null && !recordStatesDraft(draft.text, content)) {
+      // Its revision may itself have been revised: name the newest (critic round 2).
+      const latest = draftLabel(latestRevision(run, draft.replacedBy));
+      return {
+        ok: false,
+        error: {
+          code: RBOOK_ERROR_CODES.INVALID_PARAMETER,
+          message: `Draft ${label} was revised by ${draftLabel(draft.replacedBy)} after the operator approved it, so their approval records only ${label}'s own words.`,
+          field: 'content',
+          suggestion: `Record ${label} exactly as the operator approved it, or record ${latest} once the operator answers it.`,
+        },
+      };
+    }
+    // s97-m12: measured on the draft's own subject, so a short content does not stand for all of it.
+    const coverage = draftCoverage(draft.text, content);
+    if (coverage < CONTENT_FLOOR)
       return {
         ok: false,
         error: {
@@ -192,7 +213,10 @@ export function evaluateDraft(
       : single && (draft.kind !== 'decision' || recordStatesDraft(draft.text, content))
         ? 'approved'
         : 'agent-judged';
-    return { ok: true, value: { draft, label, mode, words: excerpt ? excerpt.message : null } };
+    return {
+      ok: true,
+      value: { draft, label, mode, words: excerpt ? excerpt.message : null, coverage },
+    };
   } finally {
     runtime?.close();
   }
@@ -239,8 +263,10 @@ export function directRecordAnswers(
         window.includes(row.id) &&
         !isExpired(row, startsSince(runtime, storedTimeMs(row.createdAt)), now)
     );
+    // s97-m12: only a record holding what the draft itself proposed answers it; one that says
+    // part of a longer draft leaves it pending, and named.
     const answered = drafts
-      .filter((row) => keywordOverlap(row.text, content) >= REVISION_OVERLAP)
+      .filter((row) => draftCoverage(row.text, content) >= ANSWER_COVERAGE)
       .map((row) => row.id);
     return {
       answered,
@@ -382,9 +408,13 @@ export async function recordDraftOfKind(
       suggestion: 'Fix the content and record again once the operator has approved it.',
     });
   }
-  const named = await withRun(params.projectRoot, (client) =>
-    clientRunner(client).run('UPDATE proposals SET record_id = ? WHERE id = ?', [typedId, id])
-  );
+  const named = await withRun(params.projectRoot, (client) => {
+    const run = clientRunner(client);
+    const done = run.run('UPDATE proposals SET record_id = ? WHERE id = ?', [typedId, id]);
+    // s97-m12 (critic round 3): written, it settles the approved drafts its chain revised.
+    settleRevised(run, [id], at);
+    return done;
+  });
   const warnings = [
     ...ignored,
     ...(named.success

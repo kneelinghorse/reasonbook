@@ -28,6 +28,10 @@ export const USAGE =
   "                                 exchange with the shared record's other copies\n" +
   '  join --ssh <host> --remote-root <folder> --member <name>\n' +
   "                                 join a copy to the shared record, from the owner's copy\n" +
+  '  join --dashboard <address> [--into <folder>]\n' +
+  '                                 join a project shared with you through the dashboard\n' +
+  '  share --dashboard [--yes]       share this project through the dashboard, after a dry run\n' +
+  '  move --to owner                move a project shared through the dashboard back here\n' +
   '  copy --to <folder>             a safe copy of this store, made while the server runs\n' +
   '  handover --ssh <host> --remote-root <folder>\n' +
   "                                 hand the owner's copy over to the owner's other copy\n" +

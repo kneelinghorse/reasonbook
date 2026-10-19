@@ -4,6 +4,7 @@
 
 import type { RbookDatabaseClient } from './client';
 import { authorityChain, termOf, type AuthorityTerm } from './record-authority';
+import { BASELINE_QUERY } from './record-baseline';
 import type { LoggedChange, Member, MergeContext } from './record-standing';
 import { readReplicaIdentity } from './replica-identity';
 
@@ -43,10 +44,7 @@ function gapFreePrefix(client: RbookDatabaseClient, replica: string): number {
 export function mergeContext(client: RbookDatabaseClient): MergeContext {
   const identity = readReplicaIdentity(client, { fresh: true });
   if (!identity) throw new Error('Only a copy of a shared record merges changes.');
-  const [baseline] = rows<LoggedChange>(
-    client,
-    "SELECT * FROM record_changes WHERE kind = 'baseline' ORDER BY replica_seq LIMIT 1"
-  );
+  const [baseline] = rows<LoggedChange>(client, BASELINE_QUERY);
   if (!baseline) throw new Error('This copy has no baseline, so it cannot merge.');
   const first = String((json(baseline.value) as { authority: string }).authority);
   const prefixes = new Map<string, number>();
@@ -129,6 +127,10 @@ export function mergeContext(client: RbookDatabaseClient): MergeContext {
     const latest = member.member ? people.get(member.member) : undefined;
     if (latest?.role === 'removed')
       cut(replicaId, latest.cuts[replicaId] ?? 0, 'its member was removed', 'removed');
+    // s97-m11: a role set on the person later (setRole) is the role each of its copies writes with,
+    // as the member list shows it (critics, round 1).
+    else if ((latest?.role === 'owner' || latest?.role === 'editor') && latest.role !== member.role)
+      members.set(replicaId, { ...member, role: latest.role });
   }
   for (const [replicaId, at] of Object.entries(chain.dropped))
     cut(replicaId, at, "the owner's recovery dropped this copy");

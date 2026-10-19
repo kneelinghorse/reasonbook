@@ -261,3 +261,6 @@ export function migrateDecisionShapeColumns(
     return { ...none, warnings };
   }
 }
+
+/** s97-m09: the marker a fresh copy clears with its search index, so the first write makes both again. */
+export { MARKER as DECISION_SHAPE_MARKER };

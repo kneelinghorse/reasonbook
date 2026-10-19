@@ -387,9 +387,12 @@ describe('ACTION_PARAMS vacuity floor (s86-m04)', () => {
       // projectRoot) and settle (action, table, recordId, field, value, projectRoot).
       // s96-m13: 86 -> 92 actions and 425 -> 448 entries for rbook_project share (3), invite (4),
       // join (8), members (2), remove (3) and sync (3).
-      expect(actionCount).toBe(92);
+      // s97-m11: 92 -> 93 actions and 448 -> 455 entries: share gains via and confirm, join via and
+      // project, and rbook_project adds move (action, projectRoot, to).
+      expect(actionCount).toBe(93);
       // s94-m04: record adds context, alternatives, consequences, deciders and mode.
-      expect(entryCount).toBe(448);
+      // s97-m13: start adds targetStatus (Current promotes without starting).
+      expect(entryCount).toBe(456);
 
       // Floors, so a walker that silently stops producing branches fails here rather than passing
       // every applicability case with nothing to check.

@@ -111,11 +111,36 @@ describe('plugin installer publication', () => {
 
   test('concurrent dead-owner recovery cannot remove the new live owner', async () => {
     await worker(`acquireLock(ctx); process.kill(process.pid,'SIGKILL');`).done;
-    const acquired = path.join(root, 'acquired');
-    const body = `const lock=acquireLock(ctx); if(lock){fs.appendFileSync(${JSON.stringify(acquired)},'owner'+String.fromCharCode(10)); await new Promise(r=>setTimeout(r,200)); releaseLock(lock);} console.log(!!lock);`;
-    const results = await Promise.all([worker(body).done, worker(body).done, worker(body).done]);
+    // All three reclaim the dead owner's lock at once, past a start barrier. A worker that starts
+    // after the first hold ended may take the free lock itself, as CI's slow starts showed (4.2.0-rc.1),
+    // so the rule is the lock's own: no hold is displaced, and no two holds overlap.
+    const held = path.join(root, 'held');
+    const go = path.join(root, 'go');
+    const body = (n: number) =>
+      `fs.writeFileSync(${JSON.stringify(path.join(root, 'ready-'))}+${n},'');` +
+      `while(!fs.existsSync(${JSON.stringify(go)})) await new Promise(r=>setTimeout(r,5));` +
+      `const lock=acquireLock(ctx);` +
+      `if(lock){const start=Date.now(); await new Promise(r=>setTimeout(r,200));` +
+      `const kept=JSON.parse(fs.readFileSync(ctx.installRoot+'.lock','utf8')).token===lock.token;` +
+      `fs.appendFileSync(${JSON.stringify(held)},start+' '+Date.now()+' '+kept+String.fromCharCode(10));` +
+      `releaseLock(lock);} console.log(!!lock);`;
+    const runs = [worker(body(1)), worker(body(2)), worker(body(3))];
+    for (const n of [1, 2, 3]) await waitFor(path.join(root, `ready-${n}`));
+    fs.writeFileSync(go, '');
+    const results = await Promise.all(runs.map((run) => run.done));
     expect(results.every((result) => result.code === 0)).toBe(true);
-    expect(fs.readFileSync(acquired, 'utf8').trim().split('\n')).toHaveLength(1);
+    const holds = fs
+      .readFileSync(held, 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => line.split(' '))
+      .map(([start, end, kept]) => ({ start: Number(start), end: Number(end), kept }))
+      .sort((a, b) => a.start - b.start);
+    // The dead owner's lock was recovered, every owner kept it to the end, and none overlapped.
+    expect(holds.length).toBeGreaterThanOrEqual(1);
+    expect(holds.every((hold) => hold.kept === 'true')).toBe(true);
+    for (let i = 1; i < holds.length; i += 1)
+      expect(holds[i].start).toBeGreaterThanOrEqual(holds[i - 1].end);
   });
 
   test('a crashed recovery owner is itself reclaimable without an abandoned recovery mutex', async () => {

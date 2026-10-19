@@ -10,7 +10,7 @@ The Codex plugin below installs its own pinned runtime. For the other adapters,
 install the CLI before enabling hooks:
 
 ```sh
-npm install -g @aquex/reasonbook@4.0.2
+npm install -g @aquex/reasonbook@4.2.0
 reasonbook --version
 npm root -g
 ```
@@ -121,7 +121,7 @@ Reasonbook reports `resolvedBy=client-cwd`. Approval linkage additionally requir
 evidence for that conversation in the same physical project store. A call naming
 a different project or lacking that evidence keeps process ownership; a decision
 may be agent-attested, while constraint, rule and profile drafts still require
-hook-bound approval. The [boundary fixtures](../tests/integration/codex-request-dispatch.test.ts)
+hook-bound approval. The [boundary fixtures](https://github.com/kneelinghorse/reasonbook/blob/main/tests/integration/codex-request-dispatch.test.ts)
 cover missing metadata, first drafts, other projects and SessionEnd cleanup.
 
 ## Cursor IDE and CLI

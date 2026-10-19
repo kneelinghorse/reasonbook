@@ -205,6 +205,44 @@ export function scanFile(
 const TAIL_BYTES = 256 * 1024;
 
 /**
+ * s97-m12: whether the transcript's recent part holds a ScheduleWakeup or CronCreate call whose
+ * prompt is `text`: a prompt the harness then sends at the time it was given. Claude Code runs the
+ * prompt hook before it writes the prompt itself (2.1.301), but the call that scheduled it is
+ * written when it is made. The tail read is SCAN_MAX_BYTES; the text is searched for first, and only
+ * lines holding it are parsed. False when it is not found or the file cannot be read.
+ */
+export function scheduledPrompt(file: string, text: string): boolean {
+  try {
+    const size = fs.statSync(file).size;
+    const tail = readRange(file, Math.max(0, size - SCAN_MAX_BYTES), size).toString('utf8');
+    const quoted = JSON.stringify(text).slice(1, -1);
+    if (!text || !tail.includes(quoted)) return false;
+    for (const line of tail.split('\n')) {
+      if (!line.includes(quoted) || !line.trim().startsWith('{')) continue;
+      let entry: unknown;
+      try {
+        entry = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      const content = (entry as { message?: { content?: unknown } }).message?.content;
+      if (!Array.isArray(content)) continue;
+      for (const block of content as Array<{ type?: unknown; name?: unknown; input?: unknown }>)
+        if (
+          block?.type === 'tool_use' &&
+          (block.name === 'ScheduleWakeup' || block.name === 'CronCreate') &&
+          typeof (block.input as { prompt?: unknown } | undefined)?.prompt === 'string' &&
+          (block.input as { prompt: string }).prompt.trim() === text
+        )
+          return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * The text of the transcript's last assistant entry that has any, for a Stop whose input carries
  * no `last_assistant_message` (observed in Claude Code 2.1.292 but not documented). Null when the
  * tail holds none or cannot be read.

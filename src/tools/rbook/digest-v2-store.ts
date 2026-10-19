@@ -21,6 +21,7 @@ import { readLeaseAges, leaseState } from './next-step-lease';
 import { readProfile } from './operator-profile';
 import { readProjectIdentity } from './project-identity';
 import { readProjectLevel } from './project-level';
+import { firstReady, orderByRequires } from './work-queue-order';
 import { storedTimeMs } from './stored-time';
 import { captureToolCall } from './tool-call-context';
 import { feedbackDigestLine } from './feedback-fleet';
@@ -257,9 +258,31 @@ function snapshot(
         projectId: row.projectId,
       }));
   } else if (level === 'builder') {
-    const next = missions.find((mission) => mission.sprintId === sprint?.id);
+    // s97-m13 (#662): work under way first; else the first queued mission whose Requires targets
+    // are complete; else the first queued one, saying what it waits on; else a blocked one.
+    const inSprint = missions.filter((mission) => mission.sprintId === sprint?.id);
+    const ordered = orderByRequires(
+      client,
+      inSprint.filter((mission) => mission.status === 'Queued')
+    );
+    if (ordered.warning) throw new Error('Digest work-queue edges could not be read.');
+    const next:
+      | { id: string; name: string; status: string; projectId: string | null; waitsOn?: string[] }
+      | undefined =
+      inSprint.find(
+        (mission) => mission.status === 'In Progress' || mission.status === 'Current'
+      ) ??
+      firstReady(ordered.missions) ??
+      ordered.missions[0] ??
+      inSprint.find((mission) => mission.status === 'Blocked');
     if (next)
-      work = [{ id: next.id, text: `[${next.status}] ${next.name}`, projectId: next.projectId }];
+      work = [
+        {
+          id: next.id,
+          text: `[${next.status}${next.waitsOn ? `, waits on ${next.waitsOn.join(', ')}` : ''}] ${next.name}`,
+          projectId: next.projectId,
+        },
+      ];
   }
   const localTasks = missions.filter((row) => !isForeignProject(row.projectId, local)).length;
   const shared = sharedRecordReview(client);
@@ -301,9 +324,11 @@ function pendingUnexpired(
   if (!pending.length) return [];
   const runtime = openDraftRuntime(client.path, env, { readonly: true });
   try {
+    // s97-m12: a draft approved and then revised was answered; it waits only to be recorded.
     return pending
       .filter(
         (row) =>
+          row.replacedBy === null &&
           !isExpired(row, runtime ? startsSince(runtime, storedTimeMs(row.createdAt)) : 0, now)
       )
       .map((row) => ({ id: row.id, kind: row.kind, text: row.text }));

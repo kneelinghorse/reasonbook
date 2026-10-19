@@ -2,6 +2,7 @@
 // ABOUTME: What every answer from a copy of a shared record must say (s96-m12, ADR s96 §3, §5): each field in conflict
 // ABOUTME: with its candidates, the states the cross-record checks find, and an id two copies created.
 
+import fs from 'fs';
 import { RbookDatabaseClient } from './client';
 import { crossRecordFindings } from './record-checks';
 import { openConflicts } from './record-settle';
@@ -93,6 +94,9 @@ export function sharedRecordNotices(
 
 /** The notices for the copy at `dbPath`; a copy that cannot be read says so rather than staying quiet. */
 export async function sharedRecordNoticesAt(dbPath: string, args: unknown): Promise<string[]> {
+  // A copy the call no longer has names nothing: the file a fresh copy was built in, renamed into
+  // place, or a join's store taken away again (s97-m14 live test).
+  if (!fs.existsSync(dbPath)) return [];
   const opened = await RbookDatabaseClient.create({ dbPath, readonly: true, replicaCheck: false });
   if (!opened.success || !opened.data)
     return [

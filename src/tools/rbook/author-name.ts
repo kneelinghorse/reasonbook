@@ -146,6 +146,15 @@ function copyAuthor(client: RbookDatabaseClient): string | null {
   return row.success && row.data?.value ? validAuthorName(row.data.value) : null;
 }
 
+/**
+ * s97-m09: name the author every write through this client stamps, so it is never resolved from
+ * this process's user config or sign-ins: the referee library's clients run on a host whose
+ * account is no member's (design §R1).
+ */
+export function pinWriteAuthor(client: RbookDatabaseClient, author: WriteAuthor): void {
+  perClient.set(client, author);
+}
+
 /** The author every write through this client stamps, resolved once per client. */
 export function authorForWrite(client: RbookDatabaseClient): WriteAuthor {
   const known = perClient.get(client);

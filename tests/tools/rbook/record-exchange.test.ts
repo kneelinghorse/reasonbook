@@ -26,6 +26,7 @@ import {
 } from '../../helpers/replica-fixture';
 import { memberCopy, onCopy, ownerCopy, read, type Copy } from '../../helpers/shared-copies';
 import { sharedRecordReview } from '../../../src/tools/rbook/record-review';
+import { removalNote } from '../../../src/tools/rbook/record-exchange';
 import { shareRecord } from '../../../src/tools/rbook/record-share';
 import { prepareForSharing } from '../../../src/tools/rbook/sharing-preconditions';
 import { writeUserAuthor } from '../../../src/intelligence/user-author';
@@ -105,7 +106,13 @@ describe('an exchange between a member and the owner', () => {
     // Not admitted yet: the owner refuses what it writes now, and sends a copy that is no member nothing.
     const member = await memberCopy(fixture.tmp, owner, 'member', 1, { admit: false });
     await ok(member, 'rbook_mission', { action: 'add', missionId: 'x-m01', name: 'Refused' });
-    expect(await sync(member, owner)).toMatchObject({ removed: true, received: 0 });
+    const unadmitted = await sync(member, owner);
+    expect(unadmitted).toMatchObject({ removed: true, received: 0 });
+    // s97-m14: a copy that is no member was never removed; it is told its changes are refused.
+    expect(unadmitted.removedCopy).toBeUndefined();
+    expect(removalNote(unadmitted)).toMatch(
+      /as no member of the project, so what it sent is refused/
+    );
     expect(read(member, "SELECT id FROM missions WHERE id = 'x-m01'")).toEqual([{ id: 'x-m01' }]);
     // Admitted now: its note on the refused mission is refused by the cascade, and both come back.
     await onCopy(fixture.tmp, owner, (client) => {

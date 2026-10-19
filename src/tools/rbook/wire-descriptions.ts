@@ -281,7 +281,7 @@ export const WIRE_TEXT: Readonly<Record<string, WireText>> = {
     description:
       'Projects on this machine: init, register, unregister, list, validate, prune, update the ' +
       "level (adding the new level's files), and sweep open work across all of them. A shared " +
-      'record: share, invite, join a copy over SSH, members, remove, and sync.',
+      'record: share, invite, join a copy over SSH, members, remove, sync, and move back.',
     parameters: {
       action: null,
       projectRoot: PROJECT_ROOT,
@@ -307,6 +307,10 @@ export const WIRE_TEXT: Readonly<Record<string, WireText>> = {
       remoteBin: null,
       remoteConfigDir: null,
       confirmOwner: null,
+      via: null,
+      confirm: "The person's word on the dry run",
+      project: 'Its rbook:// address',
+      to: null,
     },
   },
   rbook_feedback: {

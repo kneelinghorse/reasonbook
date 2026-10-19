@@ -20,6 +20,7 @@ remains in an older location.
 | The Reasonbook package, from your npm registry | The plugin's first launch installs its exact Reasonbook version and dependencies with `npm install`: into the plugin's data folder in Claude Code, or into `~/.config/rbook/plugins` in Codex, which both Codex plugins share. Until that install is ready, a command run through the plugin in Claude Code fetches the same version through `npx`. The one dependency with an install script, SQLite's `better-sqlite3`, downloads a prebuilt build from its GitHub releases, or Node's headers from nodejs.org when it has to build one | Install the exact version yourself: in Claude Code the plugin then uses that copy from your PATH instead of installing its own, while Codex always installs its own. Or set up the server without the plugin. Either way the package comes from npm                                                                                  |
 | Your project's record, to the dashboard        | Only with a dashboard credential, or when you sign in. Signing in sends your computer's name in its request. With a credential: a snapshot of the whole `rbook.sqlite` file after writes in a registered project and at explicit session or sprint closes; a key recovered at startup; and the dashboard calls you make, including message summaries in review and onboard                                                                                                                                                                | `RBOOK_CHECKPOINT_SYNC=off` stops automatic snapshot uploads where it reaches the server. It does not stop requested dashboard calls or direct shared-record exchanges. Signing out stops automatic uploads unless your environment sets a dashboard key or user and password; without a credential nothing is sent to the dashboard |
 | Your shared record, to its members             | The initial full store copy, then changes over SSH or bundles carried by hand. Copies with saved routes also exchange at session start and end where hooks run, and every five minutes while a server that opened them is running                                                                                                                                                                                                                                                                                                         | `RBOOK_SHARED_SYNC=off` in the hook and server environments stops automatic exchanges. Explicit sync and bundle commands remain available. Removal stops new exchange with that member but cannot retract data already copied                                                                                                        |
+| Your shared record, to reasonbook.ai           | Only for a project you share through the dashboard, or join there: a copy holding only the shared record, then its changes at each sync, at session start and end where hooks run, every five minutes while a server that opened it is running, and on demand                                                                                                                                                                                                                                                                             | The dashboard-sharing setting refuses a new share or join through the dashboard on that machine. `RBOOK_SHARED_SYNC=off` stops the automatic syncs; explicit syncs still run. Removal on the dashboard stops new exchange with that member but cannot retract what their copy holds                                                  |
 | The embedding model, from Hugging Face         | Only if you installed the optional `@xenova/transformers` package for semantic search: the first embedding downloads `Xenova/all-MiniLM-L6-v2` (about 25 MB) once, and installing that package also downloads native libraries for its `sharp` dependency                                                                                                                                                                                                                                                                                 | Leave the optional package out (the default), or set `RBOOK_OFFLINE_EMBEDDINGS=1`                                                                                                                                                                                                                                                    |
 
 There is no remote telemetry. Reasonbook keeps a local log of tool and hook use in
@@ -29,10 +30,10 @@ your record. It keeps the three newest months and is never uploaded.
 
 ## Shared copies
 
-Sharing is supported in the measured setup: two accounts operated by one person, on two machines
-in an owner/member star over SSH. A second person's collaboration and privacy experience remain
-unvalidated. The [getting-started guide](getting-started.md#share-a-projects-record) gives the
-share, copy, join and sync steps.
+Sharing is supported in the measured setup: two accounts operated by one person, on two machines,
+either in an owner/member star over SSH or through reasonbook.ai. A second person's collaboration and
+privacy experience remain unvalidated. The [getting-started guide](getting-started.md#share-a-projects-record)
+gives the steps for both.
 
 A member receives a full copy of the SQLite store, including its history and any pending, declined
 or expired proposals already stored there. Choose the project boundary before sharing: there is no
@@ -49,6 +50,13 @@ store or software. Protect SSH access and the files you carry. Removing a member
 from reaching that member and quarantines their changes beyond the removal cut; it does not erase
 what their copy already holds. Re-inviting the member permits exchange again, including quarantined
 changes.
+
+Through reasonbook.ai, the dashboard holds the project's referee copy: every member's changes
+count once it accepts them. It runs Reasonbook's own engine, binds each copy to its account, and
+refuses whole a delivery that breaks the record's rules or claims another member's changes. The
+owner shares and removes members on the dashboard. A copy shared through the dashboard exchanges with
+it alone, never over SSH or bundles. The dashboard's operator can read the referee copy;
+[Privacy](privacy.md#sharing-through-reasonbookai) says what the dashboard keeps and for how long.
 
 `RBOOK_SHARED_SYNC=off` stops the exchanges Reasonbook starts itself through hooks and its five-minute
 server timer. Explicit sync and bundle commands still run. `RBOOK_CHECKPOINT_SYNC=off` controls
@@ -111,8 +119,8 @@ tree and why.
 
 ## Turning parts off
 
-- **The hooks in one project:** `npx @aquex/reasonbook@<version> ambient off`, run in that project,
-  with the version the plugin installed. The hooks still start and log their use locally, but add
+- **The hooks in one project:** `npx --prefer-offline -y @aquex/reasonbook@4.2.0 ambient off`, run in that project,
+  with the version the plugin installed if it differs. The hooks still start and log their use locally, but add
   nothing. The command also updates the Reasonbook line in that project's `AGENTS.md`. `ambient on` turns
   them back on.
 - **Automatic uploads:** `RBOOK_CHECKPOINT_SYNC=off` in the server's environment, or signing out

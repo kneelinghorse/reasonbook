@@ -156,10 +156,12 @@ describe('one sync per copy at a time', () => {
     expect(launchSync('/some/project', path.join(dist, 'bin.js'))).toBe(true);
     for (let tries = 0; tries < 100 && !fs.existsSync(marker); tries += 1)
       await new Promise((resolve) => setTimeout(resolve, 50));
+    // s97-m10: a sync a hook starts is no person's, so it waits out a dashboard that keeps failing.
     expect(JSON.parse(fs.readFileSync(marker, 'utf8'))).toEqual([
       'sync',
       '--project-root',
       '/some/project',
+      '--auto',
     ]);
   }, 60000);
 });
@@ -208,7 +210,7 @@ describe('what starts a sync (s96-m13 build-time critics)', () => {
     fs.mkdirSync(path.dirname(link), { recursive: true });
     fs.symlinkSync(bin, link);
     expect(launchSync('/some/project', link)).toBe(true);
-    expect(await launched(marker)).toEqual(['sync', '--project-root', '/some/project']);
+    expect(await launched(marker)).toEqual(['sync', '--project-root', '/some/project', '--auto']);
   }, 60000);
 
   it('the session start and end hooks of a shared copy with a route start its sync', async () => {
@@ -228,7 +230,7 @@ describe('what starts a sync (s96-m13 build-time critics)', () => {
           stdout: () => undefined,
           stderr: () => undefined,
         });
-        expect(await launched(marker)).toEqual(['sync', '--project-root', owner.root]);
+        expect(await launched(marker)).toEqual(['sync', '--project-root', owner.root, '--auto']);
       }
     } finally {
       process.argv[1] = entry;

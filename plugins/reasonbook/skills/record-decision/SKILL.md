@@ -48,7 +48,7 @@ draft with an id (`P<n>`) and the operator's next message is bound to it. The li
 not a claim that a hook saved or approved it. Continue independent authorized work while the choice
 is open.
 
-**Published reply grammar** ([source](../../../../src/tools/rbook/draft-grammar.ts)): a plain reply
+**Published reply grammar** ([source](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/draft-grammar.ts)): a plain reply
 is at most 60 normalized characters and consists entirely of phrases below, joined by whitespace,
 commas, periods, semicolons, exclamation marks, ellipses or dashes, with optional courtesies.
 Matching ignores case, normalizes curly apostrophes, removes double quotes and collapses

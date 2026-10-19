@@ -210,11 +210,29 @@ const EXPECTED_TOTALS = {
   // s96-m14: the import's nine modules (the copy, its ids, matching, the ids it assigns, fields,
   // links, the plan, applying, and its entry); no answer shape: reasonbook import is a CLI verb.
   // s96-m08: legacy-sync-refusal joins the tool root; compatibility result types remain unchanged.
-  files: 264,
+  // s97-m09: record-fresh-copy and record-intake, the referee library's builder and intake check,
+  // join the tool root; neither declares an answer type, so only the file count moves.
+  // s97-m10: the dashboard transport's four modules (its peer, its route, the pages and the baseline
+  // query) join the closure, and rbook_project's sync names, for a peer an automatic sync waited
+  // out, an optional `nextTryAt` on PeerOutcome (one row); an exchange's `caughtUp` gains an
+  // optional `confirmed`, inside its existing row. Additive, for the 4.2.0 CHANGELOG.
+  // s97-m11: sharing, joining and moving back through the dashboard add three modules and five
+  // declarations to rbook_project's answers (DashboardSharePlan, DashboardShared, DashboardJoined,
+  // MovedBack, and the Handover it carries: 22 rows), and SuccessorReason gains 'move-back'. The
+  // critics' first round adds the plan to a confirmed share (23 rows), and lets a move back that
+  // finds its referee archived already answer with no sync. Additive, for the 4.2.0 CHANGELOG.
+  // s97-m13 (#662): the work queue's order joins the closure (work-queue-order.ts), and a queued
+  // mission in rbook_mission's status and the opener's pending list names what it waits on, an
+  // optional `waitsOn` (two rows). Not additive, for the 4.2.0 CHANGELOG: MissionStartResult's
+  // `startedAt` is absent when start promotes a mission to Current without starting it.
+  // s97-m14: an exchange names which side's member was removed (ExchangeReport's optional
+  // `removedCopy`, one row), and rbook_status's shared_sync rows gain an optional `removed_at`,
+  // inside their existing row. Additive, for the 4.2.0 CHANGELOG.
+  files: 274,
   roots: 147,
-  declarations: 330,
-  compositions: 330,
-  rows: 1866,
+  declarations: 335,
+  compositions: 335,
+  rows: 1894,
 } as const;
 const EXPLICIT_OPAQUE_LEDGER = [
   'RbookToolError.providedValue = ANY',

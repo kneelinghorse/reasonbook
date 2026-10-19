@@ -9,8 +9,8 @@ into.
 ## Five lines
 
 1. **One project, one record.** Each project keeps its own decisions, lessons, rules and next steps.
-   When shared, its copies exchange changes through the owner's copy. Reading across different
-   projects remains a view of separate records.
+   When shared, its copies exchange changes through the owner's copy, or through reasonbook.ai when
+   the project is shared there. Reading across different projects remains a view of separate records.
 2. **Every session starts from the record.** Where hooks run (the Claude Code and Codex plugins), a
    digest of the record comes into each session on its own; elsewhere the agent starts with
    `rbook_review`.
@@ -22,9 +22,9 @@ into.
 5. **The record outlives the tool.** Each copy is a SQLite file in its project folder. Its agents
    read the local copy; sync brings in changes from the other copies.
 
-Sharing is supported in the measured setup: two accounts operated by one person, on two machines
-connected to the owner's copy over SSH. A second person's collaboration and privacy experience
-remain unvalidated. Read the [sharing steps](getting-started.md#share-a-projects-record) and
+Sharing is supported in the measured setup: two accounts operated by one person, on two machines,
+either connected to the owner's copy over SSH or sharing through reasonbook.ai. A second person's
+collaboration and privacy experience remain unvalidated. Read the [sharing steps](getting-started.md#share-a-projects-record) and
 [trust boundary](trust.md#shared-copies) before inviting someone.
 
 ## Three levels
@@ -52,4 +52,4 @@ moving down removes nothing either. The digest suggests the move: a Ledger with 
 next steps is told to consider Planner, and a Planner with ten or more open tasks to consider
 Builder.
 
-The [starter templates](../templates/) hold the `AGENTS.md` and `CLAUDE.md` each level starts with.
+The [starter templates](https://github.com/kneelinghorse/reasonbook/tree/main/templates) hold the `AGENTS.md` and `CLAUDE.md` each level starts with.

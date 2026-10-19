@@ -53,6 +53,8 @@ import { z } from 'zod';
 import type { RbookToolResult } from './types';
 import { createError, createSuccess } from './errors';
 import { withClientAsync } from './client';
+import { sharedRecordText } from './digest-v2';
+import { sharedRecordReview } from './record-review';
 import { tableHasColumn } from './genesis-columns';
 import { findWrongTypedStringParam } from './param-type-guard';
 import { rbookAgentOnboard, type RbookAgentOnboardResult } from './rbook-agent-onboard';
@@ -182,6 +184,12 @@ export interface RbookReviewResult {
     status: string | null;
     tier: string;
   };
+
+  /**
+   * s97-m14: a copy of a shared record: the digest's shared-record lines, or their short form, so a
+   * client whose model reads this structured answer rather than the text sees the copy is shared.
+   */
+  sharedRecord?: string;
 
   /** Current sprint summary, focus capped to 280 chars. Null if none. */
   sprint: {
@@ -451,6 +459,7 @@ export async function rbookReview(
     registryDefault,
     recentLearningsRead,
     reflagged,
+    sharedRecord,
   ] = await Promise.all([
     rbookAgentOnboard({
       ...(projectRoot ? { projectRoot } : {}),
@@ -479,6 +488,8 @@ export async function rbookReview(
     readRecentLearnings(projectRoot),
     // s93-m11 — rows the staleness repair restored that are stale again. Never throws.
     readReflaggedSinceRepair(projectRoot),
+    // s97-m14 — a copy of a shared record: the digest's shared-record lines. Never throws.
+    readSharedRecordText(projectRoot),
   ]);
 
   if (!onboardResult.success || !onboardResult.data) {
@@ -511,6 +522,7 @@ export async function rbookReview(
       : null,
     // As a write would resolve it: a joined copy's invite name, else the user's (s96-m13, #671).
     writer: writerName(projectRoot ?? null),
+    sharedRecord,
   });
 
   // Filter to auth + sync warnings only. Drop staleness/orphan/context-size
@@ -541,6 +553,8 @@ function buildDigest(
     reflagged?: { count: number; lastRestoredAt: string } | null;
     /** s96-m02: the name this project's writes stamp now, whose decisions need no author. */
     writer?: string | null;
+    /** s97-m14: the digest's shared-record lines for a copy of a shared record. */
+    sharedRecord?: string | null;
   } = { registryDefault: null, resolution: null }
 ): RbookReviewResult {
   const sprintFocus = onboard.currentSprint?.focus
@@ -659,6 +673,7 @@ function buildDigest(
   const draft: RbookReviewResult = {
     next_actions,
     project,
+    ...(extras.sharedRecord ? { sharedRecord: extras.sharedRecord } : {}),
     sprint,
     workQueue,
     recentDecisions,
@@ -737,6 +752,19 @@ async function resolveReviewFreshness(
   }
   try {
     return await checkBuildFreshness(root);
+  } catch {
+    return null;
+  }
+}
+
+/** s97-m14 — the digest's shared-record lines for a copy of a shared record; null for any other store. */
+async function readSharedRecordText(projectRoot: string | undefined): Promise<string | null> {
+  try {
+    const read = await withClientAsync(
+      async (client) => createSuccess(sharedRecordText(sharedRecordReview(client))),
+      projectRoot ? { projectRoot } : {}
+    );
+    return read.success ? (read.data ?? null) : null;
   } catch {
     return null;
   }
@@ -1333,6 +1361,10 @@ function bucketFromOnboardFallback(
       byStatus[m.status].push(toWorkItemFromOnboard(m));
     }
   }
+  // s97-m13 (#662): the opener lists queued missions in Requires order with what each waits on,
+  // capped at five open missions, so "none ready" speaks only for the missions listed.
+  const queuedListed = onboard.pendingMissions.filter((m) => m.status === 'Queued');
+  const ready = queuedListed.find((m) => !m.waitsOn?.length);
   return {
     inProgress: {
       count: byStatus['In Progress'].length,
@@ -1346,9 +1378,11 @@ function bucketFromOnboardFallback(
         ? `Continue working on ${byStatus['In Progress'][0].id}`
         : byStatus.Current.length > 0
           ? `Start the current mission: ${byStatus.Current[0].id}`
-          : byStatus.Queued.length > 0
-            ? `Promote and start ${byStatus.Queued[0].id}`
-            : 'No missions in queue. Add new missions to continue work.',
+          : ready
+            ? `Promote and start ${ready.id}`
+            : queuedListed.length > 0
+              ? `No queued mission listed is ready: ${queuedListed[0].id} waits on ${queuedListed[0].waitsOn?.join(', ')}`
+              : 'No missions in queue. Add new missions to continue work.',
   };
 }
 

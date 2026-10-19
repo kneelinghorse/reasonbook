@@ -28,6 +28,8 @@ function syncNow(projectRoot: string): Promise<unknown> {
         await withSyncLock(dbPath, () =>
           syncPeers(storeOpener(dbPath), {
             unchecked: storeOpener(dbPath, { replicaCheck: false }),
+            projectRoot,
+            auto: true,
           })
         );
     })

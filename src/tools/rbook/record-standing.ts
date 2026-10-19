@@ -2,6 +2,7 @@
 // ABOUTME: Each transaction's standing on this copy (ADR s96 §5, §7): live, pending its verdict, held for a gap, a base
 // ABOUTME: or a row not yet here, refused or quarantined, and why; and who the authority and the members are.
 
+import { isDashboardRoute } from './record-dashboard-route';
 import type { RbookDatabaseClient } from './client';
 import { termOf, type AuthorityTerm, type PendingAuthority } from './record-authority';
 import {
@@ -108,12 +109,39 @@ const json = (text: string | null): unknown => (text === null ? null : JSON.pars
 
 // s96-m13: the context is built in record-context.ts, beside the authority chain it reads.
 export { authoredInTerm, mergeContext, termReach } from './record-context';
+export { BASELINE_QUERY } from './record-baseline';
 import { authoredInTerm, mergeContext, termReach } from './record-context';
+
+/**
+ * s97-m11 (design §Owner-role authoring): whether this copy writes what only the owner's copy writes,
+ * such as the project identity: it is the authority's, or an owner-role copy of a project a dashboard
+ * referees (the route it keeps to the authority is a dashboard's), whose referee accepts it by role.
+ */
+export function writesAsOwner(
+  client: RbookDatabaseClient,
+  ctx: MergeContext = mergeContext(client)
+): boolean {
+  if (ctx.ownReplica === ctx.authority) return true;
+  if (ctx.members.get(ctx.ownReplica)?.role !== 'owner') return false;
+  const peers = client.getOne<{ present: number }>(
+    "SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'record_peers'"
+  );
+  if (!peers.data) return false;
+  const row = client.getOne<{ route: string | null }>(
+    'SELECT route FROM record_peers WHERE replica_id = ?',
+    [ctx.authority]
+  );
+  try {
+    return isDashboardRoute(JSON.parse(row.data?.route ?? 'null'));
+  } catch {
+    return false;
+  }
+}
 
 /** ADR s96 §7: a member's copy refuses, before recording it, a change only the authority makes. */
 export function refuseUnlessAuthority(client: RbookDatabaseClient, what: string): void {
   const ctx = mergeContext(client);
-  if (ctx.ownReplica === ctx.authority) return;
+  if (writesAsOwner(client, ctx)) return;
   throw new ReplicaRefusal({
     code: REPLICA_ERROR_CODES.WRITE_REFUSED,
     message: `Only the owner's copy of a shared record changes ${what}, and this copy is a member's.`,
