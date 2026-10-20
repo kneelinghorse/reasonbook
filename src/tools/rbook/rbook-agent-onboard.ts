@@ -84,6 +84,7 @@ import { currentSessionOwner, EMPTY_AUTOMATIC_CLOSE_PATTERN } from './session-ow
 import { levelName, levelOfTier, type ProjectLevel } from './rules-files';
 import { readProjectLevel, readProjectTier } from './project-level';
 import { isMembersCopy } from './record-membership';
+import { COPY_KEYS, readCopyKey } from './replica-copy-keys';
 import { orderByRequires } from './work-queue-order';
 
 /**
@@ -686,13 +687,20 @@ export async function rbookAgentOnboard(
 
       // Layer 0: Full project identity from the project_identity contexts row
       const fullProjectIdentity = getFullProjectIdentity(client);
+      // s100-m01: a member's copy holds a project that lives elsewhere: it is never a fresh one, it
+      // asks the dashboard nothing about the project, and it names the address it joined by, which
+      // its identity, sent and registered as nothing, never holds.
+      const membersCopy = isMembersCopy(client);
+      const joinedAddress = membersCopy ? readCopyKey(client, COPY_KEYS.joinedAddress) : null;
+      if (fullProjectIdentity && !fullProjectIdentity.rbook_address && joinedAddress)
+        fullProjectIdentity.rbook_address = joinedAddress;
 
       // Layer 2: Tier-aware last session memory
       const tier = project.projectType;
       const lastSession = getLastSession(client, tier);
 
       // Detect fresh project: zero active missions AND no PROJECT BRIEF in master_context
-      const freshProject = detectFreshProject(client);
+      const freshProject = !membersCopy && detectFreshProject(client);
       const tierSelectionPrompt = freshProject
         ? buildTierSelectionPrompt(project.projectType)
         : undefined;
@@ -712,7 +720,7 @@ export async function rbookAgentOnboard(
         ? [null, null]
         : await Promise.all([
             fetchMessagingContext(warnings, tierRoot),
-            hiddenFields.has('syncHealth')
+            hiddenFields.has('syncHealth') || membersCopy
               ? Promise.resolve(null)
               : fetchSyncHealth(client, warnings, tierRoot),
           ]);
@@ -822,7 +830,7 @@ export async function rbookAgentOnboard(
         staleServer,
         dashboardInUse: await dashboardInUse(onboardRoot),
         localProjectId: getProjectId(client),
-        membersCopy: isMembersCopy(client),
+        membersCopy,
       });
 
       // s80-m07 — surface the self-capture gap as a priority-2 action when it fires,
@@ -2158,7 +2166,7 @@ function generateSuggestedActions(state: {
       });
     } else if (state.authState.authTier === 'none' && dashboardOptedIn()) {
       // Sprint 58 m02 — replaces the Sprint 57 m04 "identitySource === none"
-      // branch with a rbook_auth(action="login") command (now that m01 ships
+      // branch with a rbook_auth(action="login_init") command (now that m01 ships
       // the reachable entrypoint). Same trigger condition because authTier
       // is 'none' iff no user-scoped keys AND no legacy env vars.
       // s92-m04: and only after the user opted into the dashboard. A local-only user has nothing
@@ -2166,7 +2174,7 @@ function generateSuggestedActions(state: {
       actions.push({
         action:
           'Sign in to use dashboard messaging or sync; local project initialization needs no sign-in.',
-        command: 'rbook_auth(action="login")',
+        command: 'rbook_auth(action="login_init"), then rbook_auth(action="login_complete")',
         priority: 1,
       });
     } else if (
@@ -2178,7 +2186,7 @@ function generateSuggestedActions(state: {
       // without blocking work (priority 2, not 1).
       actions.push({
         action: `Authenticating via ${state.authState.authTier} — migrate to device-code credentials.`,
-        command: 'rbook_auth(action="login")',
+        command: 'rbook_auth(action="login_init"), then rbook_auth(action="login_complete")',
         priority: 2,
       });
     }
@@ -2334,7 +2342,13 @@ function generateSuggestedActions(state: {
   // s87-m05 — gated on THIS PROJECT'S count. It used to fire on the user-wide number, so a
   // project with an empty inbox was told to go clear messages that belong to other projects.
   // A `null` scoped count is UNKNOWN, and an unknown count is not a reason to prescribe an action.
-  if (state.messaging && (state.messaging.unreadCountScoped ?? 0) > 0) {
+  // s100-m01: and only on a count the dashboard scoped to this project: a member's copy reads its
+  // account's messages with the machine's key, and that count is the account's.
+  if (
+    state.messaging &&
+    state.messaging.unreadScope === 'project' &&
+    (state.messaging.unreadCountScoped ?? 0) > 0
+  ) {
     actions.push({
       action: `Review ${state.messaging.unreadCountScoped} unread message(s) for this project`,
       command: 'rbook_message(action="list", status="pending")',

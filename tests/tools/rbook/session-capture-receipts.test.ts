@@ -157,41 +157,41 @@ describe('s88-m04 rbook_session(capture) public receipt contract', () => {
     });
   });
 
-  it('discloses that a next-step projection is deferred and materializes it only at close', async () => {
-    const projectRoot = await makeActiveStore('deferred next-step receipt');
-    const content = 'Materialize this next step only when the session closes';
+  it('returns the next-step row ID at capture, and the close keeps that one row (s100-m03)', async () => {
+    // s100-m03 (#712): this projection was deferred to the session's close until 4.2.1, so a next step
+    // captured in a session that stayed open was invisible to every reader of next_steps.
+    const projectRoot = await makeActiveStore('next-step ID receipt');
+    const content = 'Write this next step the moment it is captured';
     const result = await capture(projectRoot, { category: 'next-step', content });
-    const receipt = receiptOf(result);
+    const receipt = receiptOf(result) as CaptureReceipt & { nextStepId?: number };
 
-    const beforeClose = withDb(
-      projectRoot,
-      (db) =>
-        db.prepare('SELECT COUNT(*) AS count FROM next_steps WHERE content = ?').get(content) as {
-          count: number;
-        }
-    );
-    expect(beforeClose.count).toBe(0);
+    expect(receipt.nextStepId).toEqual(expect.any(Number));
+    const rowsOf = () =>
+      withDb(
+        projectRoot,
+        (db) =>
+          db.prepare('SELECT id, status FROM next_steps WHERE content = ?').all(content) as Array<{
+            id: number;
+            status: string;
+          }>
+      );
+    expect(rowsOf()).toEqual([{ id: receipt.nextStepId, status: 'pending' }]);
     expectMaterialization(receipt, {
       target: 'next_steps',
-      timing: 'session-close',
-      outcome: 'deferred',
+      timing: 'immediate',
+      outcome: 'materialized',
     });
-    expect(formatSessionForLLM('capture', result).toLowerCase()).toContain('session close');
+    const rendered = formatSessionForLLM('capture', result);
+    expect(rendered).toContain(`Next step ID: #${receipt.nextStepId}`);
+    expect(rendered.toLowerCase()).not.toContain('session close');
 
     const completed = await rbookSession({
       action: 'complete',
-      summary: 'Close the deferred-materialization fixture',
+      summary: 'Close the next-step receipt fixture',
       projectRoot,
     });
     expect(completed.success).toBe(true);
-    const afterClose = withDb(
-      projectRoot,
-      (db) =>
-        db.prepare('SELECT COUNT(*) AS count FROM next_steps WHERE content = ?').get(content) as {
-          count: number;
-        }
-    );
-    expect(afterClose.count).toBe(1);
+    expect(rowsOf()).toEqual([{ id: receipt.nextStepId, status: 'pending' }]);
   });
 
   it('completes supersession through supported routers using only returned IDs', async () => {

@@ -43,12 +43,14 @@ import { harnessSessionHash } from '../tools/rbook/harness-session';
 import {
   draftLabel,
   ensureProposalsTable,
+  getDraft,
   insertDraft,
   isExpired,
   markDeclined,
   markOffered,
   markReplaced,
   markRevisedAfterApproval,
+  newestPending,
   pendingDrafts,
   proposalsTableExists,
   rawRunner,
@@ -418,7 +420,13 @@ export function onStop(options: {
             createdIds.push(id);
             shown.push(id);
             const old = revised.get(position);
-            if (old && approved(old)) markRevisedAfterApproval(run, old.id, id);
+            // s100-m02 (verification round 2): the line joins an approved draft's chain at its
+            // newest pending draft, and one there the operator never approved it retires, as it
+            // would any unapproved draft it revised.
+            const target = old && approved(old) ? getDraft(run, newestPending(run, old.id)) : null;
+            if (target && target.id !== old!.id && !approved(target))
+              replaced += markReplaced(run, target.id, id, at);
+            else if (old && approved(old)) markRevisedAfterApproval(run, old.id, id);
             else if (old) replaced += markReplaced(run, old.id, id, at);
           });
           for (const id of namedDrafts(reply, unexpired(runtime, pendingDrafts(run), now)))

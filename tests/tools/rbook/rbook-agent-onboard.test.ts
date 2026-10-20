@@ -2363,7 +2363,7 @@ describe('rbook_agent_onboard authState (Sprint 57 m04)', () => {
           action: expect.stringMatching(
             /Sign in to use dashboard messaging or sync; local project initialization needs no sign-in/
           ),
-          command: 'rbook_auth(action="login")',
+          command: 'rbook_auth(action="login_init"), then rbook_auth(action="login_complete")',
         }),
       ])
     );
@@ -2427,7 +2427,9 @@ describe('rbook_agent_onboard authState (Sprint 57 m04)', () => {
       expect.arrayContaining([
         expect.objectContaining({
           action: expect.stringMatching(/Authenticating via legacy-env/),
-          command: expect.stringMatching(/rbook_auth\(action="login"\)/),
+          command: expect.stringMatching(
+            /rbook_auth\(action="login_init"\), then rbook_auth\(action="login_complete"\)/
+          ),
         }),
       ])
     );
@@ -2444,7 +2446,9 @@ describe('rbook_agent_onboard authState (Sprint 57 m04)', () => {
       expect.arrayContaining([
         expect.objectContaining({
           action: expect.stringMatching(/Authenticating via password-fallback/),
-          command: expect.stringMatching(/rbook_auth\(action="login"\)/),
+          command: expect.stringMatching(
+            /rbook_auth\(action="login_init"\), then rbook_auth\(action="login_complete"\)/
+          ),
         }),
       ])
     );
@@ -2464,7 +2468,7 @@ describe('rbook_agent_onboard authState (Sprint 57 m04)', () => {
 
     expect(result.data?.authState?.authTier).toBe('device-code');
     const loginActions = (result.data?.suggestedActions ?? []).filter((a) =>
-      a.command?.includes('rbook_auth(action="login")')
+      a.command?.includes('rbook_auth(action="login')
     );
     // No login suggestedAction — the "no project-scoped key" branch still
     // fires (priority 2), but it points at rbook_auth(action="reissue"), not login.

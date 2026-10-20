@@ -29,6 +29,11 @@ export interface DashboardPeerOptions {
   readonly recordProtocol?: number;
   /** The most one sync takes in from the stream; tests name a small one. */
   readonly maxStreamBytes?: number;
+  /**
+   * s100-m01 (#717 item 2): whether this copy was told its member was removed, as its review keeps
+   * it: the dashboard lists no project for a removed member's account, so its 404 ends the route.
+   */
+  readonly removedHere?: () => Promise<boolean>;
 }
 
 /** A refusal of the exchange, with its remedy named where it is authored. */
@@ -74,7 +79,8 @@ function dashboardRefusal(name: string, status: number, body: unknown): ReplicaR
   if (status === 401)
     return refusal({
       message: `${name} did not accept this machine's sign-in${said}, so nothing was exchanged.`,
-      suggestion: 'Sign in again with rbook_auth(action="login"), then sync again.',
+      suggestion:
+        'Sign in again with rbook_auth(action="login_init"), then rbook_auth(action="login_complete"), and sync again.',
     });
   if (status === 404)
     return refusal({
@@ -140,6 +146,7 @@ export function mergePageReports(sum: ApplyReport | null, page: ApplyReport): Ap
     folded: sum.folded + page.folded,
     newlyLive: [...sum.newlyLive, ...page.newlyLive],
     notes: [...sum.notes, ...page.notes],
+    newerProtocol: sum.newerProtocol + page.newerProtocol,
   };
 }
 
@@ -176,13 +183,15 @@ export async function dashboardClientFor(
   if (!resolved.success || !resolved.data)
     throw refusal({
       message: `This machine has no sign-in for ${name}, so it cannot reach it: ${resolved.error?.message ?? 'no credentials'}`,
-      suggestion: 'Sign in with rbook_auth(action="login") on this machine, then try again.',
+      suggestion:
+        'Sign in on this machine with rbook_auth(action="login_init"), then rbook_auth(action="login_complete"), and try again.',
     });
   // A call to the dashboard sends a key, never a password (critics, round 1).
   if (resolved.data.keySource === 'password-fallback')
     throw refusal({
       message: `This machine signs in to ${name} with a password, which Reasonbook does not send to it.`,
-      suggestion: 'Sign in with rbook_auth(action="login") on this machine, then try again.',
+      suggestion:
+        'Sign in on this machine with rbook_auth(action="login_init"), then rbook_auth(action="login_complete"), and try again.',
     });
   return resolved.data.client;
 }
@@ -237,6 +246,17 @@ export async function dashboardPeer(
           message: `${name} no longer shares this project: its owner moved it back to their own copy.`,
           suggestion:
             "This copy keeps everything it holds, and now syncs with the owner's copy directly: reasonbook sync --ssh <host> --remote-root <folder>, or a bundle.",
+        });
+      // s100-m01 (#717 item 2): a removed member's account is listed no project row at all, so the
+      // list cannot say the project moved back; the removal this copy was told of says the route
+      // serves it nothing, and it ends here too. A copy told of none keeps its route, as one signed
+      // in to another account must.
+      if (sharing.success && !sharing.data?.listed && (await options.removedHere?.()))
+        throw new ReplicaRefusal({
+          code: REPLICA_ERROR_CODES.ROUTE_ENDED,
+          message: `${name} no longer serves this project to this copy, whose member was removed, so this copy forgets its route there.`,
+          suggestion:
+            "This copy keeps everything it holds, and syncs with no copy now; whether the project is shared with you again is the owner's to decide.",
         });
     }
     if (isAnswer(sent.data.body)) return sent.data.body;

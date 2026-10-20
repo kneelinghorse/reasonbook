@@ -17,6 +17,13 @@ export const COPY_KEYS = {
   author: REPLICA_KEYS.author,
   /** s97-m11: the join answer this copy gave a dashboard's referee, kept until the referee applies it. */
   dashboardShare: 'replica_dashboard_share',
+  /**
+   * s100-m01: the address a member's copy joined through the dashboard by, which its review and
+   * rbook_status show; never its identity's own address, so it registers and sends as nothing.
+   */
+  joinedAddress: 'replica_joined_address',
+  /** s100-m01: the newer record protocol this copy kept changes of out, and when it first met it. */
+  newerProtocol: 'replica_newer_protocol',
 } as const;
 export type CopyKey = (typeof COPY_KEYS)[keyof typeof COPY_KEYS];
 
@@ -29,6 +36,12 @@ export function writeCopyKey(
   if (value !== null) return writeReplicaKey(client, key, value);
   const cleared = client.execute('DELETE FROM metadata WHERE key = ?', [key]);
   if (!cleared.success) throw new Error(cleared.error?.message ?? `${key} was not cleared`);
+}
+
+/** One of a copy's own keys, or null when it has none. */
+export function readCopyKey(client: RbookDatabaseClient, key: CopyKey): string | null {
+  const row = client.getOne<{ value: string }>('SELECT value FROM metadata WHERE key = ?', [key]);
+  return row.success ? (row.data?.value ?? null) : null;
 }
 
 /**

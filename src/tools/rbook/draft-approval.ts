@@ -24,18 +24,20 @@ import {
   getDraft,
   isExpired,
   latestRevision,
+  newestPending,
   parseDraftId,
   settleRevised,
   pendingDrafts,
   proposalsTableExists,
   type ApprovalMode,
   type DraftRow,
+  type SqlRunner,
 } from './proposals';
 import { currentSessionOwner } from './session-owner';
 import { storedTimeMs } from './stored-time';
 import type { RbookToolError, RbookToolResult } from './types';
 import { sanitizeContentField } from '../../intelligence/content-sanitizer';
-import { computeContentHash } from './schema-migrations';
+import { computeContentHash, SAME_TEXT_SQL } from './schema-migrations';
 
 /**
  * Build plan B9–B12: hooks bind words by store/session/draft for two hours; subagents share that
@@ -67,20 +69,51 @@ export function harnessSessionOf(dbPath: string): string | null {
   return owner.kind === 'external' && owner.key.startsWith('ext:') ? owner.key.slice(4) : null;
 }
 
-function notPending(draft: DraftRow, label: string): RbookToolError {
+/** Where a record is, as a person reads it: a profile line has no id of its own. */
+const recordedAs = (recordId: string): string =>
+  recordId === 'profile' ? 'recorded in the operator profile' : `recorded as ${recordId}`;
+
+function notPending(
+  draft: DraftRow,
+  label: string,
+  run: SqlRunner,
+  expired: (row: DraftRow) => boolean
+): RbookToolError {
+  // s100-m02 (verification rounds 1 and 2): a replaced draft names where its chain ends, which may
+  // be recorded already, declined or expired, rather than the next link alone.
+  const end =
+    draft.outcome === 'replaced' && draft.replacedBy
+      ? getDraft(run, latestRevision(run, draft.replacedBy))
+      : undefined;
+  const live = end?.outcome === 'pending' && !expired(end);
+  const endState = !end
+    ? ''
+    : end.recordId
+      ? `, ${recordedAs(end.recordId)}`
+      : end.outcome === 'declined'
+        ? ', which the operator declined'
+        : end.outcome === 'pending' && !live
+          ? ', which expired unanswered'
+          : '';
   const states: Record<string, string> = {
-    approved: `was already approved and recorded as ${draft.recordId ?? 'a record'}`,
+    approved: `was already approved and ${draft.recordId ? recordedAs(draft.recordId) : 'recorded'}`,
     declined: 'was declined by the operator',
-    replaced:
-      `was replaced by its revision ${draft.replacedBy ? draftLabel(draft.replacedBy) : ''}`.trim(),
-    answered: `was answered by a direct record (${draft.recordId ?? 'unknown'})`,
+    replaced: end
+      ? `was replaced by its revision ${draftLabel(end.id)}${endState}`
+      : 'was replaced by a revision',
+    answered: `was answered by ${draft.recordId === 'profile' ? 'a line in the operator profile' : `a record (${draft.recordId ?? 'unknown'})`}`,
   };
+  // The choice is recorded already: by this draft, by the record that answered it, or at its end.
+  const recorded =
+    end?.recordId ??
+    (draft.outcome === 'approved' || draft.outcome === 'answered' ? draft.recordId : null);
   return {
     code: RBOOK_ERROR_CODES.DRAFT_NOT_PENDING,
     message: `Draft ${label} ${states[draft.outcome] ?? `is ${draft.outcome}`}; nothing was recorded.`,
-    suggestion:
-      draft.outcome === 'replaced' && draft.replacedBy
-        ? `Record the revision instead, with fromDraft="${draftLabel(draft.replacedBy)}", once the operator approves it.`
+    suggestion: live
+      ? `Record the revision instead, with fromDraft="${draftLabel(end!.id)}", once the operator approves it.`
+      : recorded
+        ? `Nothing to record from this draft: its choice is ${recordedAs(recorded)}.`
         : 'Nothing to record from this draft. Propose the choice again with a Would record line if it still matters.',
   };
 }
@@ -135,9 +168,13 @@ export function evaluateDraft(
         suggestion: `Check the project (projectRoot) and the id with ${formatCliRemedy('drafts list', { projectRoot: path.resolve(client.path, '../../..') })}, or record without fromDraft.`,
       },
     };
-  if (draft.outcome !== 'pending') return { ok: false, error: notPending(draft, label) };
   const runtime = openDraftRuntime(client.path, env, { readonly: true });
   try {
+    if (draft.outcome !== 'pending') {
+      const expired = (row: DraftRow): boolean =>
+        isExpired(row, runtime ? startsSince(runtime, storedTimeMs(row.createdAt)) : 0, now);
+      return { ok: false, error: notPending(draft, label, run, expired) };
+    }
     const starts = runtime ? startsSince(runtime, storedTimeMs(draft.createdAt)) : 0;
     if (isExpired(draft, starts, now))
       return {
@@ -151,15 +188,19 @@ export function evaluateDraft(
     // s97-m12: a revision shown after the operator plainly approved this draft leaves that approval
     // with this draft's own words only (learning #481).
     if (draft.replacedBy !== null && !recordStatesDraft(draft.text, content)) {
-      // Its revision may itself have been revised: name the newest (critic round 2).
-      const latest = draftLabel(latestRevision(run, draft.replacedBy));
+      // Its revision may itself have been revised: name the newest still pending (critic round 2),
+      // and none when the operator declined them all (s100-m02, verification round).
+      const newest = newestPending(run, draft.id);
       return {
         ok: false,
         error: {
           code: RBOOK_ERROR_CODES.INVALID_PARAMETER,
           message: `Draft ${label} was revised by ${draftLabel(draft.replacedBy)} after the operator approved it, so their approval records only ${label}'s own words.`,
           field: 'content',
-          suggestion: `Record ${label} exactly as the operator approved it, or record ${latest} once the operator answers it.`,
+          suggestion:
+            newest === draft.id
+              ? `Record ${label} exactly as the operator approved it.`
+              : `Record ${label} exactly as the operator approved it, or record ${draftLabel(newest)} once the operator answers it.`,
         },
       };
     }
@@ -389,11 +430,12 @@ export async function recordDraftOfKind(
         recordId = captured.data.learningId ?? null;
         typedId = recordId ? `l:${recordId}` : 'l:unknown';
       } else {
-        const hash = computeContentHash(sanitizeContentField(drafted).cleaned, 'constraint');
+        const text = sanitizeContentField(drafted).cleaned;
+        // s100-m03: a constraint that came from another copy has no hash here; its text is matched.
         const row = await withRun(params.projectRoot, (client) =>
           clientRunner(client).get<{ id: number }>(
-            "SELECT id FROM constraints WHERE content_hash = ? AND status = 'active' ORDER BY id DESC LIMIT 1",
-            [hash]
+            `SELECT id FROM constraints WHERE ${SAME_TEXT_SQL} AND status = 'active' ORDER BY id DESC LIMIT 1`,
+            [computeContentHash(text, 'constraint'), text]
           )
         );
         recordId = row.success ? (row.data?.id ?? null) : null;
@@ -411,8 +453,9 @@ export async function recordDraftOfKind(
   const named = await withRun(params.projectRoot, (client) => {
     const run = clientRunner(client);
     const done = run.run('UPDATE proposals SET record_id = ? WHERE id = ?', [typedId, id]);
-    // s97-m12 (critic round 3): written, it settles the approved drafts its chain revised.
-    settleRevised(run, [id], at);
+    // s97-m12 (critic round 3): written, it settles the approved drafts its chain revised, and
+    // (s100-m02) the revisions after it.
+    settleRevised(run, [id], at, typedId);
     return done;
   });
   const warnings = [

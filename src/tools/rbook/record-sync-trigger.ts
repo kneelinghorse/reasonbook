@@ -7,7 +7,7 @@ import { createHash } from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import Database from 'better-sqlite3';
-import { getSetting, resolveConfigDirectory } from '../../intelligence/legacy-compat';
+import { resolveConfigDirectory, settingIsOff } from '../../intelligence/legacy-compat';
 import { isReadOnlyAgentSession } from './read-only-agent-guard';
 
 /** The shared record's own switch: off stops every sync it starts itself; RBOOK_CHECKPOINT_SYNC is another's. */
@@ -19,7 +19,7 @@ const STALE_LOCK_MS = 15 * 60 * 1000;
 export const SHARED_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 
 export function sharedSyncEnabled(): boolean {
-  return getSetting(SHARED_SYNC_ENV) !== 'off' && !isReadOnlyAgentSession();
+  return !settingIsOff(SHARED_SYNC_ENV) && !isReadOnlyAgentSession();
 }
 
 /**

@@ -26,8 +26,8 @@ import {
  * WHY THE HANDLER AND NOT THE ROUTER. rbook_session(complete) through the router uploads the whole
  * store as a checkpoint (rbook-session.ts → checkpoint-backfill.ts). A close nobody asked for must not
  * upload anything, so every close here calls rbookSessionComplete directly. The handler is still the
- * right door: it materializes the session's deferred captures (next-steps, constraints) and writes
- * the close event, exactly as a requested complete does.
+ * right door: it writes the rows of captures that have none yet (s100-m03: a next step captured since
+ * 4.2.1 already has its row) and the close event, exactly as a requested complete does.
  *
  * NO NESTED CONNECTIONS. rbookSessionComplete opens its own client. Each function here reads its
  * candidates in one client, lets that client close, and only then calls the handler, once per

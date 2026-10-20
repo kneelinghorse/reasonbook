@@ -58,6 +58,8 @@ export function returnedIds(tool: string, args: unknown, value: unknown): string
   if (tool === 'rbook_decisions' || tool === 'rbook_session' || tool === 'rbook_learnings') {
     ids.push(...typed('d', data.decisionId), ...typed('l', data.learningId));
   }
+  // s100-m03: a next-step capture returns its row's id.
+  if (tool === 'rbook_session') ids.push(...typed('n', data.nextStepId));
   return unique(ids);
 }
 

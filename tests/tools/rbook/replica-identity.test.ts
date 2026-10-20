@@ -116,6 +116,11 @@ describe('a shared copy numbers its rows in its own block', () => {
       'constraints',
       { action: 'capture', category: 'constraint', content: 'One constraint too many.' },
     ],
+    // s100-m03: a next-step capture writes its row too, so the refusal comes at the capture.
+    [
+      'next_steps',
+      { action: 'capture', category: 'next-step', content: 'One next step too many.' },
+    ],
   ])('says so for %s too, through the capture that writes them', async (table, args) => {
     const root = project(tmp, 'member');
     const db = new Database(dbOf(root));
@@ -129,7 +134,7 @@ describe('a shared copy numbers its rows in its own block', () => {
     expect(full.error?.code).toBe('REPLICA_BLOCK_FULL');
   });
 
-  it('says so for next steps, through the session close that writes them', async () => {
+  it('says so for the next steps a close is given, through the close that writes them', async () => {
     const root = project(tmp, 'member');
     const db = new Database(dbOf(root));
     db.prepare(

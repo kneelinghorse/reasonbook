@@ -402,7 +402,8 @@ describe('first-run E2E: pack -> install -> drive quickstart over stdio (s77-m10
       const said = JSON.stringify(actions) + s.textOf(review);
       for (const misleading of [
         'tierSelectionPrompt',
-        'rbook_auth(action="login")',
+        // s100-m02: login, login_init or login_complete; a fresh project needs none.
+        'rbook_auth(action="login',
         'rbook_message(action="whoami")',
       ]) {
         expect({ misleading, present: said.includes(misleading) }).toEqual({

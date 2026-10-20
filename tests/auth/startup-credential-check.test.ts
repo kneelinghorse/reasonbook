@@ -42,7 +42,9 @@ describe('runStartupCredentialCheck', () => {
     expect(writes).toHaveLength(1);
     expect(writes[0]).toMatch(/\[WARN\]/);
     expect(writes[0]).toMatch(/no user-scoped credentials found/);
-    expect(writes[0]).toMatch(/rbook_auth\(action="login"\)/);
+    expect(writes[0]).toMatch(
+      /rbook_auth\(action="login_init"\), then rbook_auth\(action="login_complete"\)/
+    );
   });
 
   it('s78-m06: is SILENT on an empty store when NO dashboard is configured (local-forever)', async () => {

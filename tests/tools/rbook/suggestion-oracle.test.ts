@@ -250,15 +250,15 @@ const SITES_BY_MISSION = {
   // constraint draft with no operator words in this session); four need a harness session or a
   // race and are named residuals, each driven in tests/tools/rbook/draft-approval.test.ts.
   's93-m06': [
-    'src/tools/rbook/draft-approval.ts:82',
-    'src/tools/rbook/draft-approval.ts:123',
-    'src/tools/rbook/draft-approval.ts:135',
-    'src/tools/rbook/draft-approval.ts:148',
-    'src/tools/rbook/draft-approval.ts:175',
-    'src/tools/rbook/draft-approval.ts:186',
-    'src/tools/rbook/draft-approval.ts:100',
-    'src/tools/rbook/draft-approval.ts:338',
-    'src/tools/rbook/draft-approval.ts:408',
+    'src/tools/rbook/draft-approval.ts:113',
+    'src/tools/rbook/draft-approval.ts:156',
+    'src/tools/rbook/draft-approval.ts:168',
+    'src/tools/rbook/draft-approval.ts:185',
+    'src/tools/rbook/draft-approval.ts:216',
+    'src/tools/rbook/draft-approval.ts:227',
+    'src/tools/rbook/draft-approval.ts:133',
+    'src/tools/rbook/draft-approval.ts:379',
+    'src/tools/rbook/draft-approval.ts:450',
     'src/tools/rbook/rbook-decisions-record.ts:366',
   ],
   // s94-m04: shape preflight at six writer boundaries, immutable retry comparison and draft-field conflict.
@@ -345,10 +345,10 @@ const SITES_BY_MISSION = {
   // matrix case drives the two settles one store reaches; the rest are named residuals below, each
   // needing a second copy, a delivery or a conflict.
   's96-m12': [
-    'src/tools/rbook/record-apply.ts:133',
-    'src/tools/rbook/record-apply.ts:141',
-    'src/tools/rbook/record-apply.ts:167',
-    'src/tools/rbook/record-apply.ts:194',
+    'src/tools/rbook/record-apply.ts:140',
+    'src/tools/rbook/record-apply.ts:151',
+    'src/tools/rbook/record-apply.ts:177',
+    'src/tools/rbook/record-apply.ts:204',
     'src/tools/rbook/record-decide.ts:38',
     'src/tools/rbook/record-capture.ts:84',
     'src/tools/rbook/record-standing.ts:148',
@@ -364,8 +364,8 @@ const SITES_BY_MISSION = {
   // moves, recovery and re-identification; a member's copy refusing the old backfill, a purge and a
   // restore; and the CLI's bundle for a member (nine of the 72 added at the build-time critics' folds).
   's96-m13': [
-    'src/cli/sync.ts:155',
-    'src/tools/rbook/rbook-db-backfill.ts:801',
+    'src/cli/sync.ts:157',
+    'src/tools/rbook/rbook-db-backfill.ts:813',
     'src/tools/rbook/rbook-db-backfill.ts:138',
     'src/tools/rbook/rbook-db-restore.ts:226',
     'src/tools/rbook/rbook-project-shared.ts:146',
@@ -375,16 +375,16 @@ const SITES_BY_MISSION = {
     'src/tools/rbook/record-admit-successor.ts:110',
     'src/tools/rbook/record-admit-successor.ts:125',
     'src/tools/rbook/record-admit-successor.ts:133',
-    'src/tools/rbook/record-bundle.ts:108',
-    'src/tools/rbook/record-bundle.ts:147',
-    'src/tools/rbook/record-bundle.ts:160',
+    'src/tools/rbook/record-bundle.ts:116',
+    'src/tools/rbook/record-bundle.ts:155',
     'src/tools/rbook/record-bundle.ts:168',
-    'src/tools/rbook/record-bundle.ts:181',
-    'src/tools/rbook/record-bundle.ts:93',
-    'src/tools/rbook/record-bundle.ts:100',
+    'src/tools/rbook/record-bundle.ts:176',
+    'src/tools/rbook/record-bundle.ts:189',
+    'src/tools/rbook/record-bundle.ts:101',
+    'src/tools/rbook/record-bundle.ts:108',
     'src/tools/rbook/record-decide.ts:76',
     'src/tools/rbook/record-exchange-steps.ts:237',
-    'src/tools/rbook/record-exchange-steps.ts:35',
+    'src/tools/rbook/record-exchange-steps.ts:37',
     'src/tools/rbook/record-exchange.ts:214',
     'src/tools/rbook/record-exchange.ts:220',
     'src/tools/rbook/record-exchange.ts:227',
@@ -394,35 +394,35 @@ const SITES_BY_MISSION = {
     'src/tools/rbook/record-exchange.ts:273',
     'src/tools/rbook/record-exchange.ts:280',
     'src/tools/rbook/record-exchange.ts:317',
-    'src/tools/rbook/record-join.ts:104',
-    'src/tools/rbook/record-join.ts:113',
-    'src/tools/rbook/record-join.ts:125',
-    'src/tools/rbook/record-join.ts:156',
-    'src/tools/rbook/record-join.ts:161',
-    'src/tools/rbook/record-join.ts:169',
-    'src/tools/rbook/record-join.ts:174',
-    'src/tools/rbook/record-join.ts:182',
-    'src/tools/rbook/record-join.ts:189',
-    'src/tools/rbook/record-join.ts:231',
-    'src/tools/rbook/record-join.ts:241',
-    'src/tools/rbook/record-join.ts:253',
-    'src/tools/rbook/record-membership.ts:141',
-    'src/tools/rbook/record-membership.ts:148',
-    'src/tools/rbook/record-membership.ts:157',
-    'src/tools/rbook/record-membership.ts:171',
-    'src/tools/rbook/record-membership.ts:330',
-    'src/tools/rbook/record-membership.ts:339',
-    'src/tools/rbook/record-move-routes.ts:50',
+    'src/tools/rbook/record-join.ts:105',
+    'src/tools/rbook/record-join.ts:114',
+    'src/tools/rbook/record-join.ts:139',
+    'src/tools/rbook/record-join.ts:170',
+    'src/tools/rbook/record-join.ts:175',
+    'src/tools/rbook/record-join.ts:183',
+    'src/tools/rbook/record-join.ts:188',
+    'src/tools/rbook/record-join.ts:196',
+    'src/tools/rbook/record-join.ts:203',
+    'src/tools/rbook/record-join.ts:245',
+    'src/tools/rbook/record-join.ts:255',
+    'src/tools/rbook/record-join.ts:267',
+    'src/tools/rbook/record-membership.ts:144',
+    'src/tools/rbook/record-membership.ts:151',
+    'src/tools/rbook/record-membership.ts:160',
+    'src/tools/rbook/record-membership.ts:174',
+    'src/tools/rbook/record-membership.ts:338',
+    'src/tools/rbook/record-membership.ts:347',
+    'src/tools/rbook/record-move-routes.ts:67',
     'src/tools/rbook/record-moves.ts:145',
     'src/tools/rbook/record-moves.ts:153',
     'src/tools/rbook/record-moves.ts:72',
     'src/tools/rbook/record-moves.ts:79',
     'src/tools/rbook/record-moves.ts:88',
     'src/tools/rbook/record-moves.ts:95',
-    'src/tools/rbook/record-recovery.ts:160',
-    'src/tools/rbook/record-recovery.ts:172',
-    'src/tools/rbook/record-recovery.ts:189',
-    'src/tools/rbook/record-recovery.ts:214',
+    'src/tools/rbook/record-recovery.ts:168',
+    'src/tools/rbook/record-recovery.ts:180',
+    'src/tools/rbook/record-recovery.ts:197',
+    'src/tools/rbook/record-recovery.ts:222',
     'src/tools/rbook/record-share-action.ts:108',
     'src/tools/rbook/record-share-action.ts:119',
     'src/tools/rbook/record-share-action.ts:74',
@@ -430,7 +430,7 @@ const SITES_BY_MISSION = {
     'src/tools/rbook/record-share-action.ts:90',
     'src/tools/rbook/record-successor.ts:133',
     'src/tools/rbook/record-successor.ts:177',
-    'src/tools/rbook/record-sync.ts:152',
+    'src/tools/rbook/record-sync.ts:171',
     'src/tools/rbook/record-sync.ts:197',
     'src/tools/rbook/record-sync.ts:255',
     'src/tools/rbook/record-sync.ts:261',
@@ -462,8 +462,8 @@ const SITES_BY_MISSION = {
   // s99-m10: scoped and global reconciliation refuse an unrecognized table-count payload.
   // Both inherit DASHBOARD_ERROR, are driven by the portable HTTP arm, and prescribe no tool call.
   's99-m10': [
-    'src/tools/rbook/rbook-db-backfill.ts:460',
-    'src/tools/rbook/rbook-db-backfill.ts:542',
+    'src/tools/rbook/rbook-db-backfill.ts:470',
+    'src/tools/rbook/rbook-db-backfill.ts:552',
   ],
   // s96-m08: one common retirement remedy, a local hook-read fault, and owner-key gates.
   // The message-get remedy changes text at its existing site; it is not an added site.
@@ -480,25 +480,25 @@ const SITES_BY_MISSION = {
     'src/referee/copies.ts:28',
     'src/referee/copies.ts:34',
     'src/referee/copies.ts:81',
-    'src/referee/handover.ts:110',
-    'src/referee/handover.ts:124',
-    'src/referee/handover.ts:181',
-    'src/referee/handover.ts:187',
-    'src/referee/handover.ts:212',
-    'src/referee/handover.ts:220',
-    'src/referee/handover.ts:280',
-    'src/referee/intake.ts:122',
-    'src/referee/intake.ts:156',
-    'src/referee/intake.ts:172',
-    'src/referee/intake.ts:180',
-    'src/referee/intake.ts:192',
-    'src/referee/intake.ts:205',
+    'src/referee/handover.ts:116',
+    'src/referee/handover.ts:130',
+    'src/referee/handover.ts:190',
+    'src/referee/handover.ts:196',
+    'src/referee/handover.ts:221',
+    'src/referee/handover.ts:229',
+    'src/referee/handover.ts:289',
+    'src/referee/intake.ts:129',
+    'src/referee/intake.ts:163',
+    'src/referee/intake.ts:179',
+    'src/referee/intake.ts:187',
+    'src/referee/intake.ts:199',
     'src/referee/intake.ts:212',
-    'src/referee/intake.ts:233',
-    'src/referee/intake.ts:246',
-    'src/referee/intake.ts:264',
-    'src/referee/intake.ts:278',
-    'src/referee/intake.ts:290',
+    'src/referee/intake.ts:219',
+    'src/referee/intake.ts:240',
+    'src/referee/intake.ts:253',
+    'src/referee/intake.ts:271',
+    'src/referee/intake.ts:285',
+    'src/referee/intake.ts:297',
     'src/referee/membership.ts:51',
     'src/referee/membership.ts:71',
     'src/referee/membership.ts:78',
@@ -519,42 +519,42 @@ const SITES_BY_MISSION = {
     'src/referee/peer.ts:372',
     'src/referee/views.ts:69',
     'src/referee/views.ts:97',
-    'src/tools/rbook/record-fresh-copy.ts:386',
+    'src/tools/rbook/record-fresh-copy.ts:402',
   ],
   // s97-m10: the dashboard transport's refusals (a sign-in, a project, a limit, a status, a route to
   // another dashboard, no sign-in, a password, no answer, too much, an empty page, a transaction too
   // large), a dashboard route synced with no project folder, a bundle or an SSH channel of a refereed
   // project, and a dashboard route another would replace.
   's97-m10': [
-    'src/tools/rbook/record-dashboard-peer.ts:77',
     'src/tools/rbook/record-dashboard-peer.ts:83',
     'src/tools/rbook/record-dashboard-peer.ts:89',
     'src/tools/rbook/record-dashboard-peer.ts:95',
-    'src/tools/rbook/record-dashboard-peer.ts:100',
-    'src/tools/rbook/record-dashboard-peer.ts:105',
-    'src/tools/rbook/record-dashboard-peer.ts:171',
-    'src/tools/rbook/record-dashboard-peer.ts:179',
-    'src/tools/rbook/record-dashboard-peer.ts:185',
-    'src/tools/rbook/record-dashboard-peer.ts:227',
-    'src/tools/rbook/record-dashboard-peer.ts:297',
-    'src/tools/rbook/record-dashboard-peer.ts:324',
+    'src/tools/rbook/record-dashboard-peer.ts:101',
+    'src/tools/rbook/record-dashboard-peer.ts:106',
+    'src/tools/rbook/record-dashboard-peer.ts:111',
+    'src/tools/rbook/record-dashboard-peer.ts:178',
+    'src/tools/rbook/record-dashboard-peer.ts:187',
+    'src/tools/rbook/record-dashboard-peer.ts:194',
+    'src/tools/rbook/record-dashboard-peer.ts:236',
+    'src/tools/rbook/record-dashboard-peer.ts:317',
+    'src/tools/rbook/record-dashboard-peer.ts:344',
     'src/tools/rbook/record-peers.ts:99',
-    'src/tools/rbook/record-sync.ts:120',
-    'src/tools/rbook/record-sync.ts:143',
-    'src/tools/rbook/record-wire.ts:74',
+    'src/tools/rbook/record-sync.ts:122',
+    'src/tools/rbook/record-sync.ts:152',
+    'src/tools/rbook/record-wire.ts:75',
   ],
   // s97-m11: sharing, joining and moving back through the dashboard: the flows' refusals, setRole, the
   // referee's move back and archive, and a route the dashboard ended.
   's97-m11': [
-    'src/referee/handover.ts:250',
+    'src/referee/handover.ts:259',
     'src/referee/membership.ts:183',
     'src/referee/peer.ts:291',
     'src/tools/rbook/rbook-project-shared.ts:274',
     'src/tools/rbook/rbook-project-shared.ts:319',
-    'src/tools/rbook/record-dashboard-join.ts:66',
-    'src/tools/rbook/record-dashboard-join.ts:77',
-    'src/tools/rbook/record-dashboard-join.ts:101',
-    'src/tools/rbook/record-dashboard-join.ts:59',
+    'src/tools/rbook/record-dashboard-join.ts:67',
+    'src/tools/rbook/record-dashboard-join.ts:78',
+    'src/tools/rbook/record-dashboard-join.ts:105',
+    'src/tools/rbook/record-dashboard-join.ts:60',
     'src/tools/rbook/record-dashboard-move.ts:90',
     'src/tools/rbook/record-dashboard-move.ts:99',
     'src/tools/rbook/record-dashboard-move.ts:159',
@@ -564,23 +564,47 @@ const SITES_BY_MISSION = {
     'src/tools/rbook/record-dashboard-move.ts:134',
     'src/tools/rbook/record-successor.ts:312',
     'src/tools/rbook/record-dashboard-move.ts:166',
-    'src/tools/rbook/record-dashboard-peer.ts:202',
-    'src/tools/rbook/record-dashboard-peer.ts:239',
-    'src/tools/rbook/record-dashboard-share.ts:95',
-    'src/tools/rbook/record-dashboard-share.ts:142',
-    'src/tools/rbook/record-dashboard-share.ts:154',
-    'src/tools/rbook/record-dashboard-share.ts:160',
-    'src/tools/rbook/record-dashboard-share.ts:173',
-    'src/tools/rbook/record-dashboard-share.ts:198',
-    'src/tools/rbook/record-dashboard-share.ts:251',
-    'src/tools/rbook/record-dashboard-share.ts:274',
-    'src/tools/rbook/record-membership.ts:271',
-    'src/tools/rbook/record-membership.ts:277',
+    'src/tools/rbook/record-dashboard-peer.ts:211',
+    'src/tools/rbook/record-dashboard-peer.ts:248',
+    'src/tools/rbook/record-dashboard-share.ts:103',
+    'src/tools/rbook/record-dashboard-share.ts:151',
+    'src/tools/rbook/record-dashboard-share.ts:163',
+    'src/tools/rbook/record-dashboard-share.ts:180',
+    'src/tools/rbook/record-dashboard-share.ts:214',
+    'src/tools/rbook/record-dashboard-share.ts:238',
+    'src/tools/rbook/record-dashboard-share.ts:294',
+    'src/tools/rbook/record-dashboard-share.ts:317',
+    'src/tools/rbook/record-membership.ts:279',
+    'src/tools/rbook/record-membership.ts:285',
+    'src/tools/rbook/record-membership.ts:300',
+    'src/tools/rbook/record-membership.ts:306',
     'src/tools/rbook/record-membership.ts:292',
-    'src/tools/rbook/record-membership.ts:298',
-    'src/tools/rbook/record-membership.ts:284',
   ],
-  's97-m12': ['src/tools/rbook/draft-approval.ts:162'],
+  's97-m12': ['src/tools/rbook/draft-approval.ts:201'],
+  // s100-m01: the sharing fixes' refusals: the owner's other copies at a share, a removed member's
+  // route the dashboard ended, a re-judge off the owner's copy, a join and a recovery of a newer
+  // protocol, a handover to a copy behind a move or from one, a removed copy's sync, and a member's
+  // reconcile.
+  's100-m01': [
+    'src/tools/rbook/record-dashboard-share.ts:174',
+    'src/tools/rbook/record-dashboard-peer.ts:259',
+    'src/tools/rbook/record-decide.ts:127',
+    'src/tools/rbook/record-join.ts:127',
+    'src/tools/rbook/record-recovery.ts:346',
+    'src/tools/rbook/record-move-routes.ts:59',
+    'src/tools/rbook/record-move-routes.ts:53',
+    'src/tools/rbook/record-sync.ts:287',
+    'src/tools/rbook/rbook-db-backfill.ts:431',
+  ],
+  // s100-m02: a share of a project the dashboard does not hold yet, refused signed out or with
+  // uploads off, where a session close would upload nothing (the s97 review's finding 7).
+  's100-m02': [
+    'src/tools/rbook/record-dashboard-share.ts:203',
+    'src/tools/rbook/record-dashboard-share.ts:209',
+  ],
+  // s100-m03: a next-step capture whose table or genesis columns cannot be prepared before the
+  // write lock, now that the capture writes its row (#712).
+  's100-m03': ['src/tools/rbook/rbook-session-capture.ts:498'],
 } as const satisfies Readonly<Record<string, readonly string[]>>;
 const RATIFIED_SITE_ADDS = Object.values(SITES_BY_MISSION).flat();
 
@@ -665,8 +689,8 @@ const CONSUMER_RESOLVED_CODES: Readonly<Record<string, string>> = {
   'src/tools/rbook/rbook-context-update.ts:818': 'INVALID_PARAMETER',
   'src/tools/rbook/errors.ts:386': '<expr>',
   // These objects spread dashboardError before overriding its suggestion; proven below.
-  'src/tools/rbook/rbook-db-backfill.ts:460': 'DASHBOARD_ERROR',
-  'src/tools/rbook/rbook-db-backfill.ts:542': 'DASHBOARD_ERROR',
+  'src/tools/rbook/rbook-db-backfill.ts:470': 'DASHBOARD_ERROR',
+  'src/tools/rbook/rbook-db-backfill.ts:552': 'DASHBOARD_ERROR',
 };
 
 type TriggerClass = 'VALIDATION' | 'STATE' | 'FAULT' | 'EXTERNAL' | 'UNTYPED';
@@ -1357,18 +1381,21 @@ const MATRIX: MatrixCase[] = [
       "returned; SQL-forced here because a matrix call cannot read a previous call's id",
     setup: (ctx) => {
       withDb(ctx.dbPath, (db) => {
-        // Establish, never inherit (#547). The record call authors under the newest active
-        // EXPLICIT session, else its own implicit one, so the seeded row must carry that author.
-        // Borrowing whatever the live store had open passed only while a session was open there.
+        // Establish, never inherit (#547). The record call authors under its caller's own explicit
+        // session, else the newest active KEYLESS explicit session, else its own implicit one
+        // (session-owner.ts), so the seeded row must carry that author. The matrix's server owns no
+        // session, and an explicit session started inside a harness carries that harness's key, as
+        // a sprint close's own session does: borrowing it left the seeded row's author unmatched.
         const sessionColumns = new Set(
           (db.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>).map(
             (column) => column.name
           )
         );
         const explicitOnly = sessionColumns.has('implicit') ? 'AND implicit = 0' : '';
+        const keylessOnly = sessionColumns.has('owner_key') ? 'AND owner_key IS NULL' : '';
         let session = db
           .prepare(
-            `SELECT id FROM sessions WHERE status = 'active' ${explicitOnly}
+            `SELECT id FROM sessions WHERE status = 'active' ${explicitOnly} ${keylessOnly}
               ORDER BY started_at DESC LIMIT 1`
           )
           .get() as { id: string } | undefined;
@@ -2527,12 +2554,12 @@ const EXTERNAL_RESIDUAL_REASONS: Readonly<Record<string, string>> = {
 };
 
 const HTTP_EXTERNAL_SITES = new Set([
-  'src/tools/rbook/rbook-db-backfill.ts:460',
-  'src/tools/rbook/rbook-db-backfill.ts:542',
+  'src/tools/rbook/rbook-db-backfill.ts:470',
+  'src/tools/rbook/rbook-db-backfill.ts:552',
   'src/tools/rbook/rbook-auth.ts:633',
-  'src/tools/rbook/rbook-auth.ts:1218',
-  'src/tools/rbook/rbook-auth.ts:1227',
-  'src/tools/rbook/rbook-auth.ts:1235',
+  'src/tools/rbook/rbook-auth.ts:1222',
+  'src/tools/rbook/rbook-auth.ts:1231',
+  'src/tools/rbook/rbook-auth.ts:1239',
   'src/tools/rbook/rbook-message.ts:1092',
   'src/tools/rbook/errors.ts:430',
   'src/tools/rbook/errors.ts:446',
@@ -2546,11 +2573,11 @@ const SYNTHETIC_EXTERNAL_SITES = new Set([
   'src/tools/rbook/rbook-auth.ts:595',
   'src/tools/rbook/rbook-auth.ts:604',
   'src/tools/rbook/rbook-auth.ts:690',
-  'src/tools/rbook/rbook-auth.ts:833',
-  'src/tools/rbook/rbook-auth.ts:968',
-  'src/tools/rbook/rbook-auth.ts:975',
-  'src/tools/rbook/rbook-auth.ts:1157',
-  'src/tools/rbook/rbook-auth.ts:1166',
+  'src/tools/rbook/rbook-auth.ts:835',
+  'src/tools/rbook/rbook-auth.ts:970',
+  'src/tools/rbook/rbook-auth.ts:977',
+  'src/tools/rbook/rbook-auth.ts:1159',
+  'src/tools/rbook/rbook-auth.ts:1168',
   'src/tools/rbook/dashboard-client.ts:282',
   'src/tools/rbook/errors.ts:495',
 ]);
@@ -3162,7 +3189,8 @@ function externalReplayScenario(prescription: PrescribedCall): DashboardScenario
       expected: {
         method: 'POST',
         path: '/api/keys/project-key-1/revoke',
-        authorization: 'Bearer cmk_project_fixture',
+        // s100-m02 (#717 item 3): a revoke goes with the machine's user key, never a project's.
+        authorization: 'Bearer cmk_user_fixture_1',
       },
       status: 200,
       body: {
@@ -4941,8 +4969,32 @@ interface Replay {
  * The shape is `migration-warning-reachability.test.ts`'s.
  */
 const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
+  // ── s100-m02: a share refused before any upload could put the project there ──
+  'src/tools/rbook/record-dashboard-share.ts:203':
+    'A share through the dashboard of a project the dashboard does not hold yet, from a machine with no dashboard credential. rbook_project reaches it; dashboard-sharing.test.ts shares from a machine that never signed in.',
+  'src/tools/rbook/record-dashboard-share.ts:209':
+    'The same share on a signed-in machine with RBOOK_CHECKPOINT_SYNC=off. rbook_project reaches it; dashboard-sharing.test.ts shares with uploads off.',
+  // ── s100-m01: the sharing fixes ──
+  'src/tools/rbook/record-dashboard-share.ts:174':
+    "A share through the dashboard while the owner's other copies wrote or are routed to. rbook_project reaches it; stranded.test.ts shares with a second copy that wrote, one routed, and a former owner copy.",
+  'src/tools/rbook/record-dashboard-peer.ts:259':
+    "A removed member's dashboard sync answered 404 with no project listed for its account. The dashboard peer only; dashboard-sharing.test.ts answers it through a double of the deployed dashboard.",
+  'src/tools/rbook/record-decide.ts:127':
+    "A re-judge on a copy that is not the owner's. readmit runs it only after inviteMember's own owner-copy check, so no route reaches it; readd.test.ts re-adds on the referee.",
+  'src/tools/rbook/record-join.ts:127':
+    'A join request from a copy whose change log is written in a newer record protocol. A join over SSH or by file reaches it; record-protocol-paths.test.ts carries a newer copy and asks.',
+  'src/tools/rbook/record-recovery.ts:346':
+    "A recovery that meets a member's copy holding a newer record protocol's changes. reasonbook recover only, never routed; record-protocol-paths.test.ts recovers from one.",
+  'src/tools/rbook/record-move-routes.ts:59':
+    'A handover over SSH to a copy behind the latest move. reasonbook handover only, never routed; record-routes.test.ts hands over to a copy behind a move.',
+  'src/tools/rbook/record-move-routes.ts:53':
+    "A handover over SSH from a copy behind the far copy's move, which a fork of the owner copy's moves makes. reasonbook handover only, never routed; no test constructs the fork, and the far copy's own check refuses it first in every one that does.",
+  'src/tools/rbook/record-sync.ts:287':
+    "A sync from a copy told its member was removed whose route ended. rbook_project reaches it; dashboard-sharing.test.ts syncs such a copy after the dashboard's 404.",
+  'src/tools/rbook/rbook-db-backfill.ts:431':
+    "A reconcile on a member's copy of a shared record, which has no dashboard mirror of its own. rbook_db reaches it with a dashboard credential; dashboard-sharing.test.ts reconciles a member's copy.",
   // ── s97-m11: sharing, joining and moving back through the dashboard ──
-  'src/referee/handover.ts:250':
+  'src/referee/handover.ts:259':
     "An archive asked of a referee whose project has not moved back. A dashboard call at the end of a move back, never routed; dashboard-sharing.test.ts archives only after the owner's copy synced.",
   'src/referee/membership.ts:183':
     'A role change for an account that is no member. A dashboard sharing call, never routed; roles.test.ts names an unknown account.',
@@ -4950,49 +5002,49 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     "A move back asked while the referee does not hold the record, or a move is pending. The dashboard's peer route only; no test constructs one.",
   'src/tools/rbook/rbook-project-shared.ts:274':
     'A join through the dashboard with no folder or no address. rbook_project reaches it; no test sends one without.',
-  'src/tools/rbook/record-dashboard-join.ts:59':
+  'src/tools/rbook/record-dashboard-join.ts:60':
     'A join through the dashboard into a folder that is no project folder, such as home. rbook_project reaches it; dashboard-sharing.test.ts joins into a stand-in home.',
   'src/tools/rbook/record-successor.ts:312':
     "A move back's take of its successor while the copy wrote past the dashboard's mark of it. The move back only, which syncs and asks again; dashboard-sharing.test.ts writes in that window.",
-  'src/tools/rbook/record-dashboard-join.ts:66':
+  'src/tools/rbook/record-dashboard-join.ts:67':
     'A join through the dashboard into a folder that holds a store. rbook_project reaches it; no test joins into a used folder.',
-  'src/tools/rbook/record-dashboard-join.ts:77':
+  'src/tools/rbook/record-dashboard-join.ts:78':
     'An address the dashboard does not resolve for this account. rbook_project reaches it; no test sends an unknown address.',
-  'src/tools/rbook/record-dashboard-join.ts:101':
+  'src/tools/rbook/record-dashboard-join.ts:105':
     'A first copy the dashboard sent that this version builds no store from, such as a damaged file. rbook_project reaches it; no test sends a damaged first copy.',
-  'src/tools/rbook/record-dashboard-peer.ts:239':
+  'src/tools/rbook/record-dashboard-peer.ts:248':
     'A dashboard that lists the project but no longer shares it, after its owner moved it back. A sync through the dashboard only; dashboard-sharing.test.ts syncs a member after the move back.',
-  'src/tools/rbook/record-dashboard-share.ts:95':
+  'src/tools/rbook/record-dashboard-share.ts:103':
     "A share or a join through the dashboard on a machine whose switch is not on. rbook_project reaches it; dashboard-sharing.test.ts shares and joins with the switch off, and the healthy-store matrix runs without the dashboard's routes.",
-  'src/tools/rbook/record-dashboard-share.ts:142':
+  'src/tools/rbook/record-dashboard-share.ts:151':
     'A share through the dashboard of a project it already referees, with no answer kept from a share that stopped. rbook_project reaches it; dashboard-sharing.test.ts shares a second time only to finish one that stopped.',
-  'src/tools/rbook/record-dashboard-share.ts:154':
+  'src/tools/rbook/record-dashboard-share.ts:163':
     'A share through the dashboard of a project shared directly with members. rbook_project reaches it; dashboard-sharing.test.ts shares one with a member.',
-  'src/tools/rbook/record-dashboard-share.ts:160':
+  'src/tools/rbook/record-dashboard-share.ts:180':
     "A share through the dashboard from a member's copy. rbook_project reaches it; no test shares from one.",
-  'src/tools/rbook/record-dashboard-share.ts:173':
+  'src/tools/rbook/record-dashboard-share.ts:214':
     'A share through the dashboard of a project the dashboard does not know yet. rbook_project reaches it; dashboard-sharing.test.ts shares one before its first upload.',
-  'src/tools/rbook/record-membership.ts:271':
+  'src/tools/rbook/record-membership.ts:279':
     "A role change from a copy that is no authority. The referee library's setRole only, on the authority; no test constructs one.",
-  'src/tools/rbook/record-membership.ts:277':
+  'src/tools/rbook/record-membership.ts:285':
     "A role no member can hold, such as viewer. The referee library's setRole only; roles.test.ts names a viewer.",
-  'src/tools/rbook/record-membership.ts:292':
+  'src/tools/rbook/record-membership.ts:300':
     "A role change of the owner. The referee library's setRole only; roles.test.ts asks for one.",
-  'src/tools/rbook/record-membership.ts:298':
+  'src/tools/rbook/record-membership.ts:306':
     "A role change of a removed member. The referee library's setRole only; roles.test.ts asks for one after the removal.",
-  'src/tools/rbook/record-membership.ts:284':
+  'src/tools/rbook/record-membership.ts:292':
     "A role change naming no member. The referee library's setRole only, which finds the member first; no test constructs one.",
   // ── s97-m10: the dashboard transport, reached through a sync of a copy whose route is a dashboard's ──
-  'src/tools/rbook/record-dashboard-peer.ts:324':
+  'src/tools/rbook/record-dashboard-peer.ts:344':
     "One transaction larger than a page the dashboard takes, held back while the copy still takes in the stream. A sync through a dashboard only; dashboard-transport.test.ts writes a decision larger than the reference server's limit.",
   // s97-m14: down nine lines (a removal kept per peer), and record-sync's below its exchange down one.
   'src/tools/rbook/record-peers.ts:108':
     'An SSH route replacing the dashboard route a copy keeps to its referee. No router or CLI path reaches it once outbound SSH is refused for a refereed copy; dashboard-transport.test.ts calls rememberPeer with one.',
-  'src/tools/rbook/record-sync.ts:120':
+  'src/tools/rbook/record-sync.ts:122':
     'A sync of a dashboard route given no project folder to sign with, which every router and CLI path passes. dashboard-transport.test.ts calls syncPeers without one.',
-  'src/tools/rbook/record-sync.ts:143':
+  'src/tools/rbook/record-sync.ts:152':
     'An SSH channel asked of a copy whose project the dashboard referees: sync, join, handover or recovery over SSH. The CLI and rbook_project reach it; dashboard-transport.test.ts runs reasonbook sync --ssh on such a copy.',
-  'src/tools/rbook/record-wire.ts:74':
+  'src/tools/rbook/record-wire.ts:75':
     "A bundle written or taken in by a copy whose project the dashboard referees. The CLI's --bundle-out and --bundle-in only, never routed; dashboard-transport.test.ts runs both.",
   // ── s97-m09: the referee library's refusals, answered on the dashboard's routes, never a router ──
   'src/referee/copies.ts:28':
@@ -5001,43 +5053,43 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     'A first copy asked for with no file to write. A dashboard call, never routed; remedies.test.ts asks with an empty path.',
   'src/referee/copies.ts:81':
     'A referee store the sharing preparation cannot bring to this version, which only damage to its stable ids leaves. A dashboard call at deploy, never routed; no test constructs such a store.',
-  'src/referee/handover.ts:110':
+  'src/referee/handover.ts:116':
     'createReferee with no owner account. A dashboard call, never routed; remedies.test.ts passes an empty one.',
-  'src/referee/handover.ts:124':
+  'src/referee/handover.ts:130':
     'A second createReferee for an owner who did not make the store there. A dashboard call, never routed; handover-in.test.ts retries it as another account.',
-  'src/referee/handover.ts:181':
+  'src/referee/handover.ts:190':
     "An upload that is no owner's copy of a shared record, or whose clock runs more than a week ahead. It arrives on the dashboard's upload route, never an MCP router; remedies.test.ts uploads an unshared store, fresh-copy.test.ts covers views, computed columns and old schemas, and intake-forgeries.test.ts's clock cases bound the rest.",
-  'src/referee/handover.ts:187':
+  'src/referee/handover.ts:196':
     'A failure while building the referee store that no upload check names, such as a full volume. A dashboard call; no test constructs one.',
-  'src/referee/handover.ts:212':
+  'src/referee/handover.ts:221':
     'A join answer applied to a referee that has joined already. A dashboard call, never routed; remedies.test.ts applies one twice.',
-  'src/referee/handover.ts:220':
+  'src/referee/handover.ts:229':
     "A join answer that admits the referee as another member than the owner. A dashboard call, never routed; remedies.test.ts applies an editor's.",
-  'src/referee/handover.ts:280':
+  'src/referee/handover.ts:289':
     'A discard of a referee that has joined, which holds the record. A dashboard call, never routed; remedies.test.ts discards a joined referee.',
-  'src/referee/intake.ts:122':
+  'src/referee/intake.ts:129':
     "A delivery holding a malformed change. It reaches the referee only through the dashboard's peer route; intake.test.ts sends eight kinds of malformed change.",
-  'src/referee/intake.ts:156':
+  'src/referee/intake.ts:163':
     "A delivery in a newer record protocol, kept on its copy. The dashboard's peer route only; intake.test.ts sends a newer change and a newer one of an unknown kind.",
-  'src/referee/intake.ts:172':
+  'src/referee/intake.ts:179':
     "A change whose clock runs more than a week past the referee's, which waits on its copy. The dashboard's peer route only; intake-forgeries.test.ts sends one eight days ahead, then one just short of 2200.",
-  'src/referee/intake.ts:180':
+  'src/referee/intake.ts:187':
     "A change stamped with the referee's own replica. The dashboard's peer route only; who-may-call.test.ts sends one from the owner's account and in the relay.",
-  'src/referee/intake.ts:192':
+  'src/referee/intake.ts:199':
     "A change joining another copy's transaction, or one the referee holds. The dashboard's peer route only; intake-forgeries.test.ts joins the referee's, the owner's and the member's own.",
-  'src/referee/intake.ts:205':
-    "Changes stamped with a replica that is not the caller's. The dashboard's peer route only; who-may-call.test.ts sends each copy's changes as the other.",
   'src/referee/intake.ts:212':
+    "Changes stamped with a replica that is not the caller's. The dashboard's peer route only; who-may-call.test.ts sends each copy's changes as the other.",
+  'src/referee/intake.ts:219':
     "A member's change of a kind only the referee writes. The dashboard's peer route only; who-may-call.test.ts sends each of the five kinds.",
-  'src/referee/intake.ts:233':
+  'src/referee/intake.ts:240':
     "A change setting a row's id, which no copy records. The dashboard's peer route only; intake-forgeries.test.ts sets one on the owner's decision.",
-  'src/referee/intake.ts:246':
+  'src/referee/intake.ts:253':
     "A change whose clock says it was made before its copy was admitted. The dashboard's peer route only; intake-forgeries.test.ts backdates one to 1970.",
-  'src/referee/intake.ts:264':
+  'src/referee/intake.ts:271':
     "A renumber naming a block the referee did not admit, or rows outside it. The dashboard's peer route only; intake.test.ts forges one during a real re-identification.",
-  'src/referee/intake.ts:278':
+  'src/referee/intake.ts:285':
     "A numbered create outside every block admitted for its replica. The dashboard's peer route only; intake-forgeries.test.ts takes ids from the owner's block.",
-  'src/referee/intake.ts:290':
+  'src/referee/intake.ts:297':
     "An editor's change naming another author. The dashboard's peer route only; intake-forgeries.test.ts names the owner.",
   'src/referee/membership.ts:51':
     'A membership call on a referee that has not joined. A dashboard call, never routed; remedies.test.ts lists members before the join and again after.',
@@ -5079,7 +5131,7 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     'A view of a referee that has not joined. A dashboard page call, never routed; remedies.test.ts asks before the join and after.',
   'src/referee/views.ts:97':
     'The activity feed asked from a change the referee does not hold. A dashboard page call, never routed; remedies.test.ts asks from one, then from the start.',
-  'src/tools/rbook/record-fresh-copy.ts:386':
+  'src/tools/rbook/record-fresh-copy.ts:402':
     "A fresh copy's own schema that the sharing preparation cannot make current, which only a broken install leaves. The referee library and the share's upload build it, never a router; no test constructs one.",
   // The CLI's offline migration is outside the router matrix; its refusal/retry cases run
   // against real SQLite stores and child processes in tests/cli/migrate*.test.ts.
@@ -5097,9 +5149,9 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
   'src/tools/rbook/rbook-mission-add.ts:303':
     'Database read/write/transaction failure branch; the healthy-store axis cannot cause it. Fault cases live in lifecycle-decoupling.test.ts and the integration failure suites.',
   // s97-m13: start's promotion moved its two branches down 19 lines, and status's queue order 6.
-  'src/tools/rbook/rbook-mission-start.ts:274':
+  'src/tools/rbook/rbook-mission-start.ts:285':
     'Database read/write/transaction failure branch; the healthy-store axis cannot cause it. Fault cases live in lifecycle-decoupling.test.ts and the integration failure suites.',
-  'src/tools/rbook/rbook-mission-start.ts:288':
+  'src/tools/rbook/rbook-mission-start.ts:299':
     'Database read/write/transaction failure branch; the healthy-store axis cannot cause it. Fault cases live in lifecycle-decoupling.test.ts and the integration failure suites.',
   'src/tools/rbook/rbook-mission-status.ts:267':
     'Database read/write/transaction failure branch; the healthy-store axis cannot cause it. Fault cases live in lifecycle-decoupling.test.ts and the integration failure suites.',
@@ -5128,17 +5180,17 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
   // ── s93-m06: draft refusals that need a harness session or a race ────────────────────────────
   // The matrix drives routers in process with no harness link, so the server writes as a process
   // and no operator words can be bound to it; these are driven by name in draft-approval.test.ts.
-  'src/tools/rbook/draft-approval.ts:162':
+  'src/tools/rbook/draft-approval.ts:201':
     "A fromDraft record, in other words than the draft's, of a draft revised after the operator approved it. The record path only; draft-approval.test.ts records a declined revision's text under the earlier approval.",
-  'src/tools/rbook/draft-approval.ts:186':
+  'src/tools/rbook/draft-approval.ts:227':
     'The operator plainly declined but the prompt hook could not write the decline, so only the ' +
     'runtime words say so. Needs a harness-linked server and hook runtime words; driven in ' +
     'draft-approval.test.ts ("refuses a decline the hook could not write to the store").',
-  'src/tools/rbook/draft-approval.ts:338':
+  'src/tools/rbook/draft-approval.ts:379':
     'Two records of one constraint, rule or profile draft at once: the guarded claim lets one ' +
     'through. A race needs the operator words bound in a harness session; driven in ' +
     'draft-approval.test.ts ("claims a constraint draft once when two records race").',
-  'src/tools/rbook/draft-approval.ts:408':
+  'src/tools/rbook/draft-approval.ts:450':
     'An approved profile draft whose line cannot be written (past the profile cap) releases its ' +
     'claim. Needs the operator words bound in a harness session; driven in draft-approval.test.ts ' +
     '("releases the claim when an approved profile line cannot be written").',
@@ -5173,13 +5225,13 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
   'src/tools/rbook/record-recording.ts:88':
     'A recorded write that begins, commits or rolls back its own transaction, or runs a script, which no tool path makes, on a shared store or not: every converted site leaves its transaction to the change helper. record-guards.test.ts drives it with each verb and script.',
   // ── s96-m12: the merge's refusals, which need a second copy, a delivery or a conflict ─────────
-  'src/tools/rbook/record-apply.ts:133':
+  'src/tools/rbook/record-apply.ts:140':
     "A delivery that holds another project's changes. The healthy-store matrix drives routed calls on one store, and delivers nothing; record-merge-fixtures.test.ts refuses one whole on a shared copy and stores nothing of it.",
-  'src/tools/rbook/record-apply.ts:141':
+  'src/tools/rbook/record-apply.ts:151':
     "A delivery holding an author name no copy of Reasonbook records. The healthy-store matrix drives routed calls on one store, and delivers nothing; record-merge-fixtures.test.ts sends a member's change with a right-to-left override, an untrimmed name or a bell, on the change or in its row, and nothing of it is stored.",
-  'src/tools/rbook/record-apply.ts:167':
+  'src/tools/rbook/record-apply.ts:177':
     "A replica's slot that holds a different change on the two copies, delivered outside an exchange, which renumbers such a copy first. The healthy-store matrix drives routed calls on one store, and delivers nothing; record-merge-fixtures.test.ts delivers such a change and the merge stops.",
-  'src/tools/rbook/record-apply.ts:194':
+  'src/tools/rbook/record-apply.ts:204':
     "A merge into a store that keeps no change log. A merge arrives only through a sync, a join or a bundle, between two copies; record-merge-fixtures.test.ts applies a copy's changes to a solo store, which refuses with this remedy.",
   'src/tools/rbook/record-decide.ts:38':
     "An admission made off the owner's copy. The healthy-store matrix drives routed calls on one store, and only a member's copy reaches this; record-merge-fixtures.test.ts admits from a member's copy, which refuses.",
@@ -5196,67 +5248,67 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
   // ── s96-m13: the sync, sharing and joining refusals a single store cannot reach ──────────────
   'src/tools/rbook/rbook-db-backfill.ts:138':
     "The old backfill on a member's copy of a shared record, which never uploads. The healthy-store matrix drives routed calls on one store, and builds no member's copy; record-gates.test.ts joins one and drives the backfill to this refusal.",
-  'src/tools/rbook/record-bundle.ts:93':
+  'src/tools/rbook/record-bundle.ts:101':
     'A bundle file that is not JSON. Bundles travel through reasonbook sync --bundle-in, no routed tool; record-refusals.test.ts reads one.',
-  'src/tools/rbook/record-bundle.ts:100':
-    'JSON that is not a Reasonbook bundle. Bundles travel through the CLI, no routed tool; record-refusals.test.ts reads one.',
   'src/tools/rbook/record-bundle.ts:108':
+    'JSON that is not a Reasonbook bundle. Bundles travel through the CLI, no routed tool; record-refusals.test.ts reads one.',
+  'src/tools/rbook/record-bundle.ts:116':
     'A bundle edited or damaged after it was written. Bundles travel through the CLI, no routed tool; record-bundle.test.ts edits one and imports it.',
-  'src/tools/rbook/record-bundle.ts:147':
+  'src/tools/rbook/record-bundle.ts:155':
     "A bundle from a copy that has not taken the owner copy's latest move. It needs two copies and a move; record-moves.test.ts carries one.",
-  'src/tools/rbook/record-bundle.ts:181':
+  'src/tools/rbook/record-bundle.ts:189':
     "A member's bundle whose copy must take a new identity first, which only a direct sync gives. It needs a restored member's copy; record-refusals.test.ts imports one on the owner's copy.",
   'src/tools/rbook/record-decide.ts:76':
     "A decision of transactions off the owner's copy. The healthy-store matrix drives routed calls on one store, and only a member's copy reaches this; record-refusals.test.ts tries it on one.",
-  'src/tools/rbook/record-exchange-steps.ts:35':
+  'src/tools/rbook/record-exchange-steps.ts:37':
     'A copy behind a move meeting a copy ahead that is no owner copy in either view. An exchange needs two copies; record-refusals.test.ts presents one.',
   // s97-m14 (critics, round 2): down two lines (the catch-up names the removed copy).
-  'src/tools/rbook/record-exchange-steps.ts:239':
+  'src/tools/rbook/record-exchange-steps.ts:252':
     'Blocks that still clash after four renumbers: a bound that stops a fault rather than loop. No supported sequence leaves two copies clashing after renumbering; record-refusals.test.ts drives it with copies that never move.',
   // s97-m14 (critics, round 1): down five lines (removedCopy), and past removalNote down 27.
-  'src/tools/rbook/record-exchange.ts:219':
+  'src/tools/rbook/record-exchange.ts:220':
     'Two copies that speak different sync protocols. An exchange needs two copies; record-exchange.test.ts presents a newer one.',
-  'src/tools/rbook/record-exchange.ts:225':
+  'src/tools/rbook/record-exchange.ts:226':
     'Two copies of different projects. An exchange needs two copies; record-exchange.test.ts pairs them.',
-  'src/tools/rbook/record-exchange.ts:232':
+  'src/tools/rbook/record-exchange.ts:233':
     'Both sides one replica, one copied from the other. An exchange needs two copies; record-refusals.test.ts presents one.',
-  'src/tools/rbook/record-exchange.ts:239':
+  'src/tools/rbook/record-exchange.ts:240':
     'Two copies naming different owner copies for one move. An exchange needs two copies; record-refusals.test.ts presents one.',
-  'src/tools/rbook/record-exchange.ts:247':
+  'src/tools/rbook/record-exchange.ts:248':
     "Two members, neither the owner's copy, which the star refuses. An exchange needs two copies; record-exchange.test.ts and record-moves.test.ts pair two members.",
-  'src/tools/rbook/record-exchange.ts:271':
+  'src/tools/rbook/record-exchange.ts:272':
     "The owner's own stream differing at a change both copies hold, as a restored owner machine that wrote again leaves it. record-reidentify.test.ts restores one and syncs.",
-  'src/tools/rbook/record-exchange.ts:278':
+  'src/tools/rbook/record-exchange.ts:279':
     "A slot clash on a copy neither side owns, which no honest star produces: a member holds others' streams only as the owner's copy sent them. record-refusals.test.ts states the case directly.",
-  'src/tools/rbook/record-exchange.ts:285':
+  'src/tools/rbook/record-exchange.ts:286':
     'A block two replicas hold where the one admitted later is not a side of this exchange, so it cannot renumber here. record-reidentify.test.ts admits two copies in one block and syncs the earlier one.',
-  'src/tools/rbook/record-exchange.ts:344':
+  'src/tools/rbook/record-exchange.ts:352':
     "An owner copy holding less of its own stream than a member, as a restore of the owner's machine leaves it. record-recovery.test.ts restores one and syncs.",
-  'src/tools/rbook/record-join.ts:104':
+  'src/tools/rbook/record-join.ts:105':
     "A copy whose file fails SQLite's integrity check. reasonbook copy writes a consistent file, and a file damaged enough to fail the check mostly fails to open first; no test constructs one.",
-  'src/tools/rbook/record-join.ts:113':
+  'src/tools/rbook/record-join.ts:114':
     'A copy made before sharing, with no baseline, sent to the import. A join runs between two copies; record-join.test.ts presents one.',
-  'src/tools/rbook/record-join.ts:156':
+  'src/tools/rbook/record-join.ts:170':
     'A join request that is not one. Join steps travel by file or SSH, no routed tool; record-refusals.test.ts presents one.',
-  'src/tools/rbook/record-join.ts:161':
+  'src/tools/rbook/record-join.ts:175':
     'A join request in another sync protocol. Join steps travel by file or SSH; record-refusals.test.ts presents one.',
-  'src/tools/rbook/record-join.ts:169':
+  'src/tools/rbook/record-join.ts:183':
     "A join answered off the owner's copy. It needs a member's copy; record-refusals.test.ts tries it on one.",
-  'src/tools/rbook/record-join.ts:174':
+  'src/tools/rbook/record-join.ts:188':
     "A join request from another project's copy. Join steps travel by file or SSH; record-refusals.test.ts presents one.",
-  'src/tools/rbook/record-join.ts:182':
+  'src/tools/rbook/record-join.ts:196':
     'A join for someone the record has not invited. A join runs between two copies; record-join.test.ts drives it.',
-  'src/tools/rbook/record-join.ts:189':
+  'src/tools/rbook/record-join.ts:203':
     'A second answer to a request already answered, so an answer is never reused. record-join.test.ts answers twice.',
-  'src/tools/rbook/record-join.ts:231':
+  'src/tools/rbook/record-join.ts:245':
     'A join answer that is not one. Join steps travel by file or SSH; record-refusals.test.ts presents one.',
-  'src/tools/rbook/record-join.ts:253':
+  'src/tools/rbook/record-join.ts:267':
     'A join answer for another request, or one used already. record-join.test.ts applies one twice and on another copy.',
-  'src/tools/rbook/record-membership.ts:141':
+  'src/tools/rbook/record-membership.ts:144':
     "An invite off the owner's copy. The healthy-store matrix drives routed calls on one store, and only a member's copy reaches this; record-join.test.ts invites from one.",
-  'src/tools/rbook/record-membership.ts:330':
+  'src/tools/rbook/record-membership.ts:338':
     "A removal off the owner's copy. The healthy-store matrix drives routed calls on one store, and only a member's copy reaches this; record-members.test.ts removes from one.",
-  'src/tools/rbook/record-move-routes.ts:50':
+  'src/tools/rbook/record-move-routes.ts:67':
     'An SSH handover to a copy its own check refuses. The matrix opens no SSH channel; record-routes.test.ts hands over to a restored copy, then again once it re-identifies.',
   'src/tools/rbook/record-moves.ts:72':
     "A handover from a member's copy. Handovers run through reasonbook handover, no routed tool; record-moves.test.ts tries one.",
@@ -5268,13 +5320,13 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     'A handover to a copy that held a term already. Handovers run through the CLI; record-moves.test.ts tries one.',
   'src/tools/rbook/record-moves.ts:153':
     'A confirmation naming a move this copy does not hold. Only a handover over SSH names the move; record-moves.test.ts names another.',
-  'src/tools/rbook/record-recovery.ts:160':
+  'src/tools/rbook/record-recovery.ts:168':
     'A recovery on a copy that holds a move it has not confirmed. Recoveries run through reasonbook recover, no routed tool; record-recovery.test.ts tries one.',
-  'src/tools/rbook/record-recovery.ts:172':
+  'src/tools/rbook/record-recovery.ts:180':
     "A recovery whose confirmed member list is not the record's. Recoveries run through the CLI; record-recovery.test.ts drives it.",
-  'src/tools/rbook/record-recovery.ts:189':
+  'src/tools/rbook/record-recovery.ts:197':
     "A recovery while the old owner copy is live. Recoveries run through the CLI; record-recovery.test.ts drives it on the owner's machine.",
-  'src/tools/rbook/record-recovery.ts:214':
+  'src/tools/rbook/record-recovery.ts:222':
     "A recovery that cannot reach every member's copy. Recoveries run through the CLI; record-recovery.test.ts and record-move-routes.test.ts drive it.",
   'src/tools/rbook/record-admit-successor.ts:104':
     "A successor admitted off the owner's copy. Successors are admitted inside a direct exchange; record-refusals.test.ts tries it on a member's copy.",
@@ -5286,19 +5338,19 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     "A block move off the owner's copy. Block moves run inside a direct exchange; record-refusals.test.ts tries one.",
   'src/tools/rbook/record-successor.ts:177':
     'A successor taken by a store that is no copy of a shared record. Successors are taken inside a direct exchange; record-refusals.test.ts tries one.',
-  'src/cli/sync.ts:155':
+  'src/cli/sync.ts:157':
     'A bundle --for a removed member, a member with no copy, or a name that is none. Bundles travel through reasonbook sync --bundle-out, no routed tool; record-bundle.test.ts asks for each.',
-  'src/tools/rbook/rbook-db-backfill.ts:801':
+  'src/tools/rbook/rbook-db-backfill.ts:813':
     "A purge of the dashboard mirror from a member's copy. The healthy-store matrix drives routed calls on one store, and only a member's copy reaches this; record-gates.test.ts purges from one.",
   'src/tools/rbook/record-admit-successor.ts:125':
     'A join a recovery never saw, for an invite it never saw either. The healthy-store matrix builds no recovery; record-recovery.test.ts drives it, invites the member again, and the copy then re-identifies.',
-  'src/tools/rbook/record-bundle.ts:160':
-    "A bundle one move ahead from a copy that is no owner's copy in either view. Bundles travel through the CLI, no routed tool; record-bundle.test.ts imports one.",
   'src/tools/rbook/record-bundle.ts:168':
+    "A bundle one move ahead from a copy that is no owner's copy in either view. Bundles travel through the CLI, no routed tool; record-bundle.test.ts imports one.",
+  'src/tools/rbook/record-bundle.ts:176':
     "A bundle from a copy that shows this copy's member as removed. Bundles travel through the CLI; record-bundle.test.ts imports one on a removed member's copy.",
-  'src/tools/rbook/record-join.ts:241':
+  'src/tools/rbook/record-join.ts:255':
     'A join answer changed after it was written. Join steps travel by file or SSH, no routed tool; record-join.test.ts edits one and applies it.',
-  'src/tools/rbook/record-sync.ts:339':
+  'src/tools/rbook/record-sync.ts:385':
     'A sync in which no copy could be reached. The healthy-store matrix drives routed calls on one store, which has no route to any copy; record-routes.test.ts syncs with a copy whose machine is gone.',
   'src/tools/rbook/record-import.ts:140':
     'An import of a copy this account cannot read. reasonbook import is a CLI verb, no routed tool; record-import-cli.test.ts takes read access from a copy and imports it.',
@@ -5328,15 +5380,15 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     'An import --include naming a row the dry run labels neither deleted on the owner nor perhaps in the record already. A CLI verb, no routed tool; record-import.test.ts names a mission the record holds, and record-import-again.test.ts a decision the copy does not hold.',
   'src/tools/rbook/record-import-apply.ts:86':
     'An import whose write would give a numbered row another id than its plan gave it, refused before anything is written. A CLI verb, no routed tool; record-import-classify.test.ts applies a plan one number off, which refuses with this remedy.',
-  'src/tools/rbook/record-join.ts:125':
+  'src/tools/rbook/record-join.ts:139':
     "A join asked on a live copy of the shared record, the owner's or a joined member's. The healthy-store matrix's join names no copy to join; record-refusals.test.ts asks one on the owner's copy.",
-  'src/tools/rbook/record-sync.ts:152':
+  'src/tools/rbook/record-sync.ts:171':
     'A copy SSH cannot reach. The matrix opens no SSH channel; record-move-routes.test.ts and record-routes.test.ts drive it through the stand-in ssh.',
-  'src/tools/rbook/record-sync.ts:199':
+  'src/tools/rbook/record-sync.ts:229':
     'A sync whose far end stops after its handshake. The matrix opens no SSH channel; record-refusals.test.ts drives a far end that exits.',
-  'src/tools/rbook/record-sync.ts:263':
+  'src/tools/rbook/record-sync.ts:302':
     "A sync from a member's copy with no route to the owner's. The healthy-store matrix drives routed calls on one store, and builds no member's copy; record-join.test.ts drives it on a joined copy.",
-  'src/tools/rbook/record-sync.ts:414':
+  'src/tools/rbook/record-sync.ts:460':
     'A join over SSH whose far end stops after its handshake. The matrix opens no SSH channel; record-refusals.test.ts drives a far end that exits.',
 
   // ── FAULT-SHAPED PRECONDITIONS inside a VALIDATION/STATE-coded site ──────────────────────────
@@ -5356,12 +5408,12 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
   'src/tools/rbook/client.ts:871':
     'FOREIGN-KEY-constraint mapping inside RbookDatabaseClient. Same shape as :679 — no supported call ' +
     'sequence against a healthy store reaches an FK violation. Needs the fault-injection instrument.',
-  'src/tools/rbook/rbook-context-project-identity.ts:65':
+  'src/tools/rbook/rbook-context-project-identity.ts:72':
     'MEASURED: unreachable by deleting the row. On a write `ensureProjectIdentityRow(client)` runs ' +
     'first and RECREATES it, and on a read (s93-m11) the identity is derived in memory, so the ' +
     'null-identity branch needs the row to be both uncreatable and unreadable — a database fault, ' +
     'not a state this matrix can establish.',
-  'src/tools/rbook/rbook-context-project-identity.ts:130':
+  'src/tools/rbook/rbook-context-project-identity.ts:141':
     'Same fault-shaped precondition as :64, one frame later: `getProjectIdentity` returning null ' +
     'AFTER a write that already succeeded.',
 
@@ -5381,11 +5433,11 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
   // ── MASKED BY AN EARLIER REFUSAL ON EVERY PATH THIS MATRIX CAN DRIVE ─────────────────────────
   // s92-m02, s92-m05 and s92-m03 moved these two down (planned-end-date receipt fields; the
   // archive param; a comment on implicit sessions); same branches.
-  'src/tools/rbook/rbook-sprint-complete.ts:669':
+  'src/tools/rbook/rbook-sprint-complete.ts:673':
     'MEASURED: masked. With master_context deleted and the sprint made closable, closeout refuses at ' +
     'the shared errors.ts contextNotFound BEFORE reaching this sprint-local branch, so :666 is ' +
     'unreachable while that earlier guard stands.',
-  'src/tools/rbook/rbook-sprint-complete.ts:680': 'Same masking as :666, for project_context.',
+  'src/tools/rbook/rbook-sprint-complete.ts:684': 'Same masking as :666, for project_context.',
 };
 
 const FAULT_SHAPED_DRIVEABLE_RESIDUALS = new Set([
@@ -5395,8 +5447,8 @@ const FAULT_SHAPED_DRIVEABLE_RESIDUALS = new Set([
   'src/tools/rbook/rbook-mission-drop.ts:260',
   'src/tools/rbook/rbook-mission-add.ts:287',
   'src/tools/rbook/rbook-mission-add.ts:303',
-  'src/tools/rbook/rbook-mission-start.ts:274',
-  'src/tools/rbook/rbook-mission-start.ts:288',
+  'src/tools/rbook/rbook-mission-start.ts:285',
+  'src/tools/rbook/rbook-mission-start.ts:299',
   'src/tools/rbook/rbook-mission-status.ts:267',
   'src/tools/rbook/rbook-mission-update.ts:327',
   'src/tools/rbook/rbook-mission-update.ts:467',
@@ -5404,8 +5456,8 @@ const FAULT_SHAPED_DRIVEABLE_RESIDUALS = new Set([
 
   'src/tools/rbook/client.ts:860',
   'src/tools/rbook/client.ts:871',
-  'src/tools/rbook/rbook-context-project-identity.ts:65',
-  'src/tools/rbook/rbook-context-project-identity.ts:130',
+  'src/tools/rbook/rbook-context-project-identity.ts:72',
+  'src/tools/rbook/rbook-context-project-identity.ts:141',
 ]);
 const INTERNAL_FAULT_RESUME_TRIGGER =
   'any one of these codes reported from the field by an external adopter, or any in-repo incident that reaches one on a healthy store.';

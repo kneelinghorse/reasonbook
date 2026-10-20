@@ -2,7 +2,7 @@
 // ABOUTME: Pays durable dashboard upload debt for projects opened by this running server.
 // ABOUTME: A single unref timer uses a fresh request context; reads never mark a project dirty.
 
-import { getSetting } from '../../intelligence/legacy-compat';
+import { settingIsOff } from '../../intelligence/legacy-compat';
 import { ProjectGraphRegistry } from '../../intelligence/project-graph-registry';
 import { isSameDirectory } from '../../intelligence/resolution-policy';
 import { triggerCheckpointBackfill } from './checkpoint-backfill';
@@ -14,8 +14,7 @@ import { withoutCodexRequest } from '../../codex-request-context';
 const opened = new Set<string>();
 const pending = new Set<Promise<unknown>>();
 let timer: NodeJS.Timeout | undefined;
-const enabled = (): boolean =>
-  getSetting('RBOOK_CHECKPOINT_SYNC') !== 'off' && !isReadOnlyAgentSession();
+const enabled = (): boolean => !settingIsOff('RBOOK_CHECKPOINT_SYNC') && !isReadOnlyAgentSession();
 
 function launch(projectRoot: string): void {
   // setInterval inherits its creator's AsyncLocalStorage. Replace that context so later uploads

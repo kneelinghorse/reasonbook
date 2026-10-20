@@ -10,7 +10,8 @@ const SRC = path.resolve(__dirname, '../../../src');
 
 /**
  * The published universe (rbook/research/2026-10-s96-probes/s96-m01-identity-build.md, class A):
- * the objective's predicate over src, 11 lines at 92e0121. Left, each for its reason:
+ * the objective's predicate over src, 11 lines at 92e0121; 12 since s100-m03's next-step insert at
+ * capture, a ninth production site through the stamp. Left, each for its reason:
  * - sync-merge.ts, the retired sync, refused from 4.1.0 (s96-m08), inserts the origin's own ids;
  * - genesis-columns.ts holds a documentation example, inside a comment.
  * Outside the predicate: spin-out-copy.ts's dynamic insert writes into another project's store.
@@ -89,8 +90,8 @@ describe('block allocation coverage', () => {
   it('routes every production insert into a block table through the stamp', () => {
     const files = sources();
     const production = sites(files).filter((site) => !(site.file in LEFT));
-    // 8 production sites, as published; a change to the count must update the published class.
-    expect(production).toHaveLength(8);
+    // 9 production sites, as published (8, and s100-m03's); a change must update the class.
+    expect(production).toHaveLength(9);
     expect(leftCounts(sites(files), LEFT)).toEqual({
       'tools/rbook/sync-merge.ts': 2,
       'tools/rbook/genesis-columns.ts': 1,
@@ -118,7 +119,8 @@ describe('block allocation coverage', () => {
       capture,
       files.get(capture)!.replace(/\$\{g\.columns\.join\(', '\)\}/g, 'origin_seq')
     );
-    expect(violations(files).filter((v) => v.startsWith(capture))).toHaveLength(2);
+    // Learnings, constraints and, since s100-m03, next steps.
+    expect(violations(files).filter((v) => v.startsWith(capture))).toHaveLength(3);
   });
 });
 
@@ -156,8 +158,8 @@ describe('sequence coverage', () => {
   it('gives every production create of a shared table the next sequence', () => {
     const files = sources();
     const production = sites(files, SHARED_TABLES).filter((site) => !(site.file in SHARED_LEFT));
-    // 13 production sites, as published; a change to the count must update the published class.
-    expect(production).toHaveLength(13);
+    // 14 production sites, as published (13, and s100-m03's); a change must update the class.
+    expect(production).toHaveLength(14);
     expect(leftCounts(sites(files, SHARED_TABLES), SHARED_LEFT)).toEqual({
       'tools/rbook/sync-merge.ts': 6,
       'tools/rbook/genesis-columns.ts': 1,

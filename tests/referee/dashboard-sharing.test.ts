@@ -19,7 +19,6 @@ import { inviteMember } from '../../src/tools/rbook/record-membership';
 import { isRecordedStore } from '../../src/tools/rbook/record-recording';
 import { mergeContext } from '../../src/tools/rbook/record-standing';
 import { takeSuccessor } from '../../src/tools/rbook/record-successor';
-import { refereeingDashboard } from '../../src/tools/rbook/record-wire';
 import { COPY_KEYS, writeCopyKey } from '../../src/tools/rbook/replica-copy-keys';
 import { readReplicaIdentity } from '../../src/tools/rbook/replica-identity';
 import { formatSharedProjectForLLM } from '../../src/tools/rbook/rbook-project-shared';
@@ -37,6 +36,15 @@ import {
   type ReplicaFixture,
 } from '../helpers/replica-fixture';
 import { joinedCopy, onCopy, ownerCopy, read, type Copy } from '../helpers/shared-copies';
+import { routeTo as sshRouteTo, standinSsh } from '../helpers/standin-ssh';
+import { PassThrough } from 'stream';
+import { createInterface } from 'readline';
+import { hello } from '../../src/tools/rbook/record-exchange';
+import { storeOpener, syncAndRoute, syncPeers } from '../../src/tools/rbook/record-sync';
+import { handOverRoute } from '../../src/tools/rbook/record-move-routes';
+import * as freshCopy from '../../src/tools/rbook/record-fresh-copy';
+import { ownersOtherCopies } from '../../src/tools/rbook/record-owner-copies';
+import { refereeingDashboard, serveSync } from '../../src/tools/rbook/record-wire';
 
 const PROJECT = 'proj-share';
 const ADDRESS = 'rbook://derek/shared';
@@ -290,7 +298,7 @@ describe('sharing through the dashboard (s97-m11)', () => {
     const finished = await shared(owner);
     expect(finished).toMatchObject({ refereeReplica: done.refereeReplica, handover: { epoch: 2 } });
     expect(keptShare(owner)).toBe(0);
-    // The referee holds the decision, and none of what stays on this machine.
+    // The referee holds the decision, and none of what the shared record leaves out.
     const exported = await request<{ file: string }>(
       server,
       `/api/test/projects/${PROJECT}/export`,
@@ -528,16 +536,55 @@ describe('sharing through the dashboard (s97-m11)', () => {
     const fresh = { root, machine: 'machine-fresh' };
     await signIn(fresh.machine, TOKENS.owner);
     writeUserAuthor('Owner');
-    const refused = await on(fresh, 'rbook_project', { action: 'share', via: 'dashboard' });
-    expect(refused.error?.message).toMatch(/not on the dashboard yet/);
-    // Each call carries the fields its handler requires: a start's title, a close's summary.
-    expect(refused.error?.suggestion).toContain(
-      'rbook_session(action="start", type="custom", title="Share through the dashboard")'
-    );
-    expect(refused.error?.suggestion).toContain(
-      'rbook_session(action="complete", summary="Uploaded to share it")'
-    );
-    expect(refused.error?.suggestion).not.toMatch(/^Register it first/);
+    // A machine whose close does upload: the suite's default turns uploads off.
+    const uploads = process.env.RBOOK_CHECKPOINT_SYNC;
+    process.env.RBOOK_CHECKPOINT_SYNC = 'on';
+    try {
+      const refused = await on(fresh, 'rbook_project', { action: 'share', via: 'dashboard' });
+      expect(refused.error?.message).toBe(
+        'This project is not on the dashboard yet, so it has no address there.'
+      );
+      // Each call carries the fields its handler requires: a start's title, a close's summary.
+      expect(refused.error?.suggestion).toContain(
+        'rbook_session(action="start", type="custom", title="Share through the dashboard")'
+      );
+      expect(refused.error?.suggestion).toContain(
+        'rbook_session(action="complete", summary="Uploaded to share it")'
+      );
+      expect(refused.error?.suggestion).not.toMatch(/^Register it first/);
+    } finally {
+      process.env.RBOOK_CHECKPOINT_SYNC = uploads;
+    }
+  }, 600000);
+
+  it('names the missing sign-in, or uploads switched off, where a session close would upload nothing (s100-m02)', async () => {
+    // The s97 review's finding 7: signed out, the close the refusal prescribed uploaded nothing, and
+    // the next share was refused the same way, with the sign-in never named as the cause.
+    const root = project(fixture.tmp, 'unsigned');
+    const unsigned = { root, machine: 'machine-unsigned' };
+    useMachine(fixture.tmp, unsigned.machine);
+    writeUserAuthor('Owner');
+    const uploads = process.env.RBOOK_CHECKPOINT_SYNC;
+    process.env.RBOOK_CHECKPOINT_SYNC = 'on';
+    try {
+      const signedOut = await on(unsigned, 'rbook_project', { action: 'share', via: 'dashboard' });
+      expect(signedOut.error?.message).toMatch(/this machine is not signed in to it/);
+      expect(signedOut.error?.suggestion).toMatch(
+        /^Sign in on this machine first: rbook_auth\(action="login_init"\), then rbook_auth\(action="login_complete"\)\. /
+      );
+      // Signed in but with uploads off, a close still uploads nothing, and only the person turns
+      // uploads on.
+      await signIn(unsigned.machine, TOKENS.owner);
+      process.env.RBOOK_CHECKPOINT_SYNC = 'off';
+      const off = await on(unsigned, 'rbook_project', { action: 'share', via: 'dashboard' });
+      expect(off.error?.message).toMatch(
+        /uploads are off on this machine \(RBOOK_CHECKPOINT_SYNC=off\)/
+      );
+      expect(off.error?.suggestion).toMatch(/the person's setting to decide on, not an agent's/);
+      expect((await me())?.dashboardShared).toBe(false);
+    } finally {
+      process.env.RBOOK_CHECKPOINT_SYNC = uploads;
+    }
   }, 600000);
 
   it('refuses a join without a share, and a move back from a copy not the owner, or one not caught up', async () => {
@@ -973,5 +1020,416 @@ describe('the owner copy, invited on a direct share, stays as 4.1.0 left it (s97
       (await on(second, 'rbook_project', { action: 'update', projectType: 'managed' })).error
         ?.message
     ).toMatch(/Only the owner's copy of a shared record changes/);
+  }, 600000);
+});
+
+describe('a member that missed the move back (s100-m01, F7)', () => {
+  /** Every logged change of a copy, as two copies that agree both hold it. */
+  const logOf = (copy: Pick<Copy, 'root'>) =>
+    read(copy, 'SELECT change_id, replica_id, replica_seq FROM record_changes ORDER BY change_id');
+
+  it('is caught up over SSH by the owner copy that moved it back, holds the move until its person confirms it, and then syncs both ways', async () => {
+    const owner = await soloOwner();
+    await shared(owner);
+    const darryl = await joined('darryl');
+    expect(
+      (await on(darryl, 'rbook_decisions', { action: 'record', content: 'Darryl, synced.' }))
+        .success
+    ).toBe(true);
+    expect((await syncNow(darryl)).success).toBe(true);
+    const moved = await on(owner, 'rbook_project', { action: 'move', to: 'owner' });
+    if (!moved.success) throw new Error(JSON.stringify(moved.error));
+    // darryl misses the move back: it writes again, and its copy still names the dashboard. The
+    // owner's copy writes too, which darryl must not take as live before its person confirms.
+    expect(
+      (await on(darryl, 'rbook_decisions', { action: 'record', content: 'Darryl, unsynced.' }))
+        .success
+    ).toBe(true);
+    expect(
+      (await on(owner, 'rbook_decisions', { action: 'record', content: 'The owner, moved back.' }))
+        .success
+    ).toBe(true);
+    const routed = () =>
+      onCopy(fixture.tmp, darryl, (client) => refereeingDashboard(client), {
+        replicaCheck: false,
+      });
+    expect(await routed()).not.toBeNull();
+
+    // The owner's copy reaches darryl's over SSH, without darryl first syncing with the dashboard.
+    const { ssh } = standinSsh(path.join(fixture.tmp, 'ssh'));
+    const toDarryl = sshRouteTo(darryl.root, path.join(fixture.tmp, `config-${darryl.machine}`));
+    useMachine(fixture.tmp, owner.machine);
+    const open = storeOpener(dbOf(owner.root));
+    const unchecked = storeOpener(dbOf(owner.root), { replicaCheck: false });
+    const first = await syncAndRoute(open, toDarryl, { ssh, unchecked });
+    if (!first.success) throw new Error(JSON.stringify(first.error));
+    expect(first.data!.caughtUp).toMatchObject({ copy: 'remote' });
+    expect(first.data!.caughtUp!.confirmed).toBeUndefined();
+    // A catch-up only stores: darryl holds the move until its person confirms it.
+    const pending = () =>
+      onCopy(fixture.tmp, darryl, (client) => mergeContext(client).pending !== null, {
+        replicaCheck: false,
+      });
+    expect(await pending()).toBe(true);
+    expect(decisions(owner, 'Darryl, unsynced.')).toBe(0);
+    expect(decisions(darryl, 'The owner, moved back.')).toBe(0);
+    // darryl's person confirms the owner's copy (the live test records whose word this is, #1545).
+    const confirmed = await on(darryl, 'rbook_project', { action: 'sync', confirmOwner: true });
+    if (!confirmed.success) throw new Error(JSON.stringify(confirmed.error));
+    expect(await pending()).toBe(false);
+    expect(await routed()).toBeNull();
+    expect(decisions(darryl, 'The owner, moved back.')).toBe(1);
+
+    // A second exchange, from the owner's copy, flows both ways.
+    expect(
+      (await on(owner, 'rbook_decisions', { action: 'record', content: 'The owner, back home.' }))
+        .success
+    ).toBe(true);
+    useMachine(fixture.tmp, owner.machine);
+    const second = await syncPeers(open, { ssh, unchecked });
+    if (!second.success) throw new Error(JSON.stringify(second.error));
+    expect(decisions(owner, 'Darryl, unsynced.')).toBe(1);
+    expect(decisions(darryl, 'The owner, back home.')).toBe(1);
+    expect(logOf(darryl)).toEqual(logOf(owner));
+  }, 600000);
+
+  it('a far end the dashboard referees serves only hello, chains, changesSince and a catch-up apply, and only to an owner copy at a later move', async () => {
+    const owner = await soloOwner();
+    await shared(owner);
+    const darryl = await joined('darryl');
+    expect((await syncNow(darryl)).success).toBe(true);
+    useMachine(fixture.tmp, darryl.machine);
+    const opened = storeOpener(dbOf(darryl.root));
+    const unchecked = storeOpener(dbOf(darryl.root), { replicaCheck: false });
+    const own = await unchecked((client) => hello(client));
+    /** Each request's answer from darryl's far end, opened for one connection. */
+    const ask = async (near: unknown, requests: Array<{ method: string; params?: unknown }>) => {
+      const input = new PassThrough();
+      const output = new PassThrough();
+      const lines = createInterface({ input: output });
+      const answers: Array<Record<string, unknown>> = [];
+      lines.on('line', (line) => answers.push(JSON.parse(line) as Record<string, unknown>));
+      const served = serveSync(input, output, opened, { exchanged: async () => null }, unchecked);
+      const all = [
+        { method: 'hello', params: near === undefined ? undefined : { near } },
+        ...requests,
+      ];
+      all.forEach((request, index) =>
+        input.write(`${JSON.stringify({ id: index + 1, ...request })}\n`)
+      );
+      input.end();
+      await served;
+      output.end();
+      await new Promise((resolve) => lines.once('close', resolve));
+      // The banner, then the answer to the hello that named the near end, then each probe's.
+      return answers.slice(2);
+    };
+    const ahead = {
+      ...own,
+      replicaId: 'r-owner-new',
+      authority: 'r-owner-new',
+      epoch: own.epoch + 1,
+    };
+    const probes = [
+      { method: 'hello' },
+      { method: 'chains', params: {} },
+      { method: 'changesSince', params: {} },
+      { method: 'apply', params: { changes: [], judge: false, catchUp: true } },
+      { method: 'apply', params: { changes: [] } },
+      { method: 'admitSuccessor', params: { replicaId: own.replicaId } },
+      { method: 'reblockSelf' },
+      { method: 'takeSuccessor', params: {} },
+      { method: 'failed', params: { replicaId: 'r-owner-new', error: 'x' } },
+      { method: 'exchanged', params: {} },
+    ];
+    const served = await ask(ahead, probes);
+    expect(served.map((answer) => 'result' in answer)).toEqual([
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+    ]);
+    for (const refused of served.slice(4))
+      expect(String((refused.error as { message: string }).message)).toMatch(/catch-up/);
+    // A copy at the same move, one that is not the owner copy in its own view, one of another
+    // project, or one that says nothing of itself, is refused as before.
+    for (const near of [
+      { ...ahead, epoch: own.epoch },
+      { ...ahead, authority: 'r-someone-else' },
+      { ...ahead, projectId: 'another-project' },
+      undefined,
+    ])
+      for (const answer of await ask(near, probes.slice(0, 3)))
+        expect(String((answer.error as { message: string }).message)).toMatch(
+          /does not sync over SSH/
+        );
+  }, 600000);
+});
+
+describe('a join refused for a first copy it cannot build (s100-m01, critics round 1)', () => {
+  it("keeps the refusal's own remedy, such as a newer record protocol's upgrade", async () => {
+    const owner = await soloOwner();
+    await shared(owner);
+    await request(server, `/api/test/projects/${PROJECT}/shares`, {
+      token: TOKENS.owner,
+      json: { accountId: ACCOUNTS.darryl, name: 'darryl', role: 'editor' },
+    });
+    const copy = {
+      name: 'darryl',
+      root: path.join(fixture.tmp, 'darryl'),
+      machine: 'machine-darryl',
+      replicaId: '',
+      block: -1,
+    };
+    await signIn(copy.machine, TOKENS.darryl);
+    const build = jest
+      .spyOn(freshCopy, 'buildFreshCopy')
+      .mockRejectedValue(
+        new freshCopy.FreshCopyRefused(
+          "That store's change log is written in record protocol 2, newer than this version's 1, so no copy is built from it.",
+          'Upgrade Reasonbook on this machine, then join again: npm install -g @aquex/reasonbook@latest.'
+        )
+      );
+    try {
+      const answer = await on(copy, 'rbook_project', {
+        action: 'join',
+        via: 'dashboard',
+        project: ADDRESS,
+      });
+      expect(answer.success).toBe(false);
+      expect(answer.error?.message).toMatch(/record protocol 2/);
+      expect(answer.error?.suggestion).toMatch(
+        /^Nothing was joined\. Upgrade Reasonbook on this machine/
+      );
+    } finally {
+      build.mockRestore();
+    }
+  }, 600000);
+});
+
+describe('sharing again after a move back (s100-m01, critics round 2)', () => {
+  it("names no former identity of the owner's own folder as another copy, before its new one writes", async () => {
+    const owner = await soloOwner();
+    await shared(owner);
+    // The owner's copy writes while the project is shared, as its former identity.
+    expect(
+      (await on(owner, 'rbook_decisions', { action: 'record', content: 'While shared.' })).success
+    ).toBe(true);
+    expect((await syncNow(owner)).success).toBe(true);
+    const moved = await on(owner, 'rbook_project', { action: 'move', to: 'owner' });
+    if (!moved.success) throw new Error(JSON.stringify(moved.error));
+    const copies = await onCopy(fixture.tmp, owner, (client) => ownersOtherCopies(client), {
+      replicaCheck: false,
+    });
+    expect(copies).toEqual([]);
+    const dry = await on(owner, 'rbook_project', { action: 'share', via: 'dashboard' });
+    expect(dry.error?.message ?? '').not.toMatch(/also kept in/);
+  }, 600000);
+});
+
+describe('a handover to a copy behind a move (s100-m01, critics round 1)', () => {
+  it('is refused before the move is written, so the owner copy keeps the record', async () => {
+    const owner = await soloOwner();
+    await shared(owner);
+    // The owner's own second machine, joined through the dashboard: an owner-role copy.
+    const second = {
+      name: 'owner2',
+      root: path.join(fixture.tmp, 'owner2'),
+      machine: 'machine-owner2',
+      replicaId: '',
+      block: -1,
+    };
+    await signIn(second.machine, TOKENS.owner);
+    writeUserAuthor('Owner');
+    const joinedSecond = await on(second, 'rbook_project', {
+      action: 'join',
+      via: 'dashboard',
+      project: ADDRESS,
+    });
+    if (!joinedSecond.success) throw new Error(JSON.stringify(joinedSecond.error));
+    expect((await syncNow(second)).success).toBe(true);
+    const moved = await on(owner, 'rbook_project', { action: 'move', to: 'owner' });
+    if (!moved.success) throw new Error(JSON.stringify(moved.error));
+    // The second copy missed the move back; the owner hands the owner's copy to it over SSH.
+    const { ssh } = standinSsh(path.join(fixture.tmp, 'ssh'));
+    useMachine(fixture.tmp, owner.machine);
+    // A handover's far end takes no catch-up, so it refuses as it did before 4.2.1, and nothing
+    // is written; a far end that answered would be refused as behind the move (record-routes).
+    const handed = await handOverRoute(
+      storeOpener(dbOf(owner.root)),
+      sshRouteTo(second.root, path.join(fixture.tmp, `config-${second.machine}`)),
+      { ssh, unchecked: storeOpener(dbOf(owner.root), { replicaCheck: false }) }
+    ).catch((error: Error) => ({ success: false as const, error: { message: error.message } }));
+    expect(handed.success).toBe(false);
+    expect(handed.error?.message).toMatch(/does not sync over SSH|has not taken the owner copy/);
+    const holds = await onCopy(
+      fixture.tmp,
+      owner,
+      (client) => {
+        const ctx = mergeContext(client);
+        return ctx.authority === ctx.ownReplica && !ctx.pending;
+      },
+      { replicaCheck: false }
+    );
+    expect(holds).toBe(true);
+  }, 600000);
+});
+
+describe('a removed member after a move back (s100-m01, #717 item 2)', () => {
+  it('forgets its dashboard route on the 404 the dashboard answers it, as a member does when the project moves back', async () => {
+    const owner = await soloOwner();
+    await shared(owner);
+    const darryl = await joined('darryl');
+    expect((await syncNow(darryl)).success).toBe(true);
+    const removed = await request(
+      server,
+      `/api/test/projects/${PROJECT}/shares/${ACCOUNTS.darryl}`,
+      { token: TOKENS.owner, method: 'DELETE' }
+    );
+    expect(removed.status).toBe(200);
+    // Told of the removal at its next sync, as the review then keeps it.
+    const cut = await syncNow(darryl);
+    expect(cut.success).toBe(true);
+    expect(
+      read<{ removed_at: string | null }>(darryl, 'SELECT removed_at FROM record_peers')[0]
+        .removed_at
+    ).toEqual(expect.any(String));
+    const moved = await on(owner, 'rbook_project', { action: 'move', to: 'owner' });
+    if (!moved.success) throw new Error(JSON.stringify(moved.error));
+    // The deployed dashboard answers a removed member 404 and lists no row for it (its 44db86bc),
+    // where the reference server still lists the project: a double stands in for those two answers.
+    const relay = jest
+      .spyOn(DashboardClient.prototype, 'relayPeerCall')
+      .mockResolvedValue(createSuccess({ status: 404, body: { error: 'Not found' } }));
+    const listing = jest
+      .spyOn(DashboardClient.prototype, 'dashboardSharing')
+      .mockResolvedValue(createSuccess({ listed: false, shared: null }));
+    let ended: Awaited<ReturnType<typeof syncNow>>;
+    try {
+      ended = await syncNow(darryl);
+    } finally {
+      relay.mockRestore();
+      listing.mockRestore();
+    }
+    expect(ended.error?.code).toBe('RECORD_ROUTE_ENDED');
+    expect(ended.error?.message).toMatch(/removed/);
+    expect(
+      await onCopy(fixture.tmp, darryl, (client) => refereeingDashboard(client), {
+        replicaCheck: false,
+      })
+    ).toBeNull();
+    // The removal stays where the review, the digest and rbook_status read it.
+    const review = await onCopy(fixture.tmp, darryl, (client) => sharedRecordReview(client), {
+      replicaCheck: false,
+    });
+    expect(review?.removed).toBe(true);
+    expect((review?.peers ?? []).join('\n')).toMatch(/said this copy's member was removed/);
+    // Named for the dashboard it reached, which no longer holds the record, not as the owner's copy.
+    expect((review?.peers ?? []).join('\n')).toMatch(/^the dashboard \(/);
+    const status = await on(darryl, 'rbook_status', {});
+    expect(
+      (status.data as unknown as { shared_sync: Array<{ removed_at?: string }> }).shared_sync[0]
+        ?.removed_at
+    ).toEqual(expect.any(String));
+    // Its next sync says why it syncs with no one, and asks for no route.
+    const next = await syncNow(darryl);
+    expect(next.error?.message).toMatch(/member was removed from the project/);
+    expect(next.error?.suggestion).not.toMatch(/--ssh|bundle/);
+  }, 600000);
+
+  it('keeps its route on a 404 while it knows of no removal, as when this machine is signed in to another account', async () => {
+    const owner = await soloOwner();
+    await shared(owner);
+    const darryl = await joined('darryl');
+    expect((await syncNow(darryl)).success).toBe(true);
+    const relay = jest
+      .spyOn(DashboardClient.prototype, 'relayPeerCall')
+      .mockResolvedValue(createSuccess({ status: 404, body: { error: 'Not found' } }));
+    const listing = jest
+      .spyOn(DashboardClient.prototype, 'dashboardSharing')
+      .mockResolvedValue(createSuccess({ listed: false, shared: null }));
+    try {
+      expect((await syncNow(darryl)).error?.code).not.toBe('RECORD_ROUTE_ENDED');
+    } finally {
+      relay.mockRestore();
+      listing.mockRestore();
+    }
+    expect(
+      await onCopy(fixture.tmp, darryl, (client) => refereeingDashboard(client), {
+        replicaCheck: false,
+      })
+    ).not.toBeNull();
+  }, 600000);
+});
+
+describe('purge while the dashboard holds the record (s100-m02)', () => {
+  it("refuses it on the owner's own copy too, and names the move back that lets the owner purge", async () => {
+    // The docs-truth critic's round 2: once the share hands the record over, the owner's copy is a
+    // member's, so "purge from the owner's copy" names a step no copy can take.
+    const owner = await soloOwner();
+    await shared(owner);
+    const purged = await on(owner, 'rbook_db', { action: 'purge', confirm: true });
+    expect(purged.error?.message).toMatch(/member's copy of a shared record/);
+    expect(purged.error?.suggestion).toMatch(
+      /the owner moves the project back first \(reasonbook move --to owner\), then purges from that copy/
+    );
+  }, 600000);
+});
+
+describe("what a member's agent sees after a dashboard join (s100-m01, the build session's captures)", () => {
+  it("names the address it joined by, calls the copy no fresh project, asks the dashboard nothing by slug, and names no account-wide count as the project's", async () => {
+    const owner = await soloOwner();
+    await shared(owner);
+    const darryl = await joined('darryl');
+    expect((await syncNow(darryl)).success).toBe(true);
+    const bySlug = jest.spyOn(DashboardClient.prototype, 'getSyncStatus');
+    const stateBySlug = jest.spyOn(DashboardClient.prototype, 'getSyncProjectState');
+    // The machine's user key reads the account's messages, unscoped: what a member's copy holds.
+    const inbox = jest.spyOn(DashboardClient.prototype, 'listMessages').mockResolvedValue(
+      createSuccess({
+        messages: [],
+        unreadCount: 64,
+        unreadCountScoped: 64,
+        unreadScope: 'user' as const,
+        totalCount: 64,
+      })
+    );
+    try {
+      const review = await on(darryl, 'rbook_review', {});
+      const data = review.data as {
+        project: { rbook_address: string };
+        next_actions: Array<{ action: string }>;
+      };
+      expect(data.project.rbook_address).toBe(ADDRESS);
+      const actions = data.next_actions.map((action) => action.action).join('\n');
+      expect(actions).not.toMatch(/Fresh project/);
+      expect(actions).not.toMatch(/unread message\(s\) for this project/);
+      const status = await on(darryl, 'rbook_status', {});
+      expect((status.data as { rbook_address: string }).rbook_address).toBe(ADDRESS);
+      const onboard = await on(darryl, 'rbook_agent_onboard', {});
+      expect((onboard.data as { freshProject: boolean }).freshProject).toBe(false);
+      expect(
+        JSON.stringify((onboard as unknown as { warnings?: string[] }).warnings ?? [])
+      ).not.toMatch(/projectSlug/);
+      const reconciled = await on(darryl, 'rbook_db', { action: 'reconcile' });
+      expect(reconciled.error?.message).toMatch(/member's copy of a shared record/);
+      const identity = await on(darryl, 'rbook_context', {
+        action: 'view',
+        contextType: 'project_identity',
+      });
+      expect((identity.data as { joinedAddress?: string }).joinedAddress).toBe(ADDRESS);
+      expect(bySlug).not.toHaveBeenCalled();
+      expect(stateBySlug).not.toHaveBeenCalled();
+    } finally {
+      bySlug.mockRestore();
+      stateBySlug.mockRestore();
+      inbox.mockRestore();
+    }
   }, 600000);
 });

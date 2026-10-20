@@ -26,7 +26,8 @@ import {
  *
  * Mirrors the fromEnvForProject priority chain:
  *   - `device-code`       — user-scoped keys present in local credential
- *                           store (minted by rbook_auth action="login").
+ *                           store (minted by rbook_auth sign-in: login_init, then
+ *                           login_complete).
  *   - `legacy-env`        — store empty, RBOOK_DASHBOARD_API_KEY env var set.
  *                           Emits a startup WARN on first fire.
  *   - `password-fallback` — store empty, no legacy env key, email+password
@@ -88,7 +89,7 @@ export interface AuthState {
    * Sprint 58 m02 — which `fromEnvForProject` arm would fire for the next
    * send. Inferred statically from local store + env vars (not from an
    * observed send). When this is anything other than `device-code`, the
-   * onboard surface emits a `rbook_auth(action="login")` suggestedAction.
+   * onboard surface emits a `rbook_auth(action="login_init")` suggestedAction, then `login_complete`.
    */
   authTier: AuthTier;
 }

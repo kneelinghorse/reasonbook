@@ -2,6 +2,122 @@
 
 All notable changes to Reasonbook (published as `@aquex/cmos-mcp` before 4.0.0) are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.1] — 2026-10-20
+
+Fixes to sharing, through reasonbook.ai and directly, from the sprint-97 review, and docs that
+say what sharing uploads, what reasonbook.ai keeps and what its referee checks. Fixes marked
+_(referee)_ are in the engine reasonbook.ai runs for a project shared through it, so they reach such
+projects once reasonbook.ai pins 4.2.1; until then its referee runs 4.2.0.
+
+### Fixed
+
+- **Re-adding a removed member judges their set-aside changes again** _(referee, and the owner's
+  copy of a project shared directly)_. Every change set aside while they were removed used to be
+  accepted on re-add, owner-only edits their role cannot make included. Each is now judged, in clock
+  order, as their role's would be, and the invite answer counts those it refused.
+- **A share through reasonbook.ai no longer strands the owner's other copies** _(referee, and the
+  share)_. It refuses, naming each, while another copy of the owner's is still in use, since that
+  copy could not sync afterwards. There is no step yet that sets one of the owner's own copies aside.
+- **A referee whose clock once ran ahead no longer stops every copy** _(referee)_. Intake refuses a
+  change only when its clock runs more than a week past the host's clock and past the referee's own
+  latest reading, and the refusal tells the member that their changes stay safe on their copy. One
+  hole remains: at the last count of a millisecond, each delivery can carry the referee's clock one
+  millisecond on, which real time outruns.
+- **Changes in a newer record protocol are kept out, not refused.** A copy that receives one leaves
+  it, with the rest of its writer's stream, on the copy that sent it, exchanges everything else, and
+  takes them in after it upgrades; its review says to upgrade meanwhile. A referee still refuses a
+  delivery that holds such changes, whole, and the member's changes stay on its copy until the
+  dashboard upgrades. A join, a recovery and a first copy refuse a store that holds such changes,
+  and say to upgrade.
+- **A member that missed a move back can be caught up.** The owner's copy that moved the project
+  back catches up, over SSH, a member's copy that still syncs through reasonbook.ai. That copy serves
+  it only what a catch-up needs, and holds the move until its operator confirms it with
+  `reasonbook sync --confirm-owner`. Both machines need 4.2.1.
+- **A removed member keeps knowing it was removed after a move.** Its review, digest and status keep
+  the removal when it syncs with the new owner's copy, and it is no longer told to set its route
+  again. One whose project moved back off reasonbook.ai forgets its route there when the dashboard
+  no longer serves the project to it.
+- **A handover to a copy behind the owner's latest move refuses** and says to sync that copy first.
+- **A member's copy joined through reasonbook.ai reads as one.** It shows the address it joined by,
+  is not offered a fresh project's setup or a reconcile, and does not show the account's unread
+  messages as the project's.
+- **One approved choice is recorded once.** A revision declined anywhere along a chain of revisions
+  of an approved draft, or an approved draft recorded before its revision, let one choice be
+  recorded twice. A new revision now joins the chain at its newest pending draft that still states
+  its subject, retiring one the operator never approved; recording a draft settles the approved
+  drafts before it, and the revisions after it that still state its subject, while a follow-on
+  line or a changed key term stays a choice of its own; and a refusal names where the chain stands.
+- **`rbook_mission_transition` refuses a `targetStatus` outside In Progress and Current.** A start
+  to `Dropped` used to drop the mission and say it started, and an unblock could move a Blocked
+  mission to Dropped or Deferred.
+- **`RBOOK_DASHBOARD_SHARING`, `RBOOK_CHECKPOINT_SYNC` and `RBOOK_SHARED_SYNC` read `off`, `false`,
+  `0` and `no` in any case.** `OFF` and `false` used to leave sharing, whole-store uploads and
+  automatic syncs on.
+- **A share refused for a project not on reasonbook.ai yet names the cause.** Signed out, it names
+  the sign-in; with `RBOOK_CHECKPOINT_SYNC=off`, it says a never-uploaded project cannot be shared,
+  rather than prescribing a session close that would upload nothing.
+- **Every sign-in remedy names `rbook_auth(action="login_init")`, then `login_complete`.** Some
+  named `login`, which holds the call open until the person approves.
+- **Sign-out and revoke go with this machine's account key**, never a project's, so the dashboard
+  can refuse a project key that revokes account keys. A project key is now revoked while signed in.
+- **The share's dry run and the sharing switch say what is true.** The dry run says what the shared
+  record leaves out, and that this copy's uploads send the whole store until the handover; the
+  switch's refusal no longer says every copy moves a project back.
+- **A next step is a row from the moment it is captured.** A next-step capture used to wait in its
+  session until the session closed, so a session that stayed open hid its next steps from the
+  next-step list, the review and the sprint close: sprint 97's build chat held 12 that way all
+  sprint. The capture now writes the row with the capture and returns its id; in an implicit
+  session the row takes the sprint open when it is captured, not the one open at the close. A
+  session's close finds that row and writes only next steps without one: those captured before
+  4.2.1, or whose write at capture failed. The close's `missionId` stamps only the rows the close
+  writes. The same step captured again in that session is that row, open or not; when the row is
+  completed or dropped, the capture says so and names the call that opens it again. A next-step
+  capture naming a mission that does not exist is refused by name, as a sprint that does not exist
+  already was. A sprint close no longer counts a running session's next step that has its row as
+  deferred.
+- **A next step or constraint that came from another copy is not written twice.** Its text hash is
+  kept per copy, so a row that arrived by an import or a merge had none, and the dedups keyed on
+  it missed the row: closing an imported open session wrote each of its active constraints again.
+  A row without the hash now matches by its text.
+
+### Docs
+
+- **What sharing through reasonbook.ai uploads and keeps.** The privacy, trust, security, README
+  and getting-started pages now cover the whole-file uploads before a share, what the share sends,
+  what reasonbook.ai keeps and for how long, what purge and deletion leave, what other accounts see,
+  the activity feed's paging, removal, the sharing switch, and one live copy per machine.
+- **What the referee checks, and its limits.** It binds each copy to its account, and refuses a
+  member's change that names anyone but that member as its author. It does not check a change that
+  names no author, the names on the owner's own copies, a change's account id or the author fields
+  of the rows a change writes, and it checks a change's time only against the member's admission
+  and a week past the referee's clock: so a member who edits their own copy can put rows, and feed
+  entries, under another member's name, and claim an id with a back-dated time, since the earliest
+  create keeps an id by its time, not its arrival.
+- **Stated limits.** If reasonbook.ai loses a project's referee copy, this release has no step that
+  shares that project through it again. After a move back, sharing the project through
+  reasonbook.ai again cannot include the people it was shared with: the share refuses a project
+  with members, and a new referee copy refuses a removed member's username. Purge is refused on
+  every copy while a project is shared through reasonbook.ai; the owner moves it back first. After a
+  move back, a member's copy that syncs with the dashboard before the owner's copy catches it up,
+  and one the owner's machine cannot reach over SSH, were not measured.
+- **Moving back, as measured.** getting-started says how the owner's copy catches up a member's
+  copy over SSH after a move back and how that member confirms it. This was measured live through
+  reasonbook.ai with one member present and automatic syncs off, the move made through
+  `rbook_project`, so the README and the privacy page no longer say moving back was untested.
+- getting-started's step 8 says what the digest shows; the README's Codex heading names no release.
+
+### Changed (answer shapes)
+
+- An exchange's applied report and a bundle import gain `newerProtocol`, the changes a newer record
+  protocol kept out. Additive.
+- `rbook_context`'s identity view gains an optional `joinedAddress` on a member's copy joined
+  through reasonbook.ai. Additive.
+- `rbook_project(action="invite")` gains an optional `refused` when it re-adds a member. Additive.
+- `rbook_session(action="capture")` gains an optional `nextStepId` for a next-step capture. That
+  capture's `structuredMaterialization` is now `immediate`, with outcome `materialized`, `existing`
+  or `failed`, where it was `session-close` and `deferred`; and a close's `nextStepsExtracted`
+  counts only the next steps that close wrote.
+
 ## [4.2.0] — 2026-10-19
 
 Share a project through reasonbook.ai. The dashboard keeps the project's referee copy, every member's

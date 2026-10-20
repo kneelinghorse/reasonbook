@@ -9,7 +9,7 @@ import { DECISION_SHAPE_MARKER } from './decision-shape-migration';
 import { createError, createSuccess } from './errors';
 import { attachWarnings } from './format-warnings';
 import { CONFIRMED_KEY } from './record-authority';
-import { HLC_KEY } from './record-changes';
+import { HLC_KEY, PROTOCOL_VERSION } from './record-changes';
 import { IDENTITY_KEYS, RECORD_COLUMNS, RECORDED_TABLES } from './record-columns';
 import { installRecordGuards, LOG_TABLES } from './record-guards';
 import { changeProblem, readingProblem, readingTime, runsAhead } from './record-intake';
@@ -293,7 +293,13 @@ function copySharedRows(source: Source, target: Target): Record<string, number> 
   return counts;
 }
 
-function copyLog(source: Source, target: Target, projectId: string, untrusted: boolean): number {
+function copyLog(
+  source: Source,
+  target: Target,
+  projectId: string,
+  untrusted: boolean,
+  referee: boolean
+): number {
   const present = source.required('record_changes');
   const missing = LOGGED.filter((column) => !present.has(column));
   if (missing.length)
@@ -302,6 +308,16 @@ function copyLog(source: Source, target: Target, projectId: string, untrusted: b
   for (const change of source.rows(
     `SELECT ${LOGGED.join(', ')} FROM record_changes ORDER BY rowid`
   )) {
+    // s100-m01 (settled item 6): a log written in a newer record protocol is not this version's to
+    // build a copy from: its rows were made by rules this version lacks.
+    const version = (change as { protocol_version?: unknown }).protocol_version;
+    if (untrusted && typeof version === 'number' && version > PROTOCOL_VERSION)
+      throw new FreshCopyRefused(
+        `That store's change log is written in record protocol ${version}, newer than this version's ${PROTOCOL_VERSION}, so no copy is built from it.`,
+        referee
+          ? 'The dashboard upgrades its Reasonbook engine; share the project through it once it has.'
+          : 'Upgrade Reasonbook on this machine, then join again: npm install -g @aquex/reasonbook@latest.'
+      );
     // An upload is checked change by change; a copy of this host's own referee store is not, since
     // a check its own engine could fail would stop every copy it hands out.
     const problem = untrusted ? changeProblem(change, projectId) : null;
@@ -406,6 +422,11 @@ export async function buildFreshCopy(
   options: {
     /** An upload from another machine, such as the owner's at a handover in: every change is checked. */
     readonly untrusted?: boolean;
+    /**
+     * s100-m01: the fresh store becomes a referee's, so its clock may run no further ahead than intake
+     * takes in. A join's first copy keeps the referee's own reading, which every copy writes at.
+     */
+    readonly referee?: boolean;
   } = {}
 ): Promise<FreshCopy> {
   if (existsSync(destPath)) throw new Error(`${destPath} already holds a store.`);
@@ -442,7 +463,7 @@ export async function buildFreshCopy(
           throw new FreshCopyRefused(
             `That store's ${reading}, so it cannot hand its record to a referee: its next writes would carry it.`
           );
-        if (options.untrusted && clock !== undefined && runsAhead(clock, Date.now()))
+        if (options.referee && clock !== undefined && runsAhead(clock, Date.now()))
           throw new FreshCopyRefused(
             `That store's clock reads ${readingTime(clock)}, more than a week ahead, so it cannot hand its record to a referee yet: every copy would take that clock.`,
             'Share it through the dashboard once that date is within a week, or share it directly over SSH meanwhile; nothing on the copy changes.'
@@ -450,7 +471,13 @@ export async function buildFreshCopy(
         copyContexts(source, writer);
         const rows = copySharedRows(source, writer);
         installRecordGuards((sql) => writer.exec(sql));
-        const changes = copyLog(source, writer, projectId, options.untrusted === true);
+        const changes = copyLog(
+          source,
+          writer,
+          projectId,
+          options.untrusted === true,
+          options.referee === true
+        );
         return { held, projectId, rows, changes };
       })()
     );

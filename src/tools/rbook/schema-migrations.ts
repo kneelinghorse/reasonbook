@@ -700,6 +700,13 @@ export function computeContentHash(text: string, domain: string): string {
 }
 
 /**
+ * s100-m03: a dedup of next_steps or constraints by their text. The hash is derived per copy, so a
+ * row that arrived from another copy, by an import or a merge, has none here; its exact text is what
+ * the hash keys. Binds the hash, then the text.
+ */
+export const SAME_TEXT_SQL = '(content_hash = ? OR (content_hash IS NULL AND content = ?))';
+
+/**
  * Ensure the FTS5 virtual table for decisions exists and is synced.
  *
  * Creates:

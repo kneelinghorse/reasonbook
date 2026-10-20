@@ -234,8 +234,9 @@ const EXPECTED_SCHEMA_VERSION_LITERALS: readonly SourceSite[] = sortSourceSites(
   { file: MIGRATIONS_FILE, line: 164, role: 'raiseSchemaVersionLabel' },
   // s96-m11 moved these sites down 22 and 75 lines (ensureVectorStorageForWrite, then
   // underMigrationLock and markerIs); nothing was added or re-roled.
-  { file: MIGRATIONS_FILE, line: 1598, role: 'ensureVectorStorage' },
-  { file: MIGRATIONS_FILE, line: 2501, role: 'migrateFirehoseTable' },
+  // s100-m03: down 7 lines (SAME_TEXT_SQL beside computeContentHash), as the setters below.
+  { file: MIGRATIONS_FILE, line: 1605, role: 'ensureVectorStorage' },
+  { file: MIGRATIONS_FILE, line: 2508, role: 'migrateFirehoseTable' },
   { file: SCHEMA_FILE, line: 128, role: '<module>' },
   // s96-m02: author_name follows author_user_id in each of the eight logged tables, moving each
   // later site down by the tables above it.
@@ -422,18 +423,20 @@ const EXPECTED_WRITER_KEYS: readonly WriterKeySite[] = sortSourceSites([
   })),
   // s96-m13: a copy's own keys besides its identity, through writeCopyKey, whose key is a CopyKey:
   // the join it asked for, the moves it confirmed, its last new identity and its invite's name.
-  // s97-m11: down two (the dashboard share's pending answer, a new copy key).
+  // s97-m11: down two (the dashboard share's pending answer, a new copy key). s100-m01: down seven
+  // (two new copy keys: the address a member's copy joined by, and a newer protocol kept out).
   {
     file: 'tools/rbook/replica-copy-keys.ts',
-    line: 29,
+    line: 36,
     role: 'writeCopyKey',
     callee: 'writeReplicaKey',
     key: 'key',
   },
-  // s96-m13: a copy that lost a block clash moves to a new block under its replica id.
+  // s96-m13: a copy that lost a block clash moves to a new block under its replica id. s100-m01:
+  // down thirteen (those keys, and readCopyKey above it).
   {
     file: 'tools/rbook/replica-copy-keys.ts',
-    line: 41,
+    line: 54,
     role: 'moveReplicaBlock',
     callee: 'writeReplicaKey',
     key: 'REPLICA_KEYS.block',
@@ -660,14 +663,15 @@ const EXPECTED_LOGICAL_SETTERS: readonly SourceSite[] = [
     role: "migration:migrateStrategicDecisionsV21:'2.1'",
   },
   { file: MIGRATIONS_FILE, line: 596, role: "migration:migrateContentHash:'2.2'" },
-  // s96-m11 moved this setter down 22 lines (ensureVectorStorageForWrite above it).
-  { file: MIGRATIONS_FILE, line: 1837, role: 'migration:ensureVectorStorage:labelVersion' },
+  // s96-m11 moved this setter down 22 lines (ensureVectorStorageForWrite above it); s100-m03 7.
+  { file: MIGRATIONS_FILE, line: 1844, role: 'migration:ensureVectorStorage:labelVersion' },
   // s96-m11: the same setter, moved into applyFirehoseEventColumns, which
   // ensureFirehoseEventColumns now runs under the store's write lock.
   {
     file: MIGRATIONS_FILE,
-    // s96-m01 (fold): down 50 lines (sharing's every-table checks and readiness above it).
-    line: 2684,
+    // s96-m01 (fold): down 50 lines (sharing's every-table checks and readiness above it);
+    // s100-m03: down 7 (SAME_TEXT_SQL).
+    line: 2691,
     role: 'migration:applyFirehoseEventColumns:FIREHOSE_SCHEMA_VERSION',
   },
   { file: SCHEMA_FILE, line: 128, role: 'seed:ignore' },

@@ -71,7 +71,9 @@ describe('fromEnvForProject legacy-auth WARN', () => {
     const warnLines = writes.filter((w) => w.includes('[WARN]'));
     expect(warnLines).toHaveLength(1);
     expect(warnLines[0]).toMatch(/authenticating via legacy-env/);
-    expect(warnLines[0]).toMatch(/rbook_auth\(action="login"\)/);
+    expect(warnLines[0]).toMatch(
+      /rbook_auth\(action="login_init"\), then rbook_auth\(action="login_complete"\)/
+    );
   });
 
   it('WARNs exactly once when arm 5 (password fallback) fires', async () => {
@@ -88,7 +90,9 @@ describe('fromEnvForProject legacy-auth WARN', () => {
     const warnLines = writes.filter((w) => w.includes('[WARN]'));
     expect(warnLines).toHaveLength(1);
     expect(warnLines[0]).toMatch(/authenticating via password-fallback/);
-    expect(warnLines[0]).toMatch(/rbook_auth\(action="login"\)/);
+    expect(warnLines[0]).toMatch(
+      /rbook_auth\(action="login_init"\), then rbook_auth\(action="login_complete"\)/
+    );
   });
 
   it('each arm tracks its own seen-state (arm 4 and arm 5 warn independently)', async () => {

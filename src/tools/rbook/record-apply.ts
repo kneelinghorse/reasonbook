@@ -16,6 +16,7 @@ import { foldPeerSessions, repairMergedLinks, trackMergedSprints } from './recor
 import { recomputeEntities } from './record-recompute';
 import { mergeRefusal } from './record-token';
 import { judge, type Verdict } from './record-judge';
+import { keptOut, noteNewerProtocol } from './record-protocol-hold';
 import {
   authoredInTerm,
   mergeContext,
@@ -47,6 +48,12 @@ export interface ApplyReport {
   readonly newlyLive: readonly string[];
   /** What the merge could not do to this copy's own derived context, said rather than hidden. */
   readonly notes: readonly string[];
+  /**
+   * s100-m01 (settled item 6): changes kept out because one of their replica's stream is written in a
+   * newer record protocol: that change and the rest of the stream from its transaction on. They stay
+   * on the copy that sent them and are asked for again at every exchange, until this copy upgrades.
+   */
+  readonly newerProtocol: number;
 }
 
 const LOGGED_COLUMNS = [
@@ -120,7 +127,7 @@ function keepRemoteRoot(client: RbookDatabaseClient, change: LoggedChange): void
 function store(
   client: RbookDatabaseClient,
   incoming: readonly LoggedChange[]
-): { stored: LoggedChange[]; duplicates: number } {
+): { stored: LoggedChange[]; duplicates: number; newer: LoggedChange[] } {
   const stored: LoggedChange[] = [];
   let duplicates = 0;
   // ADR s96 §2: one record is one project; a change of another project's record is never merged.
@@ -132,7 +139,10 @@ function store(
       message: `What arrived holds changes of project ${foreign.project_id}, and this copy's record is project ${projectId}, so nothing was applied.`,
       suggestion: 'Sync each copy only with copies of its own project.',
     });
-  const misnamed = incoming.find(breaksNameRule);
+  // s100-m01: what this copy keeps out is not held to this version's rules, which a later
+  // protocol's may change, so the name rule reads only what it takes in.
+  const { taken, held } = keptOut(incoming);
+  const misnamed = taken.find(breaksNameRule);
   if (misnamed)
     throw new ReplicaRefusal({
       code: REPLICA_ERROR_CODES.WRITE_REFUSED,
@@ -140,7 +150,7 @@ function store(
       suggestion:
         "That copy's record was written outside Reasonbook: leave it out of syncs, and give its member a new copy from the owner's.",
     });
-  const sorted = [...incoming].sort((a, b) =>
+  const sorted = [...taken].sort((a, b) =>
     a.replica_id === b.replica_id
       ? a.replica_seq - b.replica_seq
       : a.replica_id < b.replica_id
@@ -174,7 +184,7 @@ function store(
     );
     stored.push(change);
   }
-  return { stored, duplicates };
+  return { stored, duplicates, newer: held };
 }
 
 /**
@@ -193,7 +203,7 @@ export function applyRemote(
       message: 'Only a copy of a shared record applies changes from another copy.',
       suggestion: 'Share the project, or join it, before syncing.',
     });
-  return client.writeTransaction(() => {
+  const applied = client.writeTransaction(() => {
     // s96-m13: the write check judges this copy before the merge's token is down, or it would read
     // the token as one a crashed writer left; a copy it refuses takes in nothing but a catch-up
     // (record-token.ts).
@@ -204,7 +214,7 @@ export function applyRemote(
     try {
       client.pragma('defer_foreign_keys = ON');
       const prefixBefore = mergeContext(client).prefixes;
-      const { stored, duplicates } = store(client, incoming);
+      const { stored, duplicates, newer } = store(client, incoming);
       const latest = stored
         .map((change) => change.hlc)
         .sort()
@@ -295,12 +305,19 @@ export function applyRemote(
           ...links,
           ...tracking,
         ],
+        newerProtocol: newer.length,
       };
     } finally {
       endMerging(client);
       run(client, `DELETE FROM ${APPLY_TOKEN_TABLE}`);
     }
   });
+  // s100-m01: what it kept out is kept in mind too, so the review says it until this copy upgrades;
+  // the copy that started the exchange words it for whichever side kept it out (record-exchange.ts).
+  if (!applied.success || !applied.data) return applied;
+  if (applied.data.newerProtocol)
+    noteNewerProtocol(client, Math.max(...incoming.map((change) => change.protocol_version)));
+  return applied;
 }
 
 // s96-m13: the authority's own decisions live in record-decide.ts.

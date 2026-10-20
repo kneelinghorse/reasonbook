@@ -78,7 +78,7 @@ function warnLegacyAuth(arm: 'legacy-env' | 'password-fallback'): void {
   legacyAuthWarnSeen.add(arm);
   const armLabel = arm === 'legacy-env' ? 'legacy-env' : 'password-fallback';
   process.stderr.write(
-    `[WARN] reasonbook: authenticating via ${armLabel}; run rbook_auth(action="login") to migrate to device-code credentials\n`
+    `[WARN] reasonbook: authenticating via ${armLabel}; run rbook_auth(action="login_init"), then rbook_auth(action="login_complete"), to migrate to device-code credentials\n`
   );
 }
 

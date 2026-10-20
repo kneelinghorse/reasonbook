@@ -21,6 +21,7 @@ import {
 } from './record-successor';
 import { replicaWriteRefusal } from './replica-check';
 import { recordedProjectId, REPLICA_ERROR_CODES } from './replica-identity';
+import { newerProtocolWarning } from './record-protocol-hold';
 import type { RbookToolError, RbookToolResult } from './types';
 
 /** The sync protocol two copies must share; a copy that speaks another is refused, never guessed at. */
@@ -326,10 +327,17 @@ export async function exchange(
   const stopped = async (error: RbookToolError): Promise<RbookToolResult<ExchangeReport>> => {
     // A clash is damage both operators must see: each side's review keeps it (ADR §7's digest).
     await local.failed({ replicaId: theirs.replicaId, error: error.message });
-    await remote.failed({ replicaId: ours.replicaId, error: error.message });
+    // s100-m01: a far copy that takes no note, such as one the dashboard referees taking a
+    // catch-up, must not hide the clash behind its own refusal.
+    await remote.failed({ replicaId: ours.replicaId, error: error.message }).catch(() => undefined);
     return createError<ExchangeReport>(error);
   };
-  if (ours.epoch !== theirs.epoch) return catchUp(local, remote, ours, theirs, stopped);
+  // s100-m01 (settled item 6): which copy kept changes of a newer record protocol out, said for it.
+  const keptOutBy = (side: Peer, report: ApplyReport | null | undefined): string[] =>
+    report?.newerProtocol
+      ? [newerProtocolWarning(report.newerProtocol, side === local ? 'here' : remote.name)]
+      : [];
+  if (ours.epoch !== theirs.epoch) return catchUp(local, remote, ours, theirs, stopped, keptOutBy);
 
   const localJudges = ours.replicaId === ours.authority;
   const [authority, member] = localJudges ? [local, remote] : [remote, local];
@@ -428,6 +436,11 @@ export async function exchange(
       ...(blocks.data?.length ? { reblocked: blocks.data } : {}),
     },
     // What either copy could not embed after its merge rides the answer (s96-m13).
-    [...(judged.warnings ?? []), ...(adoptedWarnings ?? [])]
+    [
+      ...(judged.warnings ?? []),
+      ...(adoptedWarnings ?? []),
+      ...keptOutBy(authority, judged.data),
+      ...keptOutBy(member, adopted),
+    ]
   );
 }

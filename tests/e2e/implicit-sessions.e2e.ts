@@ -194,6 +194,16 @@ describe('s92-m03 implicit sessions over stdio', () => {
       projectRoot,
     });
     const sessionId: string = dataOf(captured).sessionId;
+    // s100-m03 (#712): the row is there while the process still holds its session open.
+    const stepRows = () =>
+      readRows<{ id: number; content: string }>(
+        dbPath,
+        'SELECT id, content FROM next_steps WHERE session_id = ?',
+        sessionId
+      );
+    expect(stepRows()).toEqual([
+      { id: dataOf(captured).nextStepId, content: 'carry this past the exit' },
+    ]);
     await c.close();
 
     const closed = await waitFor(
@@ -212,14 +222,10 @@ describe('s92-m03 implicit sessions over stdio', () => {
       sessionId
     );
     expect(row.summary).toMatch(/^Closed automatically: its process ended\./);
-    // The deferred next-step materialized at that close.
-    expect(
-      readRows<{ content: string }>(
-        dbPath,
-        'SELECT content FROM next_steps WHERE session_id = ?',
-        sessionId
-      )
-    ).toEqual([{ content: 'carry this past the exit' }]);
+    // The close at exit found that row and wrote no second one.
+    expect(stepRows()).toEqual([
+      { id: dataOf(captured).nextStepId, content: 'carry this past the exit' },
+    ]);
   });
 
   it('a reconcile close uploads nothing; an explicit complete in the same live process does', async () => {

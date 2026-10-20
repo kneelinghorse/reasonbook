@@ -13,10 +13,12 @@ import { createError, createSuccess } from './errors';
 import { applyRemote, replicaMarks } from './record-apply';
 import type { AuthorityValue } from './record-authority';
 import { canonicalJson } from './record-capture';
-import { recordOwnChanges } from './record-changes';
+import { PROTOCOL_VERSION, recordOwnChanges } from './record-changes';
 import type { Hello, Peer } from './record-exchange';
+import type { LoggedChange } from './record-standing';
 import { freshBlock, listMembers, OWNER_MEMBER } from './record-membership';
 import { judgeUnjudged } from './record-judge';
+import { newestProtocol, UPGRADE_COMMAND } from './record-protocol-hold';
 import { recomputeEntities } from './record-recompute';
 import { mergeContext, REPLICA_ENTITY } from './record-standing';
 import { underApplyToken } from './record-token';
@@ -148,6 +150,12 @@ export async function recoverAuthority(
       marks: replicaMarks(client),
     };
   });
+  // s100-m01 (critics, rounds 1 and 2): a recovery takes every copy's changes in whole and judges
+  // them as this version would. One written in a newer record protocol, in this copy's own carried
+  // log or a member copy's, would be left with no verdict or cut off past the recovery's cut, so the
+  // recovery stops before it changes anything and runs once this copy upgrades.
+  const newerHere = await self((client) => newestLogged(client));
+  if (newerHere) return newerRefusal('This copy', newerHere);
   const old = before.ctx.authority;
   const ownerName = validAuthorName(
     before.members.find((member) => member.memberId === OWNER_MEMBER)?.name ?? ''
@@ -213,6 +221,17 @@ export async function recoverAuthority(
       suggestion:
         'Reach each copy over SSH, or drop a member by your word (drop=[name]); a dropped copy re-identifies when it returns.',
     });
+  // Every member copy's changes, fetched before anything changes here, so one that holds a newer
+  // protocol's stops the recovery with this copy as it was. Later ones arrive as duplicates.
+  const collectedFrom: Array<readonly LoggedChange[]> = [];
+  for (const peer of peers) {
+    const changes = await peer.changesSince(before.marks);
+    const newer = newestProtocol(
+      changes.filter((change) => change.protocol_version > PROTOCOL_VERSION)
+    );
+    if (newer) return newerRefusal(peer.name, newer);
+    collectedFrom.push(changes);
+  }
   // The lost-changes report reads this machine's mark of the old copy before anything is retired.
   const mark = binding ? binding.seq_mark : null;
   const restoredTogether = bound?.replicaId === old && bound.seq >= (mark ?? Infinity);
@@ -235,9 +254,7 @@ export async function recoverAuthority(
   if (!made.success) return createError(made.error!);
   if (made.data) return createError(made.data);
   let collected = 0;
-  for (const peer of peers) {
-    const marks = await self((client) => replicaMarks(client));
-    const changes = await peer.changesSince(marks);
+  for (const changes of collectedFrom) {
     // Collected whole and unjudged: this copy judges only once it is the authority.
     const applied = await self((client) => importUnjudged(client, changes));
     if (!applied.success) return createError(applied.error!);
@@ -309,6 +326,24 @@ export async function recoverAuthority(
     dropped: value.dropped ?? {},
     reached: [...hellos.keys()],
     lost,
+  });
+}
+
+/** The newest record protocol this copy's own log holds a change in, past its own; or 0. */
+function newestLogged(client: RbookDatabaseClient): number {
+  const row = client.getOne<{ version: number | null }>(
+    'SELECT max(protocol_version) AS version FROM record_changes WHERE protocol_version > ?',
+    [PROTOCOL_VERSION]
+  );
+  return row.success ? (row.data?.version ?? 0) : 0;
+}
+
+/** Why a recovery stops for a newer record protocol, before it changed anything. */
+function newerRefusal(where: string, protocol: number): RbookToolResult<never> {
+  return refuse({
+    code: REPLICA_ERROR_CODES.WRITE_REFUSED,
+    message: `${where} holds changes written in record protocol ${protocol}, newer than this version's ${PROTOCOL_VERSION}, and a recovery takes in every copy's changes whole, so nothing was recovered.`,
+    suggestion: `Upgrade Reasonbook here (${UPGRADE_COMMAND}), then run the recovery again.`,
   });
 }
 

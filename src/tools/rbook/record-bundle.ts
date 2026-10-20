@@ -12,7 +12,13 @@ import { canonicalJson } from './record-capture';
 import { chainClashes, chainsAt } from './record-chain';
 import { clashRefusal, hello, pairRefusal, SYNC_PROTOCOL, type Hello } from './record-exchange';
 import { memberProblem } from './record-exchange-steps';
-import type { LoggedChange } from './record-standing';
+import {
+  keptOut,
+  newerProtocolWarning,
+  newestProtocol,
+  noteNewerProtocol,
+} from './record-protocol-hold';
+import { mergeContext, type LoggedChange } from './record-standing';
 import { mergeRefusal } from './record-token';
 import { REPLICA_ERROR_CODES } from './replica-identity';
 import type { RbookToolResult } from './types';
@@ -44,6 +50,8 @@ export interface BundleImport {
   readonly held: number;
   readonly newlyLive: readonly string[];
   readonly notes: readonly string[];
+  /** s100-m01: changes kept out with their replica's stream, written in a newer record protocol. */
+  readonly newerProtocol: number;
 }
 
 const contentHash = (bundle: Omit<Bundle, 'hash'>): string =>
@@ -183,8 +191,11 @@ export function importBundle(
   const clashed = clashRefusal(self, bundle.from, clashes, "the bundle's copy", outcome);
   if (clashed) return createError<BundleImport>(clashed);
 
+  // s100-m01 (settled item 6): what a newer record protocol keeps out is decided over the whole
+  // bundle, which each transaction's own apply below could not see.
+  const { taken, held: keptOutChanges } = keptOut(bundle.changes);
   const byTxn = new Map<string, LoggedChange[]>();
-  for (const change of bundle.changes)
+  for (const change of taken)
     byTxn.set(change.txn_id, [...(byTxn.get(change.txn_id) ?? []), change]);
   const totals = { stored: 0, judged: 0, conflicts: 0, held: 0 };
   const newlyLive = new Set<string>();
@@ -217,17 +228,27 @@ export function importBundle(
     applied.data.newlyLive.forEach((txnId) => newlyLive.add(txnId));
     notes.push(...applied.data.notes);
   }
-  return createSuccess<BundleImport>({
-    ...(catchUp
-      ? { caughtUp: { epoch: bundle.from.epoch, authority: bundle.from.authority } }
-      : {}),
-    transactions: byTxn.size,
-    ...totals,
-    conflicts: last?.conflicts ?? 0,
-    held: last?.held ?? 0,
-    newlyLive: [...newlyLive],
-    notes,
-  });
+  if (keptOutChanges.length) noteNewerProtocol(client, newestProtocol(keptOutChanges));
+  // s100-m01: a move kept out did not arrive, so there is nothing to confirm yet.
+  const after = catchUp ? mergeContext(client) : null;
+  const arrived =
+    after !== null &&
+    (!keptOutChanges.length || after.pending !== null || after.epoch === bundle.from.epoch);
+  return createSuccess<BundleImport>(
+    {
+      ...(arrived
+        ? { caughtUp: { epoch: bundle.from.epoch, authority: bundle.from.authority } }
+        : {}),
+      transactions: byTxn.size,
+      ...totals,
+      conflicts: last?.conflicts ?? 0,
+      held: last?.held ?? 0,
+      newlyLive: [...newlyLive],
+      notes,
+      newerProtocol: keptOutChanges.length,
+    },
+    keptOutChanges.length ? [newerProtocolWarning(keptOutChanges.length, 'here')] : []
+  );
 }
 
 /**

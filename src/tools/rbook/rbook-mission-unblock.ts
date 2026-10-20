@@ -46,6 +46,9 @@ export interface MissionUnblockResult {
   unblockedAt: string;
 }
 
+/** What an unblock leaves a mission as (default In Progress). */
+const UNBLOCK_TARGETS = ['In Progress', 'Current'] as const;
+
 /**
  * Input parameters schema for rbook_mission_unblock tool.
  */
@@ -61,7 +64,7 @@ export const rbookMissionUnblockSchema = z.object({
 
   /** Target status after unblock (default: 'In Progress') */
   targetStatus: z
-    .enum(['In Progress', 'Current'])
+    .enum(UNBLOCK_TARGETS)
     .optional()
     .describe('Target status after unblocking (default: "In Progress")'),
 
@@ -162,6 +165,13 @@ export async function rbookMissionUnblock(
   }
 
   const missionId = params.missionId.trim();
+  // s100-m02: as for start (finding 14), the schema's enum binds nothing here, and Blocked may also
+  // move to Dropped or Deferred, so an unblock to either would have moved the mission there.
+  if (params.targetStatus != null && !UNBLOCK_TARGETS.includes(params.targetStatus)) {
+    return createError(
+      RbookErrors.invalidParameter('targetStatus', params.targetStatus, [...UNBLOCK_TARGETS])
+    );
+  }
   const targetStatus: MissionStatus = params.targetStatus ?? 'In Progress';
 
   const warnings: string[] = [];

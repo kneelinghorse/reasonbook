@@ -41,8 +41,9 @@ Capture the choices and their reasons with `rbook_decisions(action="record", con
 link relevant evidence and mission provenance when available. For next-step planning, reuse the
 task's planning session or open one with `rbook_session(action="start", type="planning", title="<topic>")`. Use
 `rbook_session(action="capture", category="next-step", content="<action and completion evidence>")`
-for planned next steps in the current planning session, then complete that session when planning
-is finished so its next steps materialize. Do not open one solely to record a decision.
+for planned next steps in the current planning session; each is a next step from the moment it
+is captured. Complete that session when planning is finished. Do not open one solely to record a
+decision.
 
 For Builder work, use `rbook_sprint(action="add")`, `rbook_mission(action="add")` and
 `rbook_mission(action="depends")` with the tools' current schemas, after scope and dependencies are

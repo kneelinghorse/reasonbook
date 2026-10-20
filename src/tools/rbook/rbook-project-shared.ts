@@ -390,7 +390,7 @@ export function formatSharedProjectForLLM(
         const { plan } = data as unknown as { plan: DashboardSharePlan };
         lines.push(
           `Dry run: sharing through ${plan.dashboard} sends the shared record: ${rows(plan.up)}${'record_changes' in plan.up ? '' : ', with the change log sharing starts for it'}.`,
-          `It stays on this machine: ${rows(plan.stays)}, and the search index and context documents.`,
+          `The shared record leaves out ${rows(plan.stays)}, the search index and the other context documents. Until the handover, this copy's uploads to ${plan.dashboard} send its whole store, those included, as its registration there did; after it, they stop.`,
           'Nothing was sent. Show this to the person; send it with rbook_project(action="share", via="dashboard", confirm=true) only on their word.'
         );
         break;
@@ -410,12 +410,16 @@ export function formatSharedProjectForLLM(
     }
     case 'invite':
     case 'remove': {
-      const member = data as unknown as MemberView & { invited?: boolean; accepted?: number };
+      const member = data as unknown as MemberView & {
+        invited?: boolean;
+        accepted?: number;
+        refused?: number;
+      };
       lines.push(
         action === 'remove'
           ? `✓ Removed ${member.name}: their changes past the cut are quarantined, and their copy receives nothing new.`
           : member.invited && member.accepted !== undefined
-            ? `✓ Re-added ${member.name} as ${member.role}; ${member.accepted} quarantined change(s) of theirs are accepted from now. A removal drops the route to their copy: set it again with reasonbook sync --ssh <host> --remote-root <folder>, or carry a bundle (reasonbook sync --bundle-out <file>).`
+            ? `✓ Re-added ${member.name} as ${member.role}; ${member.accepted} quarantined change(s) of theirs are accepted from now${member.refused ? `, and ${member.refused} refused, as an ${member.role}'s would be` : ''}. A removal drops the route to their copy: set it again with reasonbook sync --ssh <host> --remote-root <folder>, or carry a bundle (reasonbook sync --bundle-out <file>).`
             : member.invited
               ? `✓ Invited ${member.name} as ${member.role}. Join their copy with rbook_project(action="join", member="${member.name}", host=..., remoteRoot=...).`
               : `✓ ${member.name} is a member already, as ${member.role}.`

@@ -118,6 +118,37 @@ describe('removal and re-add', () => {
     expect(decided(member, 'The owner, meanwhile.')).toEqual([{ n: 1 }]);
   }, 240000);
 
+  it('a re-add judges what the member wrote while removed in clock order, so an edit of its own new decision is accepted after it (s100-m01)', async () => {
+    const owner = await ownerCopy(fixture.tmp);
+    const member = await joined(owner, 'Darryl', 'studio');
+    await sync(member, owner);
+    await onCopy(fixture.tmp, owner, (client) => removeMember(client, 'Darryl'));
+    // Removed, the member records a decision and then archives it: the second names the first's row.
+    const recorded = await ok(member, 'rbook_decisions', {
+      action: 'record',
+      content: 'Written and archived while removed.',
+    });
+    const decisionId =
+      (recorded.data as { id?: number; decisionId?: number }).decisionId ??
+      (recorded.data as { id?: number }).id;
+    await ok(member, 'rbook_decisions', { action: 'update', decisionId, status: 'archived' });
+    expect((await sync(member, owner)).removed).toBe(true);
+    const status = () =>
+      read<{ status: string }>(
+        owner,
+        'SELECT status FROM strategic_decisions WHERE decision_text = ?',
+        ['Written and archived while removed.']
+      );
+    expect(status()).toEqual([]);
+    const readded = await onCopy(fixture.tmp, owner, (client) =>
+      inviteMember(client, { name: 'Darryl' })
+    );
+    // The archive was judged after the decision it names; judged first, it would wait for good.
+    expect(readded.data).toMatchObject({ refused: 0 });
+    expect(readded.data!.accepted).toBeGreaterThanOrEqual(2);
+    expect(status()).toEqual([{ status: 'archived' }]);
+  }, 240000);
+
   it('the members list names the owner, the invited and the removed; only the owner removes, and never the owner', async () => {
     const owner = await ownerCopy(fixture.tmp);
     const member = await joined(owner, 'Darryl', 'studio');
@@ -172,6 +203,14 @@ describe('how an invite reads (s96-m13 critics, round 2)', () => {
       /A removal drops the route to their copy: set it again with reasonbook sync --ssh/
     );
     expect(readded).not.toMatch(/action="join"/);
+    // s100-m01: a re-add judges them again, and says how many it refused.
+    const judged = formatSharedProjectForLLM('invite', {
+      success: true,
+      data: { ...member, invited: true, accepted: 2, refused: 1 },
+    } as never);
+    expect(judged).toMatch(
+      /2 quarantined change\(s\) of theirs are accepted from now, and 1 refused, as an editor's would be/
+    );
     const invited = formatSharedProjectForLLM('invite', {
       success: true,
       data: { ...member, invited: true },

@@ -3,6 +3,10 @@
 // ABOUTME: made without the change helper's token, the capture triggers that stage each change, and their checks.
 
 import { IDENTITY_KEYS, RECORD_COLUMNS, RECORDED_TABLES, type SharedTable } from './record-columns';
+import { CHANGE_LOG_INDEXES_SQL, changeKinds, changeLogSql } from './record-protocol';
+
+// s100-m01: the kinds and the change log's DDL live with the record protocol (record-protocol.ts).
+export { CHANGE_KINDS, knownChangeKind } from './record-protocol';
 
 /** The token a change helper's transaction holds; no other connection ever sees it (ADR §6). */
 export const TOKEN_TABLE = 'record_write_token';
@@ -20,45 +24,8 @@ export const LOG_TABLES = [
   'record_conflicts',
   'record_roots',
 ] as const;
-export const CHANGE_KINDS = [
-  'create',
-  'set',
-  'append',
-  'link',
-  'unlink',
-  'settle',
-  'alias',
-  'renumber',
-  'replica_joined',
-  'member',
-  'authority',
-  'verdict',
-  'baseline',
-] as const;
-
-const LOG_TABLES_SQL = `
-CREATE TABLE IF NOT EXISTS record_changes (
-  change_id TEXT PRIMARY KEY,
-  txn_id TEXT NOT NULL,
-  project_id TEXT NOT NULL,
-  replica_id TEXT NOT NULL,
-  replica_seq INTEGER NOT NULL,
-  author_name TEXT,
-  author_user_id TEXT,
-  hlc TEXT NOT NULL,
-  protocol_version INTEGER NOT NULL,
-  kind TEXT NOT NULL CHECK (kind IN (${CHANGE_KINDS.map((kind) => `'${kind}'`).join(', ')})),
-  entity TEXT NOT NULL,
-  entity_id TEXT,
-  field TEXT,
-  value TEXT,
-  base TEXT,
-  UNIQUE (project_id, replica_id, replica_seq)
-);
-CREATE INDEX IF NOT EXISTS record_changes_entity ON record_changes (entity, entity_id, field);
-CREATE INDEX IF NOT EXISTS record_changes_txn ON record_changes (txn_id);
-CREATE INDEX IF NOT EXISTS record_changes_create ON record_changes (entity_id) WHERE kind = 'create';
-CREATE INDEX IF NOT EXISTS record_changes_replica ON record_changes (replica_id, replica_seq);
+/** The log's tables, its change log taking every kind this process knows. */
+const logTablesSql = (): string => `${changeLogSql(changeKinds())}${CHANGE_LOG_INDEXES_SQL}
 CREATE TABLE IF NOT EXISTS record_heads (
   entity TEXT NOT NULL,
   entity_id TEXT NOT NULL,
@@ -245,7 +212,7 @@ const TRIGGER_NAMES =
 
 /** Create the record tables, the token table, the stage and every trigger; inside the caller's transaction. */
 export function installRecordGuards(run: (sql: string) => void): void {
-  run(LOG_TABLES_SQL);
+  run(logTablesSql());
   run(TRANSIENT_TABLES_SQL);
   run(DERIVED_TABLES_SQL);
   for (const sql of Object.values(expectedTriggers())) run(sql);

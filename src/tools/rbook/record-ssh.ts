@@ -75,6 +75,8 @@ export async function sshPeer(
     readonly verb?: readonly string[];
     readonly ssh?: string;
     readonly timeoutMs?: number;
+    /** s100-m01 (F7): this copy's hello, which the far end reads with the first request. */
+    readonly nearHello?: Parameters<typeof wirePeer>[5];
   } = {}
 ): Promise<WirePeer> {
   const problem = routeProblem(route);
@@ -102,7 +104,8 @@ export async function sshPeer(
         () => {
           child.stdin.end();
         },
-        options.timeoutMs
+        options.timeoutMs,
+        options.nearHello
       ),
       failed,
     ]);

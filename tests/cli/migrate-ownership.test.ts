@@ -150,8 +150,12 @@ describe('offline cutover rejects cached paths before any handle opens', () => {
         inspect();
       });
       const result = await migrateProject({ projectRoot: root, env: { HOME: tmp }, apply: true });
-      expect(result.success).toBe(false);
-      expect(result.error?.message).toContain(String(child.pid));
+      // s100-m02: this failed once in a full suite with no message kept, and 0 of 14 runs under two
+      // concurrent suites reproduced it; a failure now prints the whole answer.
+      expect({ success: result.success, error: result.error }).toEqual({
+        success: false,
+        error: expect.objectContaining({ message: expect.stringContaining(String(child.pid)) }),
+      });
       expect(inspected).toHaveBeenCalled();
       expect(fs.existsSync(oldDb)).toBe(true);
       expect(fs.existsSync(path.join(root, 'rbook'))).toBe(false);

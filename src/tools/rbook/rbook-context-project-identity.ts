@@ -13,6 +13,8 @@ import {
 import { appendWarnings } from './format-warnings';
 import { storedTimeMs } from './stored-time';
 import { recordedChange } from './record-changes';
+import { isMembersCopy } from './record-membership';
+import { COPY_KEYS, readCopyKey } from './replica-copy-keys';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -24,6 +26,11 @@ export interface ProjectIdentityViewResult {
    * row yet: a read never seeds one, so the identity is derived in memory.
    */
   stored: boolean;
+  /**
+   * s100-m01: on a member's copy, the address it joined through the dashboard by; its identity's
+   * own address is never set, so it registers and sends as nothing.
+   */
+  joinedAddress?: string;
 }
 
 export interface ProjectIdentityUpdateResult {
@@ -70,11 +77,15 @@ export async function rbookContextViewProjectIdentity(
       // row does, so `seeded` counts the row this call inserted rather than reading that flag. The
       // migration's warnings channel carries the DB error onto the envelope (rendered by
       // appendWarnings below). s93-m11: a read inserts nothing and reports the seed as deferred.
+      const joinedAddress = isMembersCopy(client)
+        ? readCopyKey(client, COPY_KEYS.joinedAddress)
+        : null;
       return createSuccess<ProjectIdentityViewResult>(
         {
           projectIdentity: identity,
           seeded: migration.rowsUpdated > 0,
           stored: migration.deferred === undefined,
+          ...(joinedAddress ? { joinedAddress } : {}),
         },
         migration.warnings
       );
@@ -150,7 +161,7 @@ export function formatProjectIdentityViewForLLM(
     return `❌ Failed to view project_identity: ${result.error?.message ?? 'Unknown error'}`;
   }
 
-  const { projectIdentity, seeded, stored } = result.data;
+  const { projectIdentity, seeded, stored, joinedAddress } = result.data;
   const lines: string[] = [];
 
   if (seeded) {
@@ -166,7 +177,9 @@ export function formatProjectIdentityViewForLLM(
 
   lines.push(`# Project Identity — ${projectIdentity.project_name || '(unnamed)'}`);
   lines.push('');
-  lines.push(`**Address:** ${projectIdentity.rbook_address || '(not set)'}`);
+  lines.push(
+    `**Address:** ${projectIdentity.rbook_address || (joinedAddress ? `(not set on this copy, a member's copy joined from ${joinedAddress})` : '(not set)')}`
+  );
   lines.push(`**Platform:** ${projectIdentity.platform}`);
   lines.push(`**Domain:** ${projectIdentity.domain || '(not set)'}`);
   lines.push(`**Type:** ${projectIdentity.project_type} | **Tier:** ${projectIdentity.tier}`);

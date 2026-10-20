@@ -5,7 +5,7 @@
 import type { RbookDatabaseClient } from './client';
 import { canonicalJson } from './record-capture';
 import { recordOwnChanges } from './record-changes';
-import { judgeUnjudged } from './record-judge';
+import { judge, judgeUnjudged, type Verdict } from './record-judge';
 import { recomputeEntities } from './record-recompute';
 import { underApplyToken } from './record-token';
 import { mergeContext, REPLICA_ENTITY, TXN_ENTITY } from './record-standing';
@@ -101,6 +101,67 @@ export function decideTransactions(
         new Set()
       );
       return txnIds.length;
+    })
+  );
+}
+
+/**
+ * s100-m01 (the sprint-97 review's finding 8): the authority judges again transactions it set aside,
+ * such as a re-added member's quarantined ones. Each is judged as its replica's change would be now,
+ * under the merge context the re-add made, in clock order so a create is judged before what was
+ * written against it. A new verdict takes effect from this decision; a transaction this judging
+ * reaches no verdict on, or quarantines again, keeps the standing it had.
+ */
+export function rejudgeTransactions(
+  client: RbookDatabaseClient,
+  txnIds: readonly string[],
+  reason: string
+): RbookToolResult<{ readonly accepted: number; readonly refused: number }> {
+  return client.writeTransaction(() =>
+    underApplyToken(client, () => {
+      const ctx = mergeContext(client);
+      if (ctx.ownReplica !== ctx.authority)
+        throw new ReplicaRefusal({
+          code: REPLICA_ERROR_CODES.WRITE_REFUSED,
+          message: "Only the owner's copy decides a transaction.",
+          suggestion: "Decide it on the owner's copy.",
+        });
+      const ordered = rows<{ txn_id: string; replica_id: string }>(
+        client,
+        `SELECT txn_id, min(replica_id) AS replica_id FROM record_changes
+          WHERE txn_id IN (SELECT value FROM json_each(?)) GROUP BY txn_id ORDER BY min(hlc), txn_id`,
+        [JSON.stringify(txnIds)]
+      );
+      const decided = new Map<string, Verdict>();
+      const counts = { accepted: 0, refused: 0 };
+      for (const txn of ordered) {
+        const judged = judge(client, ctx, txn.txn_id, decided);
+        decided.set(txn.txn_id, judged.verdict ?? 'quarantined');
+        if (judged.verdict !== 'accepted' && judged.verdict !== 'refused') continue;
+        recordOwnChanges(client, [
+          {
+            kind: 'verdict',
+            entity: TXN_ENTITY,
+            entityId: txn.txn_id,
+            field: null,
+            value: canonicalJson({
+              verdict: judged.verdict,
+              reason: judged.reason ?? reason,
+              epoch: ctx.epoch,
+              replica: txn.replica_id,
+            }),
+          },
+        ]);
+        counts[judged.verdict] += 1;
+      }
+      const dependents = judgeUnjudged(client);
+      recomputeEntities(
+        client,
+        mergeContext(client),
+        new Set([...ordered.map((txn) => txn.txn_id), ...dependents]),
+        new Set()
+      );
+      return counts;
     })
   );
 }

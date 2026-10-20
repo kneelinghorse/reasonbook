@@ -21,6 +21,7 @@ import {
   type RbookSprintCompleteResult,
 } from '../../../src/tools/rbook/rbook-sprint-complete';
 import { RBOOK_SCHEMA } from '../../../src/tools/rbook/schema';
+import { computeContentHash } from '../../../src/tools/rbook/schema-migrations';
 import type { RbookToolResult } from '../../../src/tools/rbook/types';
 
 interface ActiveSessionAtClose {
@@ -212,6 +213,42 @@ describe('rbook_sprint_complete auditable close receipt', () => {
       expect(rendered).toMatch(/Active sessions at close:/i);
       expect(rendered).toMatch(/S-DIRECT.*5.*2/i);
       expect(rendered).not.toMatch(/S-COMPLETED|S-OTHER|S-NULL|S-MISSION-LINKED/);
+    });
+
+    // s100-m03 (#712): a next step captured since 4.2.1 is a row from its capture, so it is not work
+    // the running session still holds back. One captured before 4.2.1 has no row and still is.
+    it('counts a next-step capture as deferred only while it has no row', async () => {
+      const captures = ['written at capture', 'captured before 4.2.1'].map((content, index) => ({
+        timestamp: `2026-08-28T12:0${index}:00.000Z`,
+        category: 'next-step',
+        content,
+      }));
+      seedSession({
+        id: 'S-ROWS',
+        title: 'Running session with next steps',
+        sprintId: CLOSING_SPRINT_ID,
+        status: 'active',
+        captures: JSON.stringify([
+          ...captures,
+          { timestamp: '2026-08-28T12:05:00.000Z', category: 'context', content: 'a note' },
+        ]),
+      });
+      const db = new Database(dbPath);
+      db.prepare(
+        `INSERT INTO next_steps (content, status, session_id, created_at, content_hash)
+         VALUES (?, 'pending', 'S-ROWS', '2026-08-28T12:00:00.000Z', ?)`
+      ).run('written at capture', computeContentHash('written at capture', 'next-step'));
+      db.close();
+
+      const data = desiredData(await closeSprint());
+      expect(data.activeSessionsAtClose).toStrictEqual([
+        {
+          id: 'S-ROWS',
+          title: 'Running session with next steps',
+          captureCount: 3,
+          deferredCaptureCount: 2,
+        },
+      ]);
     });
 
     it('renders an explicit none when no direct active session remains', async () => {

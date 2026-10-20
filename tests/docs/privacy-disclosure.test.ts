@@ -50,15 +50,30 @@ describe('public privacy disclosure', () => {
   it('says what reasonbook.ai keeps for a project shared through it, and what deletion leaves', () => {
     const text = privacy();
     expect(text).toContain('Sharing through reasonbook.ai');
-    // What goes up, what stays, and the snapshots' retention the dashboard enforces.
-    expect(text).toContain('a copy holding only the shared record');
-    expect(text).toContain('authors');
-    expect(text).toContain('daily snapshots of it for 7 days');
-    // Who can see it: every share holder, read-only included, and no other account.
+    // s100-m02 (the s97 review's findings 1, 2 and 4): a share needs the project registered, and
+    // registering and every upload after it send the whole file, so nothing "stays on the machine"
+    // before the handover; the share itself sends only the shared record.
+    expect(text).toContain('registers the project and uploads its whole SQLite file');
+    expect(text).toContain('Every later upload sends the whole file again');
+    expect(text).toContain('no close uploads or registers a project');
+    expect(text).toContain('a fresh copy holding only the shared record');
+    expect(text).toContain("each change's author name");
+    expect(text).toContain('snapshotted daily and each snapshot is kept 7 days');
+    // Who can see it: every share holder, read-only included; every other account only the
+    // directory's entry, never the record.
     expect(text).toContain('read-only shares included');
-    // Removal deletes nothing already held; project deletion leaves the pages' mirror and activity.
+    expect(text).toContain('but none of its record');
+    expect(text).not.toContain('Other accounts see nothing of the project');
+    // Removal deletes nothing already held. Purge is refused on every copy while the dashboard holds
+    // the record (the owner's copy is a member's then), so the page names the way that works;
+    // project deletion leaves the mirror and the logs (s100-m02, the docs-truth critic's round 2).
     expect(text).toContain('Removing a member deletes nothing');
-    expect(text).toContain('but not the mirror of its pages or its activity');
+    expect(text).toContain("every copy refuses it, the owner's included");
+    expect(text).toContain('the owner moves the project back first');
+    expect(text).toContain(
+      'It leaves the mirror, its sync log and the activity and diagnostic logs'
+    );
+    expect(text).not.toContain('is not available yet');
     expect(text).toContain('two accounts operated by one person, on two machines');
   });
 

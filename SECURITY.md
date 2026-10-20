@@ -155,32 +155,39 @@ Reasonbook runtime and plugin installation make outbound requests in these situa
    Owner/editor roles hold among honest copies using the supported protocol over SSH or bundles;
    they do not defend against a member altering their store or software. Removal stops delivery of
    new changes to that member and quarantines their changes beyond the removal cut, but cannot
-   retract data already copied. Re-inviting permits exchange of those quarantined changes
+   retract data already copied. Re-inviting permits exchange again, and from 4.2.1 judges those
+   quarantined changes again, refusing what the member's role does not allow
    ([record-membership.ts](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/record-membership.ts)).
    See [Trust](docs/trust.md#shared-copies) for the measured support scope and content boundary.
 
 5. **Sharing through the dashboard, on unless `RBOOK_DASHBOARD_SHARING=off`.** This release ships
    it switched on, after its live test through reasonbook.ai. The setting is read only from the
-   environment Reasonbook runs in; `off` (or `0`) refuses starting a share or a join on that machine,
-   and nothing the dashboard reports changes it
+   environment Reasonbook runs in; `off`, `false`, `0` or `no`, in any case, refuses starting a share
+   or a join on that machine, and nothing the dashboard reports changes it
    ([record-dashboard-share.ts](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/record-dashboard-share.ts)).
    With it on:
    - **Sharing** (`rbook_project(action="share", via="dashboard")`, `reasonbook share --dashboard`)
      first lists what would go up, and sends nothing without `confirm=true` or `--yes`. It then
      uploads a fresh copy, built with Reasonbook's own schema, that holds the shared record only:
      the recorded tables' rows, the change log (every value ever recorded, replaced text
-     included) with the engine's tables beside it (conflicts, heads, roots and aliases), the
-     project identity and the metadata the engine needs. Session
-     events, agent feedback, telemetry, context snapshots and documents, proposals, prompt
-     mappings, the sync queue, the search index, routes to other copies and credentials stay on
-     the machine. The dashboard then holds the project's referee copy.
+     included, with each change's author name and, from a signed-in machine, account id) with the
+     engine's tables beside it (conflicts, heads, roots and aliases), the project identity and the
+     metadata the engine needs. That copy leaves out session events, agent feedback, telemetry,
+     context snapshots and documents, proposals, prompt mappings, the sync queue, the search
+     index, routes to other copies and credentials. The dashboard then holds the project's
+     referee copy. A share needs the project on the dashboard first, though, and item 1's uploads
+     put it there: they send the whole SQLite file, those tables included, until the share hands
+     the record over, and the dashboard keeps the file its registration uploaded.
    - **Joining** by the project's address downloads a first copy over HTTPS into a private
      temporary folder and builds the member's store from it with this version's schema, checking
      every change, so nothing the downloaded file holds runs on the member's machine
      ([record-dashboard-join.ts](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/record-dashboard-join.ts)).
    - **Syncing** exchanges changes with the dashboard's copy over HTTPS, in pages within the limit
      the dashboard publishes, on the triggers of item 4; `RBOOK_SHARED_SYNC=off` stops the automatic
-     ones. A copy shared through the dashboard exchanges with it alone: no SSH or bundle in or out.
+     ones. A copy shared through the dashboard exchanges with it alone, with no bundle in or out and
+     one exchange over SSH: a catch-up from the owner's copy that moved the project back, which it
+     serves with only the methods a catch-up needs, so SSH login is the boundary there too
+     ([record-wire.ts](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/record-wire.ts)).
    - **Moving back** (`rbook_project(action="move", to="owner")`, `reasonbook move --to owner`)
      hands the record to the owner's copy, and the dashboard archives its copy once the owner's
      copy holds the record and has synced again.
@@ -190,8 +197,16 @@ Reasonbook runtime and plugin installation make outbound requests in these situa
    address is this machine, never with a password and following no redirect
    ([record-dashboard-peer.ts](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/record-dashboard-peer.ts)).
    The dashboard's copy runs Reasonbook's own engine (`@aquex/reasonbook/referee`), which binds
-   each copy to its account and refuses, whole, a delivery that breaks the record's rules or
-   claims another member's changes.
+   each copy to its account and refuses, whole, a delivery that breaks the record's rules or, from a
+   member's copy, names anyone but that member as a change's author. A change may name no author
+   (the feed then shows the row's author), the owner's own copies are not held to the name, and a
+   change's account id is not compared with the caller's account. It does not check the author
+   fields of the rows a change writes, and checks a change's time only against the member's
+   admission and a week past its own clock, so a member who edits their own copy can put rows, and
+   feed entries, under another member's name and claim a mission, sprint or session id with a
+   back-dated time: the earliest create keeps an id.
+   The dashboard runs the engine version it pins, and a fix to the engine reaches projects shared
+   through it once it pins the release that carries it.
 
 ## Authentication model
 
@@ -243,7 +258,7 @@ surfaced as an `authTier` (the `AuthTier` type and `deriveAuthTier` in
 - There is **no `deleted_at` soft-delete net** on the main store. Decisions and learnings carry a
   status (`active`/`superseded`/`archived`/`stale`), but `rbook_db(action="restore")` replaces the
   whole database, and `rbook_db(action="purge")` deletes this project's data from the dashboard
-  mirror. A restore's pre-restore copy is **not listed or accepted by restore-by-ID**: keep its
+  mirror (refused while a project is shared through reasonbook.ai). A restore's pre-restore copy is **not listed or accepted by restore-by-ID**: keep its
   returned path for manual filesystem recovery with all writers stopped. That subdirectory is
   also outside the top-level snapshot retention count
   ([rbook-db-restore.ts](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/rbook-db-restore.ts)).
@@ -511,4 +526,4 @@ subagent type (e.g. the `Explore` agent) — that is a mitigation, not the machi
 
 ---
 
-_Last verified against the source for release 4.2.0._
+_Last verified against the source for release 4.2.1._

@@ -9,13 +9,13 @@ import { changesSince } from './record-apply';
 import { applyAndEmbed } from './record-apply-embed';
 import { chainsAt } from './record-chain';
 import { dashboardName, isDashboardRoute, type DashboardRoute } from './record-dashboard-route';
-import { hello, SYNC_PROTOCOL, type Peer } from './record-exchange';
+import { hello, SYNC_PROTOCOL, type Hello, type Peer } from './record-exchange';
 import { recordExchangeFailed, routeTo } from './record-peers';
 import { mergeContext } from './record-standing';
 import { admitSuccessor } from './record-admit-successor';
 import { reblockSelf, takeSuccessor } from './record-successor';
 import type { LoggedChange } from './record-standing';
-import { REPLICA_ERROR_CODES } from './replica-identity';
+import { recordedProjectId, REPLICA_ERROR_CODES } from './replica-identity';
 import type { RbookToolError, RbookToolResult } from './types';
 
 /** The far end's first line: who it is and the protocol it speaks, before any request. */
@@ -52,12 +52,13 @@ export function refereeingDashboard(client: RbookDatabaseClient): DashboardRoute
 /**
  * s97-m10 (design §Versions): why this copy answers no sync over SSH, or null. A project the
  * dashboard referees syncs through that dashboard, so a copy reaching this one over SSH, a 4.1.0
- * copy included, is told how to sync instead.
+ * copy included, is told how to sync instead; s100-m01 (F7): all but the owner copy that moved the
+ * project back, whose catch-up it takes in.
  */
 export function sshRefusal(client: RbookDatabaseClient): string | null {
   const route = refereeingDashboard(client);
   return route
-    ? `This project is shared through ${dashboardName(route)}, so this copy does not sync over SSH. Install Reasonbook 4.2.0 or later where you are syncing from, then sync through the dashboard there: reasonbook sync.`
+    ? `This project is shared through ${dashboardName(route)}, as far as this copy knows, so this copy does not sync over SSH. A member's copy syncs through the dashboard instead: install Reasonbook 4.2.0 or later where you are syncing from, then run reasonbook sync there. Over SSH this copy takes in only a catch-up from the owner's copy that moved the project back, run from that copy with Reasonbook 4.2.1 or later on both machines.`
     : null;
 }
 
@@ -77,6 +78,38 @@ export function bundleRefusal(client: RbookDatabaseClient): RbookToolError | nul
 }
 
 /**
+ * s100-m01 (F7): what the near end says of itself with its first request: only what a far end the
+ * dashboard referees needs to tell the owner copy that moved the project back, not its members or
+ * marks, which go to a far end before it is known to be one of this project's copies.
+ */
+export type NearHello = Pick<Hello, 'projectId' | 'replicaId' | 'authority' | 'epoch'>;
+
+/**
+ * s100-m01 (F7): what a far end the dashboard referees serves over SSH, to the owner copy that moved
+ * the project back while this copy was away: the reads and a catch-up, which only stores. Every other
+ * method would let a copy past the referee's checks.
+ */
+const CATCH_UP_METHODS: ReadonlySet<string> = new Set(['hello', 'chains', 'changesSince', 'apply']);
+
+/**
+ * s100-m01 (F7): whether the near end's hello, sent with its first request, is the owner's copy at a
+ * later move than this copy holds, as after a move back this copy missed: the one copy a far end the
+ * dashboard referees lets catch it up over SSH. Its catch-up only stores, and this copy holds the move
+ * until its person confirms it (reasonbook sync --confirm-owner).
+ */
+function catchUpFrom(client: RbookDatabaseClient, near: unknown): boolean {
+  if (!near || typeof near !== 'object' || Array.isArray(near)) return false;
+  const theirs = near as Partial<Hello>;
+  return (
+    typeof theirs.replicaId === 'string' &&
+    theirs.replicaId === theirs.authority &&
+    typeof theirs.epoch === 'number' &&
+    theirs.epoch > mergeContext(client).epoch &&
+    theirs.projectId === recordedProjectId(client)
+  );
+}
+
+/**
  * The far end of a sync: answer each request against this copy, one line each, until the input
  * ends. `open` runs each step against a client opened for it, and `unchecked` against one its copy
  * check does not refuse, for the steps that put a refused copy right (s96-m13). `extra` adds methods,
@@ -87,7 +120,12 @@ export async function serveSync(
   output: Writable,
   open: Opener,
   extra: Readonly<Record<string, (params: unknown) => Promise<unknown>>> = {},
-  unchecked: Opener = open
+  unchecked: Opener = open,
+  /**
+   * s100-m01 (F7): whether a far end the dashboard referees takes a catch-up from the owner copy
+   * that moved the project back; never while it serves a handover or a join.
+   */
+  options: { readonly catchUp?: boolean } = {}
 ): Promise<void> {
   // The near end going away ends this far end; a write it can no longer take must not crash it.
   output.on('error', () => undefined);
@@ -127,6 +165,9 @@ export async function serveSync(
     },
     ...extra,
   };
+  // s100-m01 (F7): on a copy the dashboard referees, set once the near end's hello shows the owner
+  // copy that moved the project back.
+  let catchingUp = false;
   for await (const line of createInterface({ input, crlfDelay: Infinity })) {
     if (!line.trim()) continue;
     let request: Request;
@@ -137,8 +178,43 @@ export async function serveSync(
       continue;
     }
     if (refused) {
-      send(output, { id: request.id, error: { message: refused } });
-      continue;
+      if (!catchingUp && options.catchUp !== false && request.method === 'hello') {
+        const near = (request.params as { near?: unknown } | undefined)?.near;
+        catchingUp = await unchecked((client) => catchUpFrom(client, near)).catch(() => false);
+      }
+      const asked = request.params as { catchUp?: unknown } | undefined;
+      if (
+        !catchingUp ||
+        !CATCH_UP_METHODS.has(request.method) ||
+        (request.method === 'apply' && asked?.catchUp !== true)
+      ) {
+        send(output, {
+          id: request.id,
+          error: {
+            message: catchingUp
+              ? `${request.method} is refused: this project is shared through the dashboard, so over SSH this copy only takes in a catch-up from the owner's copy that moved it back.`
+              : refused,
+          },
+        });
+        continue;
+      }
+      if (request.method === 'apply') {
+        const { changes } = request.params as { changes: LoggedChange[] };
+        try {
+          send(output, {
+            id: request.id,
+            result: await unchecked((client) =>
+              applyAndEmbed(client, changes, { judge: false, catchUp: true })
+            ),
+          });
+        } catch (error) {
+          send(output, {
+            id: request.id,
+            error: { message: error instanceof Error ? error.message : String(error) },
+          });
+        }
+        continue;
+      }
     }
     const method = methods[request.method];
     if (!method) {
@@ -173,7 +249,12 @@ export async function wirePeer(
   input: Readable,
   output: Writable,
   close: () => void,
-  timeoutMs = 120_000
+  timeoutMs = 120_000,
+  /**
+   * s100-m01 (F7): this copy's own hello, sent with the first request, so a far end the dashboard
+   * referees can tell the owner copy that moved the project back, and take in its catch-up.
+   */
+  nearHello?: () => Promise<NearHello>
 ): Promise<WirePeer> {
   const lines = createInterface({ input, crlfDelay: Infinity })[Symbol.asyncIterator]();
   const next = async (what: string): Promise<Record<string, unknown>> => {
@@ -227,7 +308,10 @@ export async function wirePeer(
     name,
     call,
     close,
-    hello: () => call('hello') as ReturnType<Peer['hello']>,
+    hello: async () =>
+      (await call('hello', nearHello ? { near: await nearHello() } : undefined)) as Awaited<
+        ReturnType<Peer['hello']>
+      >,
     chains: (at) => call('chains', at) as ReturnType<Peer['chains']>,
     changesSince: (marks) => call('changesSince', marks) as ReturnType<Peer['changesSince']>,
     apply: (changes, options = {}) =>

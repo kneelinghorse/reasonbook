@@ -1198,8 +1198,9 @@ describe('role-bearing shipped prose (s89-m02)', () => {
  *   (iv)  a helper taking the name as a string literal — envFloat/envOptFloat/envOptInt in
  *         scripts/measure-retrieval-production.ts
  *
- *   (v)   getSetting with a literal or module-level constant; both accepted prefixes map to
- *         the current documented spelling. Compatibility tests separately verify precedence.
+ *   (v)   getSetting, or settingIsOff (s100-m02: an off switch, which reads through getSetting),
+ *         with a literal or module-level constant; both accepted prefixes map to the current
+ *         documented spelling. Compatibility tests separately verify precedence.
  *
  * FALSE-NEGATIVE PROFILE: a name assembled at runtime (`process.env['RBOOK_' + suffix]`), a name
  * reaching the process through a shell wrapper rather than a code read, and a constant defined
@@ -1221,7 +1222,7 @@ function deriveEnvReads(root: string): Set<string> {
   for (const f of files) {
     const c = fs.readFileSync(f, 'utf8');
     for (const m of c.matchAll(
-      /\bgetSetting\(\s*(?:['"]((?:Reasonbook|RBOOK)_[A-Z0-9_]+)['"]|([A-Za-z_][A-Za-z0-9_]*))/g
+      /\b(?:getSetting|settingIsOff)\(\s*(?:['"]((?:Reasonbook|RBOOK)_[A-Z0-9_]+)['"]|([A-Za-z_][A-Za-z0-9_]*))/g
     )) {
       const name = m[1] ?? constMap.get(m[2]);
       if (name) out.add(name.replace(/^(?:Reasonbook|RBOOK)_/, 'RBOOK_'));

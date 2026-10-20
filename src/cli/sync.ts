@@ -114,7 +114,9 @@ export async function runSync(argv: readonly string[], io: CliIo): Promise<numbe
             }
           : {}),
       },
-      unchecked
+      unchecked,
+      // s100-m01 (F7): a handover's or a join's far end takes no catch-up a dashboard would referee.
+      { catchUp: !flags['confirm-owner'] && !flags['join'] }
     );
     return 0;
   }

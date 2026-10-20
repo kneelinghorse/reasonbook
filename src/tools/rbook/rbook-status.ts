@@ -20,9 +20,11 @@
 import { z } from 'zod';
 import * as path from 'path';
 import { withClientAsync, type RbookDatabaseClient } from './client';
+import { isMembersCopy } from './record-membership';
 import { peerHealth, syncsWith } from './record-peers';
 import { isRecordedStore } from './record-recording';
 import { mergeContext } from './record-standing';
+import { COPY_KEYS, readCopyKey } from './replica-copy-keys';
 import type { RbookToolResult } from './types';
 import { createError, createSuccess } from './errors';
 import { findWrongTypedStringParam } from './param-type-guard';
@@ -183,7 +185,13 @@ export async function rbookStatus(
   return withClientAsync(
     async (client) => {
       const identity = getProjectIdentity(client);
-      const rbook_address = normalizeRbookAddress(identity?.rbook_address);
+      // s100-m01: a member's copy names the address it joined by, and asks the dashboard nothing
+      // about the project, as its review does.
+      const membersCopy = isMembersCopy(client);
+      const rbook_address = normalizeRbookAddress(
+        identity?.rbook_address ||
+          (membersCopy ? readCopyKey(client, COPY_KEYS.joinedAddress) : null)
+      );
 
       const dashboard_url = resolveDashboardBaseUrl();
 
@@ -192,7 +200,9 @@ export async function rbookStatus(
       // s87-m03: the slug is derived the same way every other caller derives it — from the
       // project name — so the four getSyncStatus sites agree about what "this project" means.
       const projectSlug = identity?.project_name ? deriveProjectSlug(identity.project_name) : null;
-      const last_sync_at = await resolveLastSyncAt(projectSlug, params.projectRoot);
+      const last_sync_at = membersCopy
+        ? null
+        : await resolveLastSyncAt(projectSlug, params.projectRoot);
 
       const result: RbookStatusResult = {
         rbook_address,
@@ -243,7 +253,7 @@ export function formatStatusForLLM(result: RbookToolResult<RbookStatusResult>): 
         ]
       : []),
     s.auth_tier === 'none'
-      ? '\nNo dashboard credentials configured. Run rbook_auth(action="login") to bootstrap, or sign up at https://reasonbook.ai/register.'
+      ? '\nNo dashboard credentials configured. Run rbook_auth(action="login_init"), then rbook_auth(action="login_complete"), to bootstrap, or sign up at https://reasonbook.ai/register.'
       : '',
   ].filter(Boolean);
 

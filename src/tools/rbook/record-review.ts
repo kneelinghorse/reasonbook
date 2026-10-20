@@ -3,6 +3,7 @@
 // ABOUTME: checks find, the changes not live with their causes, and who started each mission in progress.
 
 import type { RbookDatabaseClient } from './client';
+import { newerProtocolHeld, UPGRADE_COMMAND } from './record-protocol-hold';
 import { knownBlocks } from './record-chain';
 import { crossRecordFindings } from './record-checks';
 import { isRecordedStore } from './record-guards';
@@ -37,6 +38,8 @@ export interface SharedRecordReview {
   readonly movePending?: boolean;
   /** s97-m14: a copy this one syncs with says this copy's member was removed (ADR s96 §8). */
   readonly removed?: boolean;
+  /** s100-m01: what this copy keeps out until it upgrades, written in a newer record protocol. */
+  readonly upgrade?: string;
 }
 
 /** How long ago a time was, as a person says it. */
@@ -61,13 +64,17 @@ function peerLines(client: RbookDatabaseClient): {
   const health = peerHealth(client).filter((peer) => syncsWith(ctx, peer.replicaId));
   return {
     lines: health.map((peer) => {
+      // s100-m01: a removed copy whose route ended keeps the name it reached that copy by, such as
+      // a dashboard that has since archived its referee copy (critics, round 2).
       const who = isDashboardRoute(peer.route)
         ? dashboardName(peer.route)
-        : peer.replicaId === ctx.authority
-          ? "the owner's copy"
-          : peer.name
-            ? `${peer.name}'s copy`
-            : `the copy in block ${blocks[peer.replicaId] ?? '?'}`;
+        : !peer.route && peer.removedAt && peer.name
+          ? peer.name
+          : peer.replicaId === ctx.authority
+            ? "the owner's copy"
+            : peer.name
+              ? `${peer.name}'s copy`
+              : `the copy in block ${blocks[peer.replicaId] ?? '?'}`;
       const last = peer.lastOkAt ? `synced ${ago(peer.lastOkAt)}` : 'never synced';
       // s97-m10: a sync that keeps failing says since when, and how many tries.
       const failing =
@@ -208,5 +215,19 @@ export function sharedRecordReview(client: RbookDatabaseClient): SharedRecordRev
     ...(peers.lines.length ? { peers: peers.lines, syncErrors: peers.errors } : {}),
     ...(peers.removed ? { removed: true } : {}),
     ...(moves.length ? { moves, movePending: Boolean(mergeContext(client).pending) } : {}),
+    ...upgradeLine(client),
   };
+}
+
+/**
+ * s100-m01 (settled item 6): changes of a newer record protocol wait on the copies that sent them
+ * until this copy upgrades, which no sync a hook or the timer ran ever told anyone.
+ */
+function upgradeLine(client: RbookDatabaseClient): { readonly upgrade?: string } {
+  const newer = newerProtocolHeld(client);
+  return newer
+    ? {
+        upgrade: `this copy keeps out changes written in record protocol ${newer.protocol}, newer than its own (first met ${ago(newer.at)}): they wait on the copies that sent them, with what came after them, until Reasonbook is upgraded here: ${UPGRADE_COMMAND}`,
+      }
+    : {};
 }

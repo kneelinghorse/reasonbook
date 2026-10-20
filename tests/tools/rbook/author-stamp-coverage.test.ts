@@ -16,7 +16,8 @@ const SRC = path.resolve(__dirname, '../../../src');
 
 /**
  * The published universe (rbook/research/2026-10-s96-probes/s96-m02-authors-build.md, class F):
- * 28 lines at cde8a0a. Left, each for its reason; every other site splices the genesis stamp.
+ * 28 lines at cde8a0a; 29 since s100-m03's next-step insert at capture, which splices the stamp. Left,
+ * each for its reason; every other site splices the genesis stamp.
  *
  * WHAT IT CANNOT SEE (practice 7). The rule reads a table named in the SQL text, bare or quoted.
  * An insert whose table is a variable (`INSERT INTO ${table}`) is outside it: spin-out's copy and
@@ -76,7 +77,7 @@ describe('author stamp coverage', () => {
   it('gives every production insert into a logged table the stamp, as published', () => {
     const files = sources();
     const found = sites(files);
-    expect(found).toHaveLength(28);
+    expect(found).toHaveLength(29);
     const left: Record<string, number> = {};
     for (const site of found) if (site.file in LEFT) left[site.file] = (left[site.file] ?? 0) + 1;
     expect(left).toEqual({ 'tools/rbook/sync-merge.ts': 5, 'tools/rbook/genesis-columns.ts': 1 });

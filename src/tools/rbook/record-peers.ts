@@ -160,6 +160,30 @@ export function recordExchanged(
   );
 }
 
+/**
+ * s100-m01 (#707): keep what an exchange said of this copy's membership on the row of the copy this
+ * copy takes for the owner's, which its review and rbook_status show, when the exchange reached
+ * another copy, such as the owner copy a move made. The first time a removal was said is kept, and
+ * a later exchange that names this copy a member clears it.
+ */
+export function noteRemoval(
+  client: RbookDatabaseClient,
+  replicaId: string,
+  removed: boolean
+): void {
+  if (!removed) {
+    if (hasPeers(client))
+      run(client, 'UPDATE record_peers SET removed_at = NULL WHERE replica_id = ?', [replicaId]);
+    return;
+  }
+  run(
+    client,
+    `INSERT INTO record_peers (replica_id, failures, removed_at) VALUES (?, 0, ?)
+       ON CONFLICT (replica_id) DO UPDATE SET removed_at = COALESCE(record_peers.removed_at, excluded.removed_at)`,
+    [replicaId, new Date().toISOString()]
+  );
+}
+
 /** An exchange with a copy that failed, said as the person will read it. */
 export function recordExchangeFailed(
   client: RbookDatabaseClient,
@@ -228,6 +252,24 @@ export function forgetPeers(client: RbookDatabaseClient, replicaIds?: readonly s
   if (!replicaIds) return run(client, 'DELETE FROM record_peers', []);
   for (const replicaId of replicaIds)
     run(client, 'DELETE FROM record_peers WHERE replica_id = ?', [replicaId]);
+}
+
+/**
+ * s100-m01 (the sprint-100 build's critics): forget only how to reach a copy, keeping its row, on
+ * which a removal this copy was told of stays for its review, digest and rbook_status to show.
+ */
+export function forgetRoute(
+  client: RbookDatabaseClient,
+  replicaId: string,
+  /** What the row's copy was reached as, such as the dashboard's name, for the review to keep. */
+  name: string | null = null
+): void {
+  if (!hasPeers(client)) return;
+  run(
+    client,
+    'UPDATE record_peers SET route = NULL, name = COALESCE(name, ?) WHERE replica_id = ?',
+    [name, replicaId]
+  );
 }
 
 /**

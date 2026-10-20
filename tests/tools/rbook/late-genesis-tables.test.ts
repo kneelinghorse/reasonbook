@@ -74,15 +74,17 @@ it.each([
     });
     expect(captured).toMatchObject({ success: true, data: { writeFailures: [] } });
     if (table === 'next_steps') {
+      // s100-m03: the capture wrote the row, so the close finds it and writes no second one.
+      expect(captured.data?.nextStepId).toEqual(expect.any(Number));
       const closed = await call('rbook_session', {
         action: 'complete',
         sessionId: started.data!.sessionId,
-        summary: 'Keep the deferred next step',
+        summary: 'Close after the next step was written',
         projectRoot: project.projectRoot,
       });
       expect(closed).toMatchObject({
         success: true,
-        data: { writeFailures: [], nextStepsExtracted: 1 },
+        data: { writeFailures: [], nextStepsExtracted: 0 },
       });
     }
     const db = new Database(project.dbPath, { readonly: true });

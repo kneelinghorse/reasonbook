@@ -107,9 +107,11 @@ describe('s92-m04 honest opener over stdio', () => {
     );
     expect(answer.resolvedBy).toBe('cwd');
     expect(answer.commands).not.toContain(WHOAMI);
-    expect(answer.commands).not.toContain('rbook_auth(action="login")');
+    expect(answer.commands).not.toContain(
+      'rbook_auth(action="login_init"), then rbook_auth(action="login_complete")'
+    );
     expect(answer.text).not.toContain(WHOAMI);
-    expect(answer.text).not.toContain('rbook_auth(action="login")');
+    expect(answer.text).not.toContain('rbook_auth(action="login');
   });
 
   it("a project named by the client's roots is not, and the onboard-only action stays home", async () => {

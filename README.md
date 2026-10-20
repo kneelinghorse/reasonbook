@@ -41,7 +41,7 @@ Requires Node.js 20 or newer.
 1. Install the pinned CLI:
 
    ```sh
-   npm install -g @aquex/reasonbook@4.2.0
+   npm install -g @aquex/reasonbook@4.2.1
    ```
 
    Ensure the global npm bin directory is on your PATH. If the former package is installed globally, run `npm uninstall -g @aquex/cmos-mcp` first. Version 4 provides only the `reasonbook` command; update scripts and MCP configurations that use the old command.
@@ -62,7 +62,7 @@ Requires Node.js 20 or newer.
 The digest names this project and shows its decisions, lessons and open work. A new
 Ledger starts empty. Planner adds next steps; Builder adds sprints and missions.
 
-## Codex plugins — 4.1.0
+## Codex plugins
 
 The developer plugin `reasonbook` supplies the server, seven skills and five lifecycle hooks.
 The conversation-focused `reasonbook-chat` supplies the same server and six distinct chat skills,
@@ -160,7 +160,9 @@ MCP tool writes also schedule an upload after 5 quiet minutes or 30 minutes of c
 the next poll starts it within 60 seconds when no upload lease or failure backoff blocks it.
 Transfer time follows. See the timing and failure details under [Optional: hosted dashboard](#optional-hosted-dashboard).
 `RBOOK_CHECKPOINT_SYNC=off` stops automatic uploads, not requested network actions or
-shared-record exchanges. Implicit process-exit closes do not upload. [Full network and data disclosure](SECURITY.md#outbound-network).
+shared-record exchanges. Implicit process-exit closes do not upload. A project shared through
+reasonbook.ai keeps uploading its whole file until the share hands its record to the dashboard's
+referee copy, then sends only the shared record's changes until it is moved back. [Full network and data disclosure](SECURITY.md#outbound-network).
 
 ## Technical reference
 
@@ -186,7 +188,7 @@ Recommended: a global install of this release. The server then starts from disk,
 lookup on launch:
 
 ```bash
-npm install -g @aquex/reasonbook@4.2.0
+npm install -g @aquex/reasonbook@4.2.1
 ```
 
 If the former package is installed globally, run `npm uninstall -g @aquex/cmos-mcp` first. Version 4 provides only the `reasonbook` command; update scripts and MCP configurations that use the old command.
@@ -195,7 +197,7 @@ Or run it on demand with `npx`. Pin the version and prefer the local cache: an u
 can look the package up again on every launch.
 
 ```bash
-npx --prefer-offline -y @aquex/reasonbook@4.2.0
+npx --prefer-offline -y @aquex/reasonbook@4.2.1
 ```
 
 Semantic (vector) search is optional. Without it, retrieval is keyword-only, and the install is
@@ -214,7 +216,7 @@ arguments (keep `--project-root` where an example has it).
 ### Claude Code
 
 ```bash
-claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.2.0"]}'
+claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.2.1"]}'
 ```
 
 ### Claude Desktop
@@ -229,7 +231,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
       "args": [
         "--prefer-offline",
         "-y",
-        "@aquex/reasonbook@4.2.0",
+        "@aquex/reasonbook@4.2.1",
         "--project-root",
         "/absolute/path/to/your/project"
       ]
@@ -253,7 +255,7 @@ Add to `~/.cursor/mcp.json`:
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.2.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.2.1"]
     }
   }
 }
@@ -266,7 +268,7 @@ Add to `~/.cursor/mcp.json`:
   "context_servers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.2.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.2.1"]
     }
   }
 }
@@ -287,7 +289,7 @@ your terminal PATH, so the terminal route needs the standalone Claude CLI.
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.2.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.2.1"]
     }
   }
 }
@@ -354,7 +356,11 @@ agents, without a foreign-source fence; invite people whose record content you t
 
 Through reasonbook.ai, each person signs in on their machine. The owner's agent shares the project,
 the owner shares it with the editor on the dashboard, and the editor gives their agent the join
-sentence from the project's page. Moving a project back off reasonbook.ai is not available yet.
+sentence from the project's page. The owner's copy can move the project back with
+`rbook_project(action="move", to="owner")` or `reasonbook move --to owner`, then catch a member's
+copy up over SSH, and the member confirms the move with `reasonbook sync --confirm-owner`. That was
+measured live with one member present, the move made through `rbook_project`. One machine keeps one
+live copy of a shared project.
 
 Start with the [sharing steps](docs/getting-started.md#share-a-projects-record) and
 [trust boundary](docs/trust.md#shared-copies). Sharing over SSH needs no dashboard account. Automatic exchanges
@@ -370,7 +376,7 @@ The dashboard is a separate service. Sign up at [reasonbook.ai](https://reasonbo
 - **Project registry** — addressable `rbook://you/project-name` URIs across machines.
 - **Messaging** — `rbook_message(action="send")` between your own projects.
 - **Sharing** — share a project's record with editors, who join from its page; the dashboard keeps
-  the referee copy and shows each member's changes. See [Share a project's record](#share-a-projects-record).
+  the referee copy and shows the record, its members and a feed of what each created and moved. See [Share a project's record](#share-a-projects-record).
 
 To connect:
 
@@ -492,8 +498,9 @@ RBOOK_CHECKPOINT_SYNC=off
 # Explicit reasonbook sync and bundle commands remain available.
 RBOOK_SHARED_SYNC=off
 
-# Optional — turn off starting a share or a join through reasonbook.ai on this machine.
-# On by default; a project already shared through the dashboard syncs either way.
+# Optional — turn off starting a share or a join through reasonbook.ai on this machine
+# (off, false, 0 or no, in any case). On by default; a project already shared through the
+# dashboard syncs either way.
 RBOOK_DASHBOARD_SHARING=off
 ```
 
@@ -518,15 +525,16 @@ Every tool returns a uniform envelope:
 
 - **Append-only audit.** Session events and mission transitions are append-only rows. Context snapshots keep their rows, ids and events, but `rbook_db(action="prune_snapshots")` can empty the content of copies Reasonbook wrote on its own.
 - **Atomic credential writes.** `credentials.json` is written via temp-file + rename with 0600 permissions.
-- **Database snapshots.** `rbook_db(action="snapshot")` copies the database on demand. A `rbook_sprint(action="complete")` attempts a snapshot before and after the close; a snapshot failure warns without blocking completion. Applying `rbook_db(action="prune_snapshots")` to a nonempty selection requires a backup, and `rbook_db(action="restore")` first copies the live database to `rbook/db/snapshots/pre-restore/`. `RBOOK_MAX_SNAPSHOTS` caps how many are kept: taking one deletes the oldest beyond it, automatic ones included. Nothing else snapshots first, and there is no soft-delete net — `rbook_db(action="purge")` deletes this project's data from the dashboard mirror. See [SECURITY.md](SECURITY.md#backups--deletion--the-honest-reality).
+- **Database snapshots.** `rbook_db(action="snapshot")` copies the database on demand. A `rbook_sprint(action="complete")` attempts a snapshot before and after the close; a snapshot failure warns without blocking completion. Applying `rbook_db(action="prune_snapshots")` to a nonempty selection requires a backup, and `rbook_db(action="restore")` first copies the live database to `rbook/db/snapshots/pre-restore/`. `RBOOK_MAX_SNAPSHOTS` caps how many are kept: taking one deletes the oldest beyond it, automatic ones included. Nothing else snapshots first, and there is no soft-delete net — `rbook_db(action="purge")` deletes this project's data from the dashboard mirror, and is refused while a project is shared through reasonbook.ai. See [SECURITY.md](SECURITY.md#backups--deletion--the-honest-reality).
 - **Dry-run where it exists.** `rbook_context(action="condense")` accepts `dryRun` to preview without committing. It is not a general property of mutating tools. Backfill's old event-replay dry run is retired and refuses with `LEGACY_SYNC_RETIRED`.
 
 ## Known limits
 
 - Registered projects with dashboard credentials upload snapshots after writes and explicit closes while a server is running; manual `rbook_db(action="backfill")` requests a whole-file upload immediately. Shared-record exchanges use their own hooks, timer and `RBOOK_SHARED_SYNC` control.
 - SQLite is the source of truth; the dashboard holds the owner's uploaded mirror. Shared copies exchange their record with `reasonbook sync`, through reasonbook.ai, over SSH or by bundle.
-- Through reasonbook.ai, moving a project back to the owner's copy is not available yet. The dashboard's activity feed shows 100 events a page and its decisions page 20 decisions a page; older entries are on later pages.
-- A project shared through reasonbook.ai changes through its members' agents; the dashboard's pages show the record but do not change it. If reasonbook.ai loses its copy of a shared project, sharing that project stops until its owner shares it again, and every member keeps their own copy. The old `rbook_db(action="clone")` and `rbook_db(action="pull")` actions refuse with `LEGACY_SYNC_RETIRED`; their action values remain until 5.0.0.
+- Through reasonbook.ai, moving a project back was measured with one member and automatic syncs off: the owner's copy caught the member's copy up over SSH before that copy had synced with the dashboard since the move. With automatic syncs on, the member's copy may well sync first. Not measured: a member's copy that syncs with the dashboard first, whose sync then says to sync with the owner's copy over SSH or with a bundle, and a member's copy the owner's machine cannot reach over SSH. The dashboard's activity feed shows 50 entries a page by default and at most 100, and its decisions page 20 decisions a page; older entries are on later pages.
+- A project shared through reasonbook.ai changes through its members' agents; the dashboard's pages show the record but do not change it. If reasonbook.ai loses its copy of a shared project, sharing through it stops and this release has no step that shares that project through it again; every member keeps their own copy. After a move back, sharing the project through reasonbook.ai again cannot include the people it was shared with: the share refuses a project that still has members, and once they are removed, the new referee copy refuses their usernames.
+- A share through reasonbook.ai refuses, naming each copy, while the owner still uses another copy of the project, such as one on a second machine, since that copy could no longer sync. The old `rbook_db(action="clone")` and `rbook_db(action="pull")` actions refuse with `LEGACY_SYNC_RETIRED`; their action values remain until 5.0.0.
 
 ## Documentation
 

@@ -3,7 +3,7 @@
 // ABOUTME: the operator's word and hands it the routes, and a recovery that reaches every member's copy by its route.
 
 import { createError, createSuccess } from './errors';
-import { clientPeer, exchange, type ExchangeReport } from './record-exchange';
+import { clientPeer, exchange, hello, type ExchangeReport } from './record-exchange';
 import { handOver, type Confirmed, type Handover } from './record-moves';
 import { peerHealth, rememberPeer } from './record-peers';
 import { recoverAuthority, type RecoveryInput, type RecoveryReport } from './record-recovery';
@@ -41,6 +41,23 @@ export async function handOverRoute(
   let confirmed: Confirmed;
   try {
     const theirs = await far.hello();
+    // s100-m01 (the sprint-100 build's critics): a copy behind the owner copy's latest move, such as
+    // one a dashboard still referees in its own view, could take a move but never the catch-up that
+    // must come first: asked first, this copy stays the owner's.
+    const ours = await local((client) => hello(client));
+    if (theirs.epoch > ours.epoch)
+      return createError({
+        code: REPLICA_ERROR_CODES.WRITE_REFUSED,
+        message: `This copy is behind the copy at ${far.name} (move ${ours.epoch} here, move ${theirs.epoch} there), so it hands nothing over, and nothing was handed over.`,
+        suggestion:
+          "Sync this copy with the owner's copy first, confirm the move it takes in (reasonbook sync --confirm-owner), then see whether a handover is still wanted.",
+      });
+    if (theirs.epoch !== ours.epoch || theirs.pending)
+      return createError({
+        code: REPLICA_ERROR_CODES.WRITE_REFUSED,
+        message: `The copy at ${far.name} has not taken the owner copy's latest move (it is at move ${theirs.epoch}${theirs.pending ? ', with a move waiting for its confirmation' : ''}, and this copy at move ${ours.epoch}), so it cannot take the owner's copy, and nothing was handed over.`,
+        suggestion: `Bring that copy up to this one first: sync it from here (reasonbook sync --ssh <host> --remote-root <folder>), confirm the move there (reasonbook sync --confirm-owner), then hand over again.`,
+      });
     // A copy its own check refuses could take the move and never confirm it, since a new owner copy
     // writes its verdicts at once: asked first, this copy stays the owner's.
     if (theirs.refusal)

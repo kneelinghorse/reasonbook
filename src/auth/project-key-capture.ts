@@ -542,13 +542,13 @@ function startupResultForAttributionFailure(
       return {
         checked: true,
         status: 'skipped-no-user-scoped-key',
-        message: `credential store at ${failure.storePath} holds no user-scoped keys, so an auto-issued project key cannot be attributed; run rbook_auth(action="login") to bootstrap one`,
+        message: `credential store at ${failure.storePath} holds no user-scoped keys, so an auto-issued project key cannot be attributed; run rbook_auth(action="login_init"), then rbook_auth(action="login_complete"), to bootstrap one`,
       };
     case 'unattributable-credential':
       return {
         checked: true,
         status: 'skipped-unattributable-credential',
-        message: `the resolved dashboard credential (${describeAttributionArm(failure.via)}) is not a device-code user key, so the dashboard cannot bind a reissued project key to a parent; migrate to a device-code user key via rbook_auth(action="login")`,
+        message: `the resolved dashboard credential (${describeAttributionArm(failure.via)}) is not a device-code user key, so the dashboard cannot bind a reissued project key to a parent; migrate to a device-code user key via rbook_auth(action="login_init"), then rbook_auth(action="login_complete")`,
       };
     case 'inconsistent-resolution':
       return {
@@ -593,7 +593,7 @@ export interface StartupCredentialCheckResult {
  * when no user-scoped keys are present. A fresh install with no device-code
  * bootstrap looks identical to a broken install from the MCP's perspective —
  * this makes that state audible so the operator knows to run
- * `rbook_auth(action="login")` before attempting a send.
+ * `rbook_auth(action="login_init")`, then `login_complete`, before attempting a send.
  *
  * Non-fatal: never throws. Startup continues regardless.
  *
@@ -629,7 +629,7 @@ export async function runStartupCredentialCheck(
   if (count === 0) {
     if (dashboardConfigured) {
       writer(
-        '[WARN] reasonbook: no user-scoped credentials found; run rbook_auth(action="login") to bootstrap\n'
+        '[WARN] reasonbook: no user-scoped credentials found; run rbook_auth(action="login_init"), then rbook_auth(action="login_complete"), to bootstrap\n'
       );
       return {
         status: 'empty-credential-store',

@@ -170,7 +170,7 @@ export const rbookSessionSchema = z
       .string()
       .optional()
       .describe(
-        'Associated mission ID. On capture, stamps immediate decision/learning rows and preserves provenance for a next-step row materialized at session close; on complete, stamps the decisions[] and nextSteps[] rows this call materializes.'
+        'Associated mission ID. On capture, stamps the decision, learning or next-step row it writes; on complete, stamps the decisions[] and nextSteps[] rows this call materializes.'
       ),
     evidence: z
       .array(z.object({ type: z.string(), id: z.string() }))
@@ -298,7 +298,7 @@ export const rbookSessionToolDefinition = {
       missionId: {
         type: 'string',
         description:
-          'Associated mission ID. On capture, stamps immediate decision/learning rows and preserves provenance for a next-step row materialized at session close; on complete, stamps the decisions[] and nextSteps[] rows this call materializes.',
+          'Associated mission ID. On capture, stamps the decision, learning or next-step row it writes; on complete, stamps the decisions[] and nextSteps[] rows this call materializes.',
       },
       evidence: {
         type: 'array',

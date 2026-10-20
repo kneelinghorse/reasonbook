@@ -17,7 +17,7 @@ import type { RbookToolResult, Session } from './types';
 import { createError, createSuccess, RbookErrors, RBOOK_ERROR_CODES } from './errors';
 import { sanitizeContentField, type SanitizedField } from '../../intelligence/content-sanitizer';
 import { ensureMissionIdColumn } from './rbook-mission-complete';
-import { genesisColumns, getProjectId } from './genesis-columns';
+import { ensureGenesisSchema, genesisColumns, getProjectId } from './genesis-columns';
 import { isRecordedStore } from './record-guards';
 import { isReplicaRefusal, isSharedStore, takeReplicaSeq } from './replica-identity';
 import { resolveOpenSprintIdForWrite } from './current-sprint';
@@ -25,7 +25,9 @@ import {
   ensureImplicitSessionColumns,
   ensureSessionMissionsTable,
   ensureConstraintsTable,
+  ensureNextStepsTable,
   computeContentHash,
+  SAME_TEXT_SQL,
 } from './schema-migrations';
 import { type SupersessionCandidate } from './supersession-detection';
 import { findExistingDecisionId, insertDecisionRow, followDecisionInsert } from './decision-write';
@@ -42,6 +44,7 @@ import {
   type ClosedSessionReceipt,
 } from './implicit-session-lifecycle';
 import { recordedTransaction } from './record-changes';
+import { LEASED_STATUS_SQL } from './next-step-lease';
 
 /**
  * Valid capture categories matching the Python session_runtime.
@@ -117,6 +120,9 @@ export interface RbookSessionCaptureResult {
 
   /** Real learnings row ID for a new or de-duplicated learning capture. */
   learningId?: number;
+
+  /** s100-m03: real next_steps row ID for a new or de-duplicated next-step capture. */
+  nextStepId?: number;
 
   /** Number of decisions extracted (present for decision category captures) */
   decisionExtractionCount?: number;
@@ -460,6 +466,40 @@ export async function rbookSessionCapture(
         }
       }
 
+      // s100-m03: a next step's row references its mission, so a missionId that names none would be
+      // refused at capture and again at every close. It is refused by name now, before anything is
+      // stored, as a sprint that does not exist is.
+      const namedMission = params.missionId?.trim();
+      if (category === 'next-step' && namedMission) {
+        const mission = client.getOne<{ id: string }>('SELECT id FROM missions WHERE id = ?', [
+          namedMission,
+        ]);
+        if (!mission.success)
+          return createError<RbookSessionCaptureResult>(
+            mission.error ?? { code: 'DB_QUERY_FAILED', message: 'Failed to look up the mission' }
+          );
+        if (!mission.data)
+          return createError<RbookSessionCaptureResult>(RbookErrors.missionNotFound(namedMission));
+      }
+
+      // s100-m03 (#712): a next step is written now, with its capture, so the next-step list shows it
+      // while the session is open. Its table and genesis columns are prepared before the write lock,
+      // since a migration never runs inside that unit, and before the session, so a refused capture
+      // opens none.
+      if (category === 'next-step') {
+        warnings.push(...(ensureNextStepsTable(client).warnings ?? []));
+        try {
+          ensureGenesisSchema(client, 'next_steps');
+        } catch (error) {
+          warnings.push(error instanceof Error ? error.message : String(error));
+          return createError<RbookSessionCaptureResult>({
+            code: 'DB_QUERY_FAILED',
+            message: 'Next-step schema preparation failed; the next step was not captured.',
+            suggestion: 'Resolve the reported schema or lock problem, then retry the capture.',
+          });
+        }
+      }
+
       // Find the session to capture to
       let sessionId = params.sessionId;
       let implicitSession: { opened: boolean } | undefined;
@@ -538,9 +578,13 @@ export async function rbookSessionCapture(
         const ready = prepareRecordLinkWrite(client, warnings, category);
         if (!ready.success) return createError<RbookSessionCaptureResult>(ready.error!);
       }
+      if (category === 'next-step' && missionId)
+        warnings.push(...(ensureSessionMissionsTable(client).warnings ?? []));
+      // A capture that writes its row under the write lock re-reads its session there.
+      const lockedCategory = linkedCategory || category === 'next-step';
       const pendingEmbeddings: Array<{ kind: 'decision' | 'learning'; id: number }> = [];
       const captureUnit = (): RbookSessionCaptureResult => {
-        if (linkedCategory) {
+        if (lockedCategory) {
           const current = client.getOne<
             Session & { implicit: number | null; owner_key: string | null }
           >(
@@ -594,9 +638,9 @@ export async function rbookSessionCapture(
         if (params.expiresAt) {
           newCapture.expiresAt = params.expiresAt;
         }
-        // s92-m03: a deferred category (next-step, constraint, context) materializes at session
-        // close. Its sprint is decided now, by the rule the immediate rows follow: the mission's
-        // sprint, else the explicit sprintId. With neither, the close decides.
+        // s92-m03: the sprint of a row this capture leaves to its session's close is decided now, by
+        // the rule the immediate rows follow: the mission's sprint, else the explicit sprintId. With
+        // neither, the close decides. s100-m03: a next step is written now, by the close's rule.
         let deferredSprintId: string | null = null;
         if (missionId) {
           const mission = client.getOne<{ sprint_id: string | null }>(
@@ -648,7 +692,7 @@ export async function rbookSessionCapture(
 
         // Track session→mission association when missionId is provided
         if (missionId) {
-          if (!linkedCategory)
+          if (!lockedCategory)
             warnings.push(...(ensureSessionMissionsTable(client).warnings ?? []));
           // INSERT OR IGNORE: idempotent — won't duplicate if already linked
           const linked = client.execute(
@@ -859,9 +903,10 @@ export async function rbookSessionCapture(
 
           // Dedup via content hash
           const hash = computeContentHash(content, 'constraint');
+          // s100-m03: a row that arrived from another copy has no hash here, so its text is matched.
           const existingConstraint = client.getOne<{ id: number }>(
-            'SELECT id FROM constraints WHERE content_hash = ? AND status = ?',
-            [hash, 'active']
+            `SELECT id FROM constraints WHERE ${SAME_TEXT_SQL} AND status = ?`,
+            [hash, content, 'active']
           );
 
           // s86-m02b (fork f10, read side): same disclosure as the learning arm above.
@@ -895,6 +940,59 @@ export async function rbookSessionCapture(
           }
         }
 
+        if (category === 'next-step') {
+          // s100-m03: the row the close would write, written now, by the close's one key: this
+          // session's row with this text, whatever its status, is this step. The close finds it and
+          // writes only captures without one; a failed write here leaves the capture for the close.
+          // A second row for a resolved step would need a second key, and the close could not tell
+          // a kept capture from the step it repeats (the write-path critic's round 2).
+          const trimmed = content.trim();
+          const hash = computeContentHash(trimmed, 'next-step');
+          const existing = client.getOne<{ id: number; status: string }>(
+            `SELECT n.id, n.status FROM next_steps n
+              WHERE n.session_id = ? AND ${SAME_TEXT_SQL}
+              ORDER BY CASE WHEN ${LEASED_STATUS_SQL} THEN 0 ELSE 1 END, n.id LIMIT 1`,
+            [sessionId, hash, trimmed]
+          );
+          if (!existing.success) {
+            warnings.push(
+              `next-step de-duplication check failed; a duplicate row may have been written: ` +
+                `${existing.error?.code ?? 'DB_ERROR'} — ${existing.error?.message ?? 'unknown'}`
+            );
+          }
+          if (existing.success && existing.data) {
+            const { id, status } = existing.data;
+            resultData.nextStepId = id;
+            resultData.structuredMaterialization.outcome = 'existing';
+            if (status === 'completed' || status === 'dropped')
+              warnings.push(
+                `Next step #${id} has this text in this session and is ${status}, so this capture opened nothing. ` +
+                  `To open it again: rbook_context(action="next_steps", nextStepAction="reopen", nextStepIds=[${id}]).`
+              );
+          } else if (trimmed) {
+            // The close's sprint rule, applied at capture: an implicit session carries no sprint.
+            const sprintId =
+              deferredSprintId ??
+              session.sprint_id ??
+              (session.implicit === 1 ? resolveOpenSprintIdForWrite(client) : null);
+            const g = genesisColumns(client, 'next_steps', getProjectId(client));
+            const insertResult = client.execute(
+              `INSERT INTO next_steps (content, status, session_id, sprint_id, mission_id, created_at, content_hash, ${g.columns.join(', ')})
+             VALUES (?, 'pending', ?, ?, ?, ?, ?, ${g.placeholders})`,
+              [trimmed, sessionId, sprintId, missionId ?? null, now, hash, ...g.values]
+            );
+            if (checkWrite(insertResult, writeSink, 'next_steps.insert')) {
+              const lastId = insertResult.data?.lastInsertRowid;
+              if (lastId !== undefined) resultData.nextStepId = Number(lastId);
+              resultData.structuredMaterialization.outcome = 'materialized';
+            }
+          } else {
+            warnings.push(
+              'This next step was empty once a marshalling artifact was removed from it, so no row was written.'
+            );
+          }
+        }
+
         if (category === 'decision' && resultData.decisionId === undefined)
           throw new Error(resultData.decisionExtractionFailed ?? 'Decision extraction failed');
         if (category === 'learning') {
@@ -906,7 +1004,7 @@ export async function rbookSessionCapture(
       };
       // s96-m01: a shared store allocates a constraint's id under the write lock too.
       const captured =
-        linkedCategory || isSharedStore(client)
+        lockedCategory || isSharedStore(client)
           ? recordedTransaction(client, captureUnit)
           : createSuccess(captureUnit());
       // s96-m01: a shared record's refusal (a full number block) keeps its own code and remedy.
@@ -957,8 +1055,9 @@ export async function rbookSessionCapture(
       // claim with no FK to catch it (verified — pragma_foreign_key_list('learnings') returns
       // zero rows on the migrated store even though the seed declares the FK). Warn instead.
       //
-      // Deliberately NOT on the next-step path: 96.4% of next_steps are born at session
-      // complete when zero mission is in progress, so it would be pure noise.
+      // Deliberately NOT on the next-step path: 96.4% of next_steps were born at session
+      // complete when zero mission was in progress, so it would be pure noise. (Measured when the
+      // close wrote them; s100-m03 writes them at capture, where it is not re-measured.)
       //
       // s95-m06: a Ledger keeps no missions, so it is never asked for one; a Planner's are tasks.
       if (!missionId && (category === 'decision' || category === 'learning')) {
@@ -1057,7 +1156,7 @@ function initialStructuredMaterialization(
         outcome: 'deferred',
       };
     case 'next-step':
-      return { target: 'next_steps', timing: 'session-close', outcome: 'deferred' };
+      return { target: 'next_steps', timing: 'immediate', outcome: 'failed' };
   }
 }
 
@@ -1127,6 +1226,22 @@ export function formatSessionCaptureForLLM(
 
   if (data.learningId !== undefined) {
     lines.push(`Learning ID: #${data.learningId}`);
+  }
+
+  if (data.nextStepId !== undefined) {
+    lines.push(`Next step ID: #${data.nextStepId}`);
+  }
+
+  // s100-m03: a rejected row is not a lost next step; the capture holds it for the session's close.
+  if (
+    data.category === 'next-step' &&
+    data.structuredMaterialization?.outcome === 'failed' &&
+    data.content.trim() &&
+    data.writeFailures.length > 0
+  ) {
+    lines.push(
+      `The capture is kept in session ${data.sessionId}; its close tries the write again.`
+    );
   }
 
   if (data.category === 'decision' && data.decisionExtractionCount !== undefined) {

@@ -16,11 +16,11 @@ Pick one:
 
 ```bash
 # Recommended: a global install of this release. It starts from disk, with no registry lookup.
-npm install -g @aquex/reasonbook@4.2.0
+npm install -g @aquex/reasonbook@4.2.1
 
 # Or run on demand via npx: pinned, and preferring the local cache. The first launch downloads
 # the package; later launches reuse the npm cache.
-npx --prefer-offline -y @aquex/reasonbook@4.2.0
+npx --prefer-offline -y @aquex/reasonbook@4.2.1
 ```
 
 If the former package is installed globally, run `npm uninstall -g @aquex/cmos-mcp` first. Version 4 provides only the `reasonbook` command; update scripts and MCP configurations that use the old command.
@@ -30,7 +30,7 @@ Verify it starts:
 ```bash
 reasonbook --version  # if globally installed
 # or
-npx --prefer-offline -y @aquex/reasonbook@4.2.0 --version
+npx --prefer-offline -y @aquex/reasonbook@4.2.1 --version
 ```
 
 Semantic (vector) search is optional: without it, retrieval is keyword-only and the install is about
@@ -44,7 +44,7 @@ Claude Code and Codex are verified; the other blocks follow each client's own MC
 ### Claude Code
 
 ```bash
-claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.2.0"]}'
+claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.2.1"]}'
 claude mcp list   # confirm it's registered
 ```
 
@@ -62,7 +62,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS), 
       "args": [
         "--prefer-offline",
         "-y",
-        "@aquex/reasonbook@4.2.0",
+        "@aquex/reasonbook@4.2.1",
         "--project-root",
         "/absolute/path/to/your/project"
       ]
@@ -85,7 +85,7 @@ Edit `~/.cursor/mcp.json`:
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.2.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.2.1"]
     }
   }
 }
@@ -100,7 +100,7 @@ Edit your Zed `settings.json`:
   "context_servers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.2.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.2.1"]
     }
   }
 }
@@ -121,7 +121,7 @@ your terminal PATH, so the terminal route needs the standalone Claude CLI.
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.2.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.2.1"]
     }
   }
 }
@@ -235,7 +235,7 @@ rbook_session(action="complete", summary="Sprint 01 first mission shipped")
 rbook_review()
 ```
 
-You'll see the completed mission, the captured decisions, and the updated context in the session digest. The next mission in the queue (if any) becomes the natural pull. `rbook_review` is the opener to reach for at the top of every ongoing session.
+The digest names the active sprint, lists the decisions you recorded under recent decisions, and shows the open work, where the next mission in the queue (if any) is the natural pull; a completed mission leaves the open work. `rbook_review` is the opener to reach for at the top of every ongoing session.
 
 ```
 rbook_status()
@@ -314,10 +314,12 @@ editor content reaches the owner's agents as local project content. Read
 
 Use a current Reasonbook installation on both machines; older servers cannot write a shared store.
 The store must be outside Git's tracked files. If sharing refuses because Git tracks it, follow the
-returned untracking remedy while keeping the local file.
+returned untracking remedy while keeping the local file. One machine keeps one live copy of a shared
+project: work in one folder, since a second copy of it in another folder on the same machine has its
+writes refused, and two joined copies of one project there both do.
 
 There are two ways to share. Through reasonbook.ai, the dashboard keeps the project's referee copy,
-and nobody needs SSH. Directly, the owner's copy is the referee, over SSH or with bundles carried by
+and nobody needs SSH while the project is shared there. Directly, the owner's copy is the referee, over SSH or with bundles carried by
 hand. Replace the names and absolute paths in these examples with yours.
 
 ### Through reasonbook.ai
@@ -329,17 +331,22 @@ dashboard is on by default; `RBOOK_DASHBOARD_SHARING=off` where Reasonbook runs 
 machine. It is the person's setting, not an agent's.
 
 On the owner's machine, ask your agent to share the project through the dashboard. It first lists
-what would go up (the shared record) and what stays on the machine, and sends nothing until you
-confirm:
+what the share would send (the shared record) and what the shared record leaves out, and sends
+nothing until you confirm:
 
 ```text
 rbook_project(action="share", via="dashboard", projectRoot="/owner/project")
 rbook_project(action="share", via="dashboard", confirm=true, projectRoot="/owner/project")
 ```
 
+Until the share hands the record over, the project's uploads to reasonbook.ai still send its whole
+file; [Privacy](privacy.md#sharing-through-reasonbookai) says what each upload holds and what the
+dashboard keeps.
+
 A project reaches reasonbook.ai at its first upload. If sharing says the project is not on the
-dashboard yet, start and close a session on that machine, which uploads it, and share again a few
-seconds later:
+dashboard yet, start and close a session on that machine, signed in and with uploads on, which
+uploads it, and share again a few seconds later. With `RBOOK_CHECKPOINT_SYNC=off`, a project that
+was never uploaded cannot be shared through the dashboard:
 
 ```text
 rbook_session(action="start", type="custom", title="Share through the dashboard", projectRoot="/owner/project")
@@ -362,9 +369,32 @@ Every copy then syncs with the dashboard at session start and end where hooks ru
 minutes while a server that opened it is running, and when asked:
 `rbook_project(action="sync", projectRoot="/member/project")`. A change counts for everyone once the
 dashboard accepts it, and each copy keeps working offline until its next sync. The project's pages on
-reasonbook.ai show every accepted change under its author, its members and its open conflicts.
+reasonbook.ai show the record as the dashboard accepted it, a feed of what was created and of status
+changes under each change's author, its members and its open conflicts.
 Conflicts are settled through an agent, as below. The owner removes a member on the dashboard, from
-the project's sharing page. Moving a project back off reasonbook.ai is not available yet.
+the project's sharing page. The owner's copy can move the project back with
+`rbook_project(action="move", to="owner", projectRoot="/owner/project")` or `reasonbook move --to owner`.
+Members then sync with the owner's copy directly. To catch up a member's copy that still syncs
+through reasonbook.ai, run this on the owner's machine:
+
+```bash
+reasonbook sync --ssh <host> --remote-root <folder>
+```
+
+Add `--node` and `--bin`, as in [Directly over SSH](#directly-over-ssh), when the member's
+non-login shell cannot run `reasonbook`, and `--project-root /owner/project` outside the project
+folder. That copy serves only what a catch-up needs, stores what it takes in, and holds the move
+until its own person confirms it there with `reasonbook sync --confirm-owner`. The catch-up's answer
+can add a note that the member's copy did not note the exchange; its review shows the previous one
+until the next sync. A second `reasonbook sync` on the owner's machine then exchanges both copies'
+changes. Both machines need 4.2.1 or later.
+
+This was measured live with one member present and automatic syncs off, with the move made through
+`rbook_project`, before the member's copy had synced with the dashboard since the move. With
+automatic syncs on, that copy also syncs at session start and end and every five minutes while a
+server that opened it runs, so it may well sync first. Not measured: a member's copy that syncs with the dashboard first, whose sync then says the
+owner moved the project back and to sync with the owner's copy over SSH or with a bundle, and a
+member's copy that the owner's machine cannot reach over SSH.
 
 ### Directly over SSH
 
@@ -446,18 +476,22 @@ rbook_db(action="settle", projectRoot="/owner/project", table="missions", record
 ```
 
 Sync again to carry the settlement. The owner's copy must settle project-identity and decision
-lineage conflicts. To remove a member, use
-`rbook_project(action="remove", projectRoot="/owner/project", name="sam")`. Removal stops new
-exchanges with that member; it cannot erase data their copy already holds. Re-inviting the same
-member resumes exchange, including changes held in quarantine after removal.
+lineage conflicts. To remove a member of a project shared directly, use
+`rbook_project(action="remove", projectRoot="/owner/project", name="sam")`; through reasonbook.ai,
+the owner removes them on the dashboard. Removal stops new exchanges with that member; it cannot
+erase data their copy already holds. Re-inviting the same member resumes exchange, and the changes
+held in quarantine after removal are judged again: those their role does not allow are refused.
+Until reasonbook.ai runs Reasonbook 4.2.1, a member re-invited there has those changes accepted
+whole.
 
 ## Optional: connect the hosted dashboard
 
-The dashboard at [reasonbook.ai](https://reasonbook.ai) adds three things on top of local mode:
+The dashboard at [reasonbook.ai](https://reasonbook.ai) adds four things on top of local mode:
 
 - **Dashboard mirror** — `rbook_db(action="backfill")` uploads a consistent snapshot of the whole SQLite file for the dashboard to display.
 - **Project registry** — addressable `rbook://you/project-name` URIs across all your machines.
 - **Messaging** — `rbook_message(action="send")` between your own projects.
+- **Sharing** — share a project's record with editors through it, as [Share a project's record](#share-a-projects-record) describes.
 
 ### Sign up
 
@@ -507,7 +541,7 @@ If you sign out:
 rbook_auth(action="logout")
 ```
 
-This revokes the user-scoped key on the dashboard and clears the local row. Project-scoped child keys keep working until you revoke them individually with `rbook_auth(action="revoke", keyId=...)`.
+This revokes the user-scoped key on the dashboard and clears the local row. Project-scoped child keys keep working until you revoke them individually with `rbook_auth(action="revoke", keyId=...)`. A revoke is sent with your user-scoped key, so revoke them before you sign out.
 
 ## Where to next
 

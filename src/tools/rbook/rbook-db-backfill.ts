@@ -133,9 +133,9 @@ export async function rbookDbBackfill(
         return createError<RbookDbBackfillResult>({
           code: REPLICA_ERROR_CODES.WRITE_REFUSED,
           message:
-            "This is a member's copy of a shared record, which never uploads: the owner's copy uploads the record, members' work included.",
+            "This is a member's copy of a shared record, which never uploads: the copy that holds the record, the owner's or the dashboard's, is the one the dashboard shows.",
           suggestion:
-            "Sync with the owner's copy (reasonbook sync); its next upload carries this work.",
+            "Sync it (reasonbook sync): this copy's work then reaches the copy that holds the record, and the dashboard shows it from there.",
         });
       const slugResult = db.getOne<MetadataRow>(
         "SELECT value FROM metadata WHERE key = 'dashboard_slug'"
@@ -420,6 +420,16 @@ export async function rbookDbReconcile(params: {
 
   return withClientAsync(
     async (db) => {
+      // s100-m01 (the build's critics): the dashboard mirror is the owner's, so a member's copy has
+      // none of its own to compare with, and asks the dashboard nothing about the project.
+      if (isMembersCopy(db))
+        return createError<ReconciliationResult>({
+          code: REPLICA_ERROR_CODES.WRITE_REFUSED,
+          message:
+            "This is a member's copy of a shared record, and the dashboard mirrors the copy that holds the record, so there is no mirror of this copy to reconcile with.",
+          suggestion:
+            "Shared directly, reconcile from the owner's copy; this copy's work reaches it at the next sync. Shared through the dashboard, the dashboard refreshes its mirror from its own copy, and no copy reconciles.",
+        });
       // Resolve project slug from metadata
       const identity = getProjectIdentity(db);
       const slug = deriveProjectSlug(identity.projectName);
@@ -792,13 +802,15 @@ export async function rbookDbPurge(params: {
   return withClientAsync(
     async (db) => {
       // s96-m13 (design §s96-m13 item 3): the dashboard mirror is the owner's, so only the owner's
-      // copy of a shared record purges it.
+      // copy of a shared record purges it. s100-m02: through the dashboard, the owner's copy is a
+      // member's too, so the remedy says how the owner gets back a copy that can.
       if (isMembersCopy(db))
         return createError<PurgeResult>({
           code: REPLICA_ERROR_CODES.WRITE_REFUSED,
           message:
             "This is a member's copy of a shared record, and the dashboard mirror is the owner's, so it was not purged.",
-          suggestion: "Purge from the owner's copy, if the owner means to.",
+          suggestion:
+            "Shared directly, purge from the owner's copy, if the owner means to. Shared through the dashboard, no copy purges while it holds the record, the owner's included: the owner moves the project back first (reasonbook move --to owner), then purges from that copy.",
         });
       const identity = getProjectIdentity(db);
       const slug = deriveProjectSlug(identity.projectName);

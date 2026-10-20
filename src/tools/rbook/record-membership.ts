@@ -6,7 +6,8 @@ import { monotonicFactory } from 'ulid';
 import { validAuthorName } from '../../intelligence/user-author';
 import type { RbookDatabaseClient } from './client';
 import { createError, createSuccess } from './errors';
-import { decideTransactions, replicaMarks } from './record-apply';
+import { replicaMarks } from './record-apply';
+import { rejudgeTransactions } from './record-decide';
 import { forgetPeers } from './record-peers';
 import { canonicalJson } from './record-capture';
 import { recordOwnChanges } from './record-changes';
@@ -132,7 +133,9 @@ function refuse<T>(refusal: {
 export function inviteMember(
   client: RbookDatabaseClient,
   input: { readonly name: string; readonly role?: string }
-): RbookToolResult<MemberView & { readonly invited: boolean; readonly accepted?: number }> {
+): RbookToolResult<
+  MemberView & { readonly invited: boolean; readonly accepted?: number; readonly refused?: number }
+> {
   const ctx = mergeContext(client);
   if (ctx.ownReplica !== ctx.authority)
     return refuse({
@@ -230,12 +233,17 @@ function quarantinedOf(client: RbookDatabaseClient, member: MemberView): string[
     .map((txn) => txn.txn_id);
 }
 
-/** A re-add (ADR s96 §8): the member's role back, and its quarantined changes accepted from now. */
+/**
+ * A re-add (ADR s96 §8): the member's role back, and its quarantined changes judged again under it
+ * (s100-m01): an owner-only change the role does not allow is refused, never accepted with the rest.
+ */
 function readmit(
   client: RbookDatabaseClient,
   member: MemberView,
   role: string
-): RbookToolResult<MemberView & { readonly invited: boolean; readonly accepted: number }> {
+): RbookToolResult<
+  MemberView & { readonly invited: boolean; readonly accepted: number; readonly refused: number }
+> {
   const done = client.writeTransaction(() =>
     recordOwnChanges(client, [
       {
@@ -248,9 +256,9 @@ function readmit(
     ])
   );
   if (!done.success) return createError(done.error!);
-  const decided = decideTransactions(client, quarantinedOf(client, member), 'accepted', 're-added');
-  if (!decided.success) return createError(decided.error!);
-  return createSuccess({ ...member, role, invited: true, accepted: decided.data ?? 0 });
+  const decided = rejudgeTransactions(client, quarantinedOf(client, member), 're-added');
+  if (!decided.success || !decided.data) return createError(decided.error!);
+  return createSuccess({ ...member, role, invited: true, ...decided.data });
 }
 
 /**

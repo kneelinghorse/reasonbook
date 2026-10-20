@@ -57,7 +57,7 @@ import {
   reopenCommand,
 } from './next-step-lease';
 import { repairCompletedSprintEndDates, type SprintEndDateRepair } from './sprint-end-date-repair';
-import { summarizeSessionCaptures } from './session-capture-state';
+import { nextStepRowLookup, summarizeSessionCaptures } from './session-capture-state';
 import { findReusableSnapshot, snapshotStorage } from './snapshot-content-policy';
 import { storedTimeMs } from './stored-time';
 import { recordedExecute } from './record-changes';
@@ -603,7 +603,11 @@ export async function rbookSprintComplete(
 
       const activeSessionsAtClose: ActiveSessionAtClose[] = (activeSessionsResult.data ?? []).map(
         (session) => {
-          const summary = summarizeSessionCaptures(session.captures);
+          // s100-m03: a next step captured since 4.2.1 already has its row, so it is not deferred.
+          const summary = summarizeSessionCaptures(
+            session.captures,
+            nextStepRowLookup(client, session.id)
+          );
           if (summary.malformed) {
             warnings.push(
               `Active session '${session.id}' has malformed or non-array captures JSON; ` +

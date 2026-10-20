@@ -690,7 +690,7 @@ describe('s92-m03 — the server closes implicit sessions without syncing', () =
     expect(sessionRow(first, inFirst.data!.sessionId).status).toBe('completed');
     expect(sessionRow(second, inSecond.data!.sessionId).status).toBe('completed');
     expect(sessionRow(first, other.data!.sessionId).status).toBe('active');
-    // The deferred next-step materialized at the close, as an explicit complete would do.
+    // The next step's row, written when it was captured, is still its only row after the close.
     expect(
       query<{ content: string; sprint_id: string }>(
         first,
@@ -902,7 +902,10 @@ describe('s92-m03 — an explicit sprintId on start and capture (#589)', () => {
     expect(sessionRow(store, blocker).status).toBe('active');
   });
 
-  it("an implicit session's close tags its next-steps with the sprint open at the close", async () => {
+  // s100-m03 (#712): an implicit session's next step is written when captured, so it takes the sprint
+  // open for writes then. Until 4.2.1 the close wrote it, with the sprint open at the close; the sprint
+  // it was captured in could not see it, carry it or let it lapse.
+  it("an implicit session's next step takes the sprint open when it is captured, and the close keeps it", async () => {
     const store = buildStore();
     setSessionOwnerForTesting(ownerA);
     await rbookSessionCapture({
@@ -923,6 +926,42 @@ describe('s92-m03 — an explicit sprintId on start and capture (#589)', () => {
         store,
         'SELECT sprint_id FROM next_steps WHERE content = ?',
         'outlived its sprint'
+      )
+    ).toEqual([{ sprint_id: SPRINT }]);
+  });
+
+  it("a capture made before 4.2.1 still takes the sprint open at its implicit session's close", async () => {
+    const store = buildStore();
+    setSessionOwnerForTesting(ownerA);
+    const opened = await rbookSessionCapture({
+      category: 'context',
+      content: 'opens the session',
+      projectRoot: store.projectRoot,
+    });
+    // An earlier version's next-step capture: in the blob only, with no row and no sprint.
+    run(
+      store,
+      'UPDATE sessions SET captures = ? WHERE id = ?',
+      JSON.stringify([
+        {
+          timestamp: new Date().toISOString(),
+          category: 'next-step',
+          content: 'captured before 4.2.1',
+        },
+      ]),
+      opened.data!.sessionId
+    );
+    run(store, `UPDATE missions SET status = 'Completed' WHERE id = ?`, MISSION);
+    run(store, `UPDATE sprints SET status = 'Completed' WHERE id = ?`, SPRINT);
+    run(store, `UPDATE sprints SET status = 'Active' WHERE id = ?`, NEXT);
+
+    const closed = await rbookSessionComplete({ summary: 'end', projectRoot: store.projectRoot });
+    expect(closed.success).toBe(true);
+    expect(
+      query<{ sprint_id: string }>(
+        store,
+        'SELECT sprint_id FROM next_steps WHERE content = ?',
+        'captured before 4.2.1'
       )
     ).toEqual([{ sprint_id: NEXT }]);
   });

@@ -5,7 +5,8 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { getSetting } from '../../intelligence/legacy-compat';
+import { getSetting, settingIsOff } from '../../intelligence/legacy-compat';
+import { RBOOK_CHECKPOINT_SYNC_ENV, whyCloseUploadsNothing } from './checkpoint-backfill';
 import type { RbookDatabaseClient } from './client';
 import { resolveDashboardBaseUrl } from './dashboard-client';
 import { createError, createSuccess } from './errors';
@@ -17,6 +18,7 @@ import type { ExchangeReport } from './record-exchange';
 import { buildFreshCopy } from './record-fresh-copy';
 import { answerJoin, type JoinAnswer, type JoinRequest } from './record-join';
 import { listMembers, OWNER_MEMBER } from './record-membership';
+import { namedCopies, ownersOtherCopies } from './record-owner-copies';
 import { handOver } from './record-moves';
 import { forgetPeers, rememberPeer } from './record-peers';
 import { isRecordedStore } from './record-recording';
@@ -29,7 +31,10 @@ import { COPY_KEYS, writeCopyKey } from './replica-copy-keys';
 import { REPLICA_ERROR_CODES, storeFolder } from './replica-identity';
 import type { RbookToolError, RbookToolResult } from './types';
 
-/** What stays on this machine when a project is shared through the dashboard: never uploaded. */
+/**
+ * What the shared record leaves out, so a share's own upload never sends it. The whole-store uploads
+ * before the handover do (s100-m02): the dashboard holds it already from the registration.
+ */
 const STAYS_LOCAL = [
   'agent_feedback',
   'session_events',
@@ -46,7 +51,7 @@ export interface DashboardSharePlan {
   readonly dashboardProjectId: string;
   /** Rows of the shared record the upload holds, by table. */
   readonly up: Readonly<Record<string, number>>;
-  /** Rows that stay on this machine, by table; the search index and context documents stay too. */
+  /** Rows the shared record leaves out, by table; the search index and context documents too. */
   readonly stays: Readonly<Record<string, number>>;
 }
 
@@ -81,18 +86,21 @@ const DASHBOARD_SHARING_DEFAULT: boolean = true;
 
 /**
  * Why this machine starts no share or join through the dashboard, or null when the switch lets it.
- * It gates only those two: a project shared through the dashboard syncs and moves back either way.
+ * It gates only those two: a project already shared through the dashboard syncs, and its owner's copy
+ * moves it back, whatever the switch says.
  */
 export function dashboardSharingOff(): RbookToolError | null {
   const set = getSetting(DASHBOARD_SHARING_ENV);
-  const off = set === 'off' || set === '0';
-  if (set === 'on' || set === '1' || (!off && DASHBOARD_SHARING_DEFAULT)) return null;
+  // s100-m02: read as a person writes it, in any case (the s97 review's finding 16).
+  const said = set?.trim().toLowerCase();
+  const off = settingIsOff(DASHBOARD_SHARING_ENV);
+  if (said === 'on' || said === '1' || (!off && DASHBOARD_SHARING_DEFAULT)) return null;
   return {
     code: REPLICA_ERROR_CODES.WRITE_REFUSED,
     message: off
       ? `Sharing through the dashboard is off on this machine (${DASHBOARD_SHARING_ENV}=${set}).`
       : 'Sharing through the dashboard is not on yet in this version of Reasonbook; it turns on once its live test passes.',
-    suggestion: `Nothing was sent. ${DASHBOARD_SHARING_ENV}=on where Reasonbook runs allows it on this machine: the person's setting to decide on, not an agent's. A project already shared through the dashboard syncs and moves back either way.`,
+    suggestion: `Nothing was sent. ${DASHBOARD_SHARING_ENV}=on where Reasonbook runs allows it on this machine: the person's setting to decide on, not an agent's. The switch stops no sync: a project already shared through the dashboard keeps syncing, and its owner's copy can still move it back.`,
   };
 }
 
@@ -129,7 +137,8 @@ function spent(client: RbookDatabaseClient, pending: PendingShare): boolean {
 function shareProblem(
   client: RbookDatabaseClient,
   projectId: string | undefined,
-  pending: PendingShare | null
+  pending: PendingShare | null,
+  uploadsNothing: 'off' | 'signed-out' | null
 ): RbookToolError | { readonly projectId: string } {
   if (isRecordedStore(client)) {
     if (refereeingDashboard(client)) {
@@ -153,6 +162,17 @@ function shareProblem(
         suggestion:
           'Keep sharing it directly, or remove those members first (their copies keep what they hold), then share it through the dashboard.',
       };
+    // s100-m01: the owner's other copies would be left unable to sync, with what they hold.
+    const copies = ownersOtherCopies(client).filter(
+      (copy) => copy.replicaId !== pending?.refereeReplica
+    );
+    if (copies.length)
+      return {
+        code: REPLICA_ERROR_CODES.WRITE_REFUSED,
+        message: `This project is also kept in ${namedCopies(copies)}, and a share through the dashboard would leave ${copies.length === 1 ? 'it' : 'each'} unable to sync, so nothing was shared.`,
+        suggestion:
+          'Sharing through the dashboard does not take your other copies along yet. Keep sharing it directly, and sync each of those copies with this one meanwhile: reasonbook sync.',
+      };
     if (ctx.ownReplica !== ctx.authority)
       return {
         code: REPLICA_ERROR_CODES.WRITE_REFUSED,
@@ -165,14 +185,34 @@ function shareProblem(
     client.getOne<{ value: string }>(
       "SELECT value FROM metadata WHERE key = 'dashboard_project_id'"
     ).data?.value;
-  if (!known)
+  if (!known) return notUploaded(uploadsNothing);
+  return { projectId: known };
+}
+
+/** Why a project the dashboard does not hold yet is not there, and the step that puts it there. */
+function notUploaded(uploadsNothing: 'off' | 'signed-out' | null): RbookToolError {
+  const close =
+    'rbook_session(action="start", type="custom", title="Share through the dashboard"), then rbook_session(action="complete", summary="Uploaded to share it")';
+  // s100-m02 (the s97 review's finding 7): a close uploads nothing signed out or with uploads off,
+  // so prescribing one alone left the next share refused the same way.
+  if (uploadsNothing === 'signed-out')
     return {
       code: REPLICA_ERROR_CODES.WRITE_REFUSED,
-      message: 'This project is not on the dashboard yet, so it has no address there.',
-      suggestion:
-        'An explicit session close uploads it there: rbook_session(action="start", type="custom", title="Share through the dashboard"), then rbook_session(action="complete", summary="Uploaded to share it"), on this machine signed in; share again once that upload is done, a few seconds later.',
+      message:
+        'This project is not on the dashboard yet, and this machine is not signed in to it, so nothing has uploaded it there.',
+      suggestion: `Sign in on this machine first: rbook_auth(action="login_init"), then rbook_auth(action="login_complete"). An explicit session close then uploads it: ${close}; share again once that upload is done, a few seconds later.`,
     };
-  return { projectId: known };
+  if (uploadsNothing === 'off')
+    return {
+      code: REPLICA_ERROR_CODES.WRITE_REFUSED,
+      message: `This project is not on the dashboard yet, and uploads are off on this machine (${RBOOK_CHECKPOINT_SYNC_ENV}=${getSetting(RBOOK_CHECKPOINT_SYNC_ENV)}), so nothing puts it there.`,
+      suggestion: `A project is shared through the dashboard only once it has been uploaded there, and turning uploads on is the person's setting to decide on, not an agent's. With ${RBOOK_CHECKPOINT_SYNC_ENV} unset where Reasonbook runs, an explicit session close on this machine, signed in, uploads it: ${close}; then share again.`,
+    };
+  return {
+    code: REPLICA_ERROR_CODES.WRITE_REFUSED,
+    message: 'This project is not on the dashboard yet, so it has no address there.',
+    suggestion: `An explicit session close uploads it there: ${close}, on this machine signed in; share again once that upload is done, a few seconds later.`,
+  };
 }
 
 /**
@@ -213,7 +253,10 @@ async function share(
     writeCopyKey(store, COPY_KEYS.dashboardShare, null);
     return null;
   });
-  const checked = await unchecked((client) => shareProblem(client, options.projectId, pending));
+  const uploadsNothing = await whyCloseUploadsNothing();
+  const checked = await unchecked((client) =>
+    shareProblem(client, options.projectId, pending, uploadsNothing)
+  );
   if ('code' in checked) return createError(checked);
   const route: DashboardRoute = {
     kind: 'dashboard',

@@ -5,7 +5,7 @@
 import type Database from 'better-sqlite3';
 
 import type { RbookDatabaseClient } from './client';
-import type { DraftKind } from './draft-grammar';
+import { draftCoverage, REVISION_COVERAGE, type DraftKind } from './draft-grammar';
 import type { RbookToolResult } from './types';
 import { storedTimeMs } from './stored-time';
 
@@ -261,13 +261,37 @@ export function markReplaced(run: SqlRunner, id: number, by: number, at: string)
 
 /**
  * s97-m12: a line revising a draft the operator plainly approved links it, and the approved draft
- * stays pending: from then on it records only in its own words (evaluateDraft).
+ * stays pending: from then on it records only in its own words (evaluateDraft). s100-m02 (the s97
+ * review's finding 15 and its verification round): the line joins the chain at its newest pending
+ * draft, past any the operator declined or that a later line revised, so recording it settles every
+ * approved draft before it, however the chain had grown.
  */
 export function markRevisedAfterApproval(run: SqlRunner, id: number, by: number): number {
-  return run.run(
-    `UPDATE proposals SET replaced_by = ? WHERE outcome = 'pending' AND id = ? AND replaced_by IS NULL`,
-    [by, id]
-  ).changes;
+  return run.run(`UPDATE proposals SET replaced_by = ? WHERE outcome = 'pending' AND id = ?`, [
+    by,
+    newestPending(run, id),
+  ]).changes;
+}
+
+/**
+ * The newest pending draft on the chain of revisions from `id`, or `id` when none follows it. The
+ * walk stops at the first later draft that states none of the subject before it (verification
+ * round 2): a follow-on line linked at the window's floor is another choice, not this one's end.
+ */
+export function newestPending(run: SqlRunner, id: number): number {
+  const subjects = [getDraft(run, id)?.text ?? ''];
+  let newest = id;
+  const seen = new Set([id]);
+  for (let next = getDraft(run, id)?.replacedBy ?? null; next !== null && !seen.has(next); ) {
+    seen.add(next);
+    const draft = getDraft(run, next);
+    if (!draft || !subjects.some((text) => draftCoverage(text, draft.text) >= REVISION_COVERAGE))
+      break;
+    subjects.push(draft.text);
+    if (draft.outcome === 'pending') newest = draft.id;
+    next = draft.replacedBy;
+  }
+  return newest;
 }
 
 /** A direct record (no fromDraft) answered these drafts; they never reappear (B12). */
@@ -283,7 +307,7 @@ export function markAnswered(
      WHERE outcome = 'pending' AND id IN (${placeholders(ids)})`,
     [recordId, at, ...ids]
   ).changes;
-  if (changed) settleRevised(run, ids, at);
+  if (changed) settleRevised(run, ids, at, recordId);
   return changed;
 }
 
@@ -298,16 +322,24 @@ export function markApproved(
      WHERE outcome = 'pending' AND id = ?`,
     [approval.recordId, approval.mode, approval.at, id]
   ).changes;
-  if (changed) settleRevised(run, [id], approval.at);
+  if (changed) settleRevised(run, [id], approval.at, approval.recordId);
   return changed;
 }
 
 /**
  * s97-m12 (critic rounds 2 and 3): a recorded revision settles every approved draft its chain
  * revised, however many revisions back, which stayed pending only so it could still be recorded
- * in its own words.
+ * in its own words. s100-m02 (the s97 review's finding 15): a recorded draft settles the revisions
+ * after it too, answered by its record, while they still state the subject of it or of a draft
+ * before it (the verification round): a follow-on line or a changed key term is another choice,
+ * and stays to be recorded on its own.
  */
-export function settleRevised(run: SqlRunner, ids: readonly number[], at: string): void {
+export function settleRevised(
+  run: SqlRunner,
+  ids: readonly number[],
+  at: string,
+  recordId: string
+): void {
   if (!ids.length) return;
   run.run(
     `WITH RECURSIVE earlier(id) AS (
@@ -319,6 +351,36 @@ export function settleRevised(run: SqlRunner, ids: readonly number[], at: string
      WHERE outcome = 'pending' AND id IN (SELECT id FROM earlier)`,
     [...ids, at]
   );
+  for (const id of ids) {
+    const subjects = run
+      .all<{ text: string }>(
+        `WITH RECURSIVE earlier(id) AS (
+           SELECT ?
+           UNION
+           SELECT proposals.id FROM proposals JOIN earlier ON proposals.replaced_by = earlier.id
+         )
+         SELECT text FROM proposals WHERE id IN (SELECT id FROM earlier)`,
+        [id]
+      )
+      .map((row) => row.text);
+    const seen = new Set([id]);
+    for (let next = getDraft(run, id)?.replacedBy ?? null; next !== null && !seen.has(next); ) {
+      seen.add(next);
+      const later = getDraft(run, next);
+      if (!later || !subjects.some((text) => draftCoverage(text, later.text) >= REVISION_COVERAGE))
+        break;
+      // As newestPending carries each draft it passes (verification round 3): a middle revision that
+      // drifted from the recorded draft's words still names the subject of the drafts after it.
+      subjects.push(later.text);
+      if (later.outcome === 'pending')
+        run.run(
+          `UPDATE proposals SET outcome = 'answered', record_id = ?, answered_at = ?
+           WHERE outcome = 'pending' AND id = ?`,
+          [recordId, at, later.id]
+        );
+      next = later.replacedBy;
+    }
+  }
 }
 
 /** The newest draft in a chain of revisions from `id`: the one no later line replaced. */

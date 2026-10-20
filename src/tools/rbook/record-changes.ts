@@ -30,10 +30,11 @@ import {
   sharedStoreWrite,
   takeReplicaSeqs,
 } from './replica-identity';
+import { PROTOCOL_VERSION } from './record-protocol';
 import type { RbookToolResult } from './types';
 
-/** The change log's wire version (ADR s96 §4). */
-export const PROTOCOL_VERSION = 1;
+// s100-m01: the record protocol, and the seam that raises it, live in record-protocol.ts; read live.
+export { PROTOCOL_VERSION };
 /** Per-copy metadata: this copy's hybrid logical clock, `<13-digit ms>-<6-digit counter>`. */
 export const HLC_KEY = 'replica_hlc';
 /** The largest count a reading's six digits hold. */

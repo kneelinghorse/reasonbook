@@ -37,6 +37,7 @@ import {
   ensureNextStepsTable,
   ensureConstraintsTable,
   computeContentHash,
+  SAME_TEXT_SQL,
 } from './schema-migrations';
 import { applyLearningReaffirm, sanitizeLearningIds } from './learning-reaffirm';
 import { ensureMissionIdColumn } from './rbook-mission-complete';
@@ -104,7 +105,11 @@ export interface RbookSessionCompleteResult {
     };
   };
 
-  /** Number of next-steps extracted to the next_steps table */
+  /**
+   * Number of next steps this close inserted into next_steps: from the `nextSteps[]` parameter, and
+   * next-step captures that had no row. s100-m03: a capture writes its row when it is captured, so
+   * one made since 4.2.1 is found by the dedup and not counted; one made before it is.
+   */
   nextStepsExtracted: number;
 
   /**
@@ -653,14 +658,17 @@ export async function rbookSessionComplete(
       let nextStepsExtracted = 0;
 
       // (a) capture-sourced next-steps FIRST — these can carry a per-capture missionId.
+      // s100-m03: a capture since 4.2.1 wrote its row when captured, and the dedup below finds it; this
+      // loop writes captures made before 4.2.1, and any whose write at capture failed.
       for (const capture of captures) {
         if (capture.category === 'next-step' && capture.content) {
           const trimmed = capture.content.trim();
           if (!trimmed) continue;
           const hash = computeContentHash(trimmed, 'next-step');
+          // s100-m03: a row that came from another copy has no hash here, so its text is matched.
           const existing = client.getOne<{ id: number }>(
-            `SELECT id FROM next_steps WHERE content_hash = ? AND session_id = ?`,
-            [hash, sessionId]
+            `SELECT id FROM next_steps WHERE ${SAME_TEXT_SQL} AND session_id = ?`,
+            [hash, trimmed, sessionId]
           );
           // s86-m02b (fork f10, read side): a FAILED dedup SELECT reads as "no duplicate" and falls
           // through to the INSERT. Behaviour is UNCHANGED — a duplicate row is recoverable and
@@ -709,8 +717,8 @@ export async function rbookSessionComplete(
           const hash = computeContentHash(trimmed, 'next-step');
           // Dedup: skip if same content already exists as pending for this session
           const existing = client.getOne<{ id: number }>(
-            `SELECT id FROM next_steps WHERE content_hash = ? AND session_id = ?`,
-            [hash, sessionId]
+            `SELECT id FROM next_steps WHERE ${SAME_TEXT_SQL} AND session_id = ?`,
+            [hash, trimmed, sessionId]
           );
           // s86-m02b (fork f10, read side): a FAILED dedup SELECT reads as "no duplicate" and falls
           // through to the INSERT. Behaviour is UNCHANGED — a duplicate row is recoverable and
@@ -747,8 +755,8 @@ export async function rbookSessionComplete(
           const hash = computeContentHash(trimmed, 'constraint');
           // Dedup: skip if same content already active
           const existing = client.getOne<{ id: number }>(
-            `SELECT id FROM constraints WHERE content_hash = ? AND status = 'active'`,
-            [hash]
+            `SELECT id FROM constraints WHERE ${SAME_TEXT_SQL} AND status = 'active'`,
+            [hash, trimmed]
           );
           // s86-m02b (fork f10, read side): a FAILED dedup SELECT reads as "no duplicate" and falls
           // through to the INSERT. Behaviour is UNCHANGED — a duplicate row is recoverable and

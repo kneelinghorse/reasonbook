@@ -17,7 +17,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 import { runCli } from '../../src/cli';
-import type { CliIo } from '../../src/cli/core';
+import { HOOK_DEADLINES_MS, type CliIo } from '../../src/cli/core';
 import { onStop } from '../../src/cli/drafts-hook';
 import { transcriptKey } from '../../src/cli/transcript-scan';
 import { RbookDetector } from '../../src/intelligence/rbook-detector';
@@ -68,12 +68,27 @@ interface Ran {
   stderr: string[];
 }
 
-async function hook(event: string, stdin: unknown, env: Record<string, string> = {}): Promise<Ran> {
+/**
+ * s100-m02: room a hook's deadline cannot run out of on a loaded machine. A hook's deadline counts
+ * from `startedAtMs`, and in process its verb's first import is a transpile, so under two concurrent
+ * suites a stop, prompt or session-end hook ran out of its budget and stored, said or forgot nothing.
+ * These tests check the drafts; the last test of the first group checks that the stop hook's own
+ * budget still holds, and tests/cli/hook-deadline.test.ts the deadline itself.
+ */
+const HOOK_ROOM_MS = 20_000;
+
+async function hook(
+  event: string,
+  stdin: unknown,
+  env: Record<string, string> = {},
+  startedAtMs = Date.now() + HOOK_ROOM_MS
+): Promise<Ran> {
   let stdout = '';
   const stderr: string[] = [];
   const io: CliIo = {
     env: { ...process.env, CLAUDE_PID: String(HARNESS_PID), ...env },
     cwd: projectRoot,
+    startedAtMs,
     readStdin: async () => (typeof stdin === 'string' ? stdin : JSON.stringify(stdin)),
     stdout: (text) => {
       stdout += text;
@@ -124,6 +139,28 @@ function drafts(): Array<{
 }
 
 describe('Stop stores the proposal and says nothing', () => {
+  it("keeps the stop hook's own budget: a stop that starts with it spent stores nothing (s100-m02)", async () => {
+    // The helper widens every hook's budget so load cannot spend it. The budget still binds a stop
+    // that starts past it: it stores no draft and prints only its one line, so it never holds the
+    // harness up.
+    await start('s-one');
+    const late = await hook(
+      'stop',
+      { session_id: 's-one', cwd: projectRoot, last_assistant_message: PROPOSAL },
+      {},
+      Date.now() - HOOK_DEADLINES_MS.stop
+    );
+    expect(late).toEqual({
+      code: 0,
+      stdout: '',
+      stderr: ['reasonbook hook stop: hook deadline exceeded'],
+    });
+    expect(drafts()).toEqual([]);
+    // Given its room, the same stop stores the draft.
+    await stop('s-one', PROPOSAL);
+    expect(drafts()).toHaveLength(1);
+  });
+
   it('turns the trailing line into a pending draft keyed by the hashed session', async () => {
     await start('s-one');
     const ran = await stop('s-one', PROPOSAL);

@@ -442,8 +442,9 @@ describe('the dashboard transport (s97-m10)', () => {
       (step) => onCopy(fixture.tmp, owner, step, { replicaCheck: false })
     );
     const near = await wirePeer('the owner machine', answers, requests, () => requests.end());
+    // A 4.1.0 copy sends no hello of its own, so it is told to sync through the dashboard instead.
     await expect(near.hello()).rejects.toThrow(
-      /the owner machine: This project is shared through the dashboard .*Install Reasonbook 4\.2\.0 or later/
+      /the owner machine: This project is shared through the dashboard .*install Reasonbook 4\.2\.0 or later where you are syncing from/
     );
     near.close();
     await served;

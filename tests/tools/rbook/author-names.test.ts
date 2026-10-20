@@ -139,10 +139,13 @@ async function signOut(keyId: string): Promise<void> {
     { action: 'logout', keyId },
     {
       store: await store(),
-      clientResolver: async () =>
-        ({
+      // s100-m02 (#717 item 3): sign-out goes with the machine's user-scoped key.
+      userClientResolver: async () => ({
+        client: {
           revokeKey: async () => ({ success: true, data: { revokedAt: new Date().toISOString() } }),
-        }) as never,
+        } as never,
+        keySource: 'user-scoped',
+      }),
     }
   );
   expect(out.success).toBe(true);
@@ -365,13 +368,16 @@ describe('an identity belongs to the sign-in that fetched it', () => {
       { action: 'revoke', keyId: 'key-derek' },
       {
         store: await store(),
-        clientResolver: async () =>
-          ({
+        // s100-m02 (#717 item 3): a revoke goes with the machine's user-scoped key.
+        userClientResolver: async () => ({
+          client: {
             revokeKey: async () => ({
               success: true,
               data: { revokedAt: new Date().toISOString() },
             }),
-          }) as never,
+          } as never,
+          keySource: 'user-scoped',
+        }),
       }
     );
     expect(revoked.success).toBe(true);
@@ -530,13 +536,16 @@ describe('an identity belongs to the sign-in that fetched it', () => {
       { action: 'revoke', keyId: 'key-ops' },
       {
         store: await store(),
-        clientResolver: async () =>
-          ({
+        // s100-m02 (#717 item 3): a revoke goes with the machine's user-scoped key.
+        userClientResolver: async () => ({
+          client: {
             revokeKey: async () => ({
               success: true,
               data: { revokedAt: new Date().toISOString() },
             }),
-          }) as never,
+          } as never,
+          keySource: 'user-scoped',
+        }),
       }
     );
     expect(revoked.success).toBe(true);

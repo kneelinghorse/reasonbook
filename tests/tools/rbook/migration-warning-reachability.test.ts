@@ -1263,7 +1263,9 @@ describe('s88-m09 MigrationResult warning reachability census', () => {
     // sync-pull.ts and sync-bootstrap.ts. No producer declaration or residual is removed.
     // s96-m09: 82 -> 85 — genesis schema preparation adds three every-table recovery calls
     // for late-created tables. Each is a separately named residual below.
-    expect(census.sites.length).toBe(85);
+    // s100-m03: 85 -> 87 — a next-step capture prepares next_steps and, with a missionId,
+    // session_missions before its write lock; both reach the capture's attachWarnings.
+    expect(census.sites.length).toBe(87);
   });
 
   it('carries every reachable producer through its exact answer boundary', () => {
@@ -1294,7 +1296,8 @@ describe('s88-m09 MigrationResult warning reachability census', () => {
     // s96-m14: +2 — the import's two direct migrations of its temporary copy.
     // s96-m08: -5 — the removed backfill migration and pull/clone's two migrations each.
     // The exact-boundary and forwarding assertions above still cover every remaining call.
-    expect(directlyBounded).toHaveLength(50);
+    // s100-m03: +2 — the next-step capture's two preparations, at its attachWarnings boundary.
+    expect(directlyBounded).toHaveLength(52);
     expect(forwarded.map(siteKey).sort()).toEqual([...expectedForwarders.keys()].sort());
   });
 
@@ -1413,7 +1416,8 @@ describe('s88-m09 MigrationResult warning reachability census', () => {
     // s96-m14: +2, the import's two direct migrations, at its attachWarnings boundary.
     // s96-m08: 50 direct + 27 verified forwarded reads after five retired direct calls leave.
     // s96-m09: all three late-table recovery calls remain separately named, making eight residuals.
-    expect(consumed).toHaveLength(77);
+    // s100-m03: 52 direct + 27 verified forwarded reads; the residuals are unchanged.
+    expect(consumed).toHaveLength(79);
     expect(unconsumed).toHaveLength(STRUCTURAL_RESIDUALS.length);
   });
 });

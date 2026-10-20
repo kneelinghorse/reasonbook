@@ -29,7 +29,8 @@ function rows<T>(client: RbookDatabaseClient, sql: string, params: unknown[] = [
 
 /**
  * The authority's verdict on a transaction it received (ADR s96 §7): it rests only on membership,
- * role, owner-only kinds, cuts, protocol version and the refused-create cascade, never on data state.
+ * role, owner-only kinds, cuts and the refused-create cascade, never on data state; a newer protocol
+ * gets none.
  * A removed member's transaction past its cut is quarantined until a re-add or a refusal decides it.
  * A dependent of a quarantined create gets no verdict while it is: it takes that standing (ADR s96
  * §5), and the decision that later accepts the create, a re-add, judges it then (s96-m13).
@@ -44,6 +45,15 @@ export function judge(
   const changes = rows<LoggedChange>(client, 'SELECT * FROM record_changes WHERE txn_id = ?', [
     txnId,
   ]);
+  // s100-m01 (settled item 6): this version's rules cannot judge a change written in a newer record
+  // protocol, so it gets no verdict here and waits for this copy's upgrade, never refused for good. A
+  // copy keeps such changes out (record-apply.ts), so only one an older release stored reaches this.
+  const newer = changes.find((change) => change.protocol_version > PROTOCOL_VERSION);
+  if (newer)
+    return {
+      verdict: null,
+      reason: `it is written in record protocol ${newer.protocol_version}, newer than this copy's ${PROTOCOL_VERSION}`,
+    };
   const replica = changes[0].replica_id;
   const member = ctx.members.get(replica);
   if (!member) {
@@ -80,12 +90,6 @@ export function judge(
     return {
       verdict: 'refused',
       reason: `only the owner's copy may write a ${owned.kind} of ${owned.entity}`,
-    };
-  const newer = changes.find((change) => change.protocol_version > PROTOCOL_VERSION);
-  if (newer)
-    return {
-      verdict: 'refused',
-      reason: `protocol ${newer.protocol_version} is newer than this copy's ${PROTOCOL_VERSION}`,
     };
   let waits: string | null = null;
   for (const change of changes)

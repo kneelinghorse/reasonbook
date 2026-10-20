@@ -4,6 +4,7 @@
 
 import { createError, createSuccess } from './errors';
 import { chainClashes, commonMarks } from './record-chain';
+import type { ApplyReport } from './record-apply';
 import type { ExchangeReport, Hello, Peer } from './record-exchange';
 import { clashRefusal } from './record-exchange';
 import type { SuccessorReason, SuccessorTaken } from './record-successor';
@@ -20,7 +21,8 @@ export async function catchUp(
   remote: Peer,
   ours: Hello,
   theirs: Hello,
-  stopped: (error: RbookToolError) => Promise<RbookToolResult<ExchangeReport>>
+  stopped: (error: RbookToolError) => Promise<RbookToolResult<ExchangeReport>>,
+  keptOutBy: (side: Peer, report: ApplyReport) => readonly string[] = () => []
 ): Promise<RbookToolResult<ExchangeReport>> {
   const localAhead = ours.epoch > theirs.epoch;
   const [ahead, behind] = localAhead ? [local, remote] : [remote, local];
@@ -61,6 +63,11 @@ export async function catchUp(
   });
   if (!applied.success || !applied.data) return createError(applied.error!);
   const after = await behind.hello();
+  // s100-m01: a move the copy behind kept out, written in a newer record protocol, did not arrive:
+  // there is nothing to confirm until it upgrades, and the sync says why instead. A move that came
+  // as a fork of one the copy holds did arrive, and is shown as one.
+  const arrived =
+    !applied.data.newerProtocol || after.pending !== null || after.epoch === aheadHello.epoch;
   return createSuccess<ExchangeReport>(
     {
       sent: 0,
@@ -73,15 +80,21 @@ export async function catchUp(
       applied: { authority: null, member: applied.data },
       local: { replicaId: ours.replicaId, marks: localAhead ? ours.marks : after.marks },
       remote: { replicaId: theirs.replicaId, marks: localAhead ? after.marks : theirs.marks },
-      caughtUp: {
-        copy: localAhead ? 'remote' : 'local',
-        epoch: aheadHello.epoch,
-        authority: aheadHello.authority,
-        // s97-m10: a copy that confirms the move itself, as a dashboard's referee does, needs no word.
-        ...(after.pending === null && after.epoch === aheadHello.epoch ? { confirmed: true } : {}),
-      },
+      ...(arrived
+        ? {
+            caughtUp: {
+              copy: localAhead ? ('remote' as const) : ('local' as const),
+              epoch: aheadHello.epoch,
+              authority: aheadHello.authority,
+              // s97-m10: a copy that confirms the move itself, as a dashboard's referee does, needs no word.
+              ...(after.pending === null && after.epoch === aheadHello.epoch
+                ? { confirmed: true }
+                : {}),
+            },
+          }
+        : {}),
     },
-    applied.warnings ?? []
+    [...(applied.warnings ?? []), ...keptOutBy(behind, applied.data)]
   );
 }
 

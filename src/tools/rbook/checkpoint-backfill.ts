@@ -16,7 +16,7 @@
  * @module tools/rbook/checkpoint-backfill
  */
 
-import { getSetting } from '../../intelligence/legacy-compat';
+import { getSetting, settingIsOff } from '../../intelligence/legacy-compat';
 import { rbookDbBackfill } from './rbook-db-backfill';
 import {
   DashboardClient,
@@ -98,6 +98,19 @@ export async function hasResolvableUserScopedKey(): Promise<boolean> {
 }
 
 /**
+ * s100-m02: why an explicit session close would upload nothing on this machine, or null. The share
+ * names it for a project the dashboard does not hold yet, rather than prescribe a close that cannot
+ * put it there (the s97 review's finding 7).
+ */
+export async function whyCloseUploadsNothing(): Promise<'off' | 'signed-out' | null> {
+  if (settingIsOff(RBOOK_CHECKPOINT_SYNC_ENV)) return 'off';
+  const hasApiKey = !!getSetting(RBOOK_DASHBOARD_API_KEY_ENV);
+  const hasCredentials =
+    !!getSetting(RBOOK_DASHBOARD_USER_ENV) && !!getSetting(RBOOK_DASHBOARD_PASSWORD_ENV);
+  return hasApiKey || hasCredentials || (await hasResolvableUserScopedKey()) ? null : 'signed-out';
+}
+
+/**
  * s86-m01 — the most recently started checkpoint sync, held so a test that does
  * NOT own the call site can still drain it deterministically.
  *
@@ -153,14 +166,11 @@ export function triggerCheckpointBackfill(options: {
   force: boolean;
   automatic?: boolean;
 }): Promise<void> {
-  if (getSetting(RBOOK_CHECKPOINT_SYNC_ENV) === 'off' || isReadOnlyAgentSession()) {
+  if (settingIsOff(RBOOK_CHECKPOINT_SYNC_ENV) || isReadOnlyAgentSession()) {
     return Promise.resolve();
   }
   const inFlight = (async () => {
-    const hasApiKey = !!getSetting(RBOOK_DASHBOARD_API_KEY_ENV);
-    const hasCredentials =
-      !!getSetting(RBOOK_DASHBOARD_USER_ENV) && !!getSetting(RBOOK_DASHBOARD_PASSWORD_ENV);
-    if (!hasApiKey && !hasCredentials && !(await hasResolvableUserScopedKey())) return;
+    if ((await whyCloseUploadsNothing()) === 'signed-out') return;
     // Freeze resolution before detached work. Production dispatch always passes its resolved root.
     const projectRoot = options.projectRoot ?? (await resolveSenderContext({})).projectRoot;
     // s96-m13 (design §s96-m13 item 3): a member's copy of a shared record never registers, names

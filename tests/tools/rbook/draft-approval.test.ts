@@ -20,7 +20,12 @@ import { buildMissionProtocolContext, executeMissionProtocolTool } from '../../.
 import { RbookDetector } from '../../../src/intelligence/rbook-detector';
 import { rbookDecisions } from '../../../src/tools/rbook/rbook-decisions';
 import { recordDraftOfKind } from '../../../src/tools/rbook/draft-approval';
-import { getDraft, rawRunner } from '../../../src/tools/rbook/proposals';
+import {
+  getDraft,
+  markAnswered,
+  PROPOSALS_TABLE_SQL,
+  rawRunner,
+} from '../../../src/tools/rbook/proposals';
 import { bindWindow, openDraftRuntime } from '../../../src/tools/rbook/draft-runtime';
 import { harnessSessionHash } from '../../../src/tools/rbook/harness-session';
 import { profilePath } from '../../../src/tools/rbook/operator-profile';
@@ -58,11 +63,21 @@ afterEach(() => {
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
+/**
+ * s100-m02: room a hook's deadline cannot run out of on a loaded machine. A hook's deadline counts
+ * from `startedAtMs`, and in process its verb's first import is a transpile, so under two concurrent
+ * suites the stop hook's 500 ms went before its draft was stored and the record that followed was
+ * refused. These tests check the drafts; tests/cli/hook-drafts.test.ts checks that the stop hook's own
+ * budget still holds, and tests/cli/hook-deadline.test.ts the deadline itself.
+ */
+const HOOK_ROOM_MS = 20_000;
+
 async function hook(event: string, stdin: unknown): Promise<string> {
   let stdout = '';
   const io: CliIo = {
     env: { ...process.env, CLAUDE_PID: String(process.pid) },
     cwd: projectRoot,
+    startedAtMs: Date.now() + HOOK_ROOM_MS,
     readStdin: async () => JSON.stringify(stdin),
     stdout: (text) => {
       stdout += text;
@@ -817,6 +832,259 @@ describe('approval provenance (s97-m12, learning #481)', () => {
     const result = await record({ content: DRAFT });
     expect((result.data as { stillPendingDrafts?: string[] }).stillPendingDrafts).toEqual(['P1']);
     expect(proposal().outcome).toBe('pending');
+  });
+});
+
+describe('the approval chain settles through declined, answered and recorded drafts (s100-m02)', () => {
+  // The s97 review's finding 15 (its repros/approval-chain): one choice was recorded twice when a
+  // revision of an approved draft was declined and the draft revised again, or when the approved
+  // draft was recorded in its own words before its revision was.
+  const REVISED =
+    'Store project decisions as one JSON file per decision, because diffs stay readable and merge cleanly.';
+  const AGAIN =
+    'Store project decisions as one JSON file per decision, because diffs stay readable and each file stays under four kilobytes.';
+  const MERGE =
+    'Store project decisions as one JSON file per decision, because diffs stay readable and merge cleanly with a three-way merge.';
+  const LONG =
+    'Store project decisions as one JSON file per decision, because diffs stay readable and merge cleanly through a three-way merge driver configured per repository for every contributor.';
+  const FOLLOW_ON =
+    'Configure a three-way merge driver for the JSON decision files in .gitattributes, so concurrent edits merge.';
+  const decisions = () => row<{ n: number }>('SELECT count(*) AS n FROM strategic_decisions').n;
+
+  it('a declined revision does not break the chain: recording the next one settles the approved draft', async () => {
+    await proposeAndAnswer('approved');
+    await stop('s-one', reply(REVISED));
+    await say('s-one', 'no');
+    await stop('s-one', reply(AGAIN));
+    await say('s-one', 'approved');
+    expect((await record({ content: AGAIN, fromDraft: 'P3' })).success).toBe(true);
+    expect(proposal(1).outcome).toBe('replaced');
+    expect((await record({ content: DRAFT, fromDraft: 'P1' })).success).toBe(false);
+    expect(decisions()).toBe(1);
+  });
+
+  it('the approved draft recorded in its own words first settles its revision, which is never recorded too', async () => {
+    await proposeAndAnswer('approved');
+    await stop('s-one', reply(REVISED));
+    const first = await record({ content: DRAFT, fromDraft: 'P1' });
+    expect(first.success).toBe(true);
+    expect(proposal(2)).toEqual({
+      outcome: 'answered',
+      record_id: `d:${idOf(first)}`,
+      approval_mode: null,
+    });
+    await say('s-one', 'approved');
+    const again = await record({ content: REVISED, fromDraft: 'P2' });
+    expect(again.error?.code).toBe('DRAFT_NOT_PENDING');
+    expect(decisions()).toBe(1);
+  });
+
+  it('a record that answers a draft settles the revisions after it too, and a cycle of links still ends', () => {
+    // Driven at the table, as the review's repro did: a direct record answers a draft whose
+    // revisions are still pending only when the operator's open message covers it.
+    const db = new Database(':memory:');
+    try {
+      const run = rawRunner(db);
+      run.exec(PROPOSALS_TABLE_SQL);
+      // Each later draft states the first's subject, as a revision does; the gate below needs it.
+      for (const text of [DRAFT, REVISED, MERGE, 'an unrelated draft'])
+        db.prepare(
+          "INSERT INTO proposals (text, created_at) VALUES (?, '2026-10-19T00:00:00Z')"
+        ).run(text);
+      // 1 is revised by 2, and 2 by 3; 4 names itself, a cycle no hook writes.
+      db.exec(
+        'UPDATE proposals SET replaced_by = 2 WHERE id = 1; UPDATE proposals SET replaced_by = 3 WHERE id = 2; UPDATE proposals SET replaced_by = 4 WHERE id = 4;'
+      );
+      expect(markAnswered(run, [1], 'd:7', '2026-10-20T00:00:00Z')).toBe(1);
+      expect(markAnswered(run, [4], 'd:8', '2026-10-20T00:00:00Z')).toBe(1);
+      expect(db.prepare('SELECT id, outcome, record_id FROM proposals ORDER BY id').all()).toEqual([
+        { id: 1, outcome: 'answered', record_id: 'd:7' },
+        { id: 2, outcome: 'answered', record_id: 'd:7' },
+        { id: 3, outcome: 'answered', record_id: 'd:7' },
+        { id: 4, outcome: 'answered', record_id: 'd:8' },
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+
+  // The verification round's matrix (s100-m02, round 2): the chain held one link per draft, so a
+  // decline further down, or a revision matched to an older approved draft than the one holding
+  // its link, left the new line out of the chain.
+  it('a decline two links down does not break the chain either', async () => {
+    await proposeAndAnswer('approved');
+    await stop('s-one', reply(REVISED));
+    await say('s-one', 'how would merging work?');
+    await stop('s-one', reply(MERGE));
+    await say('s-one', 'no');
+    await stop('s-one', reply(AGAIN));
+    await say('s-one', 'approved');
+    expect((await record({ content: AGAIN, fromDraft: 'P4' })).success).toBe(true);
+    expect((await record({ content: DRAFT, fromDraft: 'P1' })).success).toBe(false);
+    expect(decisions()).toBe(1);
+  });
+
+  it('a revision matched to the oldest approved draft joins the chain at its newest one', async () => {
+    await proposeAndAnswer('approved');
+    await stop('s-one', reply(REVISED));
+    await say('s-one', 'approved');
+    await stop('s-one', reply(MERGE));
+    await say('s-one', 'no');
+    await stop('s-one', reply(AGAIN));
+    await say('s-one', 'approved');
+    expect((await record({ content: AGAIN, fromDraft: 'P4' })).success).toBe(true);
+    expect((await record({ content: REVISED, fromDraft: 'P2' })).success).toBe(false);
+    expect((await record({ content: DRAFT, fromDraft: 'P1' })).success).toBe(false);
+    expect(decisions()).toBe(1);
+  });
+
+  it('two revisions of one approved draft are one chain: recording the later settles both before it', async () => {
+    await proposeAndAnswer('approved');
+    await stop('s-one', reply(LONG));
+    await say('s-one', 'approved');
+    await stop('s-one', reply(AGAIN));
+    await say('s-one', 'approved');
+    expect((await record({ content: AGAIN, fromDraft: 'P3' })).success).toBe(true);
+    expect((await record({ content: DRAFT, fromDraft: 'P1' })).success).toBe(false);
+    expect((await record({ content: LONG, fromDraft: 'P2' })).success).toBe(false);
+    expect(decisions()).toBe(1);
+  });
+
+  it('a follow-on line is its own choice: recording the draft before it leaves it recordable', async () => {
+    await proposeAndAnswer('approved');
+    await stop('s-one', reply(REVISED));
+    await say('s-one', 'how would merging work?');
+    // Linked as a revision at the window's floor, though it states little of the decision's subject.
+    await stop('s-one', `Git merges line by line.\n\nWould record: ${FOLLOW_ON}`);
+    expect((await record({ content: DRAFT, fromDraft: 'P1' })).success).toBe(true);
+    expect(proposal(3).outcome).toBe('pending');
+    await say('s-one', 'approved');
+    expect((await record({ content: FOLLOW_ON, fromDraft: 'P3' })).success).toBe(true);
+    expect(decisions()).toBe(2);
+  });
+
+  it('a refusal names where the chain stands: its end recorded, or its revision declined', async () => {
+    await proposeAndAnswer('approved');
+    await stop('s-one', reply(REVISED));
+    await say('s-one', 'how would merging work?');
+    await stop('s-one', reply(MERGE));
+    await say('s-one', 'approved');
+    const end = await record({ content: MERGE, fromDraft: 'P3' });
+    expect(end.success).toBe(true);
+    const settled = await record({ content: DRAFT, fromDraft: 'P1' });
+    expect(settled.error?.message).toContain(
+      `was replaced by its revision P3, recorded as d:${idOf(end)}`
+    );
+    // Not "record the revision instead": it is recorded already.
+    expect(settled.error?.suggestion).not.toMatch(/Record the revision instead/);
+    expect(settled.error?.suggestion).not.toMatch(/Propose the choice again/);
+  });
+
+  it('a refusal under an approval offers no revision the operator declined', async () => {
+    await proposeAndAnswer('approved');
+    await stop('s-one', reply(REVISED));
+    await say('s-one', 'no');
+    const refused = await record({ content: REVISED, fromDraft: 'P1' });
+    expect(refused.error?.message).toMatch(/revised by P2 after the operator approved it/);
+    expect(refused.error?.suggestion).toBe('Record P1 exactly as the operator approved it.');
+  });
+
+  // Verification round 2: the walk to the chain's newest pending draft passed a follow-on line, a
+  // different choice linked at the window's floor, and hung the next revision on it.
+  it('a revision after a follow-on line joins the approved chain, not the follow-on: both choices record', async () => {
+    await proposeAndAnswer('approved');
+    await stop('s-one', reply(REVISED));
+    await say('s-one', 'how would merging work?');
+    await stop('s-one', `Git merges line by line.\n\nWould record: ${FOLLOW_ON}`);
+    await say('s-one', 'would that work on Windows?');
+    await stop('s-one', reply(AGAIN));
+    await say('s-one', 'approved');
+    expect((await record({ content: AGAIN, fromDraft: 'P4' })).success).toBe(true);
+    expect(proposal(3).outcome).toBe('pending');
+    await say('s-one', 'approved');
+    expect((await record({ content: FOLLOW_ON, fromDraft: 'P3' })).success).toBe(true);
+    expect(decisions()).toBe(2);
+  });
+
+  it('a draft the operator never approved is retired by the revision that joins its chain', async () => {
+    await proposeAndAnswer('approved');
+    await stop('s-one', reply(REVISED));
+    await say('s-one', 'let me think about it');
+    await stop('s-one', 'Take your time.');
+    await say('s-one', 'ok, go on');
+    await stop('s-one', reply(AGAIN));
+    // P2 was shown and never approved: the revision replaces it, as any unapproved draft a line
+    // revises, instead of leaving it "revised after its approval".
+    expect(
+      row<{ outcome: string; replaced_by: number | null }>(
+        'SELECT outcome, replaced_by FROM proposals WHERE id = 2'
+      )
+    ).toEqual({ outcome: 'replaced', replaced_by: 3 });
+    await say('s-one', 'approved');
+    expect((await record({ content: AGAIN, fromDraft: 'P3' })).success).toBe(true);
+    expect((await record({ content: DRAFT, fromDraft: 'P1' })).success).toBe(false);
+    expect(decisions()).toBe(1);
+  });
+
+  it('a refusal says a recorded choice is recorded, and offers no revision that expired', async () => {
+    await proposeAndAnswer('approved');
+    await stop('s-one', reply(REVISED));
+    await say('s-one', 'how would merging work?');
+    await stop('s-one', reply(MERGE));
+    await say('s-one', 'approved');
+    const end = await record({ content: MERGE, fromDraft: 'P3' });
+    expect((await record({ content: DRAFT, fromDraft: 'P1' })).error?.suggestion).toBe(
+      `Nothing to record from this draft: its choice is recorded as d:${idOf(end)}.`
+    );
+  });
+
+  it('a replaced draft whose revision expired is not told to record that revision', async () => {
+    await start('s-one');
+    await stop('s-one', reply(DRAFT));
+    await say('s-one', 'let me think about it');
+    await stop('s-one', 'Take your time.');
+    await say('s-one', 'ok, go on');
+    await stop('s-one', reply(REVISED));
+    expect(proposal(1).outcome).toBe('replaced');
+    // Three later session starts expire P2 unanswered.
+    for (const later of ['s-two', 's-three', 's-four']) await start(later);
+    const refused = await record({ content: DRAFT, fromDraft: 'P1' });
+    expect(refused.error?.message).toContain('was replaced by its revision P2, which expired');
+    expect(refused.error?.suggestion).not.toMatch(/Record the revision instead/);
+  });
+
+  // Verification round 3: settling forward measured each later draft against the recorded one and
+  // those before it only, so a middle revision that drifted from the first's words stopped the walk
+  // short of a later restatement of it, while the linking walk carries every draft it passes.
+  it('a middle revision that drifted does not hide a later restatement from the approved draft recorded first', async () => {
+    const withDriver = `${DRAFT.slice(0, -1)}, and register a three-way merge driver per repository for concurrent edits.`;
+    const drifted =
+      'Store each project decision as one JSON file, and register a three-way merge driver per repository for concurrent edits.';
+    await proposeAndAnswer('approved');
+    await stop('s-one', reply(withDriver));
+    await say('s-one', 'does the merge driver need setup on every clone?');
+    await stop('s-one', reply(drifted));
+    await say('s-one', 'how big can a file get?');
+    await stop('s-one', reply(AGAIN));
+    expect((await record({ content: DRAFT, fromDraft: 'P1' })).success).toBe(true);
+    await say('s-one', 'approved');
+    expect((await record({ content: AGAIN, fromDraft: 'P4' })).success).toBe(false);
+    expect(decisions()).toBe(1);
+  });
+
+  it('holds for every kind of line: a constraint revised past a declined revision', async () => {
+    const first = 'Never push to main without a green CI run on the branch.';
+    const declined = 'Never push to main without a green CI run on the branch and a reviewed diff.';
+    const next =
+      'Never push to main without a green CI run on the branch, signed with the release key.';
+    await proposeAndAnswer('approved', `Proposed.\n\nWould record (constraint): ${first}`);
+    await stop('s-one', `Refined.\n\nWould record (constraint): ${declined}`);
+    await say('s-one', 'no');
+    await stop('s-one', `Refined again.\n\nWould record (constraint): ${next}`);
+    await say('s-one', 'approved');
+    expect((await record({ content: next, fromDraft: 'P3' })).success).toBe(true);
+    expect(proposal(1).outcome).toBe('replaced');
+    expect((await record({ content: first, fromDraft: 'P1' })).success).toBe(false);
   });
 });
 

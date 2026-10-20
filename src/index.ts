@@ -12,7 +12,7 @@
  * @module index
  */
 
-import { getSetting } from './intelligence/legacy-compat';
+import { getSetting, settingIsOff } from './intelligence/legacy-compat';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getServerVersion } from './server-version';
@@ -515,7 +515,7 @@ async function executeWithStoreUpkeep(
       }
       // Every caller write owes an upload, including later writes after upkeep has run.
       // The scheduler persists only the registry mark here; it never waits for the upload.
-      if (getSetting(RBOOK_CHECKPOINT_SYNC_ENV) !== 'off') {
+      if (!settingIsOff(RBOOK_CHECKPOINT_SYNC_ENV)) {
         await markDashboardUploadOwed(root);
       }
     }
@@ -1606,7 +1606,7 @@ async function initializeServer(): Promise<MissionProtocolContext> {
     }
 
     // Sprint 58 m02: surface an empty credential store with a one-line
-    // [WARN] pointing at rbook_auth(action="login"). Makes the "just nothing
+    // [WARN] pointing at rbook_auth(action="login_init"). Makes the "just nothing
     // happens" first-run state audible. Non-fatal.
     try {
       await startupCredentialCheckRunner();

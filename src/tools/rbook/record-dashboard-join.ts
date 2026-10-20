@@ -10,7 +10,7 @@ import { RbookDetector } from '../../intelligence/rbook-detector';
 import { isContextlessDirectory } from '../../intelligence/resolution-policy';
 import { resolveDashboardBaseUrl } from './dashboard-client';
 import { createError, createSuccess } from './errors';
-import { buildFreshCopy } from './record-fresh-copy';
+import { buildFreshCopy, FreshCopyRefused } from './record-fresh-copy';
 import { dashboardClientFor, relayAnswer } from './record-dashboard-peer';
 import { dashboardName, type DashboardRoute } from './record-dashboard-route';
 import { dashboardSharingOff } from './record-dashboard-share';
@@ -19,6 +19,7 @@ import { applyJoin, requestJoin, type JoinAnswer, type JoinApplied } from './rec
 import { rememberPeer } from './record-peers';
 import { mergeContext } from './record-standing';
 import { storeOpener, syncRoute } from './record-sync';
+import { COPY_KEYS, writeCopyKey } from './replica-copy-keys';
 import { REPLICA_ERROR_CODES } from './replica-identity';
 import type { RbookToolResult } from './types';
 
@@ -98,7 +99,12 @@ export async function joinThroughDashboard(input: {
       return createError({
         code: REPLICA_ERROR_CODES.EXCHANGE_REFUSED,
         message: `The first copy ${name} sent could not be taken in: ${error instanceof Error ? error.message : String(error)}`,
-        suggestion: 'Nothing was joined. Join again; if it says the same, tell the dashboard.',
+        // s100-m01: a refusal that names its own remedy, such as a newer record protocol's upgrade,
+        // keeps it.
+        suggestion:
+          error instanceof FreshCopyRefused && error.remedy
+            ? `Nothing was joined. ${error.remedy}`
+            : 'Nothing was joined. Join again; if it says the same, tell the dashboard.',
       });
     }
   } finally {
@@ -109,7 +115,7 @@ export async function joinThroughDashboard(input: {
   RbookDetector.getInstance().clearCache(folder);
   // From here the store is this join's own: a step that throws takes it away again.
   try {
-    return await joinWith(dbPath, folder, client, route, name);
+    return await joinWith(dbPath, folder, client, route, name, input.address.trim());
   } catch (error) {
     removeStore(dbPath);
     throw error;
@@ -121,7 +127,8 @@ async function joinWith(
   folder: string,
   client: Awaited<ReturnType<typeof dashboardClientFor>>,
   route: DashboardRoute,
-  name: string
+  name: string,
+  address: string
 ): Promise<RbookToolResult<DashboardJoined>> {
   const projectId = route.projectId;
   const copy = storeOpener(dbPath, { replicaCheck: false });
@@ -146,7 +153,11 @@ async function joinWith(
   const applied = await copy((store) => {
     const done = applyJoin(store, answered);
     // The join forgets every route a copy carried; the dashboard's is this copy's own (s97-m10 F).
-    if (done.success) rememberPeer(store, mergeContext(store).authority, { route });
+    if (done.success) {
+      rememberPeer(store, mergeContext(store).authority, { route });
+      // s100-m01: the address the copy was joined by, for its review to name (never its identity's).
+      writeCopyKey(store, COPY_KEYS.joinedAddress, address);
+    }
     return done;
   });
   if (!applied.success || !applied.data) return createError(applied.error!);

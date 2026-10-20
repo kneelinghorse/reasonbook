@@ -330,13 +330,15 @@ describe('rbook_auth', () => {
     const result = await rbookAuth(
       { action: 'revoke', projectRoot, keyId: 'v1' },
       deps({
-        clientResolver: async () =>
-          stubClient({
+        userClientResolver: async () => ({
+          client: stubClient({
             revoke: {
               success: true,
               data: { keyId: 'v1', revokedAt: '2026-04-17T12:00:00Z' },
             } as RbookToolResult<RevokeKeyResult>,
           }),
+          keySource: 'user-scoped',
+        }),
       })
     );
     expect(result.success).toBe(true);
@@ -358,13 +360,15 @@ describe('rbook_auth', () => {
     const result = await rbookAuth(
       { action: 'revoke', keyId: 'user-key-xyz' },
       deps({
-        clientResolver: async () =>
-          stubClient({
+        userClientResolver: async () => ({
+          client: stubClient({
             revoke: {
               success: true,
               data: { keyId: 'user-key-xyz', revokedAt: '2026-04-23T23:00:00Z' },
             } as RbookToolResult<RevokeKeyResult>,
           }),
+          keySource: 'user-scoped',
+        }),
       })
     );
     expect(result.success).toBe(true);
@@ -380,13 +384,15 @@ describe('rbook_auth', () => {
     const result = await rbookAuth(
       { action: 'revoke', keyId: 'orphan-id' },
       deps({
-        clientResolver: async () =>
-          stubClient({
+        userClientResolver: async () => ({
+          client: stubClient({
             revoke: {
               success: true,
               data: { keyId: 'orphan-id', revokedAt: '2026-04-23T23:00:00Z' },
             } as RbookToolResult<RevokeKeyResult>,
           }),
+          keySource: 'user-scoped',
+        }),
       })
     );
     expect(result.success).toBe(true);
@@ -394,6 +400,34 @@ describe('rbook_auth', () => {
       expect(result.data.scope).toBe('unknown');
       expect(result.data.keyId).toBe('orphan-id');
     }
+  });
+
+  it("revoke and logout send the machine's user-scoped key, never a project's own (s100-m02, #717 item 3)", async () => {
+    // The dashboard can then refuse a project key that revokes account keys, the one key-scope gap
+    // its PR #122 left open: a revoke sent with the project's key would be refused once it closes it.
+    const projectRoot = path.join(tempDir, 'revoke-machine-key');
+    await store.upsertProjectKey(projectRoot, projectRecord());
+    await store.upsertUserScopedKey('machine-key', userRecord({ key: 'cmk_machine' }));
+    const sentWith: string[] = [];
+    const recording = (by: string): DashboardClient =>
+      ({
+        ...stubClient(),
+        revokeKey: async (keyIdArg: string) => {
+          sentWith.push(by);
+          return {
+            success: true,
+            data: { keyId: keyIdArg, revokedAt: '2026-04-23T23:00:00Z' },
+          } as RbookToolResult<RevokeKeyResult>;
+        },
+      }) as DashboardClient;
+    const both = deps({
+      clientResolver: async () => recording('project'),
+      userClientResolver: async () => ({ client: recording('user'), keySource: 'user-scoped' }),
+    });
+
+    expect((await rbookAuth({ action: 'revoke', projectRoot }, both)).success).toBe(true);
+    expect((await rbookAuth({ action: 'logout', projectRoot }, both)).success).toBe(true);
+    expect(sentWith).toEqual(['user', 'user']);
   });
 
   it('revoke fails with MISSING_PARAMETER when neither keyId nor projectRoot is supplied', async () => {
@@ -770,7 +804,9 @@ describe('rbook_auth', () => {
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe('DEVICE_CODE_EXPIRED');
     expect(result.error?.message).toContain('user too slow');
-    expect(result.error?.suggestion).toContain('rbook_auth(action="login")');
+    // s100-m02: login, login_init and login_complete share this remedy, which names the pair.
+    expect(result.error?.suggestion).toContain('rbook_auth(action="login_init")');
+    expect(result.error?.suggestion).toContain('rbook_auth(action="login_complete")');
     // The minted key should not be persisted when the flow fails.
     expect(await store.listUserScopedKeys()).toEqual({});
   });
@@ -1104,13 +1140,15 @@ describe('rbook_auth', () => {
     const result = await rbookAuth(
       { action: 'logout' },
       deps({
-        clientResolver: async () =>
-          stubClient({
+        userClientResolver: async () => ({
+          client: stubClient({
             revoke: {
               success: true,
               data: { keyId: 'solo-key-id', revokedAt: '2026-04-23T23:30:00Z' },
             } as RbookToolResult<RevokeKeyResult>,
           }),
+          keySource: 'user-scoped',
+        }),
         // Capture the keyId the client was called with by intercepting the stub.
         // Not needed explicitly — the result's keyId is already the proof.
       })
@@ -1133,13 +1171,15 @@ describe('rbook_auth', () => {
     const result = await rbookAuth(
       { action: 'logout', keyId: 'key-b' },
       deps({
-        clientResolver: async () =>
-          stubClient({
+        userClientResolver: async () => ({
+          client: stubClient({
             revoke: {
               success: true,
               data: { keyId: 'key-b', revokedAt: '2026-04-23T23:31:00Z' },
             } as RbookToolResult<RevokeKeyResult>,
           }),
+          keySource: 'user-scoped',
+        }),
       })
     );
 
@@ -1185,13 +1225,15 @@ describe('rbook_auth', () => {
     const result = await rbookAuth(
       { action: 'logout' },
       deps({
-        clientResolver: async () =>
-          stubClient({
+        userClientResolver: async () => ({
+          client: stubClient({
             revoke: {
               success: false,
               error: { code: 'DASHBOARD_ERROR', message: 'revoke 500' },
             } as RbookToolResult<RevokeKeyResult>,
           }),
+          keySource: 'user-scoped',
+        }),
       })
     );
 
@@ -1212,13 +1254,15 @@ describe('rbook_auth', () => {
     const result = await rbookAuth(
       { action: 'logout' },
       deps({
-        clientResolver: async () =>
-          stubClient({
+        userClientResolver: async () => ({
+          client: stubClient({
             revoke: {
               success: true,
               data: { keyId: 'parent-key', revokedAt: '2026-04-23T23:32:00Z' },
             } as RbookToolResult<RevokeKeyResult>,
           }),
+          keySource: 'user-scoped',
+        }),
       })
     );
 
@@ -1234,7 +1278,7 @@ describe('rbook_auth', () => {
     await store.upsertUserScopedKey('solo-key-id', userRecord({ key: 'cmk_solo' }));
     const result = await rbookAuth(
       { action: 'logout' },
-      deps({ clientResolver: async () => null })
+      deps({ userClientResolver: async () => null })
     );
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe('DASHBOARD_NOT_CONFIGURED');

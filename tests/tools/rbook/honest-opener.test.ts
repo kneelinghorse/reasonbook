@@ -32,7 +32,8 @@ import {
 } from '../../helpers/seedRbookDb';
 
 const WHOAMI = 'rbook_message(action="whoami")';
-const LOGIN = 'rbook_auth(action="login")';
+// s100-m02: the sign-in remedies agree on login_init, then login_complete.
+const LOGIN = 'rbook_auth(action="login_init"), then rbook_auth(action="login_complete")';
 
 const projects: SeededRbookProject[] = [];
 const savedEnv: Record<string, string | undefined> = {};

@@ -20,6 +20,7 @@ import {
 } from '../tools/rbook/record-join';
 import { recordedProjectId } from '../tools/rbook/replica-identity';
 import { listMembers, OWNER_MEMBER } from '../tools/rbook/record-membership';
+import { namedCopies, ownersOtherCopies } from '../tools/rbook/record-owner-copies';
 import { mergeContext } from '../tools/rbook/record-standing';
 import type { RbookToolResult } from '../tools/rbook/types';
 import { bindAccount, readState, REFEREE_TABLES_SQL, STATE_KEYS, writeState } from './accounts';
@@ -48,6 +49,11 @@ function uploadProblem(client: RbookDatabaseClient): string | null {
   );
   if (members.length)
     return `it is shared directly with ${members.map((member) => member.name).join(', ')}, and moving a directly shared project with members to the dashboard is not built yet`;
+  // s100-m01: the owner's other copies would be stranded; an upload carries no routes, so the
+  // referee sees those that wrote.
+  const copies = ownersOtherCopies(client);
+  if (copies.length)
+    return `the project is also kept in ${namedCopies(copies)}, which a share through the dashboard would leave unable to sync, and taking the owner's other copies along is not built yet`;
   return null;
 }
 
@@ -131,7 +137,10 @@ export function createReferee(
     const warnings: string[] = [];
     let client: RbookDatabaseClient | null = null;
     try {
-      const fresh = await buildFreshCopy(input.copyFile, location.storePath, { untrusted: true });
+      const fresh = await buildFreshCopy(input.copyFile, location.storePath, {
+        untrusted: true,
+        referee: true,
+      });
       built = true;
       warnings.push(...fresh.warnings);
       const key = mintKey();

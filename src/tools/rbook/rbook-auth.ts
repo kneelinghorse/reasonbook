@@ -560,7 +560,7 @@ export async function rbookAuth(
     case 'rotate':
       return handleRotate(params, store, clientResolver, projectIdReader);
     case 'revoke':
-      return handleRevoke(params, store, clientResolver);
+      return handleRevoke(params, store, userClientResolver);
     case 'list':
       return handleList(params, store, clientResolver);
     case 'reissue':
@@ -572,7 +572,7 @@ export async function rbookAuth(
     case 'login_complete':
       return handleLoginComplete(params, store, tokenPoller, dashboardBaseUrl, identityFetcher);
     case 'logout':
-      return handleLogout(params, store, clientResolver);
+      return handleLogout(params, store, userClientResolver);
   }
 }
 
@@ -666,7 +666,7 @@ async function handleRotate(
 async function handleRevoke(
   params: RbookAuthParams,
   store: CredentialStore,
-  clientResolver: DashboardClientResolver
+  userClientResolver: UserScopedClientResolver
 ): Promise<RbookToolResult<RbookAuthResult>> {
   // Sprint 59 m02 — unified scope-aware revoke. Accepts either an explicit
   // keyId or a projectRoot (to derive the keyId from the local project key).
@@ -709,7 +709,9 @@ async function handleRevoke(
     scope = hasProjectMatch ? 'project' : 'unknown';
   }
 
-  const client = await clientResolver(params.projectRoot);
+  // s100-m02 (#717 item 3): sent with this machine's user-scoped key, never a project's own, so the
+  // dashboard can refuse a project key that revokes account keys.
+  const client = (await userClientResolver(store))?.client;
   if (!client) {
     return createError<RbookAuthResult>(RbookErrors.dashboardNotConfigured());
   }
@@ -1142,7 +1144,7 @@ async function handleLoginComplete(
 async function handleLogout(
   params: RbookAuthParams,
   store: CredentialStore,
-  clientResolver: DashboardClientResolver
+  userClientResolver: UserScopedClientResolver
 ): Promise<RbookToolResult<RbookAuthResult>> {
   const userScopedKeys = await store.listUserScopedKeys();
   const localKeyIds = Object.keys(userScopedKeys);
@@ -1176,7 +1178,8 @@ async function handleLogout(
     });
   }
 
-  const client = await clientResolver(params.projectRoot);
+  // s100-m02 (#717 item 3): as revoke, sent with this machine's user-scoped key.
+  const client = (await userClientResolver(store))?.client;
   if (!client) {
     return createError<RbookAuthResult>(RbookErrors.dashboardNotConfigured());
   }
@@ -1190,7 +1193,8 @@ async function handleLogout(
 
   // Remove the local user-scoped row. Project-scoped children are left alone
   // — they keep working server-side as standalone cmk_ bearers; if the user
-  // wants to clean them up they can revoke each individually.
+  // wants to clean them up they can revoke each individually, signed in, since
+  // a revoke goes with this machine's user-scoped key (s100-m02).
   // s96-m02: the signed-out key's identity goes with it, so author names stop defaulting to it.
   forgetDashboardIdentity(userScopedKeys[targetKeyId].key);
   await store.removeUserScopedKey(targetKeyId);
@@ -1215,7 +1219,7 @@ function mapDeviceCodeError(err: DeviceCodeError): {
           ? `Device code expired before authorization completed: ${err.description}`
           : 'Device code expired before authorization completed',
         suggestion:
-          'Re-run rbook_auth(action="login") to request a fresh code, then approve it at the verificationUri before it expires.',
+          'Request a fresh code with rbook_auth(action="login_init"), approve it at the verificationUri, then call rbook_auth(action="login_complete") before it expires.',
       };
     case 'access_denied':
       return {
@@ -1224,7 +1228,7 @@ function mapDeviceCodeError(err: DeviceCodeError): {
           ? `Authorization was denied: ${err.description}`
           : 'Authorization was denied at the dashboard',
         suggestion:
-          'Approve the device code at the verificationUri when re-running rbook_auth(action="login").',
+          'Run rbook_auth(action="login_init") again, approve the code at the verificationUri, then call rbook_auth(action="login_complete").',
       };
     case 'request_failed':
     case 'malformed_response':

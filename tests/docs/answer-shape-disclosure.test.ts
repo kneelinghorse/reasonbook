@@ -228,11 +228,17 @@ const EXPECTED_TOTALS = {
   // s97-m14: an exchange names which side's member was removed (ExchangeReport's optional
   // `removedCopy`, one row), and rbook_status's shared_sync rows gain an optional `removed_at`,
   // inside their existing row. Additive, for the 4.2.0 CHANGELOG.
-  files: 274,
+  // s100-m01: the sharing fixes add three modules to the closure (record-protocol.ts,
+  // record-protocol-hold.ts, record-owner-copies.ts), and three rows: ApplyReport's and
+  // BundleImport's `newerProtocol`, the changes a newer record protocol kept out, and the identity
+  // view's optional `joinedAddress` on a member's copy. Additive, for the 4.2.1 CHANGELOG.
+  // s100-m03: a next-step capture returns its row's id (RbookSessionCaptureResult's optional
+  // `nextStepId`, one row). Additive, for the 4.2.1 CHANGELOG.
+  files: 277,
   roots: 147,
   declarations: 335,
   compositions: 335,
-  rows: 1894,
+  rows: 1898,
 } as const;
 const EXPLICIT_OPAQUE_LEDGER = [
   'RbookToolError.providedValue = ANY',

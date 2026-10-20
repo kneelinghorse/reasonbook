@@ -40,6 +40,12 @@ export function getSetting(name: string, env: NodeJS.ProcessEnv = process.env): 
   return env[current] ?? env[legacy];
 }
 
+/** s100-m02: an off switch read as a person writes it: off, false, 0 or no, in any case. */
+export function settingIsOff(name: string, env: NodeJS.ProcessEnv = process.env): boolean {
+  const value = getSetting(name, env)?.trim().toLowerCase();
+  return value === 'off' || value === 'false' || value === '0' || value === 'no';
+}
+
 /** Retained clients must not recreate an old config folder after its offline move. */
 export function assertConfigDirectoryAvailable(configDir: string): void {
   const directory = path.resolve(configDir);

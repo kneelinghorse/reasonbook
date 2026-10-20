@@ -69,8 +69,8 @@ where hooks run, and every five minutes for shared projects a running server has
 explicit sync and bundle commands remain available. The dashboard-upload switch,
 `RBOOK_CHECKPOINT_SYNC`, is separate. Removing a member stops new changes from reaching them and
 quarantines their changes beyond the removal cut. It cannot retract data their copy already holds;
-the holder must delete that copy. Re-inviting the member resumes exchange, including quarantined
-changes.
+the holder must delete that copy. Re-inviting the member resumes exchange, and their quarantined
+changes are judged again: those their role does not allow are refused.
 
 The measured support scope is two accounts operated by one person, on two machines, sharing either
 in an owner/member star over SSH or through reasonbook.ai. A second person's collaboration and
@@ -79,32 +79,96 @@ and [trust boundary](trust.md#shared-copies).
 
 ## Sharing through reasonbook.ai
 
-**What goes up.** Sharing a project through the dashboard uploads a copy holding only the shared
-record: missions, sprints, decisions, learnings, sessions, next steps and constraints with the links
-between them, every value ever recorded (replaced text included), and the authors' names. Session
-events, agent feedback, telemetry, context snapshots and documents, proposals, the search index,
-routes to other copies and credentials stay on your machine. Every member's machine keeps its own
-full copy of the shared record.
+**What goes up before the share.** Sharing needs the project on reasonbook.ai, and a project gets
+there at its first upload: an explicit session close on a machine signed in to the dashboard
+registers the project and uploads its whole SQLite file. Every later upload sends the whole file
+again. These uploads hold everything the store holds, including session events, agent feedback,
+proposals (pending, declined and expired), context documents and snapshots, telemetry events,
+prompt mappings, the sync queue and the search index. With `RBOOK_CHECKPOINT_SYNC=off` no close
+uploads or registers a project, so a project that was never uploaded cannot be shared through the
+dashboard.
 
-**What reasonbook.ai keeps.** The dashboard keeps that copy as the project's referee copy, with
-daily snapshots of it for 7 days. It builds the project's pages from it (missions, sprints,
-decisions, learnings and the activity feed, each change under its author) and refreshes them after
-each change it accepts. A member's first copy is built when they join, sent, and deleted.
+**What the share sends.** The share's own upload is a fresh copy holding only the shared record:
+missions, sprints, decisions, learnings, sessions, next steps and constraints with the links between
+them, and the change log. The change log holds every value ever recorded (replaced text included),
+each change's author name and, from a signed-in machine, account id, the project's identity
+document and every change of membership. The dashboard keeps that copy as the project's referee
+copy. Once the referee copy holds the record, the owner's copy uploads no more whole files until the
+project is moved back, and the project's pages come from the referee copy meanwhile. Every member's
+machine keeps its own full copy of the shared record.
+
+**What reasonbook.ai keeps.**
+
+- The whole file the project's registration uploaded, until the project is deleted or registered
+  again. Each later upload is read into the dashboard's mirror of the project's pages, then deleted.
+- The mirror: the rows of sprints, missions, sessions, decisions, learnings, next steps and
+  constraints, with mission dependencies, the context snapshots' details without their content, the
+  full text of the context documents the uploads held, and the store's metadata. An upload adds and
+  updates the mirror's rows but removes none except the dependency links (registering the project
+  again rebuilds it whole), so a row deleted on your machine stays there, and the people a project
+  is shared with later see rows deleted before the share. Once the project is shared, the mirror is refreshed from the referee copy after each change
+  it accepts.
+- The referee copy: every change it took in, with its verdict, the changes it sets aside included
+  (a delivery it refuses whole is not kept); the members, by dashboard account and username; and
+  each copy's latest call. It is snapshotted daily and each snapshot is kept 7 days; a copy that
+  needs recovery or is moving back takes no new snapshot, and its last ones stay until it is
+  archived or deleted. After a move back, the dashboard keeps the archived copy 7 days, and its list
+  of the project's members (each one's account, username and whether they were removed) until the
+  project is deleted or shared through it again.
+- A member's first copy is built each time they ask for it, sent, and deleted.
+
+**The activity feed** shows what was created (sprints, missions, sessions, decisions, learnings,
+next steps and constraints) and status changes: a mission started, completed or blocked, and a
+sprint or session completed. Each entry names its change's author, or the row's author when the
+change names none. It also keeps the entries the owner's uploads made before the share, of every
+kind. It shows 50 entries a page by default, and at most 100.
 
 **Who can see it.** The owner and everyone the project is shared with, read-only shares included,
-see its pages and activity on the dashboard. Editors' copies exchange changes with the referee copy;
-a read-only share holds no copy. Other accounts see nothing of the project. Members appear by
-display name and username.
+see its pages, its feed and a list of the changes the referee set aside (whose they are, their
+state and why, not their contents), and can read its identity document and mirror through the
+dashboard's API. Editors' copies exchange changes with the referee copy; a read-only share holds no
+copy and cannot sync. Members appear by display name and username. Every other signed-in account
+can find the project in the dashboard's directory, which lists every project with its name, slug,
+owner, address, and when it was created and last synced, but none of its record. The service's
+operators can read every account's mirror.
 
 **Removal and deletion.**
 
-- Removing a member deletes nothing: their later changes stop counting and they receive nothing
-  new, but what their copy holds and what the project's pages already show remain.
-- Deleting the project deletes the dashboard's copy and its snapshots, but not the mirror of its
-  pages or its activity events. Every member keeps their own copy.
-- Deleting your account deletes the dashboard's copies of the projects you own. In projects shared
-  with you, your username and your changes remain in their record.
-- Moving a project back off reasonbook.ai is not available yet.
+- Removing a member deletes nothing: their later changes stop counting and they receive nothing new,
+  but what their copy holds and what the project's pages already show remain. The referee keeps the
+  changes it sets aside whole, in its snapshots and archive too. The owner removes a member on the
+  dashboard; a member is also removed when they leave or are removed from the team the project is
+  shared with, or when their account is deleted. Re-adding a removed member judges their set-aside
+  changes again from Reasonbook 4.2.1; until reasonbook.ai runs 4.2.1, it accepts them whole.
+- `rbook_db(action="purge", confirm=true, expectedSlug="<slug>")` clears the mirror's record tables
+  and its sync log, and leaves the registration's file, the activity feed, the diagnostic logs and
+  messages. While the project is shared through reasonbook.ai, every copy refuses it, the owner's
+  included, and the mirror is refreshed from the referee copy after each change it accepts: to
+  clear the mirror, the owner moves the project back first (`reasonbook move --to owner`), then
+  purges from that copy.
+- Deleting the project removes the registration's file, the referee copy with its snapshots and
+  archive, and the project's shares and keys. It leaves the mirror, its sync log and the activity
+  and diagnostic logs, and purge cannot reach the mirror once the project is deleted: to remove the
+  mirror too, move the project back, purge it with uploads off or signed out, then delete it. Every
+  member keeps their own copy.
+- Deleting your account deletes your projects with their mirrors, uploaded files, referee copies
+  and snapshots. In projects shared with you, your username and your changes remain in their record.
+- The owner's copy moves a project back off reasonbook.ai with
+  `rbook_project(action="move", to="owner")` or `reasonbook move --to owner`, and catches up a
+  member's copy over SSH, whose person then confirms the move with `reasonbook sync --confirm-owner`
+  ([steps](getting-started.md#through-reasonbookai)). That was measured live with one member
+  present and automatic syncs off.
+
+**Limits.**
+
+- If reasonbook.ai loses a project's referee copy, sharing through it stops, and this release has no
+  step that shares that project through it again. Every member keeps their own copy.
+- After a move back, sharing the project through reasonbook.ai again cannot include the people it
+  was shared with: the share refuses a project that still has members, and once they are removed,
+  the new referee copy refuses their usernames, because the record keeps each removed member's name.
+- Cases not measured after a move back include a member's copy that syncs with the dashboard
+  before the owner's copy catches it up, whose sync then says to sync with the owner's copy over SSH
+  or with a bundle, and a member's copy the owner's machine cannot reach over SSH.
 
 Sharing through reasonbook.ai was measured with two accounts operated by one person, on two
 machines.
@@ -128,6 +192,8 @@ their own policies apply. Reasonbook's dashboard receives no install report.
 - registered projects' uploaded databases, their local file paths, copied record contents,
   including decision reasons, recorded approval words and each record's author name and account
   id, and synced events;
+- for a project shared through it, its referee copy, that copy's snapshots for 7 days and, after a
+  move back, its archive for 7 days;
 - sync-request logs, including contents of rejected unauthenticated requests, and activity and
   diagnostic logs;
 - messages between accounts and projects: sender, recipient, type, summary, body, links, status,
@@ -196,11 +262,15 @@ front of the website. Hosting providers receive connection information under the
   remove its uploaded database, but does not remove its mirror copy. Purge can no longer reach the
   copy after registration is deleted.
 - **`rbook_db(action="purge", confirm=true, expectedSlug="<slug>")`** removes the project's mirror
-  and its mirror sync log. It leaves the uploaded database, messages, activity and diagnostic logs.
-  Stop uploads or sign out first: a later upload rebuilds the mirror.
+  and its mirror sync log. It leaves the uploaded database, messages, and activity and diagnostic
+  logs, and it is refused while a project is shared through reasonbook.ai, so the owner moves such a
+  project back first. It does not take the record off the project's pages: they read the uploaded
+  database instead until the project is deleted. Stop uploads or sign out first: a later upload
+  rebuilds the mirror.
 - **`rbook_auth(action="logout")`** revokes your account's key and removes it locally. Project keys
-  remain valid until you revoke each with `rbook_auth(action="revoke", keyId="<id>")`. Environment
-  credentials can still enable dashboard access after logout; [Trust](trust.md) explains the controls.
+  remain valid until you revoke each with `rbook_auth(action="revoke", keyId="<id>")`, which is sent
+  with your account's key: revoke them before you sign out. Environment credentials can still enable
+  dashboard access after logout; [Trust](trust.md) explains the controls.
 
 ## Contact
 

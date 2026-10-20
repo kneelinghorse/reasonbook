@@ -6,16 +6,18 @@ import { RbookDatabaseClient } from './client';
 import { createError, createSuccess } from './errors';
 import { dashboardPeer } from './record-dashboard-peer';
 import { dashboardName, isDashboardRoute } from './record-dashboard-route';
-import { clientPeer, exchange, type ExchangeReport } from './record-exchange';
+import { clientPeer, exchange, hello, type ExchangeReport } from './record-exchange';
 import { answerJoin, type JoinApplied, type JoinRequest } from './record-join';
 import { listMembers } from './record-membership';
 import {
   forgetPeers,
+  forgetRoute,
   nextTryAt,
   recordHeldBack,
   peerHealth,
   recordExchanged,
   recordExchangeFailed,
+  noteRemoval,
   rememberPeer,
   syncsWith,
   type PeerRoute,
@@ -125,6 +127,13 @@ export async function reach(
           projectRoot: options.projectRoot,
           replicaIdNow: () =>
             local((client) => readReplicaIdentity(client, { fresh: true })?.replicaId ?? ''),
+          removedHere: () =>
+            local((client) => {
+              const ctx = mergeContext(client);
+              return Boolean(
+                peerHealth(client).find((peer) => peer.replicaId === ctx.authority)?.removedAt
+              );
+            }),
         })
       );
     } catch (error) {
@@ -143,7 +152,17 @@ export async function reach(
       suggestion: 'Sync through the dashboard instead: reasonbook sync.',
     });
   try {
-    return createSuccess(await sshPeer(route, { verb, ssh: options.ssh }));
+    return createSuccess(
+      await sshPeer(route, {
+        verb,
+        ssh: options.ssh,
+        nearHello: () =>
+          local((client) => {
+            const { projectId, replicaId, authority, epoch } = hello(client);
+            return { projectId, replicaId, authority, epoch };
+          }),
+      })
+    );
   } catch (error) {
     return createError({
       code: REPLICA_ERROR_CODES.EXCHANGE_REFUSED,
@@ -168,14 +187,25 @@ export async function syncRoute(
     const result = await exchange(clientPeer('this copy', open, local), far);
     if (!result.success || !result.data) return result;
     const report = result.data;
-    await local((client) =>
+    await local((client) => {
       recordExchanged(client, report.remote.replicaId, {
         marks: report.remote.marks,
         digest: report.digest,
         // Only this copy's own membership is recorded here; a far copy's removal is not this copy's.
         removed: report.removedCopy === 'local' ? true : report.removed ? undefined : false,
-      })
-    );
+      });
+      // s100-m01 (#707): a removed copy takes nothing in, so after a move it still takes the old owner
+      // copy for the owner's; what the exchange said is kept on that copy's row too, which its
+      // review shows. A copy that is no member at all is told nothing new here.
+      const ctx = mergeContext(client);
+      const owner = ctx.ownReplica === ctx.authority ? null : ctx.authority;
+      if (
+        owner &&
+        owner !== report.remote.replicaId &&
+        (report.removedCopy === 'local' || !report.removed)
+      )
+        noteRemoval(client, owner, report.removedCopy === 'local');
+    });
     // The far copy's note of this exchange is its own: the exchange stands if the note fails (s97-m10).
     try {
       await far.call('exchanged', {
@@ -247,6 +277,15 @@ export async function syncPeers(
     };
   });
   const routed = peers.filter((peer) => peer.route);
+  // s100-m01: a copy told its member was removed, whose route is gone, is told that, not to set one.
+  if (!routed.length && !ownerCopy && peers.some((peer) => peer.removedAt))
+    return createError({
+      code: REPLICA_ERROR_CODES.EXCHANGE_REFUSED,
+      message:
+        "This copy's member was removed from the project, so it syncs with no copy; what it holds stays with it.",
+      suggestion:
+        "Whether the project is shared with you again is the owner's to decide; this copy's review keeps the removal until then.",
+    });
   if (!routed.length) {
     return createError(
       ownerCopy
@@ -280,15 +319,19 @@ export async function syncPeers(
       // A route that reached the successor its copy took moves to it; one that reached another copy
       // is left as it was, and says so, since it no longer reaches its own.
       const reached = result.data.remote.replicaId;
+      // s100-m01 (#707): a copy told its member was removed receives no move, so it cannot tell the
+      // owner copy a move made from another copy; its route stays as it was, and asks for nothing.
+      const removedHere = result.data.removedCopy === 'local';
       const moved =
         reached !== peer.replicaId &&
+        !removedHere &&
         (await local((client) => {
           if (!successorOf(mergeContext(client), reached, peer.replicaId)) return false;
           rememberPeer(client, reached, { name: peer.name, route: peer.route });
           forgetPeers(client, [peer.replicaId]);
           return true;
         }));
-      const astray = reached !== peer.replicaId && !moved;
+      const astray = reached !== peer.replicaId && !moved && !removedHere;
       if (astray)
         await local((client) =>
           recordExchangeFailed(
@@ -318,9 +361,12 @@ export async function syncPeers(
         if (result.error?.code === REPLICA_ERROR_CODES.TRANSACTION_TOO_LARGE)
           return recordHeldBack(client, peer.replicaId, error);
         // A dashboard that no longer shares the project ended this route: this copy is no longer
-        // refereed there, so it syncs with the owner's copy directly from now on (s97-m11).
+        // refereed there, so it syncs with the owner's copy directly from now on (s97-m11). A copy
+        // told its member was removed keeps the row its review reads the removal from (s100-m01).
         if (result.error?.code === REPLICA_ERROR_CODES.ROUTE_ENDED)
-          return forgetPeers(client, [peer.replicaId]);
+          return peer.removedAt
+            ? forgetRoute(client, peer.replicaId, name)
+            : forgetPeers(client, [peer.replicaId]);
         return recordExchangeFailed(client, peer.replicaId, error, { count: true });
       });
       outcomes.push({ replicaId: peer.replicaId, name, error });

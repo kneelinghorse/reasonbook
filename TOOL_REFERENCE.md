@@ -409,7 +409,7 @@ Consolidated session tool with action parameter support. Actions: list, start, c
 | `content` | string | no | Capture content for capture action |
 | `context` | string | no | Additional context for capture action |
 | `expiresAt` | string | no | Optional expiry date for constraint captures (ISO 8601, e.g. "2026-03-20T00:00:00Z"). Applies to capture(category="constraint") and to constraints materialized from that capture at session complete. |
-| `missionId` | string | no | Associated mission ID. On capture, stamps immediate decision/learning rows and preserves provenance for a next-step row materialized at session close; on complete, stamps the decisions[] and nextSteps[] rows this call materializes. |
+| `missionId` | string | no | Associated mission ID. On capture, stamps the decision, learning or next-step row it writes; on complete, stamps the decisions[] and nextSteps[] rows this call materializes. |
 | `evidence` | array | no | Array of TraceLab evidence references [{type, id}] for decision captures |
 | `evidence[].type` | string | yes | Evidence type |
 | `evidence[].id` | string | yes | Evidence identifier |
@@ -425,7 +425,7 @@ Consolidated session tool with action parameter support. Actions: list, start, c
 | `action` | string | yes | Session action: list \| start \| capture \| complete \| search |
 | `agent` | string | no | Agent identifier for start/capture/complete actions |
 | `sessionId` | string | no | capture/complete: the session to write; omit it for the session your writes land in (an open explicit session, else your own implicit one). list: only this session, to read its summary in full |
-| `missionId` | string | no | Associated mission ID. On capture, stamps immediate decision/learning rows and preserves provenance for a next-step row materialized at session close; on complete, stamps the decisions[] and nextSteps[] rows this call materializes. |
+| `missionId` | string | no | Associated mission ID. On capture, stamps the decision, learning or next-step row it writes; on complete, stamps the decisions[] and nextSteps[] rows this call materializes. |
 | `citesLearningIds` | array | no | Learning IDs this capture/decision cites. Bumps last_reviewed_at on each — applies to capture(category=decision\|learning) and complete(decisions[]). |
 | `summary` | string | no | Session summary for complete action |
 | `nextSteps` | array | no | Next steps for complete action |

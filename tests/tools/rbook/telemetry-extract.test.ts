@@ -39,6 +39,12 @@ describe('typed telemetry extraction', () => {
       'l:3',
     ]);
   });
+
+  // s100-m03: a next-step capture returns its row's id, which a later call may cite.
+  it('observes the next-step id a capture returns, beside a decision capture', () => {
+    expect(returnedIds('rbook_session', { action: 'capture' }, { nextStepId: 4 })).toEqual(['n:4']);
+    expect(returnedIds('rbook_session', { action: 'capture' }, { decisionId: 5 })).toEqual(['d:5']);
+  });
   it('counts receipt-confirmed actions, excluding unmatched IDs and review-only actions', () => {
     expect(
       usedIds('rbook_decisions', { action: 'batch_update', decisionIds: [1, 2, 3] }, 'write', {

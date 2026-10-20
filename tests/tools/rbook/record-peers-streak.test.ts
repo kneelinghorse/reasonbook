@@ -127,12 +127,13 @@ describe("a delivery's pages, reported as one (s97-m10)", () => {
     folded: 0,
     newlyLive: ['t'],
     notes: [],
+    newerProtocol: 1,
     ...over,
   });
 
   it('adds up what each page took in, and keeps the record-wide counts of the last page', () => {
     expect(mergePageReports(mergePageReports(null, page({})), page({ newlyLive: ['u'] }))).toEqual(
-      page({ stored: 4, judged: 4, recomputed: 6, newlyLive: ['t', 'u'] })
+      page({ stored: 4, judged: 4, recomputed: 6, newlyLive: ['t', 'u'], newerProtocol: 2 })
     );
   });
 

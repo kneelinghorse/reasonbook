@@ -63,6 +63,9 @@ export interface MissionStartResult {
   activatedSprintId?: string;
 }
 
+/** What a start leaves a mission as: In Progress, or Current when it only promotes (s97-m13). */
+const START_TARGETS = ['In Progress', 'Current'] as const;
+
 /**
  * Input parameters schema for rbook_mission_start tool.
  */
@@ -75,7 +78,7 @@ export const rbookMissionStartSchema = z.object({
 
   /** s97-m13 (#662): Current promotes a Queued or Deferred mission without starting its clock */
   targetStatus: z
-    .enum(['In Progress', 'Current'])
+    .enum(START_TARGETS)
     .optional()
     .describe('In Progress (the default) starts it; Current promotes it without starting it'),
 
@@ -138,6 +141,14 @@ export async function rbookMissionStart(
   }
 
   const missionId = params.missionId.trim();
+  // s100-m02 (the s97 review's finding 14): arguments reach this handler as the client sent them,
+  // so the schema's enum binds nothing here, and a start to Dropped dropped the mission and said
+  // it started.
+  if (params.targetStatus != null && !START_TARGETS.includes(params.targetStatus)) {
+    return createError(
+      RbookErrors.invalidParameter('targetStatus', params.targetStatus, [...START_TARGETS])
+    );
+  }
   const targetStatus: MissionStatus = params.targetStatus ?? 'In Progress';
   // s97-m13 (#662): a promotion makes a mission the next to start; its clock (started_at), its
   // sprint's activation and its start event wait for the start itself.

@@ -22,6 +22,8 @@ import {
   rememberPeer,
 } from '../../../src/tools/rbook/record-peers';
 import { exchangeText } from '../../../src/cli/sync-moves';
+import { sharedRecordReview } from '../../../src/tools/rbook/record-review';
+import { mergeContext } from '../../../src/tools/rbook/record-standing';
 import { joinRoute, syncAndRoute, syncPeers } from '../../../src/tools/rbook/record-sync';
 import {
   __resetSharedSyncScheduler,
@@ -633,4 +635,126 @@ describe('copies that are not this one (s96-m13 critics, round 2)', () => {
       __resetSharedSyncScheduler();
     }
   }, 360000);
+});
+
+describe('a handover to a copy behind a move (s100-m01, critics round 1)', () => {
+  it('is refused before the move is written, naming the sync that brings the copy up first', async () => {
+    const { owner, joined, ssh } = await owned([
+      ['next', 'Owner'],
+      ['studio', 'Darryl'],
+    ]);
+    useMachine(fixture.tmp, owner.machine);
+    const moved = await handOverRoute(
+      opener(owner) as never,
+      routeTo(joined.next.root, configOf(joined.next.machine), 'next'),
+      { ssh, unchecked: opener(owner, false) as never }
+    );
+    if (!moved.success) throw new Error(JSON.stringify(moved.error));
+    // The studio has not taken that move; the new owner copy hands over to it.
+    const epoch = await onCopy(fixture.tmp, joined.next, (client) => mergeContext(client).epoch, {
+      replicaCheck: false,
+    });
+    useMachine(fixture.tmp, joined.next.machine);
+    const refused = await handOverRoute(
+      opener(joined.next) as never,
+      routeTo(joined.studio.root, configOf(joined.studio.machine), 'studio'),
+      { ssh, unchecked: opener(joined.next, false) as never }
+    );
+    expect(refused.success).toBe(false);
+    expect(refused.error?.message).toMatch(/has not taken the owner copy's latest move/);
+    expect(refused.error?.suggestion).toMatch(/--confirm-owner/);
+    expect(
+      await onCopy(
+        fixture.tmp,
+        joined.next,
+        (client) => {
+          const ctx = mergeContext(client);
+          return { epoch: ctx.epoch, holds: ctx.authority === ctx.ownReplica && !ctx.pending };
+        },
+        { replicaCheck: false }
+      )
+    ).toEqual({ epoch, holds: true });
+  }, 600000);
+});
+
+describe('a removed member that syncs with the owner copy after a move (s100-m01, #707)', () => {
+  /** The owner's copy moved to its next machine after removing Darryl, whose copy routes to the old one. */
+  async function movedAfterRemoval() {
+    const { owner, joined, ssh } = await owned([
+      ['next', 'Owner'],
+      ['studio', 'Darryl'],
+    ]);
+    const studio = joined.studio;
+    useMachine(fixture.tmp, studio.machine);
+    const toOwner = await syncAndRoute(
+      opener(studio) as never,
+      routeTo(owner.root, configOf(owner.machine), 'owner-mac'),
+      { ssh, unchecked: opener(studio, false) as never }
+    );
+    if (!toOwner.success) throw new Error(JSON.stringify(toOwner.error));
+    await onCopy(fixture.tmp, owner, (client) => removeMember(client, 'Darryl'));
+    useMachine(fixture.tmp, owner.machine);
+    const moved = await handOverRoute(
+      opener(owner) as never,
+      routeTo(joined.next.root, configOf(joined.next.machine), 'next'),
+      { ssh, unchecked: opener(owner, false) as never }
+    );
+    if (!moved.success) throw new Error(JSON.stringify(moved.error));
+    return { owner, next: joined.next, studio, ssh };
+  }
+
+  /** What the studio's review, digest line and rbook_status say of its removal. */
+  async function told(studio: Copy) {
+    const review = await onCopy(fixture.tmp, studio, (client) => sharedRecordReview(client), {
+      replicaCheck: false,
+    });
+    useMachine(fixture.tmp, studio.machine);
+    const status = await call('rbook_status', { projectRoot: studio.root });
+    return {
+      removed: review?.removed === true,
+      line: (review?.peers ?? []).join('\n'),
+      status: (status.data as { shared_sync: Array<{ removed_at?: string }> }).shared_sync.some(
+        (peer) => typeof peer.removed_at === 'string'
+      ),
+    };
+  }
+
+  it('a route that now reaches the new owner copy keeps the removal in the review and status, and asks for no new route', async () => {
+    const { owner, next, studio, ssh } = await movedAfterRemoval();
+    // The owner's machine at Darryl's route was replaced by the next one, at the same address.
+    await onCopy(
+      fixture.tmp,
+      studio,
+      (client) =>
+        rememberPeer(client, owner.replicaId, {
+          route: routeTo(next.root, configOf(next.machine), 'owner-mac'),
+        }),
+      { replicaCheck: false }
+    );
+    useMachine(fixture.tmp, studio.machine);
+    const synced = await syncPeers(opener(studio) as never, {
+      ssh,
+      unchecked: opener(studio, false) as never,
+    });
+    expect(synced.success).toBe(true);
+    expect(synced.data!.peers[0].report).toMatchObject({ removedCopy: 'local' });
+    expect((synced.warnings ?? []).join('\n')).not.toMatch(/set it again|set its route again/);
+    const said = await told(studio);
+    expect(said).toMatchObject({ removed: true, status: true });
+    expect(said.line).toMatch(/said this copy's member was removed/);
+    expect(said.line).not.toMatch(/reached another copy/);
+  }, 600000);
+
+  it('a route set to the new owner copy keeps the removal in the review and status too', async () => {
+    const { next, studio, ssh } = await movedAfterRemoval();
+    useMachine(fixture.tmp, studio.machine);
+    const synced = await syncAndRoute(
+      opener(studio) as never,
+      routeTo(next.root, configOf(next.machine), 'next'),
+      { ssh, unchecked: opener(studio, false) as never }
+    );
+    expect(synced.success).toBe(true);
+    expect(synced.data).toMatchObject({ removedCopy: 'local' });
+    expect(await told(studio)).toMatchObject({ removed: true, status: true });
+  }, 600000);
 });

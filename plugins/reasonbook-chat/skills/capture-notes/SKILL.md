@@ -17,7 +17,7 @@ matching `category`: `learning`, `constraint`, or `next-step`. Omit `sessionId` 
 caller's session. Keep separate items in separate calls and include only supported context; do
 not open or close an unrelated session merely to save a note.
 
-Check each receipt and its materialization result. A next step can be captured for later
-materialization at session close: describe that as captured, not as an already published
-next-step row. Report any failed write separately and avoid retrying an uncertain write until
-checking whether it persisted. End with the confirmed items and their returned identifiers.
+Check each receipt and its materialization result. A next step is written as a row when it is
+captured, and its receipt gives that row's id. Report any failed write separately and avoid
+retrying an uncertain write until checking whether it persisted. End with the confirmed items and
+their returned identifiers.

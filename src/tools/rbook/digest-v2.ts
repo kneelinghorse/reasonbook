@@ -179,7 +179,8 @@ function sharedSection(
     !waiting.length &&
     !started.length &&
     !peers.length &&
-    !moves.length
+    !moves.length &&
+    !review.upgrade
   )
     return null;
   const cap = Math.min(SHARED_SECTION_CAP, room);
@@ -188,6 +189,8 @@ function sharedSection(
   const lines = ['Shared record:'];
   // s96-m13 (ADR s96 §8): a move this copy must confirm comes first; nothing else settles it.
   if (moves.length) lines.push(`  • Owner's copy: ${moves.join('; ')}.`);
+  // s100-m01: then an upgrade this copy needs, which only its own operator can make.
+  if (review.upgrade) lines.push(`  • This copy: ${review.upgrade}.`);
   if (conflicts.length)
     lines.push(
       `  • ${conflicts.length} field(s) in conflict, so reads show a provisional value: ${conflicts.slice(0, 3).join('; ')}${more(conflicts, 3)}.`
@@ -227,7 +230,8 @@ function sharedShortForm(review: SharedRecordReview | null | undefined): string 
     !waiting.length &&
     !started.length &&
     !peers.length &&
-    !moves.length
+    !moves.length &&
+    !review.upgrade
   )
     return null;
   const settle = conflicts.length || states.length;
@@ -235,6 +239,10 @@ function sharedShortForm(review: SharedRecordReview | null | undefined): string 
   const counts = [
     // s97-m14: a removal leads, so the short form never drops it (critics, round 1).
     review.removed ? "this copy's member was removed from the project" : '',
+    // s100-m01: what a newer record protocol keeps out waits for this copy's upgrade.
+    review.upgrade
+      ? 'changes in a newer record protocol wait until Reasonbook is upgraded here'
+      : '',
     review.movePending
       ? "a move of the owner's copy to confirm (reasonbook sync --confirm-owner)"
       : '',

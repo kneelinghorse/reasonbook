@@ -46,6 +46,8 @@ export interface Held {
   readonly txnReplicas: ReadonlyMap<string, string>;
   /** Every block the record ever admitted for a replica: its joins, its term and its own moves. */
   blocksOf(replicaId: string): ReadonlySet<number>;
+  /** The referee's own clock reading, which a copy that took it writes at (s100-m01). */
+  readonly clock: string | null;
 }
 
 const parsed = (change: LoggedChange): Record<string, unknown> | null => {
@@ -89,9 +91,14 @@ export function heldOf(client: RbookDatabaseClient, changes: readonly LoggedChan
     ).map((row) => [row.txn_id, row.replica_id])
   );
   const blocks = new Map<string, Set<number>>();
+  const [clock] = read<{ value: string }>(
+    "SELECT value FROM metadata WHERE key = 'replica_hlc'",
+    []
+  );
   return {
     changeIds,
     txnReplicas,
+    clock: clock?.value ?? null,
     blocksOf(replicaId: string): ReadonlySet<number> {
       const known = blocks.get(replicaId);
       if (known) return known;
@@ -159,17 +166,17 @@ export function intakeRefusal(
     const problem = changeProblem(change, projectId);
     if (problem) return malformed(problem);
   }
-  // A reading far past the referee's own clock waits on its copy, the relay's included: every copy
-  // takes the latest reading it receives as its clock, so one near the year 2200 would carry them all
-  // past it (critics, round 3).
+  // A reading far past real time waits on its copy, the relay's included: every copy takes the latest
+  // reading it receives as its clock, so one near the year 2200 would carry them all past it (critics,
+  // round 3). A referee whose own clock ran ahead takes readings up to it, so it stops no copy (s100-m01).
   const now = Date.now();
-  const early = changes.find((change) => runsAhead(change.hlc, now));
+  const early = changes.find((change) => runsAhead(change.hlc, now, held.clock));
   if (early)
     return refuse({
       code: REFEREE_ERROR_CODES.CLOCK_AHEAD,
-      message: `Change ${early.change_id} says it was made at ${readingTime(early.hlc)}, more than a week past the referee's clock (${new Date(now).toISOString()}), so nothing was taken in yet.`,
+      message: `Change ${early.change_id} says it was made at ${readingTime(early.hlc)}, more than a week past real time (${new Date(now).toISOString()}) and past the referee's own clock, so nothing was taken in yet.`,
       suggestion:
-        "Your changes stay safe on your copy and go up on a later sync, once the referee's clock is within a week of them. If this machine's clock runs ahead, set it right.",
+        "Your changes stay safe on your copy. If this machine's clock runs ahead, set it right: what it wrote already goes up on a later sync, once real time is within a week of it.",
     });
   const own = changes.find((change) => change.replica_id === ctx.ownReplica);
   if (own)

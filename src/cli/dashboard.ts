@@ -12,7 +12,7 @@ import type { RbookToolResult } from '../tools/rbook/types';
 
 export const SHARE_USAGE = [
   'reasonbook share --dashboard [--yes] [--project-root <root>]: share this project through the dashboard.',
-  '  Without --yes it only lists what would go up and what stays on this machine.',
+  '  Without --yes it only lists what the share would send and what the shared record leaves out.',
 ].join('\n');
 
 export const MOVE_USAGE =
@@ -72,7 +72,7 @@ export async function runShare(argv: readonly string[], io: CliIo): Promise<numb
     if (!('handover' in data)) {
       return [
         `Sharing through ${data.plan.dashboard} sends the shared record: ${rows(data.plan.up)}${'record_changes' in data.plan.up ? '' : ', with the change log sharing starts for it'}.`,
-        `It stays on this machine: ${rows(data.plan.stays)}, and the search index and context documents.`,
+        `The shared record leaves out ${rows(data.plan.stays)}, the search index and the other context documents. Until the handover, this copy's uploads to ${data.plan.dashboard} send its whole store, those included, as its registration there did; after it, they stop.`,
         'Nothing was sent. Send it with reasonbook share --dashboard --yes.',
       ].join('\n');
     }

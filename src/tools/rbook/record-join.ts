@@ -16,8 +16,9 @@ import {
   type BundleImport,
 } from './record-bundle';
 import { canonicalJson } from './record-capture';
-import { recordOwnChanges } from './record-changes';
+import { PROTOCOL_VERSION, recordOwnChanges } from './record-changes';
 import { SYNC_PROTOCOL } from './record-exchange';
+import { UPGRADE_COMMAND } from './record-protocol-hold';
 import { freshBlock, memberNamed } from './record-membership';
 import { forgetPeers } from './record-peers';
 import { BASELINE_QUERY, mergeContext, REPLICA_ENTITY } from './record-standing';
@@ -111,6 +112,19 @@ export function requestJoin(client: RbookDatabaseClient): RbookToolResult<JoinRe
         'This copy was made before the project was shared, so it holds no shared record to join; the import brings in what such a copy holds of its own.',
       suggestion:
         "Join a copy made after sharing instead (reasonbook copy on the owner's machine makes one); to bring in what this copy holds of its own, run reasonbook import --from <this folder> in the joined copy.",
+    });
+  // s100-m01 (the sprint-100 build's critics): a copy made from a newer release's store holds changes
+  // this version cannot judge or apply by its own rules, so it joins only once this machine upgrades,
+  // as a join through the dashboard refuses such a first copy (record-fresh-copy.ts).
+  const newer = client.getOne<{ version: number }>(
+    'SELECT max(protocol_version) AS version FROM record_changes WHERE protocol_version > ?',
+    [PROTOCOL_VERSION]
+  );
+  if (newer.success && typeof newer.data?.version === 'number')
+    return refuse({
+      code: REPLICA_ERROR_CODES.WRITE_REFUSED,
+      message: `This copy's change log is written in record protocol ${newer.data.version}, newer than this version's ${PROTOCOL_VERSION}, so it was not joined.`,
+      suggestion: `Upgrade Reasonbook on this machine (${UPGRADE_COMMAND}), then join again.`,
     });
   const second = secondCopyOnJoin(client);
   if (second) return createError(second);
@@ -263,9 +277,12 @@ export function applyJoin(
       // ADR s96 §10: the invite names the member, and the joined copy keeps that name for this project.
       if (name) writeCopyKey(client, COPY_KEYS.author, name);
       writeCopyKey(client, PENDING_KEY, null);
-      // The file came from another copy, whose routes, health and last new identity are its own.
+      // The file came from another copy, whose routes, health and last new identity are its own, as
+      // are the address it joined by and the newer protocol it kept out (s100-m01).
       forgetPeers(client);
       writeCopyKey(client, COPY_KEYS.successor, null);
+      writeCopyKey(client, COPY_KEYS.joinedAddress, null);
+      writeCopyKey(client, COPY_KEYS.newerProtocol, null);
     });
     if (!joined.success) return createError(joined.error!);
   } catch (error) {
@@ -275,10 +292,14 @@ export function applyJoin(
   forgetReplicaIdentity(client);
   const imported = importBundle(client, answer.bundle);
   if (!imported.success || !imported.data) return createError(imported.error!);
-  return createSuccess({
-    replicaId: answer.replicaId,
-    block: answer.block,
-    member: answer.member.name,
-    imported: imported.data,
-  });
+  // s100-m01: what the import kept out, written in a newer record protocol, is said here too.
+  return createSuccess(
+    {
+      replicaId: answer.replicaId,
+      block: answer.block,
+      member: answer.member.name,
+      imported: imported.data,
+    },
+    imported.warnings ?? []
+  );
 }

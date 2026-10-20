@@ -5,7 +5,7 @@
 import { breaksNameRule } from './author-name';
 import { PROTOCOL_VERSION } from './record-changes';
 import { PROJECT_ENTITY, RECORDED_TABLES } from './record-columns';
-import { CHANGE_KINDS } from './record-guards';
+import { knownChangeKind } from './record-guards';
 import { MEMBER_ENTITY } from './record-membership';
 import { REPLICA_ENTITY, TXN_ENTITY, type LoggedChange } from './record-standing';
 
@@ -18,7 +18,6 @@ export const CHANGE_ENTITIES: ReadonlySet<string> = new Set([
   MEMBER_ENTITY,
 ]);
 
-const KINDS: ReadonlySet<string> = new Set(CHANGE_KINDS);
 const TEXT = ['change_id', 'txn_id', 'project_id', 'replica_id', 'hlc', 'kind', 'entity'] as const;
 const OPTIONAL_TEXT = [
   'author_name',
@@ -60,9 +59,17 @@ export function readingTime(hlc: string): string {
   return new Date(Number(hlc.slice(0, 13))).toISOString();
 }
 
-/** Whether a well-formed reading runs more than MAX_AHEAD_MS past `nowMs`; such a reading waits until it does not. */
-export function runsAhead(hlc: string, nowMs: number): boolean {
-  return Number(hlc.slice(0, 13)) > nowMs + MAX_AHEAD_MS;
+/**
+ * Whether a well-formed reading runs past what intake takes in, so it waits until it does not: more
+ * than MAX_AHEAD_MS past `nowMs`, and past `held`, the reading the referee's own clock holds (s100-m01).
+ * A clock never moves back, so a referee whose host clock once ran ahead keeps that reading, and the
+ * copies that took it write at it: they count up within its millisecond and are never refused for it.
+ * A reading at the last count of the referee's millisecond moves it on by one, since the referee's
+ * next write carries into the next millisecond: one millisecond a delivery, which real time outruns.
+ */
+export function runsAhead(hlc: string, nowMs: number, held: string | null = null): boolean {
+  const heldMs = held === null || readingProblem(held) ? 0 : Number(held.slice(0, 13));
+  return Number(hlc.slice(0, 13)) > Math.max(nowMs + MAX_AHEAD_MS, heldMs);
 }
 
 /**
@@ -126,7 +133,8 @@ export function changeProblem(change: unknown, projectId: string): string | null
     return `${name}'s protocol_version is not a whole number from 1`;
   if (row.project_id !== projectId)
     return `${name} belongs to project ${String(row.project_id)}, not ${projectId}`;
-  if (!KINDS.has(row.kind as string)) return `${name} has an unknown kind ${String(row.kind)}`;
+  if (!knownChangeKind(row.kind as string))
+    return `${name} has an unknown kind ${String(row.kind)}`;
   if (!CHANGE_ENTITIES.has(row.entity as string))
     return `${name} names an unknown entity ${String(row.entity)}`;
   const reading = readingProblem(row.hlc as string);
