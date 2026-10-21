@@ -9,8 +9,13 @@ import {
   frameForeignText,
   provenanceTag,
 } from '../../intelligence/provenance-frame';
-import type { AgentFeedbackEntry, RbookFeedbackListResult } from './rbook-feedback';
+import type {
+  AgentFeedbackEntry,
+  FeedbackRowKind,
+  RbookFeedbackListResult,
+} from './rbook-feedback';
 import type { AgentFeedbackStatus } from './schema-migrations';
+import { classifyFeedback, countFeedbackKinds } from '../../signals/feedback-kinds';
 
 export interface FeedbackStoreCount {
   readonly projectId: string;
@@ -26,6 +31,8 @@ interface FeedbackCounts {
   totalCount: number;
   countsByTool: Record<string, number>;
   countsByStatus: Record<string, number>;
+  /** s97-m07: the store's matching rows by kind; absent from a count-only read. */
+  countsByKind?: Record<FeedbackRowKind, number>;
   absent: boolean;
 }
 interface FeedbackQueryRow extends CrossStoreRow {
@@ -40,6 +47,20 @@ interface FeedbackQueryRow extends CrossStoreRow {
   createdAt: string;
   resolvedAt: string | null;
   resolutionNote: string | null;
+  /** s97-m07: classified from the stored text, before any framing. */
+  kind: FeedbackRowKind;
+}
+
+/**
+ * Counts by kind as one flat record, unclassified beside every kind. It lives here, not in
+ * rbook-feedback.ts: the session-start digest reads this module, and a value import from the tool
+ * would load zod at every start (tests/e2e/hook-cli.e2e.ts).
+ */
+export function kindCounts(
+  texts: Iterable<string | null | undefined>
+): Record<FeedbackRowKind, number> {
+  const { counts, unclassified } = countFeedbackKinds(texts);
+  return { ...counts, unclassified };
 }
 
 export interface FeedbackFleetOptions {
@@ -106,11 +127,22 @@ export async function readFeedbackFleet(
         for (const name of ['id', 'body', 'created_at'])
           if (!columns.has(name)) throw new Error(`agent_feedback lacks ${name}`);
         const optional = (name: string): string => (columns.has(name) ? name : 'NULL');
+        // s97-m07: the kinds read every matching row's own text; the count-only digest reads none.
+        const byKind = options.countOnly
+          ? undefined
+          : kindCounts(
+              (
+                db.prepare(`SELECT body FROM agent_feedback ${where}`).all(...values) as Array<{
+                  body: string | null;
+                }>
+              ).map((row) => row.body)
+            );
         const rows = options.countOnly
           ? []
-          : (db
-              .prepare(
-                `SELECT id, tool_name AS toolName, body, status,
+          : (
+              db
+                .prepare(
+                  `SELECT id, tool_name AS toolName, body, status,
         ${optional('session_id')} AS sessionId, ${optional('sprint_id')} AS sprintId,
         ${optional('mission_id')} AS missionId, ${optional('project_id')} AS projectId,
         created_at AS createdAt, ${optional('resolved_at')} AS resolvedAt,
@@ -118,12 +150,14 @@ export async function readFeedbackFleet(
         COALESCE(ROUND((julianday(created_at)-2440587.5)*86400000),0) AS occurred_at,
         id AS origin_seq, ? AS project_id FROM agent_feedback ${where}
         ORDER BY occurred_at DESC,id DESC LIMIT ?`
-              )
-              .all(store.project_id, ...values, cap) as FeedbackQueryRow[]);
+                )
+                .all(store.project_id, ...values, cap) as FeedbackQueryRow[]
+            ).map((row) => ({ ...row, kind: classifyFeedback(row.body).kind }));
         counts.set(store.project_id, {
           totalCount: total.n,
           countsByTool: Object.fromEntries(byTool.map((row) => [row.key, row.n])),
           countsByStatus: Object.fromEntries(byStatus.map((row) => [row.key, row.n])),
+          ...(byKind ? { countsByKind: byKind } : {}),
           absent: false,
         });
         return rows;
@@ -133,6 +167,8 @@ export async function readFeedbackFleet(
   const coverage: FeedbackStoreCount[] = [];
   const countsByTool: Record<string, number> = Object.create(null);
   const countsByStatus: Record<string, number> = Object.create(null);
+  // s97-m07: summed only from stores that were read; an unavailable store's rows are not zero.
+  const countsByKind = options.countOnly ? undefined : kindCounts([]);
   let totalCount = 0;
   for (const store of stores) {
     const error = errors.get(store.project_id);
@@ -156,6 +192,9 @@ export async function readFeedbackFleet(
       countsByTool[key] = (countsByTool[key] ?? 0) + n;
     for (const [key, n] of Object.entries(count.countsByStatus))
       countsByStatus[key] = (countsByStatus[key] ?? 0) + n;
+    if (countsByKind && count.countsByKind)
+      for (const [key, n] of Object.entries(count.countsByKind) as Array<[FeedbackRowKind, number]>)
+        countsByKind[key] += n;
   }
   const entries: AgentFeedbackEntry[] = result.results.map(
     ({ occurred_at: _time, origin_seq: _seq, project_id: source, ...entry }) => ({
@@ -175,6 +214,7 @@ export async function readFeedbackFleet(
     totalCount,
     countsByTool,
     countsByStatus,
+    ...(countsByKind ? { countsByKind } : {}),
     limit,
     fleet: { complete: errors.size === 0, stores: coverage },
   };

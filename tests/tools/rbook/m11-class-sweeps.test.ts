@@ -196,6 +196,8 @@ const SAFE: Readonly<Record<string, string>> = {
   'intelligence/spin-out-query.ts|occurred_at':
     'same integer-millisecond merge order after source visibility filtering',
   'tools/rbook/rbook-review.ts|occurred_at': 'the drift probe reads integer milliseconds',
+  // s97-m01: quiet_days is the drift probe's stamp bounded by now, a number on both sides.
+  'signals/rules-activity.ts|occurred_at': 'the quiet rule reads the same integer milliseconds',
   'intelligence/project-graph-registry.ts|last_seen_at': 'the registry stores integer milliseconds',
   'intelligence/project-upload-state.ts|upload_latest_write_at':
     'registry INTEGER epoch milliseconds, written from the numeric clock',

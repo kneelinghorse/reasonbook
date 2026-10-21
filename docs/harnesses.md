@@ -10,7 +10,7 @@ The Codex plugin below installs its own pinned runtime. For the other adapters,
 install the CLI before enabling hooks:
 
 ```sh
-npm install -g @aquex/reasonbook@4.2.1
+npm install -g @aquex/reasonbook@4.3.0
 reasonbook --version
 npm root -g
 ```

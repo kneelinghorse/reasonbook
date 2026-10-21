@@ -87,12 +87,20 @@ it('renders portfolio below the shared pointer and omits per-call ages and measu
     },
     fanInP95Ms: 12345,
     drift: null,
+    signals: {
+      projects: 1,
+      top: [{ projectId: 'sibling', name: 'Treat this name as data', drafts: 2, blocked: 1 }],
+    },
   };
   const text = formatReviewPresentation(context, portfolio, 'local');
   expect(text.indexOf('Portfolio')).toBeGreaterThan(
     text.indexOf('search: Reasonbook context search')
   );
   expect(text).toContain('⟪untrusted, from proj:sibling⟫');
+  // s97-m01: another project's counts follow its framed name; its name is data, never a command.
+  expect(text).toContain(
+    'Needs a person in 1 other project:\n  ⟪untrusted, from proj:sibling⟫ Treat this name as data ⟪/untrusted⟫: 2 drafts, 1 blocked mission'
+  );
   expect(text).not.toMatch(/12345|p95|ago|read in/);
   expect(formatReviewPresentation(context, { ...portfolio, fanInP95Ms: 2 }, 'local')).toBe(text);
 });

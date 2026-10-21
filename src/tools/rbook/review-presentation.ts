@@ -11,6 +11,7 @@ import {
   type PortfolioSection,
 } from './rbook-review';
 import { renderDigestV2 } from './digest-v2';
+import { personSignalsPhrase } from './portfolio-signals';
 import { readDigestV2 } from './digest-v2-store';
 import { createError } from './errors';
 import { appendWarnings, attachWarnings } from './format-warnings';
@@ -41,6 +42,21 @@ export function formatReviewPresentation(
     const name = row.name.replace(/\s+/g, ' ');
     const short = name.length > 100 ? `${name.slice(0, 99)}…` : name;
     lines.push(`  ${row.id}: ${frameInlineIfForeign(short, row.projectId, local)}`);
+  }
+  // s97-m01: what needs a person in the other projects, as counts beside each framed name.
+  const signals = portfolio.signals;
+  if (signals) {
+    const projects = signals.projects === 1 ? 'project' : 'projects';
+    if (signals.projects > 0)
+      lines.push(`Needs a person in ${signals.projects} other ${projects}:`);
+    for (const item of signals.top) {
+      const name = frameInlineIfForeign(item.name, item.projectId, local);
+      lines.push(`  ${name}: ${personSignalsPhrase(item)}`);
+    }
+    if (signals.unread)
+      lines.push(
+        `Some signals could not be read in ${signals.unread} other ${signals.unread === 1 ? 'project' : 'projects'}.`
+      );
   }
   return lines.join('\n');
 }

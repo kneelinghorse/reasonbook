@@ -23,6 +23,19 @@
  * LABELLED fallback rather than an error, and exists to make a PUBLISHED NUMBER TRUE rather than
  * to add a field. Anything failing that last clause is still forbidden.
  *
+ * ONE RATIFIED EXCEPTION (s97-m01, the sprint-100 design ratified by #1546). The portfolio section
+ * carries other projects' signals that need a person. That departs from the fence above in three
+ * ways, and in nothing else. It ADDS A FIELD. A store holding a pending draft has its draft runtime
+ * opened read-only, a SECOND OPEN. And not every read is index-covered: drafts and open next steps
+ * are (idx_proposals_outcome, idx_next_steps_status), while sprints and missions are scanned, and
+ * session_events once for each blocked mission with no recorded blockedSince; on a shared copy
+ * record_conflicts and record_peers are read whole. The cost is stated as the fence asks, measured
+ * on this Mac's 25 stores on 2026-10-20 (budget.json in rbook/research/2026-10-s100-build/
+ * s97-m01-signals/, whose rule defines each number): 1.42 ms per store at p95 and 1.75 ms at most,
+ * about 10.4 ms per review beside the drift stamp's 16 ms, and 6 runtime opens. Every failure is labelled, as the fence requires: a project whose signals cannot be
+ * read is counted in `unread`, and a drift stamp that cannot be read reads as freshness unknown. A
+ * further field needs the same measurement and its own ratified reason.
+ *
  * WHY THE PROXY HAD TO GO. Under it, the only available drift signal was a file mtime — and the
  * cross-store fan-out CREATES the `-wal` sidecar whose mtime the signal read, so the instrument
  * fabricated its own evidence. A constraint written to keep a mission cheap had come to keep a
@@ -48,7 +61,8 @@ import { resolveRecordPaths } from '../../intelligence/legacy-compat';
 import { isOpenStatus } from './terminal-status';
 import { countReflaggedSinceRepair } from './staleness-detection';
 import type Database from 'better-sqlite3';
-import { statSync } from 'fs';
+import { realpathSync, statSync } from 'fs';
+import * as path from 'path';
 import { z } from 'zod';
 import type { RbookToolResult } from './types';
 import { createError, createSuccess } from './errors';
@@ -69,6 +83,7 @@ import {
 } from '../../intelligence/project-graph-registry';
 import type { ResolvedBy } from '../../intelligence/sender-context';
 import { activeMissionsAcrossProjects } from '../../intelligence/cross-store-queries';
+import { personSignalsOf, personSignalsPhrase, type PersonSignals } from './portfolio-signals';
 import {
   frameForeignInline,
   frameInlineIfForeign,
@@ -135,6 +150,32 @@ export interface PortfolioDrift {
   stale: PortfolioDriftItem[];
 }
 
+/** s97-m01 — another project's counts of what needs a person; a zero or unavailable one is left out. */
+export interface PortfolioSignalsItem extends PersonSignals {
+  projectId: string;
+  /** Display name, capped to {@link DRIFT_NAME_CAP_CHARS}. */
+  name: string;
+}
+
+/**
+ * s97-m01 — other projects' signals that need a person, counted by the signals library on the
+ * connection the fan-out opens, with this machine's draft runtime: drafts awaiting a decision,
+ * next steps near their lease, blocked missions and a shared copy's unsettled conflicts. This
+ * project's own are left out, since its digest carries them. `reasonbook signals` gives the full
+ * reports, with every unavailable signal and its reason.
+ */
+export interface PortfolioSignals {
+  /** Other projects with at least one count. */
+  projects: number;
+  /** The most counted first, then by project id; at most {@link SIGNALS_TOP_N}, trimmed under budget. */
+  top: PortfolioSignalsItem[];
+  /**
+   * Other projects whose signals could not be read: the store could not be queried, or one of the
+   * four failed on it (a missing table is not a failure). Present only when there are any.
+   */
+  unread?: number;
+}
+
 /**
  * s79-m06 / s80-m06 — cross-store portfolio rollup. Active missions (In Progress/
  * Current) across the registered projects, built on the graph-backed
@@ -164,6 +205,8 @@ export interface PortfolioSection {
   fanInP95Ms: number;
   /** Per-project freshness drift (silent + un-migrated stores); null when nothing drifted. */
   drift: PortfolioDrift | null;
+  /** s97-m01 — other projects' signals that need a person; null when none has one. */
+  signals: PortfolioSignals | null;
 }
 
 /**
@@ -386,7 +429,7 @@ const SPRINT_FOCUS_TRIM_CAP_CHARS = 160;
  * tables, read on the connection the portfolio fan-out already holds — not a file mtime, which
  * that same fan-out perturbs by opening the store.
  */
-const STALE_THRESHOLD_DAYS = 21;
+export const STALE_THRESHOLD_DAYS = 21;
 
 /**
  * s81-m03 — a FRESH store whose local mtime is more than this many days ahead of its
@@ -402,6 +445,9 @@ const DRIFT_TOP_N = 8;
 
 /** s80-m06 — cap on a drifting project's display name in the drift list. */
 const DRIFT_NAME_CAP_CHARS = 30;
+
+/** s97-m01 — cap on the other projects listed with signals that need a person. */
+const SIGNALS_TOP_N = 8;
 
 /**
  * Execute rbook_review.
@@ -513,7 +559,12 @@ export async function rbookReview(
   // 'build', so it keeps the signal.
   const gatedBuildFreshness = onboard.project.projectType === 'build' ? buildFreshness : null;
 
-  const digest = buildDigest(onboard, missionStatus, gatedBuildFreshness, portfolio, {
+  const portfolioSection = portfolioWithSignals(
+    portfolio,
+    onboard.localProjectId ?? null,
+    projectRoot ?? null
+  );
+  const digest = buildDigest(onboard, missionStatus, gatedBuildFreshness, portfolioSection, {
     registryDefault,
     recentLearnings: recentLearningsRead,
     reflagged,
@@ -713,6 +764,14 @@ function buildDigest(
     draft.resolvedBy = extras.resolution.resolvedBy;
   }
 
+  return finishDigest(draft);
+}
+
+/**
+ * The digest trimmed to its budget, with its size stamped. Exported for its tests (s97-m01), which
+ * drive the trim order and the budget's edge on built digests.
+ */
+export function finishDigest(draft: RbookReviewResult): RbookReviewResult {
   const trimmed = trimToBudget(draft);
 
   // Iterative convergence on digestSizeBytes. The field self-reports the size
@@ -1151,22 +1210,68 @@ export function deriveDrift(
   return { reachable, silent, unmigrated, unreadable, drift };
 }
 
+/** s97-m01 — what the fan-out reads on each store's connection; each half fails on its own. */
+interface PortfolioProbe {
+  /** null when no stamp could be read, which deriveDrift reports as freshness unknown. */
+  readonly drift: ReturnType<typeof driftContentProbe>;
+  /** null when the signals could not be computed; `failed` when one of them could not be read. */
+  readonly signals: ReturnType<typeof personSignalsOf> | null;
+}
+
+/** A store the portfolio names, by registry id and folder, so this project is left out by either. */
+interface PortfolioStore {
+  readonly projectId: string;
+  readonly storePath: string;
+}
+
+/** The section as the fan-out read it, and every store's person-needing counts, this one's included. */
+interface PortfolioRead {
+  readonly section: Omit<PortfolioSection, 'signals'>;
+  readonly people: ReadonlyArray<PortfolioSignalsItem & { readonly storePath: string }>;
+  /** The stores whose signals could not be read, whether the store or a signal failed. */
+  readonly unread: readonly PortfolioStore[];
+}
+
+function driftOrUnknown(db: Database.Database): ReturnType<typeof driftContentProbe> {
+  try {
+    return driftContentProbe(db);
+  } catch {
+    return null; // freshness unknown, exactly as a store whose probe failed before s97-m01
+  }
+}
+
+function personSignalsOrNull(
+  db: Database.Database,
+  store: Parameters<typeof personSignalsOf>[1],
+  nowMs: number
+): ReturnType<typeof personSignalsOf> | null {
+  try {
+    return personSignalsOf(db, store, nowMs, process.env);
+  } catch {
+    return null; // counted as unread in the section, never as none
+  }
+}
+
 async function buildPortfolioSection(
   registryOverride?: ProjectGraphRegistry,
   statFn: StoreStatFn = defaultStoreStatFn,
   nowMs: number = Date.now()
-): Promise<PortfolioSection | null> {
+): Promise<PortfolioRead | null> {
   try {
     const registry = registryOverride ?? (await ProjectGraphRegistry.create());
     const stores = registry.list();
     if (stores.length <= 1) return null; // single-project → degrade
 
-    const fanout = await activeMissionsAcrossProjects({
+    const fanout = await activeMissionsAcrossProjects<PortfolioProbe>({
       limit: PORTFOLIO_FETCH_LIMIT,
       registry,
       // s87-m03 (#529) — read the CONTENT on the connection the fan-out already opens. This is
       // the whole fix: the drift signal stops being a file mtime that this very call creates.
-      perStoreProbe: driftContentProbe,
+      // s97-m01 — the person-needing signals are read on the same connection.
+      perStoreProbe: (db, store) => ({
+        drift: driftOrUnknown(db),
+        signals: personSignalsOrNull(db, store, nowMs),
+      }),
     });
     const meta = fanout.metadata;
     // s80-m06: strict partition + drift over the SAME store set the fan-out queried.
@@ -1174,9 +1279,29 @@ async function buildPortfolioSection(
     // `fanout.errors` — a failed optional probe must not reclassify a readable store as
     // unreadable — so a store whose probe threw simply has no entry here and lands on the
     // "freshness unknown" path.
-    const contentStamps = new Map(fanout.probes.map((p) => [p.projectId, p.value]));
+    const contentStamps = new Map(fanout.probes.map((p) => [p.projectId, p.value.drift]));
     const partition = deriveDrift(stores, fanout.errors, statFn, nowMs, contentStamps);
-    return {
+    const byId = new Map(stores.map((store) => [store.project_id, store]));
+    const storeOf = (projectId: string): PortfolioStore => ({
+      projectId,
+      storePath: byId.get(projectId)?.store_path ?? '',
+    });
+    const people: Array<PortfolioSignalsItem & { storePath: string }> = [];
+    // A store the fan-out could not query, or whose probe failed, has no signals read either.
+    const unread: PortfolioStore[] = [...fanout.errors, ...fanout.probeErrors].map((error) =>
+      storeOf(error.projectId)
+    );
+    for (const probe of fanout.probes) {
+      const signals = probe.value.signals;
+      if (signals === null || signals.failed) unread.push(storeOf(probe.projectId));
+      if (signals && Object.keys(signals.counts).length)
+        people.push({
+          ...storeOf(probe.projectId),
+          name: truncate(byId.get(probe.projectId)?.name ?? probe.projectId, DRIFT_NAME_CAP_CHARS),
+          ...signals.counts,
+        });
+    }
+    const section = {
       projects: stores.length,
       reachable: partition.reachable,
       silent: partition.silent,
@@ -1193,20 +1318,74 @@ async function buildPortfolioSection(
       fanInP95Ms: Math.round(meta.perStoreP95Ms ?? meta.overallMs),
       drift: partition.drift,
     };
+    return { section, people, unread };
   } catch {
     return null; // fan-out failed → degrade, never break the opener
   }
 }
 
+const personTotal = (item: PersonSignals): number =>
+  (item.drafts ?? 0) + (item.lapsing ?? 0) + (item.blocked ?? 0) + (item.conflicts ?? 0);
+
+/** A folder as the file system names it, so one store under two spellings is one store. */
+function realFolder(folder: string): string {
+  try {
+    return realpathSync.native(folder);
+  } catch {
+    return path.resolve(folder);
+  }
+}
+
+/**
+ * s97-m01 — the section the digest carries: the other projects' person-needing counts, most
+ * first, without this project's own (its digest already carries them). This project is known by
+ * its id and, when the caller named it, its folder: a registry row keeps its id when the store is
+ * re-keyed, so the id alone could list this project as another.
+ */
+export function portfolioWithSignals(
+  read: PortfolioRead | null,
+  localProjectId: string | null,
+  localRoot: string | null = null
+): PortfolioSection | null {
+  if (!read) return null;
+  const local = localRoot ? realFolder(localRoot) : null;
+  const isLocal = (store: PortfolioStore): boolean =>
+    store.projectId === localProjectId ||
+    (local !== null && store.storePath !== '' && realFolder(store.storePath) === local);
+  const others = read.people
+    .filter((item) => !isLocal(item))
+    .sort(
+      (a, b) =>
+        personTotal(b) - personTotal(a) ||
+        (a.projectId < b.projectId ? -1 : a.projectId > b.projectId ? 1 : 0)
+    )
+    .map(({ storePath: _storePath, ...item }) => item);
+  const unread = new Set(read.unread.filter((store) => !isLocal(store)).map((s) => s.projectId))
+    .size;
+  const signals: PortfolioSignals | null =
+    others.length || unread
+      ? {
+          projects: others.length,
+          top: others.slice(0, SIGNALS_TOP_N),
+          ...(unread ? { unread } : {}),
+        }
+      : null;
+  return { ...read.section, signals };
+}
+
 /**
  * Trim the digest in stages until it fits the 4KB budget (s79-m06 F9 order). The
  * NEW cross-store portfolio signal is the point of this digest, so it is trimmed
- * LAST: recentDecisions → sprint.focus → warnings → workQueue tops →
- * portfolio.activeMissions.top (5→3→0) → portfolio=null. Everything cheaper and
- * more local is sacrificed before the portfolio rollup degrades.
+ * LAST: recentLearnings → recentDecisions → sprint.focus → workQueue tops →
+ * portfolio.activeMissions.top (5→3→0) → portfolio.drift.stale → portfolio.signals.top →
+ * portfolio=null. Everything cheaper and more local is sacrificed before the portfolio
+ * rollup degrades, and what needs a person elsewhere (s97-m01) is its last list to go.
  */
 function trimToBudget(digest: RbookReviewResult): RbookReviewResult {
-  const measure = (d: RbookReviewResult): number => Buffer.byteLength(JSON.stringify(d), 'utf8');
+  // s97-m01: measured with the size field at its final width (four digits under the 4,096-byte
+  // budget), not the 0 it holds here; stamping the size afterwards used to add up to 3 bytes.
+  const measure = (d: RbookReviewResult): number =>
+    Buffer.byteLength(JSON.stringify({ ...d, digestSizeBytes: 9999 }), 'utf8');
 
   let current = digest;
   let size = measure(current);
@@ -1304,6 +1483,26 @@ function trimToBudget(digest: RbookReviewResult): RbookReviewResult {
       portfolio: {
         ...current.portfolio,
         drift: stale.length ? { ...current.portfolio.drift, stale } : null,
+      },
+    };
+    size = measure(current);
+  }
+
+  // Stage 5c (s97-m01): shrink portfolio.signals.top one at a time. The count of other projects
+  // needing a person stays; the list of them is the portfolio's last part to go.
+  while (
+    size > DIGEST_BUDGET_BYTES &&
+    current.portfolio?.signals &&
+    current.portfolio.signals.top.length > 0
+  ) {
+    current = {
+      ...current,
+      portfolio: {
+        ...current.portfolio,
+        signals: {
+          ...current.portfolio.signals,
+          top: current.portfolio.signals.top.slice(0, -1),
+        },
       },
     };
     size = measure(current);
@@ -1575,6 +1774,16 @@ export function formatReviewForLLM(result: RbookToolResult<RbookReviewResult>): 
       for (const s of p.drift.stale) {
         lines.push(`    · ${s.name} — ${s.reason}${s.hint ? ` (${s.hint})` : ''}`);
       }
+    }
+    if (p.signals) {
+      if (p.signals.projects > 0)
+        lines.push(`  ⚑ needs a person in ${p.signals.projects} other project(s)`);
+      for (const item of p.signals.top) {
+        const name = frameInlineIfForeign(item.name, item.projectId, local);
+        lines.push(`    · ${name} [proj:${item.projectId}] — ${personSignalsPhrase(item)}`);
+      }
+      if (p.signals.unread)
+        lines.push(`  ⚑ some signals could not be read in ${p.signals.unread} other project(s)`);
     }
   }
 

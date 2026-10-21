@@ -16,11 +16,11 @@ Pick one:
 
 ```bash
 # Recommended: a global install of this release. It starts from disk, with no registry lookup.
-npm install -g @aquex/reasonbook@4.2.1
+npm install -g @aquex/reasonbook@4.3.0
 
 # Or run on demand via npx: pinned, and preferring the local cache. The first launch downloads
 # the package; later launches reuse the npm cache.
-npx --prefer-offline -y @aquex/reasonbook@4.2.1
+npx --prefer-offline -y @aquex/reasonbook@4.3.0
 ```
 
 If the former package is installed globally, run `npm uninstall -g @aquex/cmos-mcp` first. Version 4 provides only the `reasonbook` command; update scripts and MCP configurations that use the old command.
@@ -30,7 +30,7 @@ Verify it starts:
 ```bash
 reasonbook --version  # if globally installed
 # or
-npx --prefer-offline -y @aquex/reasonbook@4.2.1 --version
+npx --prefer-offline -y @aquex/reasonbook@4.3.0 --version
 ```
 
 Semantic (vector) search is optional: without it, retrieval is keyword-only and the install is about
@@ -44,7 +44,7 @@ Claude Code and Codex are verified; the other blocks follow each client's own MC
 ### Claude Code
 
 ```bash
-claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.2.1"]}'
+claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.3.0"]}'
 claude mcp list   # confirm it's registered
 ```
 
@@ -62,7 +62,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS), 
       "args": [
         "--prefer-offline",
         "-y",
-        "@aquex/reasonbook@4.2.1",
+        "@aquex/reasonbook@4.3.0",
         "--project-root",
         "/absolute/path/to/your/project"
       ]
@@ -85,7 +85,7 @@ Edit `~/.cursor/mcp.json`:
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.2.1"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.3.0"]
     }
   }
 }
@@ -100,7 +100,7 @@ Edit your Zed `settings.json`:
   "context_servers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.2.1"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.3.0"]
     }
   }
 }
@@ -121,7 +121,7 @@ your terminal PATH, so the terminal route needs the standalone Claude CLI.
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.2.1"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.3.0"]
     }
   }
 }
@@ -264,8 +264,41 @@ or `--format json` for a receipt. The package includes `plugins/reasonbook/skill
 `rbook_feedback(action="list", acrossProjects=true)` reads the registered fleet and reports
 full filtered counts beside the capped newest rows (50 by default, 200 maximum). Unavailable
 stores make the coverage partial; absent feedback tables count as zero. All rows are counted,
-without deduplication or subject filtering. Local triage accepts `resolutionNote`. For a sibling
+without deduplication or subject filtering. Each list also counts the rows by kind
+(`countsByKind`: ceremony, surfacing, identity, sync, payload), by published rules over each
+row's text, with `unclassified` beside them. Local triage accepts `resolutionNote`, and `resolve`
+takes `feedbackIds` for up to 200 rows at once; an unknown id resolves none. For a sibling
 disposition, request action through an explicitly authorized message to that project.
+
+## What needs a person, across your projects
+
+`reasonbook signals` reads every project registered on this machine, read-only, and reports nine
+signals for each: drafts awaiting a decision, next steps about to lapse, records due for review,
+rows citing a replaced decision, blocked missions, open agent friction by kind, days since the
+newest row in the record's six main tables, constraints about to expire, and a shared copy's
+unsettled conflicts.
+
+```bash
+reasonbook signals
+reasonbook signals --project-root /path/to/project --format json
+```
+
+Each signal gives its count and up to 5 row ids (20, and the rule that counted it, with
+`--format json`). A signal the store cannot answer, such as drafts in a store made before drafts
+existed, reads unavailable with its reason, never zero. A draft also expires after three session
+starts, which only this machine's draft runtime records. `rbook_review` shows the four signals that need a person
+(drafts, next steps about to lapse, blocked missions and conflicts) for up to eight of your other
+projects, in its portfolio.
+
+The signals come from a library, `@aquex/reasonbook/signals`: `readSignals(storePath, { now })`
+reads one store file at the time given. It never writes the store or starts anything, and the same
+file, time and draft runtime give the same report.
+
+`reasonbook brief` turns those reports into a one-page weekly brief: what needs a decision, what is
+stuck, what has gone quiet, what is drifting, the week's friction and what moved, five items a
+section with every listed row named by its id. `--days` sets the window (7 by default) and
+`--format json` prints the sections as data. The same renderer, `renderBrief`, gives the same bytes
+for the same reports on any machine.
 
 ## Local usage statistics
 

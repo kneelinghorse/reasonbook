@@ -455,6 +455,15 @@
           "occurrence": 1,
           "class": "outside",
           "reason": "Compatibility recognizer for an existing owned block; never emitted as a runnable recovery command. Added after the new compatibility file became tracked at the m06 boundary."
+        },
+        {
+          "id": "current-feedback-kind-recognizer",
+          "file": "src/signals/feedback-kinds.ts",
+          "line": 98,
+          "text": "/NOT NULL constraint(?: failed)?:?[^.]{0,40}\\b(?:sessions|sprints)\\.project_id|\\b(?:sessions|sprints)\\.project_id NOT NULL|stale (?:cmos-mcp )?(?:binary|runtime)|retired cmos-mcp runtime|version skew/i,",
+          "occurrence": 1,
+          "class": "outside",
+          "reason": "A feedback-kind rule (s97-m07) that recognizes rows reporting the retired binary by its old name; it reads stored text and never emits a runnable command. Added after the file became tracked at s97-m07's commit, which the gate, reading tracked files only, could not see before."
         }
       ],
       "residual": [

@@ -2,6 +2,69 @@
 
 All notable changes to Reasonbook (published as `@aquex/cmos-mcp` before 4.0.0) are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.3.0] — 2026-10-20
+
+Portfolio intelligence: what needs a person, in each project on this machine and, once reasonbook.ai
+runs it, across the operator's accounts. One read-only library, `@aquex/reasonbook/signals`, counts
+nine signals in a store and renders the weekly brief; `reasonbook signals` and `reasonbook brief` run
+it here, and `rbook_review` lists the other projects that need a person. Agent feedback is now
+sorted into kinds by published rules, and many rows resolve at once. The referee's engine is
+unchanged in kind: reasonbook.ai need not pin 4.3.0 for sharing, only to run the signals.
+
+### Added
+
+- **Agent feedback counted by kind.** `rbook_feedback(action="list")` counts every matching row by
+  kind (`countsByKind`) and names each entry's `kind`, in one project and across projects:
+  ceremony, surfacing, identity, sync or payload, with `unclassified` beside them. The kinds come
+  from published rules over a row's text (`src/signals/feedback-kinds.ts`), and a row that names
+  Reasonbook nowhere is never counted as friction with it. Each kind reached precision 0.9 or more
+  against labels a separate agent gave 157 rows without seeing the rules; setup and silent-loss fell
+  short, so their rows read as unclassified. On the machine that measured them the rules classify a
+  quarter of 884 rows, and unclassified still holds friction they miss.
+- **Resolve many feedback rows in one call.** `rbook_feedback(action="resolve", feedbackIds=[…])`
+  resolves up to 200 rows in one transaction. An unknown id refuses the call, names the id, and
+  resolves none.
+- **Signals: what needs a person, in each project.** `@aquex/reasonbook/signals` is a library that
+  reads one store, read-only, and reports nine signals at the time you give it: drafts awaiting a
+  decision, next steps about to lapse, records due for review, rows citing a replaced decision,
+  blocked missions, open agent friction by kind, days the project has been quiet, constraints about
+  to expire, and a shared copy's unsettled conflicts. Each comes with its count, up to 20 row ids
+  and its rule. A signal the store cannot answer is reported unavailable with the reason, never as
+  zero, and one whose rule failed on the store is also marked `failed`. The report's drafts rule
+  says whether a draft runtime was given, and the drafts entry names one that was not found. The
+  same file, time and draft runtime give the same report, byte for byte. On the 25 stores of the
+  machine that measured it, a report took 38 ms at the 95th percentile, counting every report of
+  five rounds over the stores, the cold first round included.
+- **`reasonbook signals`** prints those signals for every project registered on this machine, or for
+  one with `--project-root`, with this machine's draft runtime; `--format json` prints the reports.
+- **The weekly brief.** `renderBrief(reports, { now, windowDays })` in `@aquex/reasonbook/signals`
+  turns reports into one page of markdown: what needs a decision, what is stuck, what has gone quiet,
+  what is drifting, the week's friction and what moved. Each section lists five items, the most
+  pressing first, then says how many more; every listed row is named by its id; the brief is at most
+  60 lines. It reads no clock, time zone or locale, so the same reports and time give the same bytes
+  on any machine, which is how the dashboard will show the same brief. `buildBrief` gives the
+  sections as data. `reasonbook brief [--days 7] [--format md|json]` renders it over this machine's
+  projects. A report now also gives each ranked signal's `oldestAt`, and `reviews_due` gives
+  `becameDue`, the records that became due within the window.
+- **The review shows what needs a person in your other projects.** `rbook_review`'s portfolio names
+  up to eight other projects with drafts awaiting a decision, next steps about to lapse, blocked
+  missions or unsettled conflicts, with their counts, and how many other projects' signals could
+  not be read. Reading them added about 10 ms to a review across 25 stores, summed over the stores
+  and averaged over five rounds.
+
+### Changed (answer shapes)
+
+- `rbook_feedback`'s list gains `countsByKind`, and each entry gains `kind`. A resolve with
+  `feedbackIds` answers `resolved`, one `{feedbackId, previousStatus, currentStatus}` per row.
+  Additive.
+- `rbook_review`'s `portfolio` gains `signals`: `{projects, top, unread?}`, each of `top` naming
+  `projectId` and `name` with any of `drafts`, `lapsing`, `blocked` and `conflicts`, or `null` when
+  no other project needs a person and every other project's signals were read. Additive. Under the
+  4,096-byte budget the list is trimmed after recent learnings and decisions, the sprint's focus,
+  the work queue, active missions and the drift list, so on a machine with many projects the
+  structured answer can carry fewer recent learnings and decisions, work-queue items, active
+  missions and drift entries; the text answer's own project part, from the digest, is unchanged.
+
 ## [4.2.1] — 2026-10-20
 
 Fixes to sharing, through reasonbook.ai and directly, from the sprint-97 review, and docs that

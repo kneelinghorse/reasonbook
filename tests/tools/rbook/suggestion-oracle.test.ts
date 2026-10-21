@@ -605,6 +605,9 @@ const SITES_BY_MISSION = {
   // s100-m03: a next-step capture whose table or genesis columns cannot be prepared before the
   // write lock, now that the capture writes its row (#712).
   's100-m03': ['src/tools/rbook/rbook-session-capture.ts:498'],
+  // s97-m07: a bulk resolve whose feedbackIds is not a list of row ids, and one naming a row that
+  // does not exist, which resolves none.
+  's97-m07': ['src/tools/rbook/rbook-feedback.ts:278', 'src/tools/rbook/rbook-feedback.ts:350'],
 } as const satisfies Readonly<Record<string, readonly string[]>>;
 const RATIFIED_SITE_ADDS = Object.values(SITES_BY_MISSION).flat();
 
@@ -1332,6 +1335,11 @@ const MATRIX: MatrixCase[] = [
         tool: 'rbook_feedback',
         params: { action: 'resolve', feedbackId: 999_999, projectRoot: ctx.projectRoot },
       },
+      // s97-m07: a bulk resolve naming a row that does not exist refuses the whole call.
+      {
+        tool: 'rbook_feedback',
+        params: { action: 'resolve', feedbackIds: [999_999], projectRoot: ctx.projectRoot },
+      },
       {
         tool: 'rbook_db',
         params: {
@@ -1958,6 +1966,11 @@ const MATRIX: MatrixCase[] = [
     name: 'bad enum, empty string, out-of-range and malformed dot-notation paths',
     reachable: 'ordinary: an agent guesses a value shape instead of reading the schema',
     calls: (ctx) => [
+      // s97-m07: feedbackIds that is not a list of row ids, checked in the handler.
+      {
+        tool: 'rbook_feedback',
+        params: { action: 'resolve', feedbackIds: 'all', projectRoot: ctx.projectRoot },
+      },
       // The four `applyNestedFieldUpdate` returns. `contextType` MUST be master_context or
       // project_context: `runManualUpdate` types it as that union, and `project_identity` is
       // handled by a DIFFERENT module (rbook-context-project-identity.ts), so a project_identity
@@ -2818,11 +2831,14 @@ describe('s89-m08 T5 — every authored suggestion naming a shipped tool yields 
     }
     // s96-m08 removed the eighth witness with the old mutable-push implementation (:166).
     // Pin the seven surviving witnesses themselves, so a missing surface cannot hide in a count.
+    // s97-m07: rbook-feedback.ts's witness (the missing-feedbackId suggestion) moved from :324 to
+    // :497 when the bulk-resolve helpers were added above it; s97-m08 moved it to :485 when
+    // kindCounts left the file for feedback-fleet.ts. The text is unchanged.
     expect(narrowOffenders).toEqual([
       'src/tools/rbook/errors.ts:402',
       'src/tools/rbook/errors.ts:411',
       'src/tools/rbook/rbook-decisions-update.ts:81',
-      'src/tools/rbook/rbook-feedback.ts:324',
+      'src/tools/rbook/rbook-feedback.ts:485',
       'src/tools/rbook/rbook-learnings-reaffirm.ts:91',
       'src/tools/rbook/rbook-learnings-update.ts:104',
       'src/tools/rbook/rbook-sprint-complete.ts:577',

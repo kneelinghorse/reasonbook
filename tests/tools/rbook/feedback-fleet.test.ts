@@ -139,6 +139,45 @@ it('returns globally capped rows with exact full counts and trusted source-store
   expect([hash(a), hash(b)]).toEqual(before);
 });
 
+it('counts every matching row by kind across stores, from each row’s own text', async () => {
+  // s97-m07: the fleet view groups by kind. The kind is read from the stored text, before the
+  // untrusted-data frame is added for display, and a count-only read (the digest) reads no text.
+  const a = store('alpha');
+  const b = store('beta');
+  const put = (project: string, id: number, body: string, status = 'open'): void => {
+    const db = new Database(dbFile(project));
+    db.prepare('INSERT INTO agent_feedback VALUES (?,?,?,?,NULL,NULL,NULL,NULL,?,NULL,NULL)').run(
+      id,
+      'rbook_mission_transition',
+      body,
+      status,
+      new Date(now - id * 1000).toISOString()
+    );
+    db.close();
+  };
+  put(a, 1, 'cmos_mission(action="status") returned 93KB, past the tool-result token cap.');
+  put(a, 2, 'cmos_review build-freshness warning never clears.');
+  put(b, 1, 'cmos_mission show walked every registered project: ten MISSION_NOT_FOUND blocks.');
+  put(b, 2, 'The project build passed.');
+  put(b, 3, 'cmos_mission status returned 81KB again.', 'resolved');
+  store('gone', 'missing');
+  const result = await list({ limit: 1 });
+  expect(result.success).toBe(true);
+  expect(result.data).toMatchObject({
+    totalCount: 4,
+    countsByKind: { payload: 1, ceremony: 1, identity: 1, sync: 0, unclassified: 1 },
+  });
+  const entries = (result.data as unknown as { entries: Array<{ kind: string; body: string }> })
+    .entries;
+  expect(entries).toHaveLength(1);
+  expect(entries[0].kind).toBe('payload');
+  expect(entries[0].body).toMatch(/UNTRUSTED DATA/);
+  expect(formatFeedbackForLLM('list', result)).toMatch(/By kind: ceremony=1, .*unclassified=1/);
+  const countOnly = await readFeedbackFleet({ countOnly: true });
+  expect(countOnly.countsByKind).toBeUndefined();
+  expect(countOnly.totalCount).toBe(4);
+});
+
 it('counts matching tools before the cap and reports absent, malformed and missing stores separately', async () => {
   const good = store('good');
   insert(good, 1);

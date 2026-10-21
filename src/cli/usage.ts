@@ -42,6 +42,10 @@ export const USAGE =
   '  stats [--export]               local usage measurements, as counts\n' +
   '  drafts list [--all] [--format json]\n' +
   '                                 drafted records awaiting the operator\n' +
+  '  signals [--project-root <dir>] [--format json]\n' +
+  '                                 what needs a person in each project on this machine, as counts\n' +
+  '  brief [--days 7] [--format md|json]\n' +
+  "                                 the weekly brief over this machine's projects\n" +
   '  serve                          run the MCP server (the default with no verb)\n' +
   'Other verbs take --project-root <dir>; spin-out requires --from and --to explicitly.\n' +
   'Use the migration guide when upgrading an existing installation.\n';

@@ -72,6 +72,26 @@ describe('where it lives', () => {
     expect(fs.existsSync(path.join(tmp, 'config', 'runtime', 'drafts'))).toBe(false);
   });
 
+  it('refuses a linked runtime file whose sidecar loops, without throwing (s97-m01)', () => {
+    const runtime = open();
+    const file = runtime.path;
+    runtime.close();
+    opened.length = 0;
+    fs.linkSync(file, `${file}.second-name`);
+    fs.symlinkSync(`${file}-wal`, `${file}-wal`);
+    expect(openDraftRuntime(dbPath, env, { readonly: true })).toBeNull();
+  });
+
+  it('refuses a plain runtime file whose sidecar is a link (s97-m01)', () => {
+    const runtime = open();
+    const file = runtime.path;
+    runtime.close();
+    opened.length = 0;
+    fs.rmSync(`${file}-wal`, { force: true });
+    fs.symlinkSync(path.join(tmp, 'elsewhere'), `${file}-wal`);
+    expect(openDraftRuntime(dbPath, env, { readonly: true })).toBeNull();
+  });
+
   it('refuses a config directory inside a repository', () => {
     const repo = path.join(tmp, 'repo');
     fs.mkdirSync(path.join(repo, '.git'), { recursive: true });

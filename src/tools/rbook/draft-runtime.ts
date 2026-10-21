@@ -3,12 +3,15 @@
 // ABOUTME: kept per store under <configDir>/runtime/drafts, keyed by hashes, never committed or uploaded.
 
 import Database from 'better-sqlite3';
-import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 
 import { runtimeDir } from './harness-session';
 import { safeDestination, targetForStore, type TelemetryTarget } from './local-telemetry';
+import { draftRuntimeFile, draftStoreKey, plainSqliteFile, sqliteFileSet } from './store-key';
+
+// s97-m01: the key lives in a dependency-free leaf, so the signals library finds this same file.
+export { draftStoreKey };
 
 /**
  * WHY OUTSIDE THE STORE (#1188; build plan B1). The operator's reply is the approval's evidence,
@@ -71,32 +74,19 @@ export interface DraftRuntime {
   close(): void;
 }
 
-export function draftRuntimePath(storeKey: string, env: NodeJS.ProcessEnv = process.env): string {
-  return path.join(runtimeDir(env), 'drafts', `${storeKey}.sqlite`);
+/** s97-m01: the folder that holds every store's draft runtime on this machine. */
+export function draftRuntimeDir(env: NodeJS.ProcessEnv = process.env): string {
+  return path.join(runtimeDir(env), 'drafts');
 }
 
-/** The project id and the store's native real path, hashed (see the module note on letter case). */
-export function draftStoreKey(target: TelemetryTarget): string {
-  let real = path.resolve(target.dbPath);
-  try {
-    real = fs.realpathSync.native(real);
-  } catch {
-    // A store that cannot be resolved keys by its resolved path; it will not open anyway.
-  }
-  return createHash('sha256').update(`${target.projectId}\0${real}`).digest('hex').slice(0, 32);
+export function draftRuntimePath(storeKey: string, env: NodeJS.ProcessEnv = process.env): string {
+  return draftRuntimeFile(draftRuntimeDir(env), storeKey);
 }
 
 function requireSafe(file: string, target: TelemetryTarget): boolean {
-  for (const name of [file, `${file}-journal`, `${file}-wal`, `${file}-shm`]) {
-    if (!safeDestination(name, target)) return false;
-    try {
-      const stat = fs.lstatSync(name);
-      if (!stat.isFile() || stat.nlink !== 1) return false;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return false;
-    }
-  }
-  return true;
+  return sqliteFileSet(file).every(
+    (name) => safeDestination(name, target) && plainSqliteFile(name)
+  );
 }
 
 /**

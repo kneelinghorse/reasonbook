@@ -5,10 +5,21 @@
 import type { RbookToolResult } from './types';
 import type {
   RbookFeedbackAction,
+  RbookFeedbackBulkResult,
   RbookFeedbackResult,
   RbookFeedbackListResult,
   RbookFeedbackMutationResult,
 } from './rbook-feedback';
+import { FEEDBACK_KINDS_RULE } from '../../signals/feedback-kinds';
+
+/** s97-m07: every kind, zeros included, then unclassified, with the rule that sorted them. */
+function kindLine(data: RbookFeedbackListResult): string | null {
+  if (!data.countsByKind) return null;
+  const counts = Object.entries(data.countsByKind)
+    .map(([kind, n]) => `${kind}=${n}`)
+    .join(', ');
+  return `By kind: ${counts} (${FEEDBACK_KINDS_RULE}).`;
+}
 
 /**
  * The feedback answer itself. Split out of formatFeedbackForLLM in s86-m02 so the envelope
@@ -36,12 +47,17 @@ export function renderFeedbackBody(
       .map(([k, v]) => `${k}=${v}`)
       .join(', ');
     const meta = `By tool: ${byTool || '(none)'} | All statuses: ${byStatus || '(none)'}`;
+    const kinds = kindLine(d);
     const lines = d.entries.slice(0, 10).map((e) => {
       const snippet = e.body.length > 140 ? `${e.body.slice(0, 137)}…` : e.body;
-      return `  #${e.id} [${e.status}] ${e.toolName} @ ${e.createdAt}\n    ${snippet}`;
+      return `  #${e.id} [${e.status}] (${e.kind}) ${e.toolName} @ ${e.createdAt}\n    ${snippet}`;
     });
     const more = d.entries.length > 10 ? `\n  ... ${d.entries.length - 10} more` : '';
-    return `${head}\n${meta}\n${lines.join('\n')}${more}`;
+    return `${head}\n${meta}${kinds ? `\n${kinds}` : ''}\n${lines.join('\n')}${more}`;
+  }
+  if ('resolved' in result.data) {
+    const bulk = result.data as RbookFeedbackBulkResult;
+    return `${bulk.message}${bulk.resolutionNote ? `\n  Note: ${bulk.resolutionNote}` : ''}`;
   }
   const m = result.data as RbookFeedbackMutationResult;
   const noteLine = m.resolutionNote ? `\n  Note: ${m.resolutionNote}` : '';
@@ -53,6 +69,7 @@ function renderFleetFeedback(data: RbookFeedbackListResult): string {
   const lines = [
     `Fleet feedback (${coverage.complete ? 'complete' : 'partial'} coverage): ${data.entries.length} of ${data.totalCount} matching rows, global limit ${data.limit}.`,
     'Counts include every matching row without deduplication; unavailable stores are excluded.',
+    ...(kindLine(data) ? [kindLine(data)!] : []),
     ...coverage.stores.map(
       (store) =>
         `  ${store.projectId}: ${store.state === 'unavailable' ? 'unavailable' : `${store.totalCount} matching${store.state === 'absent' ? ' (no feedback table)' : ''}`}`
@@ -60,7 +77,7 @@ function renderFleetFeedback(data: RbookFeedbackListResult): string {
     'For a sibling disposition, send that project an explicitly authorized message; never write its store.',
   ];
   for (const entry of data.entries) {
-    lines.push(`  ${entry.sourceProjectId} feedback #${entry.id}`, entry.body);
+    lines.push(`  ${entry.sourceProjectId} feedback #${entry.id} (${entry.kind})`, entry.body);
     if (entry.resolutionNote) lines.push(entry.resolutionNote);
   }
   return lines.join('\n');

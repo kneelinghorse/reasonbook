@@ -392,7 +392,8 @@ describe('ACTION_PARAMS vacuity floor (s86-m04)', () => {
       expect(actionCount).toBe(93);
       // s94-m04: record adds context, alternatives, consequences, deciders and mode.
       // s97-m13: start adds targetStatus (Current promotes without starting).
-      expect(entryCount).toBe(456);
+      // s97-m07: rbook_feedback resolve adds feedbackIds (many rows in one call): 456 -> 457.
+      expect(entryCount).toBe(457);
 
       // Floors, so a walker that silently stops producing branches fails here rather than passing
       // every applicability case with nothing to check.

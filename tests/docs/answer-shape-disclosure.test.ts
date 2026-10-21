@@ -31,10 +31,11 @@
  * - Declared/runtime kind: explicit `any` / `unknown` carries no inspectable JSON kind. Exactly
  *   three reachable sites are opaque: `RbookToolError.providedValue`,
  *   `DashboardMessage.evidence` (`array<ANY>`), and `PulledSyncEvent.payload`.
- * - Generic kind is separate from explicit opacity. Exactly three rows are open type-parameter
- *   holes: `RbookToolResult.data`, `SingleCurrentSprintResult.data`, and
- *   `CrossStoreQueryResult.results` (`array<GENERIC>`). Call-site substitution can change their
- *   JSON kind without changing the declaration snapshot.
+ * - Generic kind is separate from explicit opacity. Exactly four rows are open type-parameter
+ *   holes: `RbookToolResult.data`, `SingleCurrentSprintResult.data`,
+ *   `CrossStoreQueryResult.results` (`array<GENERIC>`) and, since s97-m01, the in-process
+ *   `CrossStoreProbe.value`. Call-site substitution can change their JSON kind without changing
+ *   the declaration snapshot.
  * - Answer types: input shapes are outside this gate. The tool-definition snapshot owns the input
  *   half; `TOOL_REFERENCE.md`'s freshness test owns its generated prose.
  * - Exported roots: a module-private `*Result` is excluded unless an exported root references it.
@@ -234,11 +235,22 @@ const EXPECTED_TOTALS = {
   // view's optional `joinedAddress` on a member's copy. Additive, for the 4.2.1 CHANGELOG.
   // s100-m03: a next-step capture returns its row's id (RbookSessionCaptureResult's optional
   // `nextStepId`, one row). Additive, for the 4.2.1 CHANGELOG.
-  files: 277,
-  roots: 147,
-  declarations: 335,
-  compositions: 335,
-  rows: 1898,
+  // s97-m07: the feedback kinds join (src/signals/feedback-kinds.ts's FeedbackKind, and
+  // rbook-feedback.ts's FeedbackRowKind), and a resolve with feedbackIds answers the new root
+  // RbookFeedbackBulkResult: three declarations and compositions, one root, five rows (the bulk
+  // result's three, AgentFeedbackEntry.kind and RbookFeedbackListResult's optional countsByKind).
+  // Additive, for the 4.3.0 CHANGELOG.
+  // s97-m01: portfolio-signals.ts and store-key.ts join the folder (two files). The review's
+  // portfolio gains `signals`, other projects' counts of what needs a person, typed by
+  // PortfolioSignals, PortfolioSignalsItem and PersonSignals: three declarations and compositions,
+  // ten rows, all additive, for the 4.3.0 CHANGELOG. CrossStoreProbe's value becomes a type
+  // parameter defaulting to CrossStoreProbeValue, so one fan-out reads drift and signals on one
+  // connection; that in-process row moves from the mixed-kind ledger to the generic holes.
+  files: 279,
+  roots: 148,
+  declarations: 341,
+  compositions: 341,
+  rows: 1913,
 } as const;
 const EXPLICIT_OPAQUE_LEDGER = [
   'RbookToolError.providedValue = ANY',
@@ -253,6 +265,8 @@ const GENERIC_HOLE_LEDGER = [
   'RbookToolResult.data = GENERIC',
   'CrossStoreQueryResult.results = array<GENERIC>',
   'SingleCurrentSprintResult.data = GENERIC',
+  // s97-m01: a probe's value is what its caller's probe returns (the drift stamp by default).
+  'CrossStoreProbe.value = GENERIC',
 ] as const;
 const MIXED_KIND_LEDGER = [
   {
@@ -303,13 +317,6 @@ const MIXED_KIND_LEDGER = [
     requiredChangelogToken: null,
     reason:
       'Not a tool answer: fts5-retriever.ts uses this exported *Result in process; it predates 2.7.0.',
-  },
-  {
-    row: 'CrossStoreProbe.value',
-    runtimeKinds: ['number', 'string'],
-    requiredChangelogToken: null,
-    reason:
-      "Not a tool answer: rbook-review.ts reads it in process to classify drift; 'no-history' (s93-m11) marks a store with no rows yet.",
   },
 ] as const;
 

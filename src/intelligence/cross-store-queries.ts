@@ -17,6 +17,7 @@ import {
   type CrossStoreQueryResult,
   type CrossStoreRow,
   type CrossStoreQueryOptions,
+  type CrossStoreProbeValue,
 } from './cross-store-query';
 
 /** Pass-through knobs every named query forwards to queryAcrossStores. */
@@ -35,7 +36,7 @@ type NamedQueryOpts = Pick<
  * instead means a caller that supplies a probe to `decisionsAcrossProjects` gets a compile error
  * rather than silence.
  */
-type ProbeableQueryOpts = NamedQueryOpts & Pick<CrossStoreQueryOptions, 'perStoreProbe'>;
+type ProbeableQueryOpts<P> = NamedQueryOpts & Pick<CrossStoreQueryOptions<P>, 'perStoreProbe'>;
 
 export interface PortfolioDecisionRow extends CrossStoreRow {
   id: number;
@@ -83,10 +84,10 @@ export interface PortfolioMissionRow extends CrossStoreRow {
  * (b) "What are the active missions across my project portfolio right now?"
  * (status = 'In Progress' OR 'Current').
  */
-export function activeMissionsAcrossProjects(
-  opts: ProbeableQueryOpts = {}
-): Promise<CrossStoreQueryResult<PortfolioMissionRow>> {
-  return queryAcrossStores<PortfolioMissionRow>({
+export function activeMissionsAcrossProjects<P = CrossStoreProbeValue>(
+  opts: ProbeableQueryOpts<P> = {}
+): Promise<CrossStoreQueryResult<PortfolioMissionRow, P>> {
+  return queryAcrossStores<PortfolioMissionRow, P>({
     sql: `SELECT project_id, id, name, status, occurred_at, origin_seq
           FROM missions
           WHERE status IN ('In Progress', 'Current')`,

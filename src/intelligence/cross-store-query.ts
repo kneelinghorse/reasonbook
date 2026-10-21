@@ -40,7 +40,7 @@ export interface CrossStoreRow {
   [column: string]: unknown;
 }
 
-export interface CrossStoreQueryOptions {
+export interface CrossStoreQueryOptions<P = CrossStoreProbeValue> {
   /**
    * The per-store SELECT — must project `occurred_at`, `origin_seq`, and
    * `project_id` (the merge keys). Do NOT include ORDER BY / LIMIT; this API wraps
@@ -79,7 +79,7 @@ export interface CrossStoreQueryOptions {
    * Results are keyed by registry project_id in probes. Failures stay in probeErrors, never
    * errors: an optional probe failure cannot reclassify a successfully queried store as unreadable.
    */
-  perStoreProbe?: (db: Database.Database) => CrossStoreProbeValue;
+  perStoreProbe?: (db: Database.Database, store: ProjectGraphEntry) => P;
 }
 
 /**
@@ -96,14 +96,17 @@ export interface CrossStoreError {
 }
 
 /** s87-m03 — one store's {@link CrossStoreQueryOptions.perStoreProbe} result. */
-export interface CrossStoreProbe {
+export interface CrossStoreProbe<P = CrossStoreProbeValue> {
   projectId: string;
   /** Whatever the probe returned; `null` means "the probe ran and found nothing to report". */
-  value: CrossStoreProbeValue;
+  value: P;
 }
 
 /** The fan-out result: merged rows + isolated errors + latency instrumentation. */
-export interface CrossStoreQueryResult<T extends CrossStoreRow = CrossStoreRow> {
+export interface CrossStoreQueryResult<
+  T extends CrossStoreRow = CrossStoreRow,
+  P = CrossStoreProbeValue,
+> {
   results: T[];
   errors: CrossStoreError[];
 
@@ -111,7 +114,7 @@ export interface CrossStoreQueryResult<T extends CrossStoreRow = CrossStoreRow> 
    * s87-m03 — per-store probe values, present only for stores whose query SUCCEEDED and whose
    * probe did not throw. Empty when no `perStoreProbe` was supplied.
    */
-  probes: CrossStoreProbe[];
+  probes: CrossStoreProbe<P>[];
 
   /**
    * s87-m03 — separate from errors, which deriveDrift uses to classify store reachability.
@@ -258,10 +261,13 @@ function p95(samples: number[]): number | null {
  * Query active stores and merge by (occurred_at, origin_seq, project_id).
  * The injectable clock governs both latency measurements and optional absolute deadlines.
  */
-export async function queryAcrossStores<T extends CrossStoreRow = CrossStoreRow>(
-  options: CrossStoreQueryOptions,
+export async function queryAcrossStores<
+  T extends CrossStoreRow = CrossStoreRow,
+  P = CrossStoreProbeValue,
+>(
+  options: CrossStoreQueryOptions<P>,
   clock: () => number = Date.now
-): Promise<CrossStoreQueryResult<T>> {
+): Promise<CrossStoreQueryResult<T, P>> {
   const order = options.order ?? 'desc';
   const limit = options.limit ?? DEFAULT_LIMIT;
   const concurrency = options.concurrency ?? DEFAULT_CONCURRENCY;
@@ -278,7 +284,7 @@ export async function queryAcrossStores<T extends CrossStoreRow = CrossStoreRow>
 
   const overallStart = clock();
   const errors: CrossStoreError[] = [];
-  const probes: CrossStoreProbe[] = [];
+  const probes: CrossStoreProbe<P>[] = [];
   const probeErrors: CrossStoreError[] = [];
   const perStoreMs: number[] = [];
   const cappedFlags: boolean[] = [];
@@ -314,7 +320,7 @@ export async function queryAcrossStores<T extends CrossStoreRow = CrossStoreRow>
       // unreadable on the strength of an optional extra read failing.
       if (options.perStoreProbe) {
         try {
-          const value = options.perStoreProbe(db);
+          const value = options.perStoreProbe(db, store);
           checkDeadline();
           probes.push({ projectId: store.project_id, value });
         } catch (probeErr) {

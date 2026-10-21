@@ -46,7 +46,12 @@ project root to triage, resolve or archive its rows during a fleet review.
 
 For local triage, mark an entry `triage` while investigating it, `resolve` when the reported issue
 is addressed, or `archive` when deliberately setting it aside. Include a resolution note where
-the action supports one. Preserve the original report.
+the action supports one. Preserve the original report. To resolve several entries addressed by
+one fix, pass `feedbackIds=[…]` to `resolve`: the call resolves all of them or, when an id is
+unknown, none.
+
+Each list counts its rows by kind (`countsByKind`), sorted by published rules over each entry's
+text. Read `unclassified` beside the kinds: it holds friction the rules miss, never zero friction.
 
 When another project must act, prepare a concise message containing the source project, feedback
 ID, evidence and requested action. Send through `rbook_message` only when the user explicitly

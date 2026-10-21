@@ -15,8 +15,26 @@ import {
 } from './record-link-store';
 import { inspectRecordLinkSchema } from './record-link-schema';
 
-/** available means a usable graph, including the explicit-only compatibility fallback. */
-export function readRecordLinks(reader: RecordLinkReader): {
+/**
+ * s97-m01: whether a field could hold a citation. Every candidate the extractor reads is a match of
+ * decision-citations.ts's CITATION in the field with code, links and URLs overwritten by dots of
+ * the same length, so its `[dlcn]:` and first digit, or its `#` and first digit, stand in the field
+ * as written. A field with neither cites nothing, and the narrowed read skips it unparsed.
+ */
+const MAY_CITE = /[dlcn]:[1-9]|#[1-9]/i;
+
+/**
+ * available means a usable graph, including the explicit-only compatibility fallback.
+ *
+ * s97-m01: with `toDecisions`, only the links to those decisions are read, the same links the full
+ * read returns for them: persisted edges to other targets are not checked, and in the fallback a
+ * record whose fields hold no citation at all is not parsed ({@link MAY_CITE}). Its `discarded`
+ * then counts only what that narrower read looked at.
+ */
+export function readRecordLinks(
+  reader: RecordLinkReader,
+  options: { readonly toDecisions?: ReadonlySet<number> } = {}
+): {
   available: boolean;
   mode: 'persisted' | 'typed-fallback' | 'error';
   links: RecordLink[];
@@ -39,16 +57,21 @@ export function readRecordLinks(reader: RecordLinkReader): {
     const state = inspectRecordLinkSchema(reader);
     const inventory = loadLinkInventory(reader);
     const links: RecordLink[] = [];
+    const targets = options.toDecisions;
+    const wanted = (link: { to_kind: string; to_id: number }): boolean =>
+      !targets || (link.to_kind === 'decision' && targets.has(link.to_id));
     if (!state.table || state.marker !== '1') {
       for (const source of inventory.sources) {
+        const fields = canonicalRecordFields(source.kind, source.fields);
+        if (targets && !fields.some((field) => MAY_CITE.test(field))) continue;
         const parsed = extractRecordLinkCandidates(
-          canonicalRecordFields(source.kind, source.fields),
+          fields,
           source,
           inventory.identities,
           inventory.localProjectId,
           { typedOnly: true }
         );
-        links.push(...withoutSelfLinks(parsed.links, source));
+        links.push(...withoutSelfLinks(parsed.links, source).filter(wanted));
         add(parsed.discarded);
       }
       return { available: true, mode: 'typed-fallback', links, warnings: [], discarded };
@@ -62,6 +85,7 @@ export function readRecordLinks(reader: RecordLinkReader): {
       inventory.sources.map((source) => [`${source.kind}:${source.id}`, source])
     );
     for (const edge of stored) {
+      if (!wanted(edge)) continue;
       const source = sources.get(`${edge.from_kind}:${edge.from_id}`);
       if (!source) {
         discarded.missing++;

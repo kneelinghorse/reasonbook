@@ -19,6 +19,8 @@
  *   Ratified always-on portfolio digests:
  *     - rbook-review.ts           (≤4KB portfolio section, s79-m06 / decision #672)
  *     - rbook-agent-onboard.ts    (portfolio rollup; write-classified, not a pin-only read)
+ *     - portfolio-signals.ts      (the signals fan-out the review and `reasonbook signals` share,
+ *                                  s97-m01, ratified with sprint 100's design, #1546)
  *   Portfolio-by-design registry management (NOT pin-only reads — they ARE the registry):
  *     - rbook-project-list.ts / -register / -unregister / -init / -validate / -sweep
  *   Single-project upload state (registry only; cross-store query imports remain forbidden):
@@ -49,6 +51,8 @@ const ALLOWLIST = new Set<string>([
   // Ratified always-on portfolio digests.
   'rbook-review.ts',
   'rbook-agent-onboard.ts',
+  // s97-m01: the signals fan-out the review's portfolio and `reasonbook signals` share (#1546).
+  'portfolio-signals.ts',
   // Portfolio-by-design registry management (they manage the graph registry itself).
   'rbook-project-list.ts',
   'rbook-project-register.ts',

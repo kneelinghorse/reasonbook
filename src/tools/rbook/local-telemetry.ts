@@ -14,6 +14,7 @@ import * as path from 'path';
 
 import { rbookConfigDir } from './harness-session';
 import { storedTimeMs } from './stored-time';
+import { storeProjectId, type StoreTarget } from './store-key';
 
 /**
  * WHERE (design doc s93-m04, fork 1): `<configDir>/telemetry/<h>/<YYYY-MM>.jsonl`, where `<h>`
@@ -85,10 +86,7 @@ const DRAFT_COUNTS = [
 ] as const;
 
 /** The store a record belongs to. */
-export interface TelemetryTarget {
-  readonly projectId: string;
-  readonly dbPath: string;
-}
+export type TelemetryTarget = StoreTarget;
 
 export function telemetryRoot(env: NodeJS.ProcessEnv = process.env): string {
   return path.join(rbookConfigDir(env), 'telemetry');
@@ -133,11 +131,10 @@ export function targetForStore(dbPath: string): TelemetryTarget | null {
   try {
     db = new Database(dbPath, { readonly: true, fileMustExist: true, timeout: 100 });
     const query = db.prepare('SELECT value FROM metadata WHERE key = ?');
-    for (const key of ['project_id', 'dashboard_slug', 'project_name']) {
-      const row = query.get(key) as { value: unknown } | undefined;
-      if (typeof row?.value === 'string' && row.value) return { projectId: row.value, dbPath };
-    }
-    return { projectId: 'unknown-project', dbPath };
+    const projectId = storeProjectId(
+      (key) => (query.get(key) as { value: unknown } | undefined)?.value
+    );
+    return { projectId, dbPath };
   } catch {
     return null;
   } finally {

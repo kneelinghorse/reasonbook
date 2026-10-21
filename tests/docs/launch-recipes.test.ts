@@ -63,10 +63,13 @@ function recipeLines(): Array<{ where: string; text: string }> {
 
 /** Package specs in commands and configs; the badge and npm page URLs are links, not launches. */
 function packageSpecs(text: string): string[] {
-  return text
-    .split('\n')
-    .filter((line) => !line.includes('img.shields.io') && !line.includes('npmjs.com/package'))
-    .flatMap((line) => line.match(/@aquex\/reasonbook(@[^\s"'`,\]]*)?/g) ?? []);
+  return (
+    text
+      .split('\n')
+      .filter((line) => !line.includes('img.shields.io') && !line.includes('npmjs.com/package'))
+      // A subpath such as `@aquex/reasonbook/signals` is an import, not a launch (as RECIPE_LINE reads it).
+      .flatMap((line) => line.match(/@aquex\/reasonbook(?!\/)(@[^\s"'`,\]]*)?/g) ?? [])
+  );
 }
 
 function parseSemver(value: string): { core: bigint[]; pre: string[] } | undefined {
@@ -124,6 +127,13 @@ describe('s92-m07 — launch recipes', () => {
     ]) {
       expect(isExactPackageSpec(spec)).toBe(false);
     }
+  });
+
+  it('reads a subpath as an import, not a launch, and still finds a spec beside one', () => {
+    expect(packageSpecs("import { readSignals } from '@aquex/reasonbook/signals';")).toEqual([]);
+    expect(packageSpecs('npx @aquex/reasonbook@latest, then @aquex/reasonbook/signals')).toEqual([
+      '@aquex/reasonbook@latest',
+    ]);
   });
 
   it('orders prereleases for the existing Unreleased-ahead exception without treating another RC as equal', () => {

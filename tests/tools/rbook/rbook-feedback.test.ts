@@ -427,3 +427,172 @@ describe('rbook_feedback(action=list|triage|resolve|archive)', () => {
     expect(result.error?.code).toBe('FEEDBACK_NOT_FOUND');
   });
 });
+
+describe('rbook_feedback by kind and bulk resolve (s97-m07)', () => {
+  let t: TestDb;
+  let ids: number[];
+
+  /** The rows as the store holds them, read beside the tool rather than through it. */
+  function rows(): Array<{
+    id: number;
+    status: string;
+    resolved_at: string | null;
+    resolution_note: string | null;
+  }> {
+    return t.db
+      .prepare('SELECT id, status, resolved_at, resolution_note FROM agent_feedback ORDER BY id')
+      .all() as Array<{
+      id: number;
+      status: string;
+      resolved_at: string | null;
+      resolution_note: string | null;
+    }>;
+  }
+
+  beforeEach(async () => {
+    t = createTestDb();
+    RbookDetector.resetInstance();
+    for (const text of [
+      'cmos_mission(action="status") returned an 81KB payload past the token cap.',
+      'cmos_review build-freshness warning never clears for this repo.',
+      'The project tests were flaky; nothing about the tooling.',
+    ])
+      await rbookAgentOnboard({ agentFeedback: text, projectRoot: t.tempDir });
+    ids = rows().map((row) => row.id);
+  });
+
+  afterEach(() => cleanup(t));
+
+  it('counts every matching row by kind, past the limit, and names each entry its kind', async () => {
+    // The fleet's agents triage by kind; a count over only the returned page would hide the rest.
+    const result = await rbookFeedback({ action: 'list', limit: 1, projectRoot: t.tempDir });
+    expect(result.success).toBe(true);
+    const data = result.data as RbookFeedbackListResult;
+    expect(data.entries).toHaveLength(1);
+    expect(data.countsByKind).toMatchObject({
+      payload: 1,
+      ceremony: 1,
+      identity: 0,
+      unclassified: 1,
+    });
+    const all = await rbookFeedback({ action: 'list', projectRoot: t.tempDir });
+    const kinds = new Map(
+      (all.data as RbookFeedbackListResult).entries.map((entry) => [entry.id, entry.kind])
+    );
+    expect([kinds.get(ids[0]), kinds.get(ids[1]), kinds.get(ids[2])]).toEqual([
+      'payload',
+      'ceremony',
+      'unclassified',
+    ]);
+  });
+
+  it('resolves every listed row in one call, each from its own status', async () => {
+    await rbookFeedback({ action: 'triage', feedbackId: ids[1], projectRoot: t.tempDir });
+    const result = await rbookFeedback({
+      action: 'resolve',
+      feedbackIds: [ids[0], ids[1]],
+      resolutionNote: 'Fixed in 4.2.1.',
+      projectRoot: t.tempDir,
+    });
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      resolved: [
+        { feedbackId: ids[0], previousStatus: 'open', currentStatus: 'resolved' },
+        { feedbackId: ids[1], previousStatus: 'triaged', currentStatus: 'resolved' },
+      ],
+      resolutionNote: 'Fixed in 4.2.1.',
+    });
+    const after = rows();
+    expect(after.slice(0, 2).every((row) => row.status === 'resolved' && row.resolved_at)).toBe(
+      true
+    );
+    expect(after.slice(0, 2).map((row) => row.resolution_note)).toEqual([
+      'Fixed in 4.2.1.',
+      'Fixed in 4.2.1.',
+    ]);
+    expect(after[2].status).toBe('open');
+  });
+
+  it('refuses the whole call when any id is unknown, naming it, and changes nothing', async () => {
+    // All or nothing: a typo in one id must not leave the others half-resolved.
+    const before = rows();
+    const result = await rbookFeedback({
+      action: 'resolve',
+      feedbackIds: [ids[0], 99999],
+      projectRoot: t.tempDir,
+    });
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe('FEEDBACK_NOT_FOUND');
+    expect(result.error?.message).toContain('99999');
+    expect(result.error?.message).not.toContain(`#${ids[0]}`);
+    expect(rows()).toEqual(before);
+  });
+
+  it.each([
+    ['an empty list', []],
+    ['a string id', ['1']],
+    ['zero', [0]],
+    ['a fraction', [1.5]],
+    ['not a list', 'all'],
+  ])('refuses feedbackIds given %s, before touching the store', async (_label, feedbackIds) => {
+    const before = rows();
+    const result = await rbookFeedback({
+      action: 'resolve',
+      feedbackIds,
+      projectRoot: t.tempDir,
+    } as never);
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe('INVALID_PARAMETER');
+    expect(result.error?.suggestion).toMatch(/feedbackIds/);
+    expect(rows()).toEqual(before);
+  });
+
+  it('refuses more than 200 ids in one call', async () => {
+    const result = await rbookFeedback({
+      action: 'resolve',
+      feedbackIds: Array.from({ length: 201 }, (_, i) => i + 1),
+      projectRoot: t.tempDir,
+    });
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe('INVALID_PARAMETER');
+  });
+
+  it('refuses feedbackId and feedbackIds together', async () => {
+    const result = await rbookFeedback({
+      action: 'resolve',
+      feedbackId: ids[0],
+      feedbackIds: [ids[1]],
+      projectRoot: t.tempDir,
+    });
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe('INVALID_PARAMETER');
+    expect(rows().every((row) => row.status === 'open')).toBe(true);
+  });
+
+  it.each(['triage', 'archive'] as const)(
+    'refuses feedbackIds on %s, which takes one row, rather than ignoring it',
+    async (action) => {
+      const result = await rbookFeedback({
+        action,
+        feedbackIds: [ids[0]],
+        projectRoot: t.tempDir,
+      } as never);
+      expect(result.success).toBe(false);
+      expect(result.error?.code).toBe('INVALID_PARAMETER');
+      expect(result.error?.message).toContain(action);
+      expect(rows().every((row) => row.status === 'open')).toBe(true);
+    }
+  );
+
+  it('resolves a repeated id once', async () => {
+    const result = await rbookFeedback({
+      action: 'resolve',
+      feedbackIds: [ids[2], ids[2]],
+      projectRoot: t.tempDir,
+    });
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      resolved: [{ feedbackId: ids[2], previousStatus: 'open', currentStatus: 'resolved' }],
+    });
+  });
+});

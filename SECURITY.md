@@ -318,6 +318,13 @@ the editor's record content; an author name is attribution, not content validati
 
   This closes the former foreign MISSION/SPRINT/SESSION limitation; the decision/learning sweep above
   and this row-type sweep together frame every local-store read surface that can carry a pull-merged row.
+
+- **Signals (4.3.0):** `rbook_review`'s list of other projects that need a person frames each
+  project's name, and its counts are numbers this client computed from those projects' stores, read
+  read-only. `reasonbook signals` frames each project's name the same way. The weekly brief
+  (`renderBrief`, `reasonbook brief`) escapes every name and row id for markdown and carries counts,
+  row ids and dates, never record text. The signals library reads one store file read-only, and a
+  draft runtime file only when it and its sidecars are plain files; it opens no network connection.
   Scope boundary (ratified): the framed field set is name / objective / context / title / focus / summary
   (+ success_criteria / deliverables on `mission show`). Mission `notes` and `reference_docs` are **not**
   framed — they are operator-authored operational metadata (a blocker reason, a doc URI), rendered on a
@@ -526,4 +533,4 @@ subagent type (e.g. the `Explore` agent) — that is a mitigation, not the machi
 
 ---
 
-_Last verified against the source for release 4.2.1._
+_Last verified against the source for release 4.3.0._

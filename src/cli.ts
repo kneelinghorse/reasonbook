@@ -343,6 +343,10 @@ async function dispatchCli(
       return (await import('./cli/import')).runImport(rest, io);
     case 'drafts':
       return (await import('./cli/drafts')).runDrafts(rest, io);
+    case 'signals':
+      return (await import('./cli/signals')).runSignals(rest, io);
+    case 'brief':
+      return (await import('./cli/brief')).runBrief(rest, io);
     case 'review':
     case 'relevant':
     case 'decisions':

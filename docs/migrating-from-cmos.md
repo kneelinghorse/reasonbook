@@ -31,17 +31,17 @@ Requires Node.js 20 or newer. Replace a globally installed old package if presen
 
 ```sh
 npm uninstall -g @aquex/cmos-mcp
-npm install -g @aquex/reasonbook@4.2.1
+npm install -g @aquex/reasonbook@4.3.0
 reasonbook --version
 ```
 
 Without a global installation, use the scoped package explicitly:
 
 ```sh
-npx --prefer-offline -y @aquex/reasonbook@4.2.1 --version
+npx --prefer-offline -y @aquex/reasonbook@4.3.0 --version
 ```
 
-Update every manual MCP package pin to `@aquex/reasonbook@4.2.1`. A server that runs
+Update every manual MCP package pin to `@aquex/reasonbook@4.3.0`. A server that runs
 local `dist/` files needs a 4.x build too. See [client configuration](getting-started.md)
 and [harness setup](harnesses.md).
 
@@ -100,7 +100,7 @@ The command is a dry run unless you add `--apply`. Run it from the project root,
 select a root explicitly; `--project-root` is an alias for `--project`.
 
 ```sh
-npx --prefer-offline -y @aquex/reasonbook@4.2.1 migrate --project /absolute/path/to/project
+npx --prefer-offline -y @aquex/reasonbook@4.3.0 migrate --project /absolute/path/to/project
 ```
 
 The JSON result lists proposed changes and text left for review. A successful preview
@@ -109,8 +109,8 @@ does not establish that the database will be safe to move when you apply it.
 To update instructions while keeping the database where it is:
 
 ```sh
-npx --prefer-offline -y @aquex/reasonbook@4.2.1 migrate --docs-only --project /absolute/path/to/project
-npx --prefer-offline -y @aquex/reasonbook@4.2.1 migrate --docs-only --apply --project /absolute/path/to/project
+npx --prefer-offline -y @aquex/reasonbook@4.3.0 migrate --docs-only --project /absolute/path/to/project
+npx --prefer-offline -y @aquex/reasonbook@4.3.0 migrate --docs-only --apply --project /absolute/path/to/project
 ```
 
 This covers root `AGENTS.md`/`agents.md`, `CLAUDE.md`, `.mcp.json`, and the record's
@@ -128,7 +128,7 @@ the record: MCP servers, CLI jobs, plugin installers and database viewers, inclu
 idle Reasonbook 4.x servers. Run the migration from a separate terminal.
 
 ```sh
-npx --prefer-offline -y @aquex/reasonbook@4.2.1 migrate --apply --project /absolute/path/to/project
+npx --prefer-offline -y @aquex/reasonbook@4.3.0 migrate --apply --project /absolute/path/to/project
 ```
 
 The command refuses configured legacy clients, detected live runtimes, open file handles
@@ -151,8 +151,8 @@ using it has been upgraded. Stop all relevant runtimes and installers first. Uns
 `CMOS_CONFIG_DIR`; this command moves only the default shared folder.
 
 ```sh
-npx --prefer-offline -y @aquex/reasonbook@4.2.1 migrate --config
-npx --prefer-offline -y @aquex/reasonbook@4.2.1 migrate --config --apply
+npx --prefer-offline -y @aquex/reasonbook@4.3.0 migrate --config
+npx --prefer-offline -y @aquex/reasonbook@4.3.0 migrate --config --apply
 ```
 
 It moves `~/.config/cmos-mcp` to `~/.config/rbook`, preserving filenames and creating
