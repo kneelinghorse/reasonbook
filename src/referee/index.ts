@@ -34,9 +34,28 @@ import { DASHBOARD_LIMIT_FLOOR } from '../tools/rbook/record-pages';
 export { REFEREE_ERROR_CODES, refereeStatus } from './codes';
 export type { RefereeLocation, RefereeOutcome, StreamHead } from './open';
 export { peer, PEER_METHODS, type Caller } from './peer';
-export { applyJoinAnswer, archiveReferee, createReferee, discardReferee } from './handover';
+export {
+  applyJoinAnswer,
+  archiveReferee,
+  createReferee,
+  discardReferee,
+  type CreateRefereeInput,
+} from './handover';
 export { invite, members, remove, setRole, type HostedMember } from './membership';
+export { setAside, type SetAsideReport, type HostedSetAsideReport } from './set-aside';
 export { exportSnapshot, makeFirstCopy, migrate } from './copies';
+export { recoveryIntake, recoveryPlan, finalizeRecovery, recoveringAnswer } from './recovery';
+export type {
+  RecoveryLocation,
+  RecoveryMember,
+  RecoveryUpload,
+  RecoverySnapshot,
+  RecoveryIntakeInput,
+  RecoveryIntake,
+  RecoveryPlanInput,
+  RecoveryPlan,
+  FinalizeRecoveryInput,
+} from './recovery';
 export {
   conflicts,
   peers,

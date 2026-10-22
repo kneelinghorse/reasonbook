@@ -61,6 +61,7 @@ const OPTIONS: Readonly<
   recover: { values: [...ROOT, ...ROUTE, 'members', 'routes', 'drop'] },
   share: { values: ROOT, switches: ['dashboard', 'yes'] },
   move: { values: [...ROOT, 'to'] },
+  'set-aside': { values: [...ROOT, 'replica'], switches: ['yes'] },
   import: { values: [...ROOT, 'from', 'include'], switches: ['apply'] },
   signals: { values: [...ROOT, 'format'] },
   brief: { values: ['days', 'format'] },
@@ -128,6 +129,7 @@ export const USAGE =
   '                                 join a project shared with you through the dashboard\n' +
   '  share --dashboard [--yes]       share this project through the dashboard, after a dry run\n' +
   '  move --to owner                move a project shared through the dashboard back here\n' +
+  '  set-aside --replica <id> [--yes] preview or set aside one gone copy, on the authority copy\n' +
   '  copy --to <folder>             a safe copy of this store, made while the server runs\n' +
   '  handover --ssh <host> --remote-root <folder>\n' +
   "                                 hand the owner's copy over to the owner's other copy\n" +

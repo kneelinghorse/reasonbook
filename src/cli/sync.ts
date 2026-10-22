@@ -20,6 +20,8 @@ import {
   type JoinRequest,
 } from '../tools/rbook/record-join';
 import { memberNamed } from '../tools/rbook/record-membership';
+import { copyReport } from '../tools/rbook/record-copy-report';
+import { reportedCopy } from '../tools/rbook/record-peer-report';
 import { forgetPeers, peerMarks, recordExchanged } from '../tools/rbook/record-peers';
 import { COPY_KEYS, writeCopyKey } from '../tools/rbook/replica-copy-keys';
 import { mergeContext } from '../tools/rbook/record-standing';
@@ -102,7 +104,9 @@ export async function runSync(argv: readonly string[], io: CliIo): Promise<numbe
             marks: Record<string, number>;
             digest: unknown;
           };
-          return unchecked((client) => recordExchanged(client, replicaId, { marks, digest }));
+          return unchecked((client) =>
+            recordExchanged(client, replicaId, { ...copyReport(params), marks, digest })
+          );
         },
         // s96-m13: a handover's far end confirms the move and takes the routes, as the operator's word.
         ...(flags['confirm-owner'] ? handoverMethods(open, unchecked) : {}),
@@ -158,7 +162,13 @@ export async function runSync(argv: readonly string[], io: CliIo): Promise<numbe
             });
           target = replica;
         }
-        return createSuccess(writeBundle(client, target ? peerMarks(client, target) : {}));
+        return createSuccess(
+          writeBundle(
+            client,
+            target ? peerMarks(client, target) : {},
+            target ? reportedCopy(client, target) : {}
+          )
+        );
       })
     );
     if (!written.success || !written.data) return report(io, written, () => '');
@@ -177,7 +187,10 @@ export async function runSync(argv: readonly string[], io: CliIo): Promise<numbe
       storeOpener(dbPath, { replicaCheck: false })(async (client) => {
         const result = await importBundleAndEmbed(client, bundle);
         if (result.success)
-          recordExchanged(client, bundle.from.replicaId, { marks: bundle.from.marks });
+          recordExchanged(client, bundle.from.replicaId, {
+            ...copyReport(bundle.from),
+            marks: bundle.from.marks,
+          });
         return result;
       })
     );

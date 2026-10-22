@@ -8,6 +8,7 @@ import { members, migrate, peer, REFEREE_ERROR_CODES, refereeStatus } from '../.
 import * as opened from '../../src/referee/open';
 import * as applied from '../../src/tools/rbook/record-apply';
 import { createError, createSuccess } from '../../src/tools/rbook/errors';
+import { localCopyReport } from '../../src/tools/rbook/record-copy-report';
 import { ReplicaRefusal, REPLICA_ERROR_CODES } from '../../src/tools/rbook/replica-identity';
 import type { RbookToolResult } from '../../src/tools/rbook/types';
 import { replicaFixture, type ReplicaFixture } from '../helpers/replica-fixture';
@@ -105,6 +106,10 @@ describe('member-safe peer refusals (s98-m13)', () => {
     );
     expect(admitted.success).toBe(true);
     const successor = { ...owner, replicaId: (admitted.data as { replicaId: string }).replicaId };
+    const reported = await ask(hosted.referee, (at) =>
+      peer(at, 'hello', localCopyReport(), successor)
+    );
+    expect(reported.error).toBeUndefined();
     const moving = await ask(hosted.referee, (at) => peer(at, 'moveBack', {}, successor));
     expect(moving.success).toBe(true);
     const refused = await ask(hosted.referee, (at) => peer(at, 'moveBack', {}, successor));

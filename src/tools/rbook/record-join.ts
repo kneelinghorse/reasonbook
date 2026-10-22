@@ -5,6 +5,7 @@
 import { createHash, randomUUID } from 'crypto';
 import { monotonicFactory } from 'ulid';
 import { validAuthorName } from '../../intelligence/user-author';
+import { copyReport, localCopyReport, type CopyReport } from './record-copy-report';
 import type { RbookDatabaseClient } from './client';
 import { createError, createSuccess } from './errors';
 import { replicaMarks } from './record-apply';
@@ -16,6 +17,8 @@ import {
   type BundleImport,
 } from './record-bundle';
 import { canonicalJson } from './record-capture';
+import { rememberCopyReport } from './record-peer-report';
+import { readerRefusal } from './record-reader-gate';
 import { PROTOCOL_VERSION, recordOwnChanges } from './record-changes';
 import { SYNC_PROTOCOL } from './record-exchange';
 import { UPGRADE_COMMAND } from './record-protocol-hold';
@@ -40,7 +43,7 @@ export const JOIN_ANSWER_FORMAT = 'reasonbook-join-answer';
 /** The joiner's own record of the join it asked for: the id it minted and the request's nonce. */
 const PENDING_KEY = COPY_KEYS.joinPending;
 
-export interface JoinRequest {
+export interface JoinRequest extends CopyReport {
   readonly format: typeof JOIN_REQUEST_FORMAT;
   readonly protocol: number;
   readonly projectId: string;
@@ -140,6 +143,7 @@ export function requestJoin(client: RbookDatabaseClient): RbookToolResult<JoinRe
     });
   const request: JoinRequest = {
     format: JOIN_REQUEST_FORMAT,
+    ...localCopyReport(),
     protocol: SYNC_PROTOCOL,
     projectId: recordedProjectId(client),
     replicaId: mintReplicaId(),
@@ -175,6 +179,16 @@ export function answerJoin(
       suggestion: 'Install the same Reasonbook release on both machines, then ask again.',
       code: REPLICA_ERROR_CODES.EXCHANGE_REFUSED,
     });
+  const committed = client.writeTransaction(() => answerLocked(client, request, memberName));
+  if (!committed.success) return createError(committed.error!);
+  return committed.data!;
+}
+
+function answerLocked(
+  client: RbookDatabaseClient,
+  request: JoinRequest,
+  memberName: string
+): RbookToolResult<JoinAnswer> {
   const ctx = mergeContext(client);
   if (ctx.ownReplica !== ctx.authority)
     return refuse({
@@ -202,18 +216,25 @@ export function answerJoin(
         'That copy has joined already, so this request was answered before: a join answer cannot be reused.',
       suggestion: 'Sync the copy instead.',
     });
+  const oldReader = readerRefusal(client, request.replicaId, request, member.name, ctx);
+  if (oldReader) return createError(oldReader);
   const block = freshBlock(client);
-  const done = client.writeTransaction(() =>
-    recordOwnChanges(client, [
-      {
-        kind: 'replica_joined',
-        entity: REPLICA_ENTITY,
-        entityId: request.replicaId,
-        field: null,
-        value: canonicalJson({ block, role: member.role, member: member.memberId }),
-      },
-    ])
-  );
+  const done = client.writeTransaction(() => {
+    recordOwnChanges(
+      client,
+      [
+        {
+          kind: 'replica_joined',
+          entity: REPLICA_ENTITY,
+          entityId: request.replicaId,
+          field: null,
+          value: canonicalJson({ block, role: member.role, member: member.memberId }),
+        },
+      ],
+      { admittingReads: copyReport(request).reads }
+    );
+    rememberCopyReport(client, request.replicaId, request, { called: true });
+  });
   if (!done.success) return createError(done.error!);
   const body: Omit<JoinAnswer, 'hash'> = {
     format: JOIN_ANSWER_FORMAT,
@@ -224,7 +245,7 @@ export function answerJoin(
     block,
     role: member.role,
     member: { memberId: member.memberId, name: member.name },
-    bundle: writeBundle(client, request.marks),
+    bundle: writeBundle(client, request.marks, request),
   };
   return createSuccess<JoinAnswer>({ ...body, hash: answerHash(body) });
 }

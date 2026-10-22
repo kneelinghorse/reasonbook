@@ -2,16 +2,24 @@
 // ABOUTME: Running a sync (ADR s96 §7): with each copy this one has a route to, over SSH, each side recording the other's
 // ABOUTME: health; the one-command join from the authority; and why a copy with no route cannot start one.
 
-import { RbookDatabaseClient } from './client';
+import { copyReport, localCopyReport } from './record-copy-report';
+import { reach, type Opener, type SyncOptions } from './record-sync-channel';
+export { reach, storeOpener, answered } from './record-sync-channel';
+export type { Opener, SyncOptions } from './record-sync-channel';
 import { createError, createSuccess } from './errors';
-import { dashboardPeer } from './record-dashboard-peer';
+import { rememberDashboardAuthority } from './record-dashboard-history';
+import {
+  hostedRecoveryPeer,
+  rebindRecoveryRoutes,
+  recoveryReplaces,
+} from './record-dashboard-recovery-moves';
 import { dashboardName, isDashboardRoute } from './record-dashboard-route';
-import { clientPeer, exchange, hello, type ExchangeReport } from './record-exchange';
+import { clientPeer, exchange, type ExchangeReport, type Hello } from './record-exchange';
 import { answerJoin, type JoinApplied, type JoinRequest } from './record-join';
 import { listMembers } from './record-membership';
 import {
   forgetPeers,
-  forgetRoute,
+  endDashboardRoute,
   nextTryAt,
   recordHeldBack,
   peerHealth,
@@ -20,75 +28,14 @@ import {
   noteRemoval,
   rememberPeer,
   syncsWith,
+  visiblePeerRoutes,
   type PeerRoute,
 } from './record-peers';
-import { sshPeer, type SshRoute } from './record-ssh';
+import type { SshRoute } from './record-ssh';
 import { mergeContext, type MergeContext } from './record-standing';
 import { replicaWriteRefusal } from './replica-check';
-import {
-  carriedRefusal,
-  isReplicaRefusal,
-  readReplicaIdentity,
-  REPLICA_ERROR_CODES,
-  ReplicaRefusal,
-} from './replica-identity';
+import { carriedRefusal, REPLICA_ERROR_CODES } from './replica-identity';
 import type { RbookToolError, RbookToolResult } from './types';
-import { refereeingDashboard, type WirePeer } from './record-wire';
-
-/** Runs a step against a fresh client on this copy's store. */
-export type Opener = <T>(step: (client: RbookDatabaseClient) => T) => Promise<Awaited<T>>;
-
-/** A step against a fresh client on this copy's store, closed afterwards. */
-export function storeOpener(
-  dbPath: string,
-  options: { readonly replicaCheck?: boolean } = {}
-): Opener {
-  return async <T>(step: (client: RbookDatabaseClient) => T): Promise<Awaited<T>> => {
-    const opened = await RbookDatabaseClient.create({
-      dbPath,
-      registerProject: false,
-      ...(options.replicaCheck === false ? { replicaCheck: false } : {}),
-    });
-    // A copy check's refusal keeps its code and remedy, so the answer can name them.
-    if (!opened.success || !opened.data)
-      throw isReplicaRefusal(opened.error)
-        ? new ReplicaRefusal(opened.error!)
-        : new Error(opened.error?.message ?? 'the store could not be opened');
-    try {
-      // A step may be async, such as an apply that embeds what it merged: the store stays open for it.
-      return await step(opened.data);
-    } finally {
-      opened.data.close();
-    }
-  };
-}
-
-/** A step's answer, or the copy check's refusal, with its own remedy, when the store would not open. */
-export async function answered<T>(
-  pending: Promise<RbookToolResult<T>>
-): Promise<RbookToolResult<T>> {
-  try {
-    return await pending;
-  } catch (error) {
-    const refused = carriedRefusal(error);
-    if (refused) return createError<T>(refused);
-    throw error;
-  }
-}
-
-export interface SyncOptions {
-  /** The ssh client to run; a test passes a stand-in. */
-  readonly ssh?: string;
-  /**
-   * s96-m13: this copy opened without its check, for reads, per-copy health and the steps that put
-   * a refused copy right (re-identifying it); writes to the record go through the checked opener.
-   */
-  readonly unchecked?: Opener;
-  /** s97-m10: the project folder, whose credentials sign a dashboard route's calls (decision #832). */
-  readonly projectRoot?: string;
-  /** s97-m10: a sync no person started (a hook or the timer), which waits out a failing dashboard. */
-  readonly auto?: boolean;
-}
 
 export interface PeerOutcome {
   readonly replicaId: string;
@@ -104,91 +51,39 @@ export interface PeerOutcome {
 const message = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
-/**
- * Open the channel to a copy: the SSH channel to its far end, or (s97-m10) the dashboard that
- * referees the project, whose calls name this copy's replica as `local` reads it. Or say why not.
- */
-export async function reach(
-  route: PeerRoute,
-  verb: readonly string[] | undefined,
-  options: SyncOptions,
-  local: Opener
-): Promise<RbookToolResult<WirePeer>> {
-  if (isDashboardRoute(route)) {
-    if (!options.projectRoot)
-      return createError({
-        code: REPLICA_ERROR_CODES.EXCHANGE_REFUSED,
-        message: `This copy reaches ${dashboardName(route)}, but this sync named no project folder to sign its calls with.`,
-        suggestion: 'Sync from the project: reasonbook sync --project-root <folder>.',
-      });
-    try {
-      return createSuccess(
-        await dashboardPeer(route, {
-          projectRoot: options.projectRoot,
-          replicaIdNow: () =>
-            local((client) => readReplicaIdentity(client, { fresh: true })?.replicaId ?? ''),
-          removedHere: () =>
-            local((client) => {
-              const ctx = mergeContext(client);
-              return Boolean(
-                peerHealth(client).find((peer) => peer.replicaId === ctx.authority)?.removedAt
-              );
-            }),
-        })
-      );
-    } catch (error) {
-      const refused = carriedRefusal(error);
-      if (refused) return createError(refused);
-      throw error;
-    }
-  }
-  // A project the dashboard referees moves only through it: this copy opens no SSH channel at all,
-  // so no far copy can stand in for the referee (critics, round 2).
-  const refereed = await local((client) => refereeingDashboard(client));
-  if (refereed)
-    return createError({
-      code: REPLICA_ERROR_CODES.EXCHANGE_REFUSED,
-      message: `This project is shared through ${dashboardName(refereed)}, so this copy opens no SSH channel to another copy.`,
-      suggestion: 'Sync through the dashboard instead: reasonbook sync.',
-    });
-  try {
-    return createSuccess(
-      await sshPeer(route, {
-        verb,
-        ssh: options.ssh,
-        nearHello: () =>
-          local((client) => {
-            const { projectId, replicaId, authority, epoch } = hello(client);
-            return { projectId, replicaId, authority, epoch };
-          }),
-      })
-    );
-  } catch (error) {
-    return createError({
-      code: REPLICA_ERROR_CODES.EXCHANGE_REFUSED,
-      message: `${route.host} could not be reached: ${message(error)}`,
-      suggestion:
-        'Check that the machine is awake with Remote Login on, and that its remote command names Reasonbook there, then sync again; if the machine or its paths moved, set the route again: reasonbook sync --ssh <host> --remote-root <folder>.',
-    });
-  }
-}
-
 /** Sync with one copy over its route; each side then records the other's marks and the time. */
 export async function syncRoute(
   open: Opener,
   route: PeerRoute,
   options: SyncOptions = {}
 ): Promise<RbookToolResult<ExchangeReport>> {
+  const local = options.unchecked ?? open;
+  if (isDashboardRoute(route)) await local(rebindRecoveryRoutes);
   const reached = await reach(route, undefined, options, options.unchecked ?? open);
   if (!reached.success || !reached.data) return createError(reached.error!);
   const far = reached.data;
-  const local = options.unchecked ?? open;
   try {
-    const result = await exchange(clientPeer('this copy', open, local), far);
+    let remoteIdentity: Hello | undefined;
+    const observedFar = {
+      ...far,
+      hello: async () => {
+        remoteIdentity = await far.hello();
+        return remoteIdentity;
+      },
+    };
+    const near = clientPeer('this copy', open, local);
+    const result = await exchange(
+      isDashboardRoute(route) ? await hostedRecoveryPeer(near, local, route) : near,
+      observedFar
+    );
     if (!result.success || !result.data) return result;
     const report = result.data;
     await local((client) => {
+      if (isDashboardRoute(route)) rebindRecoveryRoutes(client);
+      if (isDashboardRoute(route) && remoteIdentity)
+        rememberDashboardAuthority(client, route, remoteIdentity);
       recordExchanged(client, report.remote.replicaId, {
+        ...copyReport(remoteIdentity),
         marks: report.remote.marks,
         digest: report.digest,
         // Only this copy's own membership is recorded here; a far copy's removal is not this copy's.
@@ -209,6 +104,7 @@ export async function syncRoute(
     // The far copy's note of this exchange is its own: the exchange stands if the note fails (s97-m10).
     try {
       await far.call('exchanged', {
+        ...localCopyReport(),
         replicaId: report.local.replicaId,
         marks: report.local.marks,
         digest: report.digest,
@@ -267,16 +163,29 @@ export async function syncPeers(
   const local = options.unchecked ?? open;
   const stranger = await strangerHere(local);
   if (stranger) return createError(stranger);
+  await local(rebindRecoveryRoutes);
   const { peers, ownerCopy } = await local((client) => {
     const ctx = mergeContext(client);
     return {
       // ADR s96 §7: a member's copy syncs only with the owner's copy, and no copy with a removed
       // member's; a route a file brought from another copy is not followed to any other.
-      peers: peerHealth(client).filter((peer) => syncsWith(ctx, peer.replicaId)),
+      peers: visiblePeerRoutes(
+        peerHealth(client).filter(
+          (peer) => syncsWith(ctx, peer.replicaId) || isDashboardRoute(peer.route)
+        )
+      ),
       ownerCopy: ctx.ownReplica === ctx.authority,
     };
   });
-  const routed = peers.filter((peer) => peer.route);
+  const routed = peers.filter(
+    (peer) => peer.route && !(options.auto && isDashboardRoute(peer.route) && peer.route.ended)
+  );
+  if (
+    options.auto &&
+    !routed.length &&
+    peers.some((peer) => isDashboardRoute(peer.route) && peer.route.ended)
+  )
+    return createSuccess({ peers: [] });
   // s100-m01: a copy told its member was removed, whose route is gone, is told that, not to set one.
   if (!routed.length && !ownerCopy && peers.some((peer) => peer.removedAt))
     return createError({
@@ -322,13 +231,33 @@ export async function syncPeers(
       // s100-m01 (#707): a copy told its member was removed receives no move, so it cannot tell the
       // owner copy a move made from another copy; its route stays as it was, and asks for nothing.
       const removedHere = result.data.removedCopy === 'local';
+      const dashboardRoute = isDashboardRoute(peer.route) ? peer.route : null;
       const moved =
         reached !== peer.replicaId &&
         !removedHere &&
         (await local((client) => {
-          if (!successorOf(mergeContext(client), reached, peer.replicaId)) return false;
-          rememberPeer(client, reached, { name: peer.name, route: peer.route });
-          forgetPeers(client, [peer.replicaId]);
+          const ctx = mergeContext(client);
+          if (
+            !successorOf(ctx, reached, peer.replicaId) &&
+            !(
+              dashboardRoute &&
+              (recoveryReplaces(ctx, reached, peer.replicaId) ||
+                peerHealth(client).some(
+                  (current) =>
+                    current.replicaId === reached &&
+                    isDashboardRoute(current.route) &&
+                    current.route.url === dashboardRoute.url &&
+                    current.route.projectId === dashboardRoute.projectId
+                ))
+            )
+          )
+            return false;
+          if (isDashboardRoute(peer.route)) {
+            endDashboardRoute(client, peer.replicaId);
+          } else {
+            rememberPeer(client, reached, { name: peer.name, route: peer.route });
+            forgetPeers(client, [peer.replicaId]);
+          }
           return true;
         }));
       const astray = reached !== peer.replicaId && !moved && !removedHere;
@@ -364,9 +293,7 @@ export async function syncPeers(
         // refereed there, so it syncs with the owner's copy directly from now on (s97-m11). A copy
         // told its member was removed keeps the row its review reads the removal from (s100-m01).
         if (result.error?.code === REPLICA_ERROR_CODES.ROUTE_ENDED)
-          return peer.removedAt
-            ? forgetRoute(client, peer.replicaId, name)
-            : forgetPeers(client, [peer.replicaId]);
+          return endDashboardRoute(client, peer.replicaId);
         return recordExchangeFailed(client, peer.replicaId, error, { count: true });
       });
       outcomes.push({ replicaId: peer.replicaId, name, error });

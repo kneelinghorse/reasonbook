@@ -4,6 +4,7 @@
 
 import type { RbookDatabaseClient } from './client';
 import { canonicalJson } from './record-capture';
+import { setAsideCut } from './record-member-cuts';
 import { recordOwnChanges } from './record-changes';
 import { judge, judgeUnjudged, type Verdict } from './record-judge';
 import { recomputeEntities } from './record-recompute';
@@ -77,11 +78,19 @@ export function decideTransactions(
         });
       const epoch = ctx.epoch;
       for (const txnId of txnIds) {
-        const [first] = rows<{ replica_id: string }>(
+        const [first] = rows<{ replica_id: string; last: number | null }>(
           client,
-          'SELECT replica_id FROM record_changes WHERE txn_id = ? LIMIT 1',
+          'SELECT replica_id, max(replica_seq) AS last FROM record_changes WHERE txn_id = ?',
           [txnId]
         );
+        const cut = first?.replica_id ? setAsideCut(ctx, first.replica_id) : undefined;
+        if (verdict === 'accepted' && cut !== undefined && (first?.last ?? 0) > cut)
+          throw new ReplicaRefusal({
+            code: REPLICA_ERROR_CODES.WRITE_REFUSED,
+            message: `Transaction ${txnId} is past the permanent set-aside cutoff of its copy, so it cannot be accepted.`,
+            suggestion:
+              'Write again what still matters from a current copy; permanent tails are never replayed.',
+          });
         recordOwnChanges(client, [
           {
             kind: 'verdict',

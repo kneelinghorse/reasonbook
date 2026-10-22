@@ -3,7 +3,16 @@
 // ABOUTME: review shows: one module with no merge in it, so the hooks' digest stays light (s96-m13).
 
 import type { RbookDatabaseClient } from './client';
+import type { CopyReport } from './record-copy-report';
 import { mergeContext, type LoggedChange } from './record-standing';
+import { REPLICA_ERROR_CODES, ReplicaRefusal } from './replica-identity';
+
+export interface ChangeRecipient extends Pick<CopyReport, 'reads'> {
+  /** Between-epoch delivery may use connection-local historical capacity, never admission evidence. */
+  readonly catchUp?: boolean;
+  /** Recovery may proceed only after inspecting every needed row, never a filtered prefix. */
+  readonly requireComplete?: boolean;
+}
 
 function rows<T>(client: RbookDatabaseClient, sql: string, params: unknown[] = []): T[] {
   const read = client.getMany<T>(sql, params);
@@ -17,7 +26,8 @@ function rows<T>(client: RbookDatabaseClient, sql: string, params: unknown[] = [
  */
 export function changesSince(
   client: RbookDatabaseClient,
-  marks: Readonly<Record<string, number>>
+  marks: Readonly<Record<string, number>>,
+  recipient?: ChangeRecipient
 ): LoggedChange[] {
   const ctx = mergeContext(client);
   const withheld = new Set(
@@ -30,10 +40,55 @@ export function changesSince(
           .map((txn) => txn.txn_id)
       : []
   );
-  return rows<LoggedChange>(
+  const all = rows<LoggedChange>(
     client,
     'SELECT * FROM record_changes ORDER BY replica_id, replica_seq'
-  ).filter(
+  );
+  // The whole stored transaction is inspected before marks, including a mark inside that txn.
+  const readable = recipient === undefined ? all : readableChanges(all, recipient);
+  if (recipient?.requireComplete) {
+    const included = new Set(readable);
+    const missing = all.find(
+      (change) => change.replica_seq > (marks[change.replica_id] ?? 0) && !included.has(change)
+    );
+    if (missing) {
+      const version = all.reduce(
+        (maximum, change) =>
+          change.replica_id === missing.replica_id
+            ? Math.max(maximum, change.protocol_version)
+            : maximum,
+        1
+      );
+      throw new ReplicaRefusal({
+        code: REPLICA_ERROR_CODES.EXCHANGE_REFUSED,
+        message: `The complete record includes protocol ${version} changes this reader cannot read, so no partial recovery log was returned.`,
+        suggestion:
+          'Upgrade Reasonbook on the recovering machine, then run the recovery again; every copy keeps its changes.',
+      });
+    }
+  }
+  return readable.filter(
     (change) => change.replica_seq > (marks[change.replica_id] ?? 0) && !withheld.has(change.txn_id)
   );
+}
+
+/** Stop each stream before the whole first transaction its recipient cannot read. */
+export function readableChanges(
+  changes: readonly LoggedChange[],
+  recipient: Pick<CopyReport, 'reads'>
+): LoggedChange[] {
+  const reads =
+    Number.isInteger(recipient.reads) && (recipient.reads ?? 0) > 0 ? recipient.reads! : 1;
+  const starts = new Map<string, number>();
+  for (const change of changes) {
+    const key = `${change.replica_id}:${change.txn_id}`;
+    starts.set(key, Math.min(starts.get(key) ?? Infinity, change.replica_seq));
+  }
+  const held = new Map<string, number>();
+  for (const change of changes) {
+    if (change.protocol_version <= reads) continue;
+    const start = starts.get(`${change.replica_id}:${change.txn_id}`)!;
+    held.set(change.replica_id, Math.min(held.get(change.replica_id) ?? Infinity, start));
+  }
+  return changes.filter((change) => change.replica_seq < (held.get(change.replica_id) ?? Infinity));
 }

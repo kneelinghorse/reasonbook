@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // ABOUTME: s96-m13 (ADR s96 §7, §9) — a copy an exchange finds restored, replaced or clashing takes a successor in a fresh
 // ABOUTME: block and reports what it lost; reused slots and a shared block are renumbered, and every copy ends equal.
+import { localCopyReport } from '../../../src/tools/rbook/record-copy-report';
 import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
 import { importBundle, writeBundle } from '../../../src/tools/rbook/record-bundle';
 import { exchange, type Peer } from '../../../src/tools/rbook/record-exchange';
@@ -342,7 +343,7 @@ describe('the order and the steps of a new identity (s96-m13 build-time critics)
       const bundle = await onCopy(
         fixture.tmp,
         from,
-        (client) => writeBundle(client, marks),
+        (client) => writeBundle(client, marks, localCopyReport()),
         unchecked
       );
       return onCopy(fixture.tmp, to, (client) => importBundle(client, bundle), unchecked);

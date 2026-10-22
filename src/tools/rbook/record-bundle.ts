@@ -12,12 +12,15 @@ import { canonicalJson } from './record-capture';
 import { chainClashes, chainsAt } from './record-chain';
 import { clashRefusal, hello, pairRefusal, SYNC_PROTOCOL, type Hello } from './record-exchange';
 import { memberProblem } from './record-exchange-steps';
+import { receivedMove } from './record-move-receipt';
 import {
   keptOut,
   newerProtocolWarning,
   newestProtocol,
   noteNewerProtocol,
 } from './record-protocol-hold';
+import { rememberCopyReport } from './record-peer-report';
+import type { CopyReport } from './record-copy-report';
 import { mergeContext, type LoggedChange } from './record-standing';
 import { mergeRefusal } from './record-token';
 import { REPLICA_ERROR_CODES } from './replica-identity';
@@ -60,7 +63,8 @@ const contentHash = (bundle: Omit<Bundle, 'hash'>): string =>
 /** Everything this copy holds after the recipient's assumed marks, as a bundle. */
 export function writeBundle(
   client: RbookDatabaseClient,
-  since: Readonly<Record<string, number>>
+  since: Readonly<Record<string, number>>,
+  recipient: Pick<CopyReport, 'reads'> = {}
 ): Bundle {
   const self = hello(client);
   const assumed = Object.fromEntries(
@@ -75,7 +79,7 @@ export function writeBundle(
     from: self,
     since,
     chains: chainsAt(client, assumed),
-    changes: changesSince(client, since),
+    changes: changesSince(client, since, recipient),
   };
   return { ...body, hash: contentHash(body) };
 }
@@ -230,15 +234,12 @@ export function importBundle(
   }
   if (keptOutChanges.length) noteNewerProtocol(client, newestProtocol(keptOutChanges));
   // s100-m01: a move kept out did not arrive, so there is nothing to confirm yet.
-  const after = catchUp ? mergeContext(client) : null;
-  const arrived =
-    after !== null &&
-    (!keptOutChanges.length || after.pending !== null || after.epoch === bundle.from.epoch);
+  const arrived = catchUp ? receivedMove(hello(client), bundle.from) : null;
+  if (mergeContext(client).members.has(bundle.from.replicaId))
+    rememberCopyReport(client, bundle.from.replicaId, bundle.from);
   return createSuccess<BundleImport>(
     {
-      ...(arrived
-        ? { caughtUp: { epoch: bundle.from.epoch, authority: bundle.from.authority } }
-        : {}),
+      ...(arrived ? { caughtUp: arrived } : {}),
       transactions: byTxn.size,
       ...totals,
       conflicts: last?.conflicts ?? 0,

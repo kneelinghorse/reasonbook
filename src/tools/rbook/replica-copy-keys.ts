@@ -24,6 +24,8 @@ export const COPY_KEYS = {
   joinedAddress: 'replica_joined_address',
   /** s100-m01: the newer record protocol this copy kept changes of out, and when it first met it. */
   newerProtocol: 'replica_newer_protocol',
+  /** Hosted recovery receipts and held-condition notes belong to this copy alone. */
+  dashboardRecovery: 'replica_dashboard_recovery',
 } as const;
 export type CopyKey = (typeof COPY_KEYS)[keyof typeof COPY_KEYS];
 

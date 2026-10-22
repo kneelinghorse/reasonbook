@@ -17,6 +17,7 @@ import { runRepair } from '../../src/cli/repair';
 import { runSync, runJoin, runCopy } from '../../src/cli/sync';
 import { runHandover, runRecover } from '../../src/cli/sync-moves';
 import { runShare, runMove } from '../../src/cli/dashboard';
+import { runSetAside } from '../../src/cli/set-aside';
 import { runImport } from '../../src/cli/import';
 import { runDrafts } from '../../src/cli/drafts';
 import { runSignals } from '../../src/cli/signals';
@@ -45,6 +46,7 @@ jest.mock('../../src/cli/dashboard', () => ({
   runShare: jest.fn(async () => 0),
   runMove: jest.fn(async () => 0),
 }));
+jest.mock('../../src/cli/set-aside', () => ({ runSetAside: jest.fn(async () => 0) }));
 jest.mock('../../src/cli/import', () => ({ runImport: jest.fn(async () => 0) }));
 jest.mock('../../src/cli/drafts', () => ({ runDrafts: jest.fn(async () => 0) }));
 jest.mock('../../src/cli/signals', () => ({ runSignals: jest.fn(async () => 0) }));
@@ -165,6 +167,7 @@ const routes = [
   ],
   ['share', runShare, ['--dashboard', '--yes']],
   ['move', runMove, ['--to=owner']],
+  ['set-aside', runSetAside, ['--replica=copy', '--yes']],
   [
     'import',
     runImport,
@@ -207,7 +210,7 @@ beforeEach(() => {
 describe('F9 public option boundary', () => {
   it('accounts for every routed CLI verb, including the hook exemption', () => {
     expect([...CLI_VERBS].sort()).toEqual([...routes.map(([verb]) => verb), 'hook'].sort());
-    expect(routes).toHaveLength(25);
+    expect(routes).toHaveLength(26);
   });
 
   it.each(routes.map(([verb]) => verb))(

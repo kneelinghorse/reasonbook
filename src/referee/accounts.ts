@@ -4,7 +4,10 @@
 
 import type { RbookDatabaseClient } from '../tools/rbook/client';
 import { OWNER_MEMBER } from '../tools/rbook/record-membership';
+import { copyReport } from '../tools/rbook/record-copy-report';
+import { rememberCopyReport } from '../tools/rbook/record-peer-report';
 import type { MergeContext } from '../tools/rbook/record-standing';
+export { predecessorsOf } from '../tools/rbook/record-lineage';
 
 /** The referee's own state and its account bindings: per copy, so no copy of the record carries them. */
 export const REFEREE_TABLES_SQL = `
@@ -22,7 +25,9 @@ CREATE TABLE IF NOT EXISTS referee_copies (
   last_call_at TEXT,
   received_at TEXT,
   served_marks TEXT,
-  served_at TEXT
+  served_at TEXT,
+  library_version TEXT,
+  reads INTEGER
 );`;
 
 export const STATE_KEYS = {
@@ -31,6 +36,8 @@ export const STATE_KEYS = {
   /** The account the project's owner member is bound to at createReferee. */
   owner: 'owner_account',
   createdAt: 'created_at',
+  /** Immutable normalized carried member/history contract for retrying an unanswered handover. */
+  creationMembers: 'creation_members',
   /** s97-m11: when the owner's successor, holding the record again, first synced with this referee. */
   movedBack: 'moved_back_at',
   /** s97-m11: when that successor first delivered its stream here from an exchange it judged. */
@@ -98,7 +105,7 @@ export function bindAccount(
 
 /** The member (person) a replica is a copy for, as the record admitted it. */
 export function memberOfReplica(ctx: MergeContext, replicaId: string): string | null {
-  const member = ctx.members.get(replicaId);
+  const member = ctx.members.get(replicaId) ?? ctx.unseen.get(replicaId);
   if (!member) return null;
   return member.member ?? (member.role === 'owner' ? OWNER_MEMBER : null);
 }
@@ -117,41 +124,51 @@ export function accountOfReplica(
   return member ? (accounts.get(member) ?? null) : null;
 }
 
-/** The replicas a copy succeeded, oldest last: its changes may carry their ids (ADR s96 §9). */
-export function predecessorsOf(ctx: MergeContext, replicaId: string): string[] {
-  const found: string[] = [];
-  let at = ctx.members.get(replicaId)?.previous;
-  while (at && !found.includes(at) && found.length < 64) {
-    found.push(at);
-    at = ctx.members.get(at)?.previous;
-  }
-  return found;
-}
-
 /** What the referee itself saw of a copy's call, never what the copy reported (the per-call table). */
 export function noteCall(
   client: RbookDatabaseClient,
   replicaId: string,
   seen: {
+    readonly report?: unknown;
     readonly received?: boolean;
     readonly served?: Readonly<Record<string, number>>;
   }
 ): void {
-  const now = new Date().toISOString();
-  run(
-    client,
-    `INSERT INTO referee_copies (replica_id, last_call_at, received_at, served_marks, served_at)
+  const saved = client.writeTransaction(() => {
+    const columns = new Set(
+      rows<{ name: string }>(client, 'PRAGMA table_info(referee_copies)').map((row) => row.name)
+    );
+    for (const [name, type] of [
+      ['library_version', 'TEXT'],
+      ['reads', 'INTEGER'],
+    ])
+      if (!columns.has(name)) run(client, `ALTER TABLE referee_copies ADD COLUMN ${name} ${type}`);
+    const now = new Date().toISOString();
+    run(
+      client,
+      `INSERT INTO referee_copies (replica_id, last_call_at, received_at, served_marks, served_at)
        VALUES (?, ?, ?, ?, ?)
        ON CONFLICT (replica_id) DO UPDATE SET last_call_at = excluded.last_call_at,
          received_at = COALESCE(excluded.received_at, referee_copies.received_at),
          served_marks = COALESCE(excluded.served_marks, referee_copies.served_marks),
          served_at = COALESCE(excluded.served_at, referee_copies.served_at)`,
-    [
-      replicaId,
-      now,
-      seen.received ? now : null,
-      seen.served ? JSON.stringify(seen.served) : null,
-      seen.served ? now : null,
-    ]
-  );
+      [
+        replicaId,
+        now,
+        seen.received ? now : null,
+        seen.served ? JSON.stringify(seen.served) : null,
+        seen.served ? now : null,
+      ]
+    );
+    if ('report' in seen) {
+      const report = copyReport(seen.report);
+      run(client, 'UPDATE referee_copies SET library_version = ?, reads = ? WHERE replica_id = ?', [
+        report.libraryVersion,
+        report.reads,
+        replicaId,
+      ]);
+      rememberCopyReport(client, replicaId, seen.report, { called: true });
+    }
+  });
+  if (!saved.success) throw new Error(saved.error?.message ?? 'could not record the copy call');
 }

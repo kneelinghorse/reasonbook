@@ -241,18 +241,19 @@ describe('what starts a sync (s96-m13 build-time critics)', () => {
     }
   }, 120000);
 
-  it("a lock its holder has made but not yet written is a live holder's, and an old empty one is taken", async () => {
+  it('an unwritten lock is held briefly, then refuses because its owner cannot be verified', async () => {
     const owner = await ownerCopy(fixture.tmp);
     useMachine(fixture.tmp, owner.machine);
     const dbPath = dbOf(owner.root);
-    const key = createHash('sha256').update(path.resolve(dbPath)).digest('hex').slice(0, 32);
+    const key = createHash('sha256').update(fs.realpathSync(dbPath)).digest('hex').slice(0, 32);
     const lock = path.join(resolveConfigDirectory(), 'sync-locks', `${key}.lock`);
     fs.mkdirSync(path.dirname(lock), { recursive: true });
     fs.writeFileSync(lock, '');
     expect(await withSyncLock(dbPath, async () => 'ran')).toBeNull();
     const old = (Date.now() - 60_000) / 1000;
     fs.utimesSync(lock, old, old);
-    expect(await withSyncLock(dbPath, async () => 'ran')).toBe('ran');
+    await expect(withSyncLock(dbPath, async () => 'ran')).rejects.toThrow(/no verifiable owner/);
+    expect(fs.existsSync(lock)).toBe(true);
   }, 60000);
 
   it("the server's timer takes up a shared copy with a route, and asks again of a store it could not read", async () => {

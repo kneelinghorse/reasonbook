@@ -106,11 +106,10 @@ export async function runJoinDashboard(
     return 1;
   }
   const result = await answered(joinThroughDashboard({ folder, address }));
-  return said(
-    io,
-    result,
-    (data) =>
-      `Joined through ${oneLine(data.dashboard)} as ${oneLine(data.joined.member)}, in block ${data.joined.block}, into ${oneLine(folder)}.${data.sync ? '' : ` Sync once more to finish: reasonbook sync --project-root ${oneLine(folder)}`}`
+  return said(io, result, (data) =>
+    data.reattached
+      ? `Re-attached this copy through ${oneLine(data.dashboard)}, ${data.sync?.reidentified ? `now using successor ${oneLine(data.reattached.replicaId)}` : 'keeping its identity'} in block ${data.reattached.block}.${data.sync?.caughtUp && !data.sync.caughtUp.confirmed ? ' Confirm each held move with reasonbook sync --confirm-owner.' : ''}`
+      : `Joined through ${oneLine(data.dashboard)} as ${oneLine(data.joined.member)}, in block ${data.joined.block}, into ${oneLine(folder)}.${data.sync ? '' : ` Sync once more to finish: reasonbook sync --project-root ${oneLine(folder)}`}`
   );
 }
 

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // ABOUTME: s96-m13 (ADR s96 §8) — recovering a lost owner copy: only with every member reached and the member list
 // ABOUTME: confirmed, adopting every verdict, saying what was lost; dropped, unseen and superseded copies re-identify.
+import { localCopyReport } from '../../../src/tools/rbook/record-copy-report';
 import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
 import Database from 'better-sqlite3';
 import fs from 'fs';
@@ -584,7 +585,7 @@ describe('dependents of a quarantined create, whatever their order (s96-m13 crit
     expect((await syncCopies(fixture.tmp, studio, authority)).caughtUp).toBeDefined();
     await on(studio, (client) => confirmOwner(client));
     // A bundle applies a transaction at a time; the studio's may sort before Erin's.
-    const bundle = await on(studio, (client) => writeBundle(client, {}));
+    const bundle = await on(studio, (client) => writeBundle(client, {}, localCopyReport()));
     for (const attempt of [1, 2]) {
       const imported = await on(authority, (client) => importBundle(client, bundle));
       expect({ attempt, ok: imported.success }).toEqual({ attempt, ok: true });

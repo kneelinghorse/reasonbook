@@ -8,14 +8,26 @@ import type { RbookDatabaseClient } from './client';
 import { changesSince } from './record-apply';
 import { applyAndEmbed } from './record-apply-embed';
 import { chainsAt } from './record-chain';
-import { dashboardName, isDashboardRoute, type DashboardRoute } from './record-dashboard-route';
+import {
+  dashboardName,
+  isActiveDashboardRoute,
+  type DashboardRoute,
+} from './record-dashboard-route';
 import { hello, SYNC_PROTOCOL, type Hello, type Peer } from './record-exchange';
+import { rememberCopyReport } from './record-peer-report';
+import { boundHello, historicalCatchUpReport } from './record-peer-hello';
 import { recordExchangeFailed, routeTo } from './record-peers';
 import { mergeContext } from './record-standing';
+import type { ChangeRecipient } from './record-since';
 import { admitSuccessor } from './record-admit-successor';
 import { reblockSelf, takeSuccessor } from './record-successor';
 import type { LoggedChange } from './record-standing';
-import { recordedProjectId, REPLICA_ERROR_CODES } from './replica-identity';
+import {
+  carriedRefusal,
+  recordedProjectId,
+  REPLICA_ERROR_CODES,
+  ReplicaRefusal,
+} from './replica-identity';
 import type { RbookToolError, RbookToolResult } from './types';
 
 /** The far end's first line: who it is and the protocol it speaks, before any request. */
@@ -46,7 +58,7 @@ export function refereeingDashboard(client: RbookDatabaseClient): DashboardRoute
     return null;
   }
   const route = routeTo(client, authority);
-  return isDashboardRoute(route) ? route : null;
+  return isActiveDashboardRoute(route) ? route : null;
 }
 
 /**
@@ -58,7 +70,7 @@ export function refereeingDashboard(client: RbookDatabaseClient): DashboardRoute
 export function sshRefusal(client: RbookDatabaseClient): string | null {
   const route = refereeingDashboard(client);
   return route
-    ? `This project is shared through ${dashboardName(route)}, as far as this copy knows, so this copy does not sync over SSH. A member's copy syncs through the dashboard instead: install Reasonbook 4.2.0 or later where you are syncing from, then run reasonbook sync there. Over SSH this copy takes in only a catch-up from the owner's copy that moved the project back, run from that copy with Reasonbook 4.2.1 or later on both machines.`
+    ? `This project is shared through ${dashboardName(route)}, as far as this copy knows, so this copy does not sync over SSH. A returning copy re-attaches through the dashboard: install Reasonbook 4.5.0 or later where you are syncing from, then run reasonbook join --dashboard <this project's address> there. Copies already attached sync with reasonbook sync. Over SSH this copy takes in only a catch-up from the owner's copy that moved the project back, run from that copy with Reasonbook 4.2.1 or later on both machines.`
     : null;
 }
 
@@ -82,14 +94,23 @@ export function bundleRefusal(client: RbookDatabaseClient): RbookToolError | nul
  * dashboard referees needs to tell the owner copy that moved the project back, not its members or
  * marks, which go to a far end before it is known to be one of this project's copies.
  */
-export type NearHello = Pick<Hello, 'projectId' | 'replicaId' | 'authority' | 'epoch'>;
+export type NearHello = Pick<
+  Hello,
+  'projectId' | 'replicaId' | 'authority' | 'epoch' | 'libraryVersion' | 'reads'
+>;
 
 /**
  * s100-m01 (F7): what a far end the dashboard referees serves over SSH, to the owner copy that moved
- * the project back while this copy was away: the reads and a catch-up, which only stores. Every other
- * method would let a copy past the referee's checks.
+ * the project back while this copy was away: reads, a catch-up that only stores, and its receipt.
+ * The receipt follows a successful apply and names only the near replica established by hello.
  */
-const CATCH_UP_METHODS: ReadonlySet<string> = new Set(['hello', 'chains', 'changesSince', 'apply']);
+const CATCH_UP_METHODS: ReadonlySet<string> = new Set([
+  'hello',
+  'chains',
+  'changesSince',
+  'apply',
+  'exchanged',
+]);
 
 /**
  * s100-m01 (F7): whether the near end's hello, sent with its first request, is the owner's copy at a
@@ -137,12 +158,48 @@ export async function serveSync(
     );
     return null;
   });
+  let reader: NearHello | undefined;
   const methods: Readonly<Record<string, (params: unknown) => Promise<unknown>>> = {
     // Reads open without the check: a refused copy still says who it is and what it holds.
-    hello: () => unchecked((client) => hello(client)),
+    hello: (params) =>
+      unchecked((client) => {
+        const ours = hello(client);
+        const near = (params as { near?: NearHello } | undefined)?.near;
+        reader = near;
+        if (near && boundHello(client, near)?.current) {
+          rememberCopyReport(client, near.replicaId, near, { called: true });
+        }
+        return ours;
+      }),
     chains: (at) => unchecked((client) => chainsAt(client, at as Record<string, number>)),
-    changesSince: (marks) =>
-      unchecked((client) => changesSince(client, marks as Record<string, number>)),
+    changesSince: (params) => {
+      const complete = params as ChangeRecipient & { marks?: Record<string, number> };
+      const marks =
+        complete.requireComplete === true || complete.catchUp === true
+          ? complete.marks!
+          : (params as Record<string, number>);
+      return unchecked((client) => {
+        const bound = boundHello(client, reader);
+        const historical =
+          complete.catchUp === true && complete.requireComplete !== true
+            ? historicalCatchUpReport(client, reader)
+            : null;
+        if (bound?.blocked && complete.requireComplete)
+          throw new ReplicaRefusal({
+            code: REPLICA_ERROR_CODES.EXCHANGE_REFUSED,
+            message:
+              'This removed or set-aside copy cannot fetch the complete record, so no recovery log was returned.',
+            suggestion:
+              'Ask the owner to recover from an admitted copy; this copy keeps everything it holds.',
+          });
+        return bound?.blocked && !historical
+          ? []
+          : changesSince(client, marks, {
+              ...(historical ?? bound?.report),
+              requireComplete: complete.requireComplete === true,
+            });
+      });
+    },
     apply: (params) => {
       const { changes, judge, catchUp } = params as {
         changes: LoggedChange[];
@@ -168,6 +225,8 @@ export async function serveSync(
   // s100-m01 (F7): on a copy the dashboard referees, set once the near end's hello shows the owner
   // copy that moved the project back.
   let catchingUp = false;
+  let catchUpReplica: string | null = null;
+  let appliedCatchUp = false;
   for await (const line of createInterface({ input, crlfDelay: Infinity })) {
     if (!line.trim()) continue;
     let request: Request;
@@ -181,12 +240,14 @@ export async function serveSync(
       if (!catchingUp && options.catchUp !== false && request.method === 'hello') {
         const near = (request.params as { near?: unknown } | undefined)?.near;
         catchingUp = await unchecked((client) => catchUpFrom(client, near)).catch(() => false);
+        if (catchingUp) catchUpReplica = (near as NearHello).replicaId;
       }
-      const asked = request.params as { catchUp?: unknown } | undefined;
+      const asked = request.params as { catchUp?: unknown; replicaId?: unknown } | undefined;
       if (
         !catchingUp ||
         !CATCH_UP_METHODS.has(request.method) ||
-        (request.method === 'apply' && asked?.catchUp !== true)
+        (request.method === 'apply' && asked?.catchUp !== true) ||
+        (request.method === 'exchanged' && (!appliedCatchUp || asked?.replicaId !== catchUpReplica))
       ) {
         send(output, {
           id: request.id,
@@ -199,14 +260,14 @@ export async function serveSync(
         continue;
       }
       if (request.method === 'apply') {
+        appliedCatchUp = false;
         const { changes } = request.params as { changes: LoggedChange[] };
         try {
-          send(output, {
-            id: request.id,
-            result: await unchecked((client) =>
-              applyAndEmbed(client, changes, { judge: false, catchUp: true })
-            ),
-          });
+          const result = await unchecked((client) =>
+            applyAndEmbed(client, changes, { judge: false, catchUp: true })
+          );
+          appliedCatchUp = result.success;
+          send(output, { id: request.id, result });
         } catch (error) {
           send(output, {
             id: request.id,
@@ -226,7 +287,9 @@ export async function serveSync(
     } catch (error) {
       send(output, {
         id: request.id,
-        error: { message: error instanceof Error ? error.message : String(error) },
+        error: carriedRefusal(error) ?? {
+          message: error instanceof Error ? error.message : String(error),
+        },
       });
     }
   }
@@ -300,8 +363,12 @@ export async function wirePeer(
     send(output, { id, method, params });
     const answer = await next(method);
     if (answer.id !== id) throw new Error(`${name} answered out of turn, so the exchange stopped.`);
-    if (answer.error)
-      throw new Error(`${name}: ${String((answer.error as { message?: unknown }).message)}`);
+    if (answer.error) {
+      const error = answer.error as RbookToolError;
+      if (typeof error.code === 'string' && typeof error.suggestion === 'string')
+        throw new ReplicaRefusal(error);
+      throw new Error(`${name}: ${String(error.message)}`);
+    }
     return answer.result;
   };
   return {
@@ -313,7 +380,13 @@ export async function wirePeer(
         ReturnType<Peer['hello']>
       >,
     chains: (at) => call('chains', at) as ReturnType<Peer['chains']>,
-    changesSince: (marks) => call('changesSince', marks) as ReturnType<Peer['changesSince']>,
+    changesSince: (marks, recipient) =>
+      call(
+        'changesSince',
+        recipient?.requireComplete || recipient?.catchUp
+          ? { marks, requireComplete: recipient.requireComplete, catchUp: recipient.catchUp }
+          : marks
+      ) as ReturnType<Peer['changesSince']>,
     apply: (changes, options = {}) =>
       call('apply', { changes, ...options }) as Promise<RbookToolResult<never>>,
     admitSuccessor: (input) => call('admitSuccessor', input) as ReturnType<Peer['admitSuccessor']>,

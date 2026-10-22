@@ -82,6 +82,10 @@ export function recomputeEntities(
   touched: ReadonlySet<string>,
   arrived: ReadonlySet<string>
 ): RecomputeOutcome {
+  if (!client.inTransaction) throw new Error('Recompute requires an encompassing transaction.');
+  // A claim rename changes a parent id before rewriting its children. Keep foreign keys enabled,
+  // but check the finished graph at COMMIT; SQLite resets this flag on commit or rollback.
+  client.pragma('defer_foreign_keys = ON');
   const before = new Map(
     rows<{ txn_id: string; state: string }>(
       client,

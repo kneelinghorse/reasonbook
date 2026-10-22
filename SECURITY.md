@@ -205,8 +205,12 @@ Reasonbook runtime and plugin installation make outbound requests in these situa
    change's account id is not compared with the caller's account. It does not check the author
    fields of the rows a change writes, and checks a change's time only against the member's
    admission and a week past its own clock, so a member who edits their own copy can put rows, and
-   feed entries, under another member's name and claim a mission, sprint or session id with a
-   back-dated time: the earliest create keeps an id.
+   feed entries, under another member's name. Before a record switches to protocol 2, a back-dated
+   create can win a mission, sprint or session id because claims use clock order. After the switch,
+   the first counted acceptance fixes a claim's position, and pre-switch claims precede later ones.
+   An accepted id is final once a copy holds every earlier-positioned claim's data. Predictable ids
+   can still be claimed first, and recovery judges previously unjudged transactions in clock order
+   ([record-claim-order.ts](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/record-claim-order.ts)).
    The dashboard runs the engine version it pins, and a fix to the engine reaches projects shared
    through it once it pins the release that carries it.
 
@@ -535,4 +539,4 @@ subagent type (e.g. the `Explore` agent) — that is a mitigation, not the machi
 
 ---
 
-_Last verified against the source for release 4.4.0._
+_Last verified against the source for release 4.5.0._

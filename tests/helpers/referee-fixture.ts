@@ -15,7 +15,8 @@ import {
   type RefereeOutcome,
   type StreamHead,
 } from '../../src/referee';
-import { PROTOCOL_VERSION } from '../../src/tools/rbook/record-changes';
+import { localCopyReport } from '../../src/tools/rbook/record-copy-report';
+import { currentWriteProtocol } from '../../src/tools/rbook/record-protocol-state';
 import { exchange, type ExchangeReport, type Peer } from '../../src/tools/rbook/record-exchange';
 import { buildFreshCopy } from '../../src/tools/rbook/record-fresh-copy';
 import {
@@ -97,7 +98,13 @@ export function refereePeer(tmp: string, referee: Referee, copy: Copy, accountId
   };
   return {
     name: 'the referee',
-    hello: async () => value(await run('hello', { recordProtocol: PROTOCOL_VERSION })) as never,
+    hello: async () =>
+      value(
+        await run('hello', {
+          ...localCopyReport(),
+          recordProtocol: await onCopy(tmp, copy, currentWriteProtocol, { replicaCheck: false }),
+        })
+      ) as never,
     chains: async (at) => value(await run('chains', at)) as never,
     changesSince: async (marks) => value(await run('changesSince', marks)) as never,
     apply: (changes, options = {}) => run('apply', { changes, ...options }) as never,

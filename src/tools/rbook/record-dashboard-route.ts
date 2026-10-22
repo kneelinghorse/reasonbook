@@ -9,6 +9,8 @@ export interface DashboardRoute {
   readonly url: string;
   /** The project's id in the dashboard's registry (user_projects.id). */
   readonly projectId: string;
+  /** Kept for explicit re-attachment/history; never an automatic sync or current referee. */
+  readonly ended?: true;
 }
 
 export function isDashboardRoute(route: unknown): route is DashboardRoute {
@@ -19,6 +21,11 @@ export function isDashboardRoute(route: unknown): route is DashboardRoute {
     typeof (route as { url?: unknown }).url === 'string' &&
     typeof (route as { projectId?: unknown }).projectId === 'string'
   );
+}
+
+/** An ended route still names its dashboard, but confers no current referee permissions. */
+export function isActiveDashboardRoute(route: unknown): route is DashboardRoute {
+  return isDashboardRoute(route) && route.ended !== true;
 }
 
 /** The dashboard as a person knows it: its host. */

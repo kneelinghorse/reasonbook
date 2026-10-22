@@ -69,6 +69,7 @@ import { createError, createSuccess } from './errors';
 import { withClientAsync } from './client';
 import { sharedRecordText } from './digest-v2';
 import { sharedRecordReview } from './record-review';
+import type { RecordProtocolReview } from './record-protocol-review';
 import { tableHasColumn } from './genesis-columns';
 import { findWrongTypedStringParam } from './param-type-guard';
 import { rbookAgentOnboard, type RbookAgentOnboardResult } from './rbook-agent-onboard';
@@ -237,6 +238,9 @@ export interface RbookReviewResult {
    * client whose model reads this structured answer rather than the text sees the copy is shared.
    */
   sharedRecord?: string;
+
+  /** Complete named protocol blockers; retained even when their irreducible list exceeds the typical budget. */
+  recordProtocol?: RecordProtocolReview;
 
   /** Current sprint summary, focus capped to 280 chars. Null if none. */
   sprint: {
@@ -586,12 +590,14 @@ export async function rbookReview(
       : null,
     // As a write would resolve it: a joined copy's invite name, else the user's (s96-m13, #671).
     writer: writerName(projectRoot ?? null),
-    sharedRecord,
+    sharedRecord: sharedRecord?.text,
+    recordProtocol: sharedRecord?.protocol,
   });
 
   // Filter to auth + sync warnings only. Drop staleness/orphan/context-size
   // warnings — those live on the long-form rbook_agent_onboard payload.
   const reviewWarnings = filterReviewWarnings(onboardResult.warnings ?? []);
+  if (sharedRecord?.warning) reviewWarnings.push(sharedRecord.warning);
 
   return createSuccess(digest, reviewWarnings);
 }
@@ -619,6 +625,7 @@ function buildDigest(
     writer?: string | null;
     /** s97-m14: the digest's shared-record lines for a copy of a shared record. */
     sharedRecord?: string | null;
+    recordProtocol?: RecordProtocolReview;
   } = { registryDefault: null, resolution: null }
 ): RbookReviewResult {
   const sprintFocus = onboard.currentSprint?.focus
@@ -738,6 +745,7 @@ function buildDigest(
     next_actions,
     project,
     ...(extras.sharedRecord ? { sharedRecord: extras.sharedRecord } : {}),
+    ...(extras.recordProtocol ? { recordProtocol: extras.recordProtocol } : {}),
     sprint,
     workQueue,
     recentDecisions,
@@ -829,16 +837,25 @@ async function resolveReviewFreshness(
   }
 }
 
-/** s97-m14 — the digest's shared-record lines for a copy of a shared record; null for any other store. */
-async function readSharedRecordText(projectRoot: string | undefined): Promise<string | null> {
+/** Shared-record lines and protocol status; unshared stores omit them, failed reads warn. */
+async function readSharedRecordText(
+  projectRoot: string | undefined
+): Promise<{ text: string | null; protocol?: RecordProtocolReview; warning?: string } | null> {
   try {
     const read = await withClientAsync(
-      async (client) => createSuccess(sharedRecordText(sharedRecordReview(client))),
+      async (client) => {
+        const review = sharedRecordReview(client);
+        return createSuccess({ text: sharedRecordText(review), protocol: review?.protocol });
+      },
       projectRoot ? { projectRoot } : {}
     );
-    return read.success ? (read.data ?? null) : null;
-  } catch {
-    return null;
+    if (!read.success) throw new Error(read.error?.message ?? 'Could not open the record.');
+    return read.data ?? null;
+  } catch (error) {
+    return {
+      text: null,
+      warning: `Shared-record review, including protocol status, could not be read: ${error instanceof Error ? error.message : String(error)}. Retry rbook_review; resolve the reported error if it persists.`,
+    };
   }
 }
 
@@ -1830,7 +1847,10 @@ export function formatReviewForLLM(result: RbookToolResult<RbookReviewResult>): 
   // rendered by `appendWarnings(lines, result)` below, exactly once, and that is the live channel.
 
   lines.push('');
-  lines.push(`Digest size: ${d.digestSizeBytes} bytes (budget 4096)`);
+  if (d.recordProtocol) lines.push(d.recordProtocol.summary);
+  lines.push(
+    `Digest size: ${d.digestSizeBytes} bytes (${d.digestSizeBytes > DIGEST_BUDGET_BYTES && d.recordProtocol?.blockers.length ? 'exceeds budget 4096 to list all blocking copies' : 'budget 4096'})`
+  );
   appendWarnings(lines, result);
 
   return lines.join('\n');

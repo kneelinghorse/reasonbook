@@ -3,8 +3,9 @@
 // ABOUTME: the operator's word and hands it the routes, and a recovery that reaches every member's copy by its route.
 
 import { createError, createSuccess } from './errors';
-import { clientPeer, exchange, hello, type ExchangeReport } from './record-exchange';
+import { clientPeer, exchange, hello, pairRefusal, type ExchangeReport } from './record-exchange';
 import { handOver, type Confirmed, type Handover } from './record-moves';
+import { rememberCopyReport } from './record-peer-report';
 import { peerHealth, rememberPeer } from './record-peers';
 import { recoverAuthority, type RecoveryInput, type RecoveryReport } from './record-recovery';
 import { mergeContext } from './record-standing';
@@ -66,7 +67,13 @@ export async function handOverRoute(
         message: `The copy at ${far.name} is refused its own writes (${theirs.refusal}), so it cannot take the owner's copy, and nothing was handed over.`,
         suggestion: `Put that copy right first, then hand over again. Its own check says: ${theirs.remedy ?? 'sync it to see what puts it right.'}`,
       });
-    const moved = await open((client) => handOver(client, { to: theirs.replicaId }));
+    const unpaired = pairRefusal(ours, theirs, far.name, 'nothing was handed over');
+    if (unpaired) return createError(unpaired);
+    const moved = await open((client) => {
+      if (mergeContext(client).members.has(theirs.replicaId))
+        rememberCopyReport(client, theirs.replicaId, theirs, { called: true });
+      return handOver(client, { to: theirs.replicaId });
+    });
     if (!moved.success || !moved.data) return createError(moved.error!);
     handover = moved.data;
     const caught = await exchange(clientPeer('this copy', open, local), far);

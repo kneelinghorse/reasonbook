@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // ABOUTME: s96-m13 — the shared record's refusals no fuller flow reaches: files that are not bundles or join steps, copies
 // ABOUTME: that cannot pair, steps off the owner's copy, a far end that dies mid-exchange; each names its remedy.
+import { localCopyReport } from '../../../src/tools/rbook/record-copy-report';
 import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
 import Database from 'better-sqlite3';
 import fs from 'fs';
@@ -215,7 +216,7 @@ describe("steps that only the owner's copy takes", () => {
     });
     if (!wrote.success) throw new Error(JSON.stringify(wrote.error));
     restore();
-    const bundle = await on(studio, (client) => writeBundle(client, {}));
+    const bundle = await on(studio, (client) => writeBundle(client, {}, localCopyReport()));
     const refused = await on(owner, (client) => importBundle(client, bundle));
     expect(refused.error).toMatchObject({
       message: expect.stringMatching(/must take a new identity first/),

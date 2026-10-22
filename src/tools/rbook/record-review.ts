@@ -8,13 +8,20 @@ import { knownBlocks } from './record-chain';
 import { crossRecordFindings } from './record-checks';
 import { isRecordedStore } from './record-guards';
 import { clientQuery } from './record-conflict-marks';
-import { peerHealth, syncsWith } from './record-peers';
-import { dashboardName, isDashboardRoute } from './record-dashboard-route';
+import { peerHealth, peerMarks, syncsWith, visiblePeerRoutes } from './record-peers';
+import { predecessorsOf } from './record-lineage';
+import { authorityValue } from './record-authority';
+import { changesSince } from './record-since';
+import { dashboardName, isActiveDashboardRoute, isDashboardRoute } from './record-dashboard-route';
+import { dashboardRecoveryState } from './record-dashboard-recovery';
 import { openConflicts } from './record-settle';
-import { mergeContext } from './record-standing';
+import { mergeContext, type StandingState } from './record-standing';
 import { COPY_KEYS } from './replica-copy-keys';
+import { protocolReview, type RecordProtocolReview } from './record-protocol-review';
 
 export interface SharedRecordReview {
+  /** Informational write protocol and complete named blockers, never conflict states. */
+  readonly protocol?: RecordProtocolReview;
   /** Each field in conflict, as "missions s96-m12's objective (2 values)". */
   readonly conflicts: readonly string[];
   /** What the cross-record checks find. */
@@ -23,6 +30,8 @@ export interface SharedRecordReview {
   readonly waiting: readonly string[];
   /** How many transactions are not live. */
   readonly waitingTotal: number;
+  /** Structured causes survive compact rendering without parsing the human-readable waiting lines. */
+  readonly waitingCounts?: Readonly<Partial<Record<Exclude<StandingState, 'live'>, number>>>;
   /** Each mission in progress, and who started it. */
   readonly started: readonly string[];
   /** s96-m13: each copy this one syncs with: its last exchange, what it lacks, and its last error. */
@@ -36,6 +45,8 @@ export interface SharedRecordReview {
   readonly moves?: readonly string[];
   /** A move of the owner copy waits for this copy's confirmation. */
   readonly movePending?: boolean;
+  /** Failed held-recovery conditions must survive the compact review beside its confirmation remedy. */
+  readonly recoveryConditions?: readonly string[];
   /** s97-m14: a copy this one syncs with says this copy's member was removed (ADR s96 §8). */
   readonly removed?: boolean;
   /** s100-m01: what this copy keeps out until it upgrades, written in a newer record protocol. */
@@ -61,9 +72,32 @@ function peerLines(client: RbookDatabaseClient): {
 } {
   const ctx = mergeContext(client);
   const blocks = knownBlocks(client);
-  const health = peerHealth(client).filter((peer) => syncsWith(ctx, peer.replicaId));
+  const health = visiblePeerRoutes(
+    peerHealth(client).filter(
+      (peer) => syncsWith(ctx, peer.replicaId) || isDashboardRoute(peer.route)
+    )
+  );
   return {
     lines: health.map((peer) => {
+      const own = new Set([ctx.ownReplica, ...predecessorsOf(ctx, ctx.ownReplica)]);
+      const marks = peerMarks(client, peer.replicaId);
+      const handover = ctx.terms.find(
+        (term) =>
+          term.replicaId === peer.replicaId &&
+          term.change?.replica_id === ctx.ownReplica &&
+          authorityValue(term.change).move === 'handover'
+      )?.change;
+      // Review has only last-observed marks, not the peer's current hello. Until those marks
+      // cover our outgoing move, foreign rows may still travel in its handover relay.
+      const mayRelay =
+        isActiveDashboardRoute(peer.route) &&
+        handover !== null &&
+        handover !== undefined &&
+        (marks[ctx.ownReplica] ?? 0) < handover.replica_seq;
+      const foreign =
+        isActiveDashboardRoute(peer.route) && ctx.ownReplica !== ctx.authority
+          ? changesSince(client, marks).filter((change) => !own.has(change.replica_id)).length
+          : 0;
       // s100-m01: a removed copy whose route ended keeps the name it reached that copy by, such as
       // a dashboard that has since archived its referee copy (critics, round 2).
       const who = isDashboardRoute(peer.route)
@@ -76,18 +110,20 @@ function peerLines(client: RbookDatabaseClient): {
               ? `${peer.name}'s copy`
               : `the copy in block ${blocks[peer.replicaId] ?? '?'}`;
       const last = peer.lastOkAt ? `synced ${ago(peer.lastOkAt)}` : 'never synced';
+      // s97-m14 (ADR s96 §8): a removal stays in the review until a sync says otherwise. It leads,
+      // so a long error never cuts it from the digest's line (critics, round 1).
+      const removed = peer.removedAt
+        ? `said this copy's member was removed (first said ${ago(peer.removedAt)}): what this copy sends is set aside, and counts only if the owner shares the project with it again; `
+        : '';
+      if (isDashboardRoute(peer.route) && peer.route.ended)
+        return `${who}: ${removed}route ended; kept for an explicit reasonbook sync or join --dashboard if the same project is shared again; ${peer.pending} changes stay on this copy.`;
       // s97-m10: a sync that keeps failing says since when, and how many tries.
       const failing =
         peer.failures > 0 && peer.failingSince
           ? `; failing since ${ago(peer.failingSince)} (${peer.failures} ${peer.failures === 1 ? 'try' : 'tries'})`
           : '';
       const error = peer.lastError ? `; last error: ${peer.lastError.slice(0, 160)}` : '';
-      // s97-m14 (ADR s96 §8): a removal stays in the review until a sync says otherwise. It leads,
-      // so a long error never cuts it from the digest's line (critics, round 1).
-      const removed = peer.removedAt
-        ? `said this copy's member was removed (first said ${ago(peer.removedAt)}): what this copy sends is set aside, and counts only if the owner shares the project with it again; `
-        : '';
-      return `${who}: ${removed}${last}, ${peer.pending} pending${failing}${error}`;
+      return `${who}: ${removed}${last}, ${peer.pending - (mayRelay ? 0 : foreign)} pending${foreign ? `; ${foreign} foreign changes ${mayRelay ? 'may relay during handover' : 'kept local (not sent)'}` : ''}${failing}${error}`;
     }),
     errors: health.filter((peer) => peer.lastError).length,
     removed: health.some((peer) => peer.removedAt),
@@ -98,9 +134,26 @@ function peerLines(client: RbookDatabaseClient): {
 const REIDENTIFIED_DAYS = 14;
 
 /** The owner copy's moves this copy must act on, and its own last new identity (ADR s96 §8, §9). */
-function moveLines(client: RbookDatabaseClient): string[] {
+function moveLines(client: RbookDatabaseClient): {
+  lines: string[];
+  recoveryConditions: string[];
+} {
   const ctx = mergeContext(client);
   const lines: string[] = [];
+  let recoveryConditions: string[] = [];
+  const recovery = dashboardRecoveryState(client);
+  if (
+    recovery.held &&
+    !ctx.terms.some((term) => term.change?.change_id === recovery.held?.changeId)
+  ) {
+    const conditions = recovery.held.failures.map((failure) => failure.split(' failed:')[0]);
+    recoveryConditions = [...new Set(conditions)];
+    lines.push(
+      `recovery held: ${conditions.join(', ')} failed; review with the owner, then reasonbook sync --confirm-owner (invalid chains first need correction)`
+    );
+    lines.push(...recovery.held.failures);
+  }
+  if (recovery.status) lines.push(recovery.status.detail);
   if (ctx.pending)
     lines.push(
       `the owner's copy moved to the copy in block ${ctx.pending.value.block} by a ${ctx.pending.value.move} (move ${ctx.pending.value.epoch}); this copy holds its changes until you confirm it: reasonbook sync --confirm-owner`
@@ -122,7 +175,7 @@ function moveLines(client: RbookDatabaseClient): string[] {
     } catch {
       // A note this copy cannot read says nothing.
     }
-  return lines;
+  return { lines, recoveryConditions };
 }
 
 const ULID = /(replica )?\b([0-9A-HJKMNP-TV-Z]{26})\b/g;
@@ -205,16 +258,19 @@ export function sharedRecordReview(client: RbookDatabaseClient): SharedRecordRev
       : `${id}, started by ${author || 'an author not recorded'}`
   );
   const peers = peerLines(client);
-  const moves = moveLines(client);
+  const { lines: moves, recoveryConditions } = moveLines(client);
   return {
     conflicts,
     states: crossRecordFindings(client).map((f) => f.detail),
+    protocol: protocolReview(client),
     waiting,
     waitingTotal,
+    waitingCounts: Object.fromEntries(standings.map((row) => [row.state, row.n])),
     started,
     ...(peers.lines.length ? { peers: peers.lines, syncErrors: peers.errors } : {}),
     ...(peers.removed ? { removed: true } : {}),
     ...(moves.length ? { moves, movePending: Boolean(mergeContext(client).pending) } : {}),
+    ...(recoveryConditions.length ? { recoveryConditions } : {}),
     ...upgradeLine(client),
   };
 }

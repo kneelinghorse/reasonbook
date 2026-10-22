@@ -2,7 +2,18 @@
 // ABOUTME: One peer call on a hosted referee (s97-m09, design §Who may call what): the dashboard names the authenticated
 // ABOUTME: caller, and the library allows each method only to the copies its table names, refusing the rest by code.
 
-import { applyRemote, replicaMarks } from '../tools/rbook/record-apply';
+import {
+  object,
+  malformed,
+  pageAsked,
+  servedThrough,
+  marks,
+  standingOf,
+  type Standing,
+} from './peer-input';
+import { applyRemote } from '../tools/rbook/record-apply';
+import { copyReport } from '../tools/rbook/record-copy-report';
+import { reportedCopy } from '../tools/rbook/record-peer-report';
 import { PROTOCOL_VERSION } from '../tools/rbook/record-changes';
 import { chainsAt } from '../tools/rbook/record-chain';
 import { hello } from '../tools/rbook/record-exchange';
@@ -13,7 +24,7 @@ import { recordExchanged, recordExchangeFailed } from '../tools/rbook/record-pee
 import { changeProblem } from '../tools/rbook/record-intake';
 import { firstPage } from '../tools/rbook/record-pages';
 import { changesSince } from '../tools/rbook/record-since';
-import { mergeContext, type LoggedChange, type MergeContext } from '../tools/rbook/record-standing';
+import { mergeContext, type LoggedChange } from '../tools/rbook/record-standing';
 import { takeSuccessor } from '../tools/rbook/record-successor';
 import { admitSuccessor } from '../tools/rbook/record-admit-successor';
 import { createSuccess } from '../tools/rbook/errors';
@@ -21,8 +32,6 @@ import { recordedProjectId } from '../tools/rbook/replica-identity';
 import type { RbookDatabaseClient } from '../tools/rbook/client';
 import type { RbookToolResult } from '../tools/rbook/types';
 import {
-  accountOfReplica,
-  accountsByMember,
   memberOfAccount,
   memberOfReplica,
   noteCall,
@@ -57,77 +66,6 @@ export const PEER_METHODS = [
 
 /** How much of a copy's own report on an exchange the referee keeps. */
 const REPORT_CHARS = 2000;
-
-const object = (value: unknown): Record<string, unknown> =>
-  value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-
-const malformed = <T>(what: string): RbookToolResult<T> =>
-  refuse<T>({
-    code: REFEREE_ERROR_CODES.MALFORMED,
-    message: `The request is not well formed: ${what}.`,
-    suggestion: 'Send the request as a Reasonbook release writes it.',
-  });
-
-/** Marks or chain positions: an object of replica ids to whole numbers. */
-/**
- * s97-m10 (design §R2): a changesSince asked a page at a time names `{ marks, maxBytes }`; one that
- * names the marks alone takes the whole stream, as 4.1.0's wire asks.
- */
-function pageAsked(params: unknown): { readonly marks: unknown; readonly maxBytes: number } | null {
-  const body = object(params);
-  // At least a page of a mebibyte, so a caller asking for tiny pages cannot make each one rescan
-  // the whole log for one transaction (critics, round 1).
-  return typeof body.maxBytes === 'number' && Number.isFinite(body.maxBytes) && body.maxBytes > 0
-    ? { marks: body.marks, maxBytes: Math.max(body.maxBytes, MIN_PAGE_BYTES) }
-    : null;
-}
-
-/** The least a page of the stream holds, whatever a caller asks. */
-const MIN_PAGE_BYTES = 1024 * 1024;
-
-/** The marks a page served, from the marks it was asked from: each replica's last change in it. */
-function servedThrough(
-  since: Readonly<Record<string, number>>,
-  page: readonly LoggedChange[]
-): Record<string, number> {
-  const served = { ...since };
-  for (const change of page)
-    served[change.replica_id] = Math.max(served[change.replica_id] ?? 0, change.replica_seq);
-  return served;
-}
-
-function marks(value: unknown): Record<string, number> | null {
-  const held = object(value);
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
-  return Object.values(held).every(
-    (seq) => typeof seq === 'number' && Number.isInteger(seq) && seq >= 0
-  )
-    ? (held as Record<string, number>)
-    : null;
-}
-
-interface Standing {
-  readonly ctx: MergeContext;
-  /** The caller's replica is bound to the caller's account. */
-  readonly bound: boolean;
-  readonly removed: boolean;
-  /** The outgoing authority relaying to the referee while the referee is still its member. */
-  readonly relay: boolean;
-}
-
-function standingOf(client: RbookDatabaseClient, caller: Caller): Standing {
-  const ctx = mergeContext(client);
-  const account = accountOfReplica(ctx, accountsByMember(client), caller.replicaId);
-  const bound = account !== null && account === caller.accountId;
-  return {
-    ctx,
-    bound,
-    removed: ctx.members.get(caller.replicaId)?.role === 'removed',
-    relay: bound && ctx.ownReplica !== ctx.authority && caller.replicaId === ctx.authority,
-  };
-}
 
 const notMember = <T>(): RbookToolResult<T> =>
   refuse<T>({
@@ -223,9 +161,18 @@ function dispatch(
   params: unknown,
   caller: Caller
 ): RbookToolResult<unknown> {
-  if (method === 'answerJoin') return joinFor(client, caller, params);
   const standing = standingOf(client, caller);
+  if (method === 'answerJoin' && !standing.ctx.unseen.has(caller.replicaId))
+    return joinFor(client, caller, params);
   if (!standing.bound) return notMember();
+  if (
+    standing.ctx.unseen.has(caller.replicaId) &&
+    !['hello', 'chains', 'apply', 'admitSuccessor'].includes(method)
+  )
+    return refusedMethod(
+      method,
+      'this copy must re-identify after a recovery before receiving the record'
+    );
   const body = object(params);
   switch (method) {
     case 'hello': {
@@ -237,7 +184,7 @@ function dispatch(
           suggestion:
             'Your changes stay safe on your copy. The dashboard upgrades its Reasonbook engine; sync again once it has.',
         });
-      return createSuccess({ ...hello(client), recordProtocol: PROTOCOL_VERSION });
+      return createSuccess(hello(client));
     }
     case 'chains': {
       const at = marks(params);
@@ -254,7 +201,10 @@ function dispatch(
       const paged = pageAsked(params);
       const since = marks(paged ? paged.marks : params);
       if (!since) return malformed('changesSince needs marks by replica');
-      const stream = changesSince(client, since);
+      const stream = changesSince(client, since, {
+        ...reportedCopy(client, caller.replicaId),
+        requireComplete: body.requireComplete === true,
+      });
       return paged ? createSuccess(firstPage(stream, paged.maxBytes)) : createSuccess(stream);
     }
     case 'apply':
@@ -337,6 +287,7 @@ function dispatch(
         if (!held || !digestWhole)
           return malformed('exchanged needs the marks the copy holds and its digest');
         recordExchanged(client, caller.replicaId, {
+          ...copyReport(body),
           marks: held,
           digest: body.digest ? { mark: digest.mark, hash: digest.hash } : body.digest,
         });
@@ -377,17 +328,23 @@ export function peer(
     const result = dispatch(client, method, params, caller);
     // The sync-state view reads what the referee saw: a call, a delivery taken in, a stream sent,
     // so far as it went: a page with more to follow served only what it held (s97-m10).
-    if (result.success && mergeContext(client).members.has(caller.replicaId)) {
+    const observed = result.success ? standingOf(client, caller) : null;
+    if (
+      observed &&
+      (observed.ctx.members.has(caller.replicaId) ||
+        (method === 'hello' && observed.bound && observed.ctx.unseen.has(caller.replicaId)))
+    ) {
       const page = result.data as { changes?: LoggedChange[]; more?: boolean } | undefined;
-      const since = marks(pageAsked(params)?.marks);
+      const since = marks(pageAsked(params)?.marks ?? params);
       noteCall(client, caller.replicaId, {
         received: method === 'apply',
+        ...(['hello', 'exchanged', 'answerJoin'].includes(method) ? { report: params } : {}),
         ...(method === 'changesSince'
           ? {
-              served:
-                page?.more === true && since && page.changes
-                  ? servedThrough(since, page.changes)
-                  : replicaMarks(client),
+              served: servedThrough(
+                since ?? {},
+                Array.isArray(result.data) ? result.data : (page?.changes ?? [])
+              ),
             }
           : {}),
       });

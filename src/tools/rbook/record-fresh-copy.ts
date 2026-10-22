@@ -3,7 +3,8 @@
 // ABOUTME: with their recorded columns, the change log and the identity keys, read from a source opened as data only.
 
 import Database from 'better-sqlite3';
-import { existsSync, renameSync, rmSync } from 'fs';
+import { existsSync, linkSync, mkdtempSync, rmSync } from 'fs';
+import path from 'path';
 import { RbookDatabaseClient } from './client';
 import { DECISION_SHAPE_MARKER } from './decision-shape-migration';
 import { createError, createSuccess } from './errors';
@@ -418,7 +419,7 @@ async function prepareFresh(file: string): Promise<RbookToolResult<SharingReadin
  * (design §R1): our schema, the shared tables' rows with every recorded column, the change log,
  * each transaction's standing worked out again, and the identity keys and metadata the engine needs.
  * No feedback, session timeline, usage statistics, proposals, snapshots or search index is copied.
- * The file is built beside `destPath` and renamed into place, so a failed build leaves nothing.
+ * The file is built beside `destPath` and linked into place without replacing a competing file.
  */
 export async function buildFreshCopy(
   sourcePath: string,
@@ -434,11 +435,13 @@ export async function buildFreshCopy(
   } = {}
 ): Promise<FreshCopy> {
   if (existsSync(destPath)) throw new Error(`${destPath} already holds a store.`);
-  const building = `${destPath}.building-${process.pid}-${Date.now()}`;
   const source = new Source(sourcePath);
+  let staging: string | null = null;
   let target: Target | null = null;
   let client: RbookDatabaseClient | null = null;
   try {
+    staging = mkdtempSync(`${destPath}.building-`);
+    const building = path.join(staging, 'rbook.sqlite');
     target = new Database(building);
     target.exec(RBOOK_SCHEMA);
     target.close();
@@ -465,7 +468,9 @@ export async function buildFreshCopy(
         const reading = clock === undefined ? null : readingProblem(clock);
         if (options.untrusted && reading)
           throw new FreshCopyRefused(
-            `That store's ${reading}, so it cannot hand its record to a referee: its next writes would carry it.`
+            options.referee
+              ? `That store's ${reading}, so it cannot hand its record to a referee: its next writes would carry it.`
+              : `That store's ${reading}, so it cannot be used to join this record: the joining copy's next writes would carry it.`
           );
         if (options.referee && clock !== undefined && runsAhead(clock, Date.now()))
           throw new FreshCopyRefused(
@@ -504,7 +509,8 @@ export async function buildFreshCopy(
     client.pragma('journal_mode = DELETE');
     client.close();
     client = null;
-    renameSync(building, destPath);
+    // link is atomic and fails if any file (including a symlink) won the destination meanwhile.
+    linkSync(building, destPath);
     return {
       projectId: built.projectId,
       replicaId: built.held.get(REPLICA_KEYS.id)!,
@@ -517,7 +523,6 @@ export async function buildFreshCopy(
     target?.close();
     client?.close();
     source.close();
-    for (const suffix of ['', '-wal', '-shm', '-journal'])
-      rmSync(`${building}${suffix}`, { force: true });
+    if (staging) rmSync(staging, { recursive: true, force: true });
   }
 }

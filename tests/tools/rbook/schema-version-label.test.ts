@@ -408,17 +408,17 @@ const EXPECTED_WRITER_KEYS: readonly WriterKeySite[] = sortSourceSites([
   // clash and field-in-conflict codes, and the peer-sessions import). s96-m13: nine more (three
   // exchange refusal codes, and this helper's comment naming its one other caller). s97-m10: four
   // more (the oversized-transaction code, and carrying a refusal thrown on purpose whatever its code).
-  // s97-m11: two more (the route-ended code).
+  // s97-m11: two more (the route-ended code). s98-m17: two more (the target-version refusal code).
   {
     file: 'tools/rbook/replica-identity.ts',
-    line: 200,
+    line: 202,
     role: 'writeReplicaKey',
     callee: 'metadata.execute',
     key: 'key',
   },
   ...['REPLICA_KEYS.id', 'REPLICA_KEYS.block', 'REPLICA_KEYS.seq'].map((key, index) => ({
     file: 'tools/rbook/replica-identity.ts',
-    line: 209 + index,
+    line: 211 + index,
     role: 'writeIdentity',
     callee: 'writeReplicaKey',
     key,
@@ -427,18 +427,19 @@ const EXPECTED_WRITER_KEYS: readonly WriterKeySite[] = sortSourceSites([
   // the join it asked for, the moves it confirmed, its last new identity and its invite's name.
   // s97-m11: down two (the dashboard share's pending answer, a new copy key). s100-m01: down seven
   // (two new copy keys: the address a member's copy joined by, and a newer protocol kept out).
+  // s98-m15: down two for the per-copy hosted recovery receipt key; writer and key unchanged.
   {
     file: 'tools/rbook/replica-copy-keys.ts',
-    line: 36,
+    line: 38,
     role: 'writeCopyKey',
     callee: 'writeReplicaKey',
     key: 'key',
   },
   // s96-m13: a copy that lost a block clash moves to a new block under its replica id. s100-m01:
-  // down thirteen (those keys, and readCopyKey above it).
+  // down thirteen (those keys, and readCopyKey above it). s98-m15: two more for the recovery key.
   {
     file: 'tools/rbook/replica-copy-keys.ts',
-    line: 54,
+    line: 56,
     role: 'moveReplicaBlock',
     callee: 'writeReplicaKey',
     key: 'REPLICA_KEYS.block',
@@ -446,10 +447,10 @@ const EXPECTED_WRITER_KEYS: readonly WriterKeySite[] = sortSourceSites([
   // s96-m01 (fold): the copy's sequence, raised in one variable-key UPDATE; never the label.
   // s96-m12: down eight lines (the five above, and establishReplica marking the open sessions a
   // copy brought, at its first identity only). s96-m13: down nine (the lines above). s97-m10: four.
-  // s97-m11: two.
+  // s97-m11: two. s98-m17: two more (the target-version refusal code); role and key unchanged.
   {
     file: 'tools/rbook/replica-identity.ts',
-    line: 323,
+    line: 325,
     role: 'takeReplicaSeq',
     callee: 'metadata.update',
     key: 'KEYS.seq',

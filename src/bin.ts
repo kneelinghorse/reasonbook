@@ -35,6 +35,7 @@ export const CLI_VERBS: ReadonlySet<string> = new Set([
   'recover',
   'share',
   'move',
+  'set-aside',
   'import',
   'signals',
   'brief',

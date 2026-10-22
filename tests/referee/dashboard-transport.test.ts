@@ -11,6 +11,7 @@ import { PassThrough } from 'stream';
 import { CredentialStore } from '../../src/intelligence/credential-store';
 import { writeUserAuthor } from '../../src/intelligence/user-author';
 import { PROTOCOL_VERSION } from '../../src/tools/rbook/record-changes';
+import { currentWriteProtocol } from '../../src/tools/rbook/record-protocol-state';
 import { dashboardPeer } from '../../src/tools/rbook/record-dashboard-peer';
 import type { DashboardRoute } from '../../src/tools/rbook/record-dashboard-route';
 import {
@@ -292,6 +293,8 @@ async function peerOf(
           replicaCheck: false,
         }
       ),
+    recordProtocolNow: () =>
+      onCopy(fixture.tmp, copy, currentWriteProtocol, { replicaCheck: false }),
     ...options,
   });
 }
@@ -447,7 +450,7 @@ describe('the dashboard transport (s97-m10)', () => {
     expect(decisions(darryl, 'Written on a newer copy.')).toBe(1);
   }, 600000);
 
-  it('a copy whose project the dashboard referees answers no SSH sync, and tells a 4.1.0 copy how to sync', async () => {
+  it('a copy whose project the dashboard referees answers no SSH sync, and tells a 4.1.0 copy how to re-attach', async () => {
     const { owner } = await handIn();
     // The 4.1.0 near end shows a far end's error as `<name>: <message>`; its code is today's (record-wire.ts).
     const requests = new PassThrough();
@@ -460,9 +463,9 @@ describe('the dashboard transport (s97-m10)', () => {
       (step) => onCopy(fixture.tmp, owner, step, { replicaCheck: false })
     );
     const near = await wirePeer('the owner machine', answers, requests, () => requests.end());
-    // A 4.1.0 copy sends no hello of its own, so it is told to sync through the dashboard instead.
+    // A 4.1.0 copy sends no hello of its own; returning copies get the dashboard re-attach remedy.
     await expect(near.hello()).rejects.toThrow(
-      /the owner machine: This project is shared through the dashboard .*install Reasonbook 4\.2\.0 or later where you are syncing from/
+      /the owner machine: This project is shared through the dashboard .*install Reasonbook 4\.5\.0 or later where you are syncing from, then run reasonbook join --dashboard .*Copies already attached sync with reasonbook sync\. Over SSH this copy takes in only a catch-up .*Reasonbook 4\.2\.1 or later on both machines/
     );
     near.close();
     await served;

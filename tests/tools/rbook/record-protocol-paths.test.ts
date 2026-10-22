@@ -7,7 +7,7 @@ import path from 'path';
 import { monotonicFactory } from 'ulid';
 import { writeUserAuthor } from '../../../src/intelligence/user-author';
 import { exchangeText } from '../../../src/cli/sync-moves';
-import { replicaMarks } from '../../../src/tools/rbook/record-apply';
+import { replicaMarks, changesSince } from '../../../src/tools/rbook/record-apply';
 import { importBundle, writeBundle } from '../../../src/tools/rbook/record-bundle';
 import { exchange } from '../../../src/tools/rbook/record-exchange';
 import { requestJoin } from '../../../src/tools/rbook/record-join';
@@ -64,6 +64,15 @@ async function decide(copy: Copy, content: string) {
 const unchecked = <T>(copy: Copy, use: Parameters<typeof onCopy<T>>[2]) =>
   onCopy(fixture.tmp, copy, use, { replicaCheck: false });
 
+/** Receiver-only fixture: an unfiltered incoming transport, independent of the new sender hold. */
+function incomingPeer(copy: Copy) {
+  return {
+    ...copyPeer(fixture.tmp, copy),
+    changesSince: (marks: Readonly<Record<string, number>>) =>
+      unchecked(copy, (client) => changesSince(client, marks)),
+  };
+}
+
 /** A decision `copy` records while this process speaks the newer protocol: a known kind, written newer. */
 async function decideNewer(copy: Copy, content: string): Promise<void> {
   const back = upgradeRecordProtocolForTesting(NEWER);
@@ -119,8 +128,10 @@ describe('every path that takes changes in (s100-m01, critics round 1)', () => {
       { members: ['Darryl', 'Pat'] }
     );
     expect(report.success).toBe(false);
-    expect(report.error?.message).toMatch(new RegExp(`record protocol ${NEWER}, newer than`));
-    expect(report.error?.suggestion).toMatch(/Upgrade Reasonbook here.*run the recovery again/);
+    expect(report.error?.message).toMatch(new RegExp(`protocol ${NEWER}`));
+    expect(report.error?.suggestion).toMatch(
+      /Upgrade Reasonbook on the recovering machine.*run the recovery again/
+    );
     // Nothing was recorded as the owner copy: pat's change still counts where it did.
     expect(await unchecked(recovered, (client) => mergeContext(client).epoch)).toBe(epochBefore);
     expect(live(pat, 'Owner, in the newer protocol.')).toBe(1);
@@ -151,12 +162,12 @@ describe('every path that takes changes in (s100-m01, critics round 1)', () => {
     expect(await identity()).toEqual(before);
   }, 600000);
 
-  it('a joined copy keeps none of the notes its carried store brought', async () => {
+  it('a joined copy clears notes left by an unfiltered future incoming delivery', async () => {
     const owner = await ownerCopy(fixture.tmp);
     const darryl = await joinedCopy(fixture.tmp, owner, 'darryl');
     await syncCopies(fixture.tmp, darryl, owner);
     writeAsNewerRelease(dbOf(darryl.root));
-    await syncCopies(fixture.tmp, darryl, owner);
+    expect((await exchange(incomingPeer(darryl), copyPeer(fixture.tmp, owner))).success).toBe(true);
     // The owner's store now notes the newer protocol it kept out, and a copy of it carries the note.
     expect((await unchecked(owner, (client) => sharedRecordReview(client)))?.upgrade).toMatch(
       /record protocol/
@@ -176,7 +187,7 @@ describe('every path that takes changes in (s100-m01, critics round 1)', () => {
     expect(asked.error?.suggestion).toMatch(/Upgrade Reasonbook on this machine/);
   }, 600000);
 
-  it('a bundle keeps out a newer change and the rest of its stream, says so, and the review keeps saying it', async () => {
+  it('an incoming future bundle is kept out with its stream tail, warnings and persistent review', async () => {
     const owner = await ownerCopy(fixture.tmp);
     const darryl = await joinedCopy(fixture.tmp, owner, 'darryl');
     await syncCopies(fixture.tmp, darryl, owner);
@@ -184,7 +195,9 @@ describe('every path that takes changes in (s100-m01, critics round 1)', () => {
     const bump = writeAsNewerRelease(dbOf(darryl.root));
     await decide(darryl, 'After the bump.');
     const marks = await unchecked(owner, (client) => replicaMarks(client));
-    const bundle = await unchecked(darryl, (client) => writeBundle(client, marks));
+    const bundle = await unchecked(darryl, (client) =>
+      writeBundle(client, marks, { reads: NEWER })
+    );
     const imported = await unchecked(owner, (client) => importBundle(client, bundle));
     expect(imported.success).toBe(true);
     expect(imported.data?.newerProtocol).toBeGreaterThan(0);
@@ -210,23 +223,23 @@ describe('every path that takes changes in (s100-m01, critics round 1)', () => {
     expect(JSON.stringify(after)).not.toMatch(new RegExp(`record protocol ${NEWER}`));
   }, 600000);
 
-  it('the warning names the copy that kept changes out, whichever copy ran the sync', async () => {
+  it('an unfiltered incoming transport names the receiver that kept changes out, whichever side runs it', async () => {
     const owner = await ownerCopy(fixture.tmp);
     const darryl = await joinedCopy(fixture.tmp, owner, 'darryl');
     await syncCopies(fixture.tmp, darryl, owner);
     writeAsNewerRelease(dbOf(darryl.root));
     // darryl, the newer copy, runs it: the owner's copy kept its change out, not darryl's.
-    const fromDarryl = await exchange(copyPeer(fixture.tmp, darryl), copyPeer(fixture.tmp, owner));
+    const fromDarryl = await exchange(incomingPeer(darryl), copyPeer(fixture.tmp, owner));
     expect(fromDarryl.success).toBe(true);
     const said = (fromDarryl.warnings ?? []).join(' ');
     expect(said).toMatch(/^owner kept out \d+ change\(s\) this copy sent/);
     expect(said).not.toMatch(/Upgrade Reasonbook here/);
     // The owner runs it: this copy kept them out, and this copy upgrades.
-    const fromOwner = await exchange(copyPeer(fixture.tmp, owner), copyPeer(fixture.tmp, darryl));
+    const fromOwner = await exchange(copyPeer(fixture.tmp, owner), incomingPeer(darryl));
     expect((fromOwner.warnings ?? []).join(' ')).toMatch(/Upgrade Reasonbook here/);
   }, 600000);
 
-  it('a move kept out for its newer protocol asks no one to confirm it', async () => {
+  it('a move withheld by the sender asks no one to confirm an epoch that never arrived', async () => {
     const old = await ownerCopy(fixture.tmp);
     const next = await joinedCopy(fixture.tmp, old, 'next', 'Owner');
     await syncCopies(fixture.tmp, old, next);
@@ -241,7 +254,9 @@ describe('every path that takes changes in (s100-m01, critics round 1)', () => {
     expect(result.success).toBe(true);
     expect(result.data?.caughtUp).toBeUndefined();
     expect(exchangeText(result.data!)).not.toMatch(/confirm/);
-    expect((result.warnings ?? []).join(' ')).toMatch(/kept out/);
+    expect((result.warnings ?? []).join(' ')).toMatch(
+      /does not report holding.*advertised.*held back/
+    );
     expect(await unchecked(next, (client) => mergeContext(client).pending)).toBeNull();
   }, 600000);
 

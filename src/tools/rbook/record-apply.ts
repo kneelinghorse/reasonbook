@@ -16,6 +16,7 @@ import { foldPeerSessions, repairMergedLinks, trackMergedSprints } from './recor
 import { recomputeEntities } from './record-recompute';
 import { mergeRefusal } from './record-token';
 import { judge, type Verdict } from './record-judge';
+import { judgeProtocolUpgrade } from './record-upgrade-judge';
 import { keptOut, noteNewerProtocol } from './record-protocol-hold';
 import {
   authoredInTerm,
@@ -214,6 +215,7 @@ export function applyRemote(
     try {
       client.pragma('defer_foreign_keys = ON');
       const prefixBefore = mergeContext(client).prefixes;
+      const upgraded = options.judge !== false ? judgeProtocolUpgrade(client) : [];
       const { stored, duplicates, newer } = store(client, incoming);
       const latest = stored
         .map((change) => change.hlc)
@@ -221,7 +223,7 @@ export function applyRemote(
         .slice(-1)[0];
       if (latest) advanceClock(client, latest);
       let ctx = mergeContext(client);
-      const judged: string[] = [];
+      const judged: string[] = [...upgraded];
       // A catch-up between epochs only stores and recomputes (ADR s96 §8): this copy may not be the
       // authority of the stream it is taking in.
       if (ctx.ownReplica === ctx.authority && options.judge !== false) {
@@ -277,9 +279,9 @@ export function applyRemote(
       // A transaction that became live in this merge, stored now or released from a hold, reaches
       // this copy's derived data whichever delivery releases it.
       const waitingAfter = waitingTxns(client);
-      const newlyLive = [...new Set([...stored.map((c) => c.txn_id), ...waitingBefore])].filter(
-        (txnId) => !waitingAfter.has(txnId)
-      );
+      const newlyLive = [
+        ...new Set([...stored.map((c) => c.txn_id), ...upgraded, ...waitingBefore]),
+      ].filter((txnId) => !waitingAfter.has(txnId));
       const live = rows<LoggedChange>(
         client,
         'SELECT * FROM record_changes WHERE txn_id IN (SELECT value FROM json_each(?)) ORDER BY replica_id, replica_seq',

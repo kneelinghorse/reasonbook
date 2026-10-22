@@ -8,6 +8,7 @@ import * as path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { admitMember, applyRemote, changesSince } from '../../../src/tools/rbook/record-apply';
 import { RECORD_COLUMNS, type SharedTable } from '../../../src/tools/rbook/record-columns';
+import { currentWriteProtocol } from '../../../src/tools/rbook/record-protocol-state';
 import type { OpenConflict } from '../../../src/tools/rbook/record-settle';
 import type { LoggedChange } from '../../../src/tools/rbook/record-standing';
 import {
@@ -32,6 +33,7 @@ let owner: Copy;
 let members: Copy[];
 let observer: Copy;
 let clashOnY: Array<{ id: string; name: string }>;
+let protocolOnY: number;
 let observerBytes: Buffer;
 /** Y's copy holding its own writes, which the owner refused, before any verdict on them reached it. */
 let yBytes: Buffer;
@@ -215,8 +217,8 @@ beforeAll(async () => {
     fields: { name: 'Named by Y' },
   });
   await ok(y, 'rbook_mission', { action: 'add', missionId: 'i-y01', name: 'Made before Y joined' });
-  // One id made first on Y, then by the owner: Y keeps it until the owner refuses Y's create, then
-  // gives it back (the engine critic).
+  // One id made first on Y, then by the owner: after S, the owner's accepted claim outranks
+  // Y's provisional create even though Y wrote first.
   await ok(y, 'rbook_mission', { action: 'add', missionId: 'i-c01', name: 'Made on Y first' });
   await ok(owner, 'rbook_mission', {
     action: 'add',
@@ -234,7 +236,8 @@ beforeAll(async () => {
 
   // Y sees the owner's name beside its own and settles it; then the owner refuses Y's first writes.
   await sync(fixture.tmp, owner, y);
-  // Before the refusal, Y keeps the plain id and names the owner's mission by its alias.
+  // Before refusal, the counted owner claim already keeps the plain id; Y's local claim is provisional.
+  protocolOnY = await onCopy(fixture.tmp, y, currentWriteProtocol);
   clashOnY = read<{ id: string; name: string }>(
     y,
     "SELECT id, name FROM missions WHERE id LIKE 'i-c01%' OR id LIKE 'i-d01%' ORDER BY id"
@@ -310,10 +313,11 @@ describe('one log, any order of arrival', () => {
         "SELECT from_id, to_id FROM mission_dependencies WHERE to_id = 'i-m01' ORDER BY from_id"
       )
     ).toEqual([{ from_id: 'i-a01', to_id: 'i-m01' }]);
-    // Y named the owner's mission by an alias while its own create stood, and gave the id back.
+    // This is the read-2 property workload: provisional Y never displaces a counted owner claim.
+    expect(protocolOnY).toBe(2);
     expect(clashOnY).toEqual([
-      { id: 'i-c01', name: 'Made on Y first' },
-      { id: 'i-c01~0', name: 'The owner made it' },
+      { id: 'i-c01', name: 'The owner made it' },
+      { id: 'i-c01~3', name: 'Made on Y first' },
       { id: 'i-d01', name: 'The owner made it first' },
       { id: 'i-d01~3', name: 'Made on Y later' },
     ]);

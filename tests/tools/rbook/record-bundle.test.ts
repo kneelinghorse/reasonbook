@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // ABOUTME: s96-m13 (ADR s96 §7) — a bundle carries a shared record's changes by file: two carries leave both copies
 // ABOUTME: with one record, a damaged or edited file is refused whole, and a duplicate import changes nothing.
+import { localCopyReport } from '../../../src/tools/rbook/record-copy-report';
 import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
 import fs from 'fs';
 import path from 'path';
@@ -50,7 +51,9 @@ async function ok(copy: Copy, tool: string, args: Record<string, unknown>) {
 /** A bundle written on `from` for `to`, as of what `to` holds, then carried as text. */
 async function carry(from: Copy, to: Copy): Promise<string> {
   const since = await onCopy(fixture.tmp, to, (client) => replicaMarks(client));
-  return JSON.stringify(await onCopy(fixture.tmp, from, (client) => writeBundle(client, since)));
+  return JSON.stringify(
+    await onCopy(fixture.tmp, from, (client) => writeBundle(client, since, localCopyReport()))
+  );
 }
 
 async function land(copy: Copy, text: string): Promise<RbookToolResult<BundleImport>> {
@@ -120,7 +123,7 @@ describe('a bundle between a member and the owner', () => {
     const marks = await onCopy(fixture.tmp, owner, (client) => replicaMarks(client));
     const ahead = { ...marks, [owner.replicaId]: marks[owner.replicaId] - 1 };
     const second = JSON.stringify(
-      await onCopy(fixture.tmp, owner, (client) => writeBundle(client, ahead))
+      await onCopy(fixture.tmp, owner, (client) => writeBundle(client, ahead, localCopyReport()))
     );
     expect((await land(member, second)).data!.held).toBeGreaterThan(0);
     expect(
@@ -178,7 +181,9 @@ describe('a bundle refused whole', () => {
     // Opened without the copy check, as reasonbook sync --bundle-in opens it: the import checks first.
     const unchecked = { replicaCheck: false };
     const since = await onCopy(fixture.tmp, b, (client) => replicaMarks(client), unchecked);
-    const bundle = await onCopy(fixture.tmp, a, (client) => writeBundle(client, since));
+    const bundle = await onCopy(fixture.tmp, a, (client) =>
+      writeBundle(client, since, localCopyReport())
+    );
     const landed = await onCopy(
       fixture.tmp,
       b,
@@ -198,7 +203,7 @@ describe('bundles across a move or a removal (s96-m13 build-time critics)', () =
     const studio = await joinedCopy(fixture.tmp, owner, 'studio', 'Darryl');
     await syncCopies(fixture.tmp, studio, owner);
     // The studio's copy says it follows a move this copy never took, to an owner copy neither knows.
-    const bundle = await unchecked(studio, (client) => writeBundle(client, {}));
+    const bundle = await unchecked(studio, (client) => writeBundle(client, {}, localCopyReport()));
     const ahead: Bundle = {
       ...bundle,
       from: { ...bundle.from, epoch: bundle.from.epoch + 1, authority: 'someone-else' },

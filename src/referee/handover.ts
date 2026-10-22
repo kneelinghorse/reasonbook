@@ -9,6 +9,7 @@ import { ProjectGraphRegistry } from '../intelligence/project-graph-registry';
 import { RbookDatabaseClient } from '../tools/rbook/client';
 import { createError, createSuccess } from '../tools/rbook/errors';
 import { buildFreshCopy, FreshCopyRefused } from '../tools/rbook/record-fresh-copy';
+import { localCopyReport } from '../tools/rbook/record-copy-report';
 import { replicaMarks } from '../tools/rbook/record-apply';
 import { SYNC_PROTOCOL } from '../tools/rbook/record-exchange';
 import {
@@ -19,12 +20,19 @@ import {
   type JoinRequest,
 } from '../tools/rbook/record-join';
 import { recordedProjectId } from '../tools/rbook/replica-identity';
-import { listMembers, OWNER_MEMBER } from '../tools/rbook/record-membership';
+import { OWNER_MEMBER } from '../tools/rbook/record-membership';
 import { namedCopies, ownersOtherCopies } from '../tools/rbook/record-owner-copies';
 import { mergeContext } from '../tools/rbook/record-standing';
 import type { RbookToolResult } from '../tools/rbook/types';
 import { bindAccount, readState, REFEREE_TABLES_SQL, STATE_KEYS, writeState } from './accounts';
 import { REFEREE_ERROR_CODES, refuse } from './codes';
+import {
+  carriedMembers,
+  carriedMembersProblem,
+  type CarriedMembers,
+  type CreateRefereeInput,
+} from './handover-members';
+export type { CreateRefereeInput } from './handover-members';
 import {
   exclusive,
   pendingJoin,
@@ -38,22 +46,26 @@ import {
 const mintKey = monotonicFactory();
 
 /** Why the uploaded copy cannot become this referee's, or null: it must be the owner's live authority copy. */
-function uploadProblem(client: RbookDatabaseClient): string | null {
+function uploadProblem(client: RbookDatabaseClient, carried: CarriedMembers): string | null {
   const ctx = mergeContext(client);
   if (ctx.ownReplica !== ctx.authority)
     return "it is a member's copy, and only the owner's copy hands the record to the dashboard";
   if (ctx.pending) return 'it holds a move of the owner copy it has not confirmed';
   if (ctx.forks.length) return 'it holds two moves of the owner copy for one epoch';
-  const members = listMembers(client).filter(
-    (member) => member.memberId !== OWNER_MEMBER && member.role !== 'removed'
-  );
-  if (members.length)
-    return `it is shared directly with ${members.map((member) => member.name).join(', ')}, and moving a directly shared project with members to the dashboard is not built yet`;
+  const membersProblem = carriedMembersProblem(client, carried);
+  if (membersProblem)
+    throw new FreshCopyRefused(
+      `That copy cannot become the referee's: ${membersProblem}.`,
+      "For former dashboard members, restore this project's carried account bindings and former referee history. Keep sharing directly with other members, or remove them on the owner's copy before sharing through the dashboard."
+    );
   // s100-m01: the owner's other copies would be stranded; an upload carries no routes, so the
   // referee sees those that wrote.
   const copies = ownersOtherCopies(client);
   if (copies.length)
-    return `the project is also kept in ${namedCopies(copies)}, which a share through the dashboard would leave unable to sync, and taking the owner's other copies along is not built yet`;
+    throw new FreshCopyRefused(
+      `That copy cannot become the referee's: the project is also kept in ${namedCopies(copies)}, which a share through the dashboard would leave unable to sync.`,
+      `Keep sharing it directly while those copies are in use. If a copy is gone, preview setting it aside on the authority owner's copy: reasonbook set-aside --replica ${copies[0].replicaId}. Only after the person decides it is gone, repeat with --yes; then upload a fresh copy from that authority. Taking the other copies along is not built yet.`
+    );
   return null;
 }
 
@@ -63,7 +75,8 @@ function uploadProblem(client: RbookDatabaseClient): string | null {
  */
 async function askedAgain(
   location: Omit<RefereeLocation, 'expectedHead'>,
-  ownerAccountId: string
+  ownerAccountId: string,
+  carried: CarriedMembers
 ): Promise<RefereeOutcome<{ readonly joinRequest: JoinRequest }> | null> {
   let client: RbookDatabaseClient | null = null;
   try {
@@ -76,13 +89,21 @@ async function askedAgain(
     if (!opened.success || !opened.data) return null;
     client = opened.data;
     const state = client.getMany<{ key: string; value: string }>(
-      "SELECT key, value FROM referee_state WHERE key IN ('owner_account', 'registry_key')"
+      "SELECT key, value FROM referee_state WHERE key IN ('owner_account', 'registry_key', 'creation_members')"
     );
     const held = new Map((state.data ?? []).map((row) => [row.key, row.value]));
+    const contract = held.get(STATE_KEYS.creationMembers);
+    if (
+      contract === undefined
+        ? carried.members.length !== 1 || carried.formerRefereeReplicaIds.length !== 0
+        : contract !== JSON.stringify(carried)
+    )
+      return null;
     const pending = pendingJoin(client);
     if (!pending || held.get(STATE_KEYS.owner) !== ownerAccountId || !held.get(STATE_KEYS.registry))
       return null;
     const joinRequest: JoinRequest = {
+      ...localCopyReport(),
       format: JOIN_REQUEST_FORMAT,
       protocol: SYNC_PROTOCOL,
       projectId: recordedProjectId(client),
@@ -100,26 +121,31 @@ async function askedAgain(
 
 /**
  * Build this project's referee store from the owner's uploaded copy (design §R1): a fresh store with
- * only the shared record, the owner member bound to `ownerAccountId`, no caller bound to the
+ * only the shared record, every carried member bound to its account, no caller bound to the
  * referee's own replica, and the referee's join request, which the owner's copy answers as its own.
  */
 export function createReferee(
   location: Omit<RefereeLocation, 'expectedHead'>,
-  input: { readonly copyFile: string; readonly ownerAccountId: string }
+  input: CreateRefereeInput
 ): Promise<RefereeOutcome<{ readonly joinRequest: JoinRequest }>> {
   return exclusive(async () => {
-    if (typeof input?.ownerAccountId !== 'string' || !input.ownerAccountId)
+    let carried: CarriedMembers;
+    try {
+      carried = carriedMembers(input);
+    } catch (error) {
       return {
         result: refuse({
           code: REFEREE_ERROR_CODES.MALFORMED,
-          message: 'createReferee needs the owner account.',
-          suggestion: "Pass the account id of the project's owner.",
+          message: error instanceof Error ? error.message : String(error),
+          suggestion:
+            "Pass the owner's account and unique member/account bindings and former referee ids from this project's authenticated dashboard history.",
         }),
         head: null,
       };
+    }
     if (existsSync(location.storePath)) {
       // A retry after a lost answer: a store made for this owner that has not joined yet asks again.
-      const again = await askedAgain(location, input.ownerAccountId);
+      const again = await askedAgain(location, input.ownerAccountId, carried);
       if (again) return again;
       return {
         result: refuse({
@@ -134,6 +160,7 @@ export function createReferee(
     }
     mkdirSync(path.dirname(location.storePath), { recursive: true });
     let built = false;
+    let allocatedRegistry: string | null = null;
     const warnings: string[] = [];
     let client: RbookDatabaseClient | null = null;
     try {
@@ -144,7 +171,8 @@ export function createReferee(
       built = true;
       warnings.push(...fresh.warnings);
       const key = mintKey();
-      await ProjectGraphRegistry.create({ configDir: registryFolder(location.configDir, key) });
+      allocatedRegistry = registryFolder(location.configDir, key);
+      await ProjectGraphRegistry.create({ configDir: allocatedRegistry });
       const opened = await RbookDatabaseClient.create({
         dbPath: location.storePath,
         registerProject: false,
@@ -154,7 +182,7 @@ export function createReferee(
       if (!opened.success || !opened.data)
         throw new Error(opened.error?.message ?? 'the referee store could not be opened');
       client = opened.data;
-      const problem = uploadProblem(client);
+      const problem = uploadProblem(client, carried);
       if (problem) throw new FreshCopyRefused(`That copy cannot become the referee's: ${problem}.`);
       const ran = client.raw(REFEREE_TABLES_SQL);
       if (!ran.success) throw new Error(ran.error?.message ?? 'the referee tables were not made');
@@ -162,7 +190,9 @@ export function createReferee(
         writeState(client!, STATE_KEYS.registry, key);
         writeState(client!, STATE_KEYS.owner, input.ownerAccountId);
         writeState(client!, STATE_KEYS.createdAt, new Date().toISOString());
-        bindAccount(client!, OWNER_MEMBER, input.ownerAccountId);
+        writeState(client!, STATE_KEYS.creationMembers, JSON.stringify(carried));
+        for (const member of carried.members)
+          bindAccount(client!, member.memberId, member.accountId);
       });
       if (!done.success)
         throw new Error(done.error?.message ?? 'the referee state was not written');
@@ -176,6 +206,8 @@ export function createReferee(
     } catch (error) {
       client?.close();
       client = null;
+      ProjectGraphRegistry.resetInstance();
+      if (allocatedRegistry) rmSync(allocatedRegistry, { recursive: true, force: true });
       if (built)
         for (const suffix of ['', '-wal', '-shm'])
           rmSync(`${location.storePath}${suffix}`, { force: true });

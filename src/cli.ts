@@ -351,6 +351,8 @@ async function dispatchCli(
       return (await import('./cli/dashboard')).runShare(rest, io);
     case 'move':
       return (await import('./cli/dashboard')).runMove(rest, io);
+    case 'set-aside':
+      return (await import('./cli/set-aside')).runSetAside(rest, io);
     case 'import':
       return (await import('./cli/import')).runImport(rest, io);
     case 'drafts':

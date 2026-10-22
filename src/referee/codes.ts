@@ -8,6 +8,8 @@ import type { RbookToolResult } from '../tools/rbook/types';
 
 /** Every refusal the referee library adds to the engine's own (design §R1, "a stable error vocabulary"). */
 export const REFEREE_ERROR_CODES = {
+  /** The host is collecting member uploads before the owner confirms a new referee. */
+  RECOVERING: 'REFEREE_RECOVERING',
   /** The store is missing, behind or forked from the head the last call returned, or its copy check refuses it. */
   NEEDS_RECOVERY: 'REFEREE_NEEDS_RECOVERY',
   /** A call that needs the last recorded head came without one. */
@@ -45,6 +47,7 @@ export const REFEREE_ERROR_CODES = {
 } as const;
 
 const STATUS: Readonly<Record<string, number>> = {
+  [REFEREE_ERROR_CODES.RECOVERING]: 409,
   [REFEREE_ERROR_CODES.NEEDS_RECOVERY]: 409,
   [REFEREE_ERROR_CODES.HEAD_REQUIRED]: 400,
   [REFEREE_ERROR_CODES.EXISTS]: 409,
@@ -68,6 +71,7 @@ const STATUS: Readonly<Record<string, number>> = {
   [REPLICA_ERROR_CODES.SLOT_CLASH]: 409,
   [REPLICA_ERROR_CODES.BLOCK_CLASH]: 409,
   [REPLICA_ERROR_CODES.WRITE_REFUSED]: 403,
+  [REPLICA_ERROR_CODES.COPY_TOO_OLD]: 403,
   // A store another writer holds is a busy moment, which the host tries again (its s62-m06 ask).
   [RBOOK_ERROR_CODES.DB_CONNECTION_FAILED]: 503,
 };

@@ -7,8 +7,10 @@ import { validAuthorName } from '../../intelligence/user-author';
 import type { RbookDatabaseClient } from './client';
 import { createError, createSuccess } from './errors';
 import { replicaMarks } from './record-apply';
-import { rejudgeTransactions } from './record-decide';
-import { forgetPeers } from './record-peers';
+import { readmit } from './record-readmit';
+import { carriedSetAsideCuts } from './record-member-cuts';
+import { forgetPeers, routeTo } from './record-peers';
+import { dashboardName, isDashboardRoute } from './record-dashboard-route';
 import { canonicalJson } from './record-capture';
 import { recordOwnChanges } from './record-changes';
 import { isRecordedStore } from './record-recording';
@@ -125,6 +127,25 @@ function refuse<T>(refusal: {
   return createError<T>({ ...refusal });
 }
 
+/** A hosted owner's local copy is a member too; only the dashboard can administer its members. */
+function authorityRefusal(
+  client: RbookDatabaseClient,
+  authority: string,
+  message: string,
+  suggestion: string
+): RbookToolResult<never> {
+  const route = routeTo(client, authority);
+  return refuse({
+    code: REPLICA_ERROR_CODES.WRITE_REFUSED,
+    message: isDashboardRoute(route)
+      ? `This project is shared through ${dashboardName(route)}; the owner manages its members there.`
+      : message,
+    suggestion: isDashboardRoute(route)
+      ? `Ask the project owner to manage members on its sharing page on ${dashboardName(route)}.`
+      : suggestion,
+  });
+}
+
 /**
  * Invite a person to a shared record, from the authority's copy: a `member` change naming them and
  * their role (ADR s96 §8). Under write access the read-only role is refused until proposals exist.
@@ -138,11 +159,12 @@ export function inviteMember(
 > {
   const ctx = mergeContext(client);
   if (ctx.ownReplica !== ctx.authority)
-    return refuse({
-      code: REPLICA_ERROR_CODES.WRITE_REFUSED,
-      message: "Only the owner's copy invites a member.",
-      suggestion: "Invite from the owner's copy.",
-    });
+    return authorityRefusal(
+      client,
+      ctx.authority,
+      "Only the owner's copy invites a member.",
+      "Invite from the owner's copy."
+    );
   const role = input.role ?? 'editor';
   if (!(INVITE_ROLES as readonly string[]).includes(role))
     return refuse({
@@ -223,44 +245,6 @@ export function isMembersCopy(client: RbookDatabaseClient): boolean {
   }
 }
 
-function quarantinedOf(client: RbookDatabaseClient, member: MemberView): string[] {
-  const replicas = new Set(member.replicas.map((replica) => replica.replicaId));
-  return rows<{ txn_id: string; replica_id: string }>(
-    client,
-    "SELECT txn_id, replica_id FROM record_txn_state WHERE state = 'quarantined' ORDER BY txn_id"
-  )
-    .filter((txn) => replicas.has(txn.replica_id))
-    .map((txn) => txn.txn_id);
-}
-
-/**
- * A re-add (ADR s96 §8): the member's role back, and its quarantined changes judged again under it
- * (s100-m01): an owner-only change the role does not allow is refused, never accepted with the rest.
- */
-function readmit(
-  client: RbookDatabaseClient,
-  member: MemberView,
-  role: string
-): RbookToolResult<
-  MemberView & { readonly invited: boolean; readonly accepted: number; readonly refused: number }
-> {
-  const done = client.writeTransaction(() =>
-    recordOwnChanges(client, [
-      {
-        kind: 'member',
-        entity: MEMBER_ENTITY,
-        entityId: member.memberId,
-        field: null,
-        value: canonicalJson({ name: member.name, role }),
-      },
-    ])
-  );
-  if (!done.success) return createError(done.error!);
-  const decided = rejudgeTransactions(client, quarantinedOf(client, member), 're-added');
-  if (!decided.success || !decided.data) return createError(decided.error!);
-  return createSuccess({ ...member, role, invited: true, ...decided.data });
-}
-
 /**
  * s97-m11 (design §R1): change a member's role, from the authority's copy: an editor made an owner, or
  * back. The owner's own role never changes, a removed member is invited again instead, and the role is
@@ -273,11 +257,12 @@ export function setMemberRole(
 ): RbookToolResult<MemberView> {
   const ctx = mergeContext(client);
   if (ctx.ownReplica !== ctx.authority)
-    return refuse({
-      code: REPLICA_ERROR_CODES.WRITE_REFUSED,
-      message: "Only the owner's copy changes a member's role.",
-      suggestion: "Change the role from the owner's copy.",
-    });
+    return authorityRefusal(
+      client,
+      ctx.authority,
+      "Only the owner's copy changes a member's role.",
+      "Change the role from the owner's copy."
+    );
   if (!(INVITE_ROLES as readonly string[]).includes(role))
     return refuse({
       code: REPLICA_ERROR_CODES.WRITE_REFUSED,
@@ -313,7 +298,11 @@ export function setMemberRole(
         entity: MEMBER_ENTITY,
         entityId: member.memberId,
         field: null,
-        value: canonicalJson({ name: member.name, role }),
+        value: canonicalJson({
+          name: member.name,
+          role,
+          ...carriedSetAsideCuts(ctx, member.memberId),
+        }),
       },
     ])
   );
@@ -332,11 +321,12 @@ export function removeMember(
 ): RbookToolResult<MemberView & { readonly cuts: Readonly<Record<string, number>> }> {
   const ctx = mergeContext(client);
   if (ctx.ownReplica !== ctx.authority)
-    return refuse({
-      code: REPLICA_ERROR_CODES.WRITE_REFUSED,
-      message: "Only the owner's copy removes a member.",
-      suggestion: "Remove the member from the owner's copy.",
-    });
+    return authorityRefusal(
+      client,
+      ctx.authority,
+      "Only the owner's copy removes a member.",
+      "Remove the member from the owner's copy."
+    );
   const member = memberNamed(client, name);
   if (!member || member.memberId === OWNER_MEMBER)
     return refuse({
@@ -358,7 +348,12 @@ export function removeMember(
         entity: MEMBER_ENTITY,
         entityId: member.memberId,
         field: null,
-        value: canonicalJson({ name: member.name, role: 'removed', cuts }),
+        value: canonicalJson({
+          name: member.name,
+          role: 'removed',
+          cuts,
+          ...carriedSetAsideCuts(ctx, member.memberId),
+        }),
       },
     ])
   );

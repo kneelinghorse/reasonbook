@@ -180,7 +180,9 @@ function sharedSection(
     !started.length &&
     !peers.length &&
     !moves.length &&
-    !review.upgrade
+    !review.recoveryConditions?.length &&
+    !review.upgrade &&
+    !review.protocol
   )
     return null;
   const cap = Math.min(SHARED_SECTION_CAP, room);
@@ -191,6 +193,7 @@ function sharedSection(
   if (moves.length) lines.push(`  • Owner's copy: ${moves.join('; ')}.`);
   // s100-m01: then an upgrade this copy needs, which only its own operator can make.
   if (review.upgrade) lines.push(`  • This copy: ${review.upgrade}.`);
+  if (review.protocol) lines.push(`  • ${review.protocol.summary}.`);
   if (conflicts.length)
     lines.push(
       `  • ${conflicts.length} field(s) in conflict, so reads show a provisional value: ${conflicts.slice(0, 3).join('; ')}${more(conflicts, 3)}.`
@@ -231,24 +234,40 @@ function sharedShortForm(review: SharedRecordReview | null | undefined): string 
     !started.length &&
     !peers.length &&
     !moves.length &&
-    !review.upgrade
+    !review.recoveryConditions?.length &&
+    !review.upgrade &&
+    !review.protocol
   )
     return null;
   const settle = conflicts.length || states.length;
   const syncErrors = review.syncErrors ?? 0;
+  const waitingDetail = Object.entries(review.waitingCounts ?? {})
+    .map(([state, count]) => `${count} ${state}`)
+    .join(', ');
+  const moveNotice = review.recoveryConditions?.length
+    ? `recovery held: ${review.recoveryConditions.join(', ')}; ask owner; fix invalid chains first`
+    : "a move of the owner's copy to confirm";
+  const protocol = review.protocol;
+  const protocolNotice =
+    protocol?.writeProtocol === 2
+      ? 'record protocol 2: switched; downgrades may rename ids and hold streams'
+      : protocol?.writeProtocol === 1
+        ? `record protocol 1: not switched; ${protocol.blockers.length} blocking copies`
+        : (protocol?.summary ?? '');
   const counts = [
     // s97-m14: a removal leads, so the short form never drops it (critics, round 1).
     review.removed ? "this copy's member was removed from the project" : '',
     // s100-m01: what a newer record protocol keeps out waits for this copy's upgrade.
-    review.upgrade
-      ? 'changes in a newer record protocol wait until Reasonbook is upgraded here'
-      : '',
-    review.movePending
-      ? "a move of the owner's copy to confirm (reasonbook sync --confirm-owner)"
+    review.upgrade ? 'newer record protocol waits for an upgrade here' : '',
+    protocolNotice,
+    review.movePending || review.recoveryConditions?.length
+      ? `${moveNotice} (reasonbook sync --confirm-owner)`
       : '',
     conflicts.length ? `${conflicts.length} field(s) in conflict` : '',
     states.length ? `${states.length} state(s) need a person` : '',
-    waitingTotal ? `${waitingTotal} change(s) not live yet` : '',
+    waitingTotal
+      ? `${waitingTotal} change(s) not live yet${waitingDetail ? ` (${waitingDetail})` : ''}`
+      : '',
     syncErrors ? `${syncErrors} sync error(s)` : '',
     !settle && !waitingTotal && !syncErrors && started.length
       ? `${started.length} mission(s) in progress`

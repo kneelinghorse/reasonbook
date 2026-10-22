@@ -271,7 +271,8 @@ export async function rbookProjectJoin(params: {
         code: 'INVALID_PARAMETER',
         message:
           "A join through the dashboard names the folder to join into and the project's address.",
-        suggestion: 'Pass projectRoot (an empty folder) and project (its rbook:// address).',
+        suggestion:
+          'Pass projectRoot (an empty folder or this project’s existing copy) and project (its rbook:// address).',
       });
     const joined = await answered(
       joinThroughDashboard({ folder: params.projectRoot, address: params.project })
@@ -432,7 +433,9 @@ export function formatSharedProjectForLLM(
       if ('dashboard' in data) {
         const joined = data as unknown as DashboardJoined;
         lines.push(
-          `✓ Joined through ${joined.dashboard} as ${joined.joined.member}, in block ${joined.joined.block}${joined.sync ? `, and synced: ${exchangeLine(joined.sync)}` : '; sync once more to finish'}.`
+          joined.reattached
+            ? `✓ Re-attached this copy through ${joined.dashboard}, ${joined.sync?.reidentified ? `now using successor ${joined.reattached.replicaId}` : 'keeping its identity'} in block ${joined.reattached.block}.${joined.sync?.caughtUp && !joined.sync.caughtUp.confirmed ? ' Confirm each held move with reasonbook sync --confirm-owner.' : ''}`
+            : `✓ Joined through ${joined.dashboard} as ${joined.joined.member}, in block ${joined.joined.block}${joined.sync ? `, and synced: ${exchangeLine(joined.sync)}` : '; sync once more to finish'}.`
         );
         break;
       }

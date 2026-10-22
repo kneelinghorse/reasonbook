@@ -5,15 +5,19 @@ import { spawn, type ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { createInterface } from 'readline';
-import type { Peer } from '../../src/tools/rbook/record-exchange';
+import type { Hello, Peer } from '../../src/tools/rbook/record-exchange';
 import { ReplicaRefusal } from '../../src/tools/rbook/replica-identity';
-import { PROTOCOL_VERSION } from '../../src/tools/rbook/record-changes';
 import type { RbookToolResult } from '../../src/tools/rbook/types';
 import type { RefereeServerConfig } from './referee-server';
 
 export interface RunningServer {
   readonly url: string;
   readonly child: ChildProcess;
+  readonly engine: {
+    readonly path: string;
+    readonly version: string;
+    readonly protocol: { readonly wire: number; readonly record: number };
+  };
   stop(): Promise<void>;
 }
 
@@ -74,10 +78,14 @@ export async function spawnRefereeServer(
       reject(new Error(`the reference server exited (${code}): ${stderr}`))
     );
   });
-  const { port } = JSON.parse(first) as { port: number };
+  const { port, engine } = JSON.parse(first) as {
+    port: number;
+    engine: { path: string; version: string; protocol: { wire: number; record: number } };
+  };
   return {
     url: `http://127.0.0.1:${port}`,
     child,
+    engine,
     stop: () =>
       new Promise((resolve) => {
         if (child.exitCode !== null) return resolve();
@@ -116,7 +124,8 @@ export function httpPeer(
   server: Pick<RunningServer, 'url'>,
   projectId: string,
   token: string,
-  replicaIdNow: () => Promise<string>
+  replicaIdNow: () => Promise<string>,
+  helloNow: () => Promise<Hello>
 ): Peer {
   const run = async (method: string, params?: unknown): Promise<RbookToolResult<unknown>> => {
     const replicaId = await replicaIdNow();
@@ -134,7 +143,14 @@ export function httpPeer(
   };
   return {
     name: 'the reference server',
-    hello: () => value('hello', { recordProtocol: PROTOCOL_VERSION }),
+    hello: async () => {
+      const own = await helloNow();
+      return value('hello', {
+        recordProtocol: own.recordProtocol,
+        libraryVersion: own.libraryVersion,
+        reads: own.reads,
+      });
+    },
     chains: (at) => value('chains', at),
     changesSince: (marks) => value('changesSince', marks),
     apply: (changes, options = {}) => run('apply', { changes, ...options }) as never,

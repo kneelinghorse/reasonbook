@@ -8,6 +8,8 @@ import type { ApplyReport } from './record-apply';
 import type { ExchangeReport, Hello, Peer } from './record-exchange';
 import { clashRefusal } from './record-exchange';
 import type { SuccessorReason, SuccessorTaken } from './record-successor';
+import { receivedMove } from './record-move-receipt';
+import { copyReport } from './record-copy-report';
 import { REPLICA_ERROR_CODES } from './replica-identity';
 import type { RbookToolError, RbookToolResult } from './types';
 
@@ -57,17 +59,18 @@ export async function catchUp(
       local: { replicaId: ours.replicaId, marks: ours.marks },
       remote: { replicaId: theirs.replicaId, marks: theirs.marks },
     });
-  const applied = await behind.apply(await ahead.changesSince(behindHello.marks), {
-    judge: false,
-    catchUp: true,
-  });
+  const applied = await behind.apply(
+    await ahead.changesSince(behindHello.marks, { ...behindHello, catchUp: true }),
+    { judge: false, catchUp: true }
+  );
   if (!applied.success || !applied.data) return createError(applied.error!);
   const after = await behind.hello();
   // s100-m01: a move the copy behind kept out, written in a newer record protocol, did not arrive:
   // there is nothing to confirm until it upgrades, and the sync says why instead. A move that came
   // as a fork of one the copy holds did arrive, and is shown as one.
-  const arrived =
-    !applied.data.newerProtocol || after.pending !== null || after.epoch === aheadHello.epoch;
+  const arrived = receivedMove(after, aheadHello);
+  const reads = copyReport(behindHello).reads;
+  const incompatible = reads !== null && (aheadHello.recordProtocol ?? 1) > reads;
   return createSuccess<ExchangeReport>(
     {
       sent: 0,
@@ -84,17 +87,26 @@ export async function catchUp(
         ? {
             caughtUp: {
               copy: localAhead ? ('remote' as const) : ('local' as const),
-              epoch: aheadHello.epoch,
-              authority: aheadHello.authority,
+              ...arrived,
               // s97-m10: a copy that confirms the move itself, as a dashboard's referee does, needs no word.
-              ...(after.pending === null && after.epoch === aheadHello.epoch
+              ...(after.pending === null &&
+              after.epoch === aheadHello.epoch &&
+              after.authority === aheadHello.authority
                 ? { confirmed: true }
                 : {}),
             },
           }
         : {}),
     },
-    [...(applied.warnings ?? []), ...keptOutBy(behind, applied.data)]
+    [
+      ...(applied.warnings ?? []),
+      ...keptOutBy(behind, applied.data),
+      ...(!arrived && !applied.data.newerProtocol
+        ? [
+            `${behind.name} does not report holding the advertised owner's move; unreadable changes may be held back by the sender. Inspect this copy's current owner state and sync again before confirming a move.${incompatible ? " Upgrade that copy: its reported reader is below the owner's write protocol." : ''}`,
+          ]
+        : []),
+    ]
   );
 }
 
@@ -126,6 +138,8 @@ export function memberProblem(
   ownClash: boolean
 ): SuccessorReason | null {
   if (authority.removed.includes(member.replicaId)) return null;
+  // A cutoff holds even when a restored/duplicated stream also clashes: its tail is never replayed.
+  if (member.replicaId in authority.cuts) return 'cut';
   if (ownClash) return 'slot';
   if (
     member.refusal === REPLICA_ERROR_CODES.RESTORED ||
@@ -134,7 +148,6 @@ export function memberProblem(
     return 'restored';
   if ((authority.marks[member.replicaId] ?? 0) > (member.marks[member.replicaId] ?? 0))
     return 'whole-machine';
-  if (member.replicaId in authority.cuts) return 'cut';
   if (authority.unseen.includes(member.replicaId)) return 'unseen';
   return null;
 }
@@ -169,7 +182,7 @@ export async function settleIdentity(
   if (!reason && !unknown) return createSuccess(null);
   const divergesFrom =
     reason === 'slot' ? await firstDifference(member, authority, own, common[own]) : undefined;
-  const sent = (await member.changesSince(authorityHello.marks)).filter(
+  const sent = (await member.changesSince(authorityHello.marks, authorityHello)).filter(
     (change) =>
       divergesFrom === undefined || change.replica_id !== own || change.replica_seq < divergesFrom
   );
@@ -178,6 +191,8 @@ export async function settleIdentity(
   const after = await authority.hello();
   if (unknown) reason = memberProblem(memberHello, after, false);
   if (!reason) return createSuccess(null);
+  // The applied rows may first prove an unseen join; bind its report before testing a successor.
+  await authority.observeHello?.(memberHello);
   const successor = await authority.admitSuccessor({ replicaId: own });
   if (!successor.success || !successor.data) return createError(successor.error!);
   const taken = await member.takeSuccessor({

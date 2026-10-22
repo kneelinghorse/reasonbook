@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-// ABOUTME: Two copies that create one mission, sprint or session id (ADR s96 §3): the earlier create keeps it, the other
-// ABOUTME: becomes <id>~<its creator's block>, and a rename rewrites the row and every reference this copy keeps to it.
+// ABOUTME: Two copies that claim one mission, sprint or session id use clock order before S and counted arrival after it.
+// ABOUTME: Later claims take <id>~<their creator's block>; a rename rewrites the row and every reference this copy keeps.
 
 import type { RbookDatabaseClient } from './client';
-import { txnStanding, type LoggedChange, type MergeContext } from './record-standing';
+import type { LoggedChange, MergeContext } from './record-standing';
+import { orderedClaims } from './record-claim-order';
 
 export type TextKeyed = 'missions' | 'sprints' | 'sessions';
 /** s96-m13: sessions too, whose block-segmented ids clash only when two replicas write in one block. */
@@ -80,12 +81,9 @@ function run(client: RbookDatabaseClient, sql: string, params: unknown[] = []): 
 const tablePresent = (client: RbookDatabaseClient, table: string): boolean =>
   rows(client, "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", [table]).length > 0;
 
-const order = (a: LoggedChange, b: LoggedChange): number =>
-  a.hlc === b.hlc ? (a.change_id < b.change_id ? -1 : 1) : a.hlc < b.hlc ? -1 : 1;
-
 /**
  * The id a live create of a mission or sprint takes on this copy: the earliest live create that
- * claims an id keeps it, by (hlc, change_id); each later one takes `<id>~<its creator's block>`.
+ * claims an id keeps it, by clock before S and counted arrival after; each later one takes its block suffix.
  */
 export function aliasedId(
   client: RbookDatabaseClient,
@@ -93,13 +91,15 @@ export function aliasedId(
   create: LoggedChange
 ): string {
   const plain = String((JSON.parse(create.value ?? '{}') as { id?: unknown }).id);
-  const claims = rows<LoggedChange>(
+  const claims = orderedClaims(
     client,
-    "SELECT * FROM record_changes WHERE kind = 'create' AND entity = ? AND json_extract(value, '$.id') = ?",
-    [create.entity, plain]
-  )
-    .filter((claim) => txnStanding(client, ctx, claim.txn_id).state === 'live')
-    .sort(order);
+    ctx,
+    rows<LoggedChange>(
+      client,
+      "SELECT * FROM record_changes WHERE kind = 'create' AND entity = ? AND json_extract(value, '$.id') = ?",
+      [create.entity, plain]
+    )
+  );
   if (!claims.length || claims[0].change_id === create.change_id) return plain;
   // A copy knows its own block before the authority admits it; another's comes from its admission.
   const block =

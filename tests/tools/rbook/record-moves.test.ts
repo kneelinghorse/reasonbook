@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // ABOUTME: s96-m13 (ADR s96 §8) — the owner copy moves by a planned handover; each copy confirms the move before it applies
 // ABOUTME: it, holding the new stream until then; afterwards the new owner copy admits and removes, and every copy ends equal.
+import { localCopyReport } from '../../../src/tools/rbook/record-copy-report';
 import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
 import Database from 'better-sqlite3';
 import { replicaMarks } from '../../../src/tools/rbook/record-apply';
@@ -183,19 +184,19 @@ describe('a move carried by bundle', () => {
     await syncCopies(fixture.tmp, old, next);
     await on(next, (client) => confirmOwner(client));
     await decide(studio, 'Written before the member took the move.');
-    const stale = await on(studio, (client) => writeBundle(client, {}));
+    const stale = await on(studio, (client) => writeBundle(client, {}, localCopyReport()));
     expect((await on(next, (client) => importBundle(client, stale))).error?.message).toMatch(
       /has not taken the owner copy's latest move/
     );
-    const ahead = await on(next, (client) => writeBundle(client, {}));
+    const ahead = await on(next, (client) => writeBundle(client, {}, localCopyReport()));
     const caught = await on(studio, (client) => importBundle(client, ahead));
     expect(caught.data).toMatchObject({ caughtUp: { epoch: 2, authority: next.replicaId } });
     await on(studio, (client) => confirmOwner(client));
-    const sent = await on(studio, (client) => writeBundle(client, {}));
+    const sent = await on(studio, (client) => writeBundle(client, {}, localCopyReport()));
     expect((await on(next, (client) => importBundle(client, sent))).data!.judged).toBeGreaterThan(
       0
     );
-    const back = await on(next, (client) => writeBundle(client, {}));
+    const back = await on(next, (client) => writeBundle(client, {}, localCopyReport()));
     await on(studio, (client) => importBundle(client, back));
     expect(recordedState(studio)).toEqual(recordedState(next));
   }, 360000);
@@ -287,7 +288,7 @@ describe('around a move (s96-m13 build-time critics)', () => {
     // Confirming would make it the owner's copy, which writes its own verdicts at once: refused.
     expect((await on(next, (client) => confirmOwner(client))).error?.code).toBe('REPLICA_RESTORED');
     const marks = await on(studio, (client) => replicaMarks(client));
-    const bundle = await on(old, (client) => writeBundle(client, marks));
+    const bundle = await on(old, (client) => writeBundle(client, marks, localCopyReport()));
     const imported = await on(studio, (client) => importBundle(client, bundle));
     expect(imported.data?.caughtUp).toEqual({ epoch: 2, authority: next.replicaId });
     // A member's copy confirming a move to another copy writes none of its own changes either.

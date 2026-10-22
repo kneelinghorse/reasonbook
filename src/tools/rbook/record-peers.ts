@@ -2,8 +2,14 @@
 // ABOUTME: Each copy's own view of the copies it syncs with (ADR s96 §7; design §s96-m13 item 5): the route to each,
 // ABOUTME: its marks at the last exchange, and that exchange's health. Per copy: never recorded, never sent.
 
+import { copyReport, type CopyReport } from './record-copy-report';
 import type { RbookDatabaseClient } from './client';
-import { dashboardName, isDashboardRoute, type DashboardRoute } from './record-dashboard-route';
+import {
+  dashboardName,
+  isActiveDashboardRoute,
+  isDashboardRoute,
+  type DashboardRoute,
+} from './record-dashboard-route';
 import { changesSince } from './record-since';
 import type { SshRoute } from './record-ssh';
 import type { MergeContext } from './record-standing';
@@ -28,7 +34,10 @@ const PEERS_SQL = `CREATE TABLE IF NOT EXISTS record_peers (
   last_error_at TEXT,
   failures INTEGER NOT NULL DEFAULT 0,
   failing_since TEXT,
-  removed_at TEXT
+  removed_at TEXT,
+  library_version TEXT,
+  reads INTEGER,
+  last_call_at TEXT
 )`;
 
 /** s97-m10: the columns a table made by 4.1.0 lacks, added when this copy next writes a peer. */
@@ -37,6 +46,9 @@ const ADDED_COLUMNS: ReadonlyArray<[string, string]> = [
   ['failing_since', 'failing_since TEXT'],
   // s97-m14: when the copy at the far end first said this copy's member was removed.
   ['removed_at', 'removed_at TEXT'],
+  ['library_version', 'library_version TEXT'],
+  ['reads', 'reads INTEGER'],
+  ['last_call_at', 'last_call_at TEXT'],
 ];
 
 export interface PeerRow {
@@ -51,9 +63,12 @@ export interface PeerRow {
   readonly failures?: number | null;
   readonly failing_since?: string | null;
   readonly removed_at?: string | null;
+  readonly library_version?: string | null;
+  readonly reads?: number | null;
+  readonly last_call_at?: string | null;
 }
 
-export interface PeerHealth {
+export interface PeerHealth extends CopyReport {
   readonly replicaId: string;
   readonly name: string | null;
   readonly route: PeerRoute | null;
@@ -72,10 +87,28 @@ export interface PeerHealth {
   readonly removedAt: string | null;
 }
 
+/** Superseded ended dashboard history is kept, but one active route represents that endpoint. */
+export function visiblePeerRoutes(peers: readonly PeerHealth[]): PeerHealth[] {
+  const active = peers.filter((peer) => isActiveDashboardRoute(peer.route));
+  return peers.filter(
+    (peer) =>
+      !isDashboardRoute(peer.route) ||
+      !peer.route.ended ||
+      !active.some(
+        (current) =>
+          isDashboardRoute(current.route) &&
+          isDashboardRoute(peer.route) &&
+          current.route.url === peer.route.url &&
+          current.route.projectId === peer.route.projectId
+      )
+  );
+}
+
 function ensure(client: RbookDatabaseClient): void {
   const made = client.execute(PEERS_SQL);
   if (!made.success) throw new Error(made.error?.message ?? 'the peers table could not be made');
   const columns = client.getMany<{ name: string }>('PRAGMA table_info(record_peers)');
+  if (!columns.success) throw new Error(columns.error?.message ?? 'could not inspect peer columns');
   const has = new Set((columns.data ?? []).map((column) => column.name));
   for (const [name, definition] of ADDED_COLUMNS)
     if (!has.has(name)) {
@@ -101,7 +134,7 @@ export function rememberPeer(
 ): void {
   // s97-m10: a copy reached through the dashboard keeps that route; no other route stands in for it.
   const held = routeTo(client, replicaId);
-  if (isDashboardRoute(held) && peer.route && !isDashboardRoute(peer.route))
+  if (isActiveDashboardRoute(held) && peer.route && !isDashboardRoute(peer.route))
     throw new ReplicaRefusal({
       code: REPLICA_ERROR_CODES.EXCHANGE_REFUSED,
       message: `This copy reaches ${replicaId} through ${dashboardName(held)}, so it keeps that route, and no other replaces it.`,
@@ -132,21 +165,22 @@ export function rememberPeer(
 export function recordExchanged(
   client: RbookDatabaseClient,
   replicaId: string,
-  outcome: {
+  outcome: CopyReport & {
     readonly marks: Readonly<Record<string, number>>;
     readonly digest?: unknown;
     readonly removed?: boolean;
   }
 ): void {
   const at = new Date().toISOString();
+  const report = copyReport(outcome);
   const said = outcome.removed === undefined ? null : outcome.removed ? 1 : 0;
   run(
     client,
-    `INSERT INTO record_peers (replica_id, marks, digest, last_ok_at, last_error, last_error_at, failures, failing_since, removed_at)
-       VALUES (?, ?, ?, ?, NULL, NULL, 0, NULL, ?)
+    `INSERT INTO record_peers (replica_id, marks, digest, last_ok_at, last_error, last_error_at, failures, failing_since, removed_at, library_version, reads)
+       VALUES (?, ?, ?, ?, NULL, NULL, 0, NULL, ?, ?, ?)
        ON CONFLICT (replica_id) DO UPDATE SET marks = excluded.marks, digest = excluded.digest,
          last_ok_at = excluded.last_ok_at, last_error = NULL, last_error_at = NULL, failures = 0,
-         failing_since = NULL,
+         failing_since = NULL, library_version = excluded.library_version, reads = excluded.reads,
          removed_at = CASE ? WHEN 1 THEN COALESCE(record_peers.removed_at, excluded.removed_at)
            WHEN 0 THEN NULL ELSE record_peers.removed_at END`,
     [
@@ -155,6 +189,8 @@ export function recordExchanged(
       outcome.digest === undefined ? null : JSON.stringify(outcome.digest),
       at,
       said === 1 ? at : null,
+      report.libraryVersion,
+      report.reads,
       said,
     ]
   );
@@ -254,6 +290,16 @@ export function forgetPeers(client: RbookDatabaseClient, replicaIds?: readonly s
     run(client, 'DELETE FROM record_peers WHERE replica_id = ?', [replicaId]);
 }
 
+/** A dashboard ending its route retains the exact identity for a later explicit re-attachment. */
+export function endDashboardRoute(client: RbookDatabaseClient, replicaId: string): void {
+  const route = routeTo(client, replicaId);
+  if (!isDashboardRoute(route)) return;
+  run(client, 'UPDATE record_peers SET route = ? WHERE replica_id = ?', [
+    JSON.stringify({ ...route, ended: true }),
+    replicaId,
+  ]);
+}
+
 /**
  * s100-m01 (the sprint-100 build's critics): forget only how to reach a copy, keeping its row, on
  * which a removal this copy was told of stays for its review, digest and rbook_status to show.
@@ -303,6 +349,7 @@ export function peerHealth(client: RbookDatabaseClient): PeerHealth[] {
     const marks = row.marks ? (JSON.parse(row.marks) as Record<string, number>) : {};
     return {
       replicaId: row.replica_id,
+      ...copyReport({ libraryVersion: row.library_version, reads: row.reads }),
       name: row.name,
       route: row.route ? (JSON.parse(row.route) as PeerRoute) : null,
       lastOkAt: row.last_ok_at,

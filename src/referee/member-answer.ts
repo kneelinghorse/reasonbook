@@ -2,6 +2,7 @@
 // ABOUTME: Translate hosted-store repair remedies into actions the calling member can take.
 // ABOUTME: Peer answers retain their codes and diagnostics; host-only library calls keep their original remedies.
 import type { RbookToolResult } from '../tools/rbook/types';
+import { REPLICA_ERROR_CODES } from '../tools/rbook/replica-identity';
 import { REFEREE_ERROR_CODES } from './codes';
 
 /** These refusals are authored for the peer's caller, rather than for the host's store operator. */
@@ -19,6 +20,10 @@ const MEMBER_CODES: ReadonlySet<string> = new Set([
 ]);
 
 const HOST_REMEDIES: ReadonlyMap<string, string> = new Map([
+  [
+    REPLICA_ERROR_CODES.COPY_TOO_OLD,
+    "Upgrade this owner's copy to Reasonbook 4.5.0 or later, then retry reasonbook move --to owner. The dashboard still holds authority and the set-aside cuts.",
+  ],
   [
     REFEREE_ERROR_CODES.NEEDS_RECOVERY,
     "Keep your local copy. Ask the project's owner to open its page on the dashboard and contact the dashboard operator about recovery; sync again after recovery is complete.",

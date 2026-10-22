@@ -14,6 +14,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { PROTOCOL_VERSION } from '../../src/tools/rbook/record-protocol';
 import { installPackedArtifact } from './packed-artifact';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -179,7 +180,8 @@ it.each(['node16', 'bundler'] as const)(
     ).version;
     expect(JSON.parse(probe.stdout)).toEqual({
       version,
-      protocol: { wire: 1, record: 1 },
+      // Compare the installed artifact's advertised maximum with the source being packed.
+      protocol: { wire: 1, record: PROTOCOL_VERSION },
       code: 'REFEREE_NEEDS_RECOVERY',
       head: null,
     });

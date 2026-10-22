@@ -13,8 +13,11 @@ import {
 } from './record-authority';
 import { canonicalJson } from './record-capture';
 import { recordOwnChanges } from './record-changes';
+import { libraryAtLeast } from './record-dashboard-history';
 import { judgeUnjudged } from './record-judge';
 import { recomputeEntities } from './record-recompute';
+import { reportedCopy } from './record-peer-report';
+import { readerRefusal } from './record-reader-gate';
 import { underApplyToken } from './record-token';
 import { mergeContext, REPLICA_ENTITY, type LoggedChange } from './record-standing';
 import { writeCopyKey } from './replica-copy-keys';
@@ -64,66 +67,90 @@ export function handOver(
   client: RbookDatabaseClient,
   input: { readonly to: string }
 ): RbookToolResult<Handover> {
-  const ctx = mergeContext(client);
-  if (ctx.ownReplica !== ctx.authority)
-    return refuse({
-      code: REPLICA_ERROR_CODES.WRITE_REFUSED,
-      message: "Only the owner's copy hands over, and this copy is a member's.",
-      suggestion: "Hand over from the owner's copy.",
+  // A concurrent cut or capability downgrade must be visible before authority is published.
+  const done = client.writeTransaction<RbookToolResult<Handover>>(() => {
+    const ctx = mergeContext(client);
+    if (ctx.ownReplica !== ctx.authority)
+      return refuse({
+        code: REPLICA_ERROR_CODES.WRITE_REFUSED,
+        message: "Only the owner's copy hands over, and this copy is a member's.",
+        suggestion: "Hand over from the owner's copy.",
+      });
+    if (ctx.pending)
+      return refuse({
+        code: REPLICA_ERROR_CODES.WRITE_REFUSED,
+        message:
+          'This copy holds a move of the owner copy it has not confirmed, so it cannot hand over.',
+        suggestion: 'Confirm that move first: reasonbook sync --confirm-owner.',
+      });
+    const target = ctx.members.get(input.to);
+    if (
+      !target ||
+      target.role !== 'owner' ||
+      target.cut !== undefined ||
+      input.to === ctx.ownReplica
+    )
+      return refuse({
+        code: REPLICA_ERROR_CODES.WRITE_REFUSED,
+        message:
+          "A handover names another copy of the owner's that has joined, and that copy is not one.",
+        suggestion:
+          "Join the owner's new copy first (reasonbook join --member <the owner's name>), then hand over to it.",
+      });
+    if (termOf(ctx.terms, input.to))
+      return refuse({
+        code: REPLICA_ERROR_CODES.WRITE_REFUSED,
+        message: "That copy was the owner's copy once already, and each copy holds one term.",
+        suggestion:
+          'Have that copy re-identify first (its next sync does when it is cut), then hand over to the new copy.',
+      });
+    if ([...ctx.setAsideCuts.values()].some((cuts) => Object.keys(cuts).length > 0)) {
+      const report = reportedCopy(client, input.to);
+      if (!libraryAtLeast(report.libraryVersion, '4.5.0'))
+        return refuse({
+          code: REPLICA_ERROR_CODES.COPY_TOO_OLD,
+          message: `This record holds a set-aside, so copy ${input.to} (block ${target.block}) must report Reasonbook library 4.5.0 or later before it holds authority; it reported ${report.libraryVersion ?? 'no usable version'}.`,
+          suggestion:
+            'Upgrade that copy to Reasonbook 4.5.0 or later, then sync it and retry the handover.',
+        });
+    }
+    const report = reportedCopy(client, input.to);
+    const oldReader = readerRefusal(client, input.to, report, undefined, ctx);
+    if (oldReader) return createError<Handover>(oldReader);
+    const value: AuthorityValue = {
+      epoch: ctx.epoch + 1,
+      authority: input.to,
+      previous: ctx.authority,
+      move: 'handover',
+      block: target.block,
+    };
+    recordOwnChanges(
+      client,
+      [
+        {
+          kind: 'authority',
+          entity: REPLICA_ENTITY,
+          entityId: input.to,
+          field: null,
+          value: canonicalJson(value),
+        },
+      ],
+      { admittingReads: report.reads }
+    );
+    const [change] = rows<{ change_id: string }>(
+      client,
+      "SELECT change_id FROM record_changes WHERE kind = 'authority' AND replica_id = ? ORDER BY replica_seq DESC LIMIT 1",
+      [ctx.ownReplica]
+    );
+    return createSuccess({
+      epoch: value.epoch,
+      to: input.to,
+      block: target.block,
+      changeId: change.change_id,
     });
-  if (ctx.pending)
-    return refuse({
-      code: REPLICA_ERROR_CODES.WRITE_REFUSED,
-      message:
-        'This copy holds a move of the owner copy it has not confirmed, so it cannot hand over.',
-      suggestion: 'Confirm that move first: reasonbook sync --confirm-owner.',
-    });
-  const target = ctx.members.get(input.to);
-  if (!target || target.role !== 'owner' || target.cut !== undefined || input.to === ctx.ownReplica)
-    return refuse({
-      code: REPLICA_ERROR_CODES.WRITE_REFUSED,
-      message:
-        "A handover names another copy of the owner's that has joined, and that copy is not one.",
-      suggestion:
-        "Join the owner's new copy first (reasonbook join --member <the owner's name>), then hand over to it.",
-    });
-  if (termOf(ctx.terms, input.to))
-    return refuse({
-      code: REPLICA_ERROR_CODES.WRITE_REFUSED,
-      message: "That copy was the owner's copy once already, and each copy holds one term.",
-      suggestion:
-        'Have that copy re-identify first (its next sync does when it is cut), then hand over to the new copy.',
-    });
-  const value: AuthorityValue = {
-    epoch: ctx.epoch + 1,
-    authority: input.to,
-    previous: ctx.authority,
-    move: 'handover',
-    block: target.block,
-  };
-  const done = client.writeTransaction(() =>
-    recordOwnChanges(client, [
-      {
-        kind: 'authority',
-        entity: REPLICA_ENTITY,
-        entityId: input.to,
-        field: null,
-        value: canonicalJson(value),
-      },
-    ])
-  );
-  if (!done.success) return createError(done.error!);
-  const [change] = rows<{ change_id: string }>(
-    client,
-    "SELECT change_id FROM record_changes WHERE kind = 'authority' AND replica_id = ? ORDER BY replica_seq DESC LIMIT 1",
-    [ctx.ownReplica]
-  );
-  return createSuccess({
-    epoch: value.epoch,
-    to: input.to,
-    block: target.block,
-    changeId: change.change_id,
   });
+  if (!done.success) return createError(done.error!);
+  return done.data!;
 }
 
 /**

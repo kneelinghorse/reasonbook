@@ -7,6 +7,7 @@ import { createError, createSuccess } from './errors';
 import { canonicalJson } from './record-capture';
 import { recordOwnChanges } from './record-changes';
 import { freshBlock } from './record-membership';
+import { setAsideCut } from './record-member-cuts';
 import { recomputeEntities } from './record-recompute';
 import { underApplyToken } from './record-token';
 import { NUMBERED, numberedId, planRenumber } from './record-renumber';
@@ -177,6 +178,11 @@ export function takeSuccessor(
       suggestion: 'Join it first.',
     });
   const { successor } = input;
+  const cutoff = input.cut ?? setAsideCut(mergeContext(client), old.replicaId);
+  const reason =
+    cutoff !== undefined && input.reason !== 'move-back' && input.reason !== 'block'
+      ? 'cut'
+      : input.reason;
   const done = client.writeTransaction(() => {
     if (successor.replicaId === old.replicaId) {
       return underApplyToken(client, () => {
@@ -198,13 +204,14 @@ export function takeSuccessor(
         };
       });
     }
-    const divergent = input.divergesFrom
-      ? rows<LoggedChange>(
-          client,
-          'SELECT * FROM record_changes WHERE replica_id = ? AND replica_seq >= ? ORDER BY replica_seq',
-          [old.replicaId, input.divergesFrom]
-        )
-      : [];
+    const divergent =
+      input.divergesFrom && cutoff === undefined
+        ? rows<LoggedChange>(
+            client,
+            'SELECT * FROM record_changes WHERE replica_id = ? AND replica_seq >= ? ORDER BY replica_seq',
+            [old.replicaId, input.divergesFrom]
+          )
+        : [];
     const ownSeq = rows<{ last: number | null }>(
       client,
       'SELECT max(replica_seq) AS last FROM record_changes WHERE replica_id = ?',
@@ -279,8 +286,8 @@ export function takeSuccessor(
           moved: 0,
           renumbered,
         };
-      if (input.reason === 'cut' || input.reason === 'unseen') {
-        const cut = input.cut ?? 0;
+      if (reason === 'cut' || reason === 'unseen') {
+        const cut = cutoff ?? 0;
         const count = Math.max(0, (ownSeq ?? 0) - cut);
         return {
           count,
@@ -315,7 +322,7 @@ export function takeSuccessor(
     from: old.replicaId,
     to: successor.replicaId,
     block: successor.block,
-    reason: input.reason,
+    reason,
     ...done.data,
   };
   writeCopyKey(client, SUCCESSOR_KEY, JSON.stringify({ ...taken, at: new Date().toISOString() }));

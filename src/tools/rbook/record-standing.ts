@@ -2,9 +2,10 @@
 // ABOUTME: Each transaction's standing on this copy (ADR s96 §5, §7): live, pending its verdict, held for a gap, a base
 // ABOUTME: or a row not yet here, refused or quarantined, and why; and who the authority and the members are.
 
-import { isDashboardRoute } from './record-dashboard-route';
+import { isActiveDashboardRoute } from './record-dashboard-route';
 import type { RbookDatabaseClient } from './client';
-import { termOf, type AuthorityTerm, type PendingAuthority } from './record-authority';
+import type { AuthorityTerm, PendingAuthority } from './record-authority';
+import { countedVerdicts } from './record-positions';
 import {
   IMPORT_BASE,
   PROJECT_ENTITY,
@@ -80,6 +81,8 @@ export interface MergeContext {
    */
   readonly authorityPrefix: number;
   readonly members: ReadonlyMap<string, Member>;
+  /** Permanent per-member replica cutoffs, independent of role/removal changes. */
+  readonly setAsideCuts: ReadonlyMap<string, Readonly<Record<string, number>>>;
   readonly standings: Map<string, Standing>;
   /** s96-m13 (ADR s96 §8): the epoch this copy applies, every term up to it, and a move it holds unconfirmed. */
   readonly epoch: number;
@@ -110,7 +113,7 @@ const json = (text: string | null): unknown => (text === null ? null : JSON.pars
 // s96-m13: the context is built in record-context.ts, beside the authority chain it reads.
 export { authoredInTerm, mergeContext, termReach } from './record-context';
 export { BASELINE_QUERY } from './record-baseline';
-import { authoredInTerm, mergeContext, termReach } from './record-context';
+import { authoredInTerm, mergeContext } from './record-context';
 
 /**
  * s97-m11 (design §Owner-role authoring): whether this copy writes what only the owner's copy writes,
@@ -132,7 +135,7 @@ export function writesAsOwner(
     [ctx.authority]
   );
   try {
-    return isDashboardRoute(JSON.parse(row.data?.route ?? 'null'));
+    return isActiveDashboardRoute(JSON.parse(row.data?.route ?? 'null'));
   } catch {
     return false;
   }
@@ -252,19 +255,10 @@ export function verdictOn(
   txnId: string,
   before = Infinity
 ): { verdict: string; reason: string | null; replica: string | null } | null {
-  let best: { epoch: number; change: LoggedChange } | null = null;
-  for (const change of rows<LoggedChange>(
-    client,
-    "SELECT * FROM record_changes WHERE kind = 'verdict' AND entity = ? AND entity_id = ? ORDER BY replica_seq DESC",
-    [TXN_ENTITY, txnId]
-  )) {
-    const term = termOf(ctx.terms, change.replica_id);
-    if (!term || term.epoch >= before || change.replica_seq > termReach(ctx, term)) continue;
-    if (!best || term.epoch > best.epoch) best = { epoch: term.epoch, change };
-  }
+  const counted = countedVerdicts(client, ctx, txnId, before);
+  const best = counted[counted.length - 1];
   if (!best) return null;
-  const value = json(best.change.value) as { verdict: string; reason?: string; replica?: string };
-  return { verdict: value.verdict, reason: value.reason ?? null, replica: value.replica ?? null };
+  return { verdict: best.verdict, reason: best.reason, replica: best.replica };
 }
 
 /**
@@ -343,9 +337,11 @@ function evaluate(client: RbookDatabaseClient, ctx: MergeContext, txnId: string)
   // waits for the renumber that moves it.
   const clash = numberClash(client, ctx, changes);
   if (clash) return { state: 'held', cause: clash };
-  // A term's authority's own write is live by authorship; only an earlier term's verdict judged it.
+  // Unjudged authority writes are live by authorship. A member transaction judged before promotion
+  // remains verdict-governed, including a later upgrade replay recorded during its author's term.
   const term = authoredInTerm(ctx, changes);
-  const verdict = verdictOn(client, ctx, txnId, term ? term.epoch : Infinity);
+  const earlier = term ? verdictOn(client, ctx, txnId, term.epoch) : null;
+  const verdict = !term || earlier ? verdictOn(client, ctx, txnId) : null;
   for (const stable of needs(changes)) {
     const creator = createTxnOf(client, stable);
     if (!creator) continue;

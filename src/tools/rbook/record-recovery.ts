@@ -3,37 +3,27 @@
 // ABOUTME: operator confirmed, a new copy collects every log, takes a fresh block and the next epoch, and says what was lost.
 
 import Database from 'better-sqlite3';
-import { monotonicFactory } from 'ulid';
 import { resolveRecordPaths } from '../../intelligence/legacy-compat';
 import { ProjectGraphRegistry } from '../../intelligence/project-graph-registry';
 import type { ReplicaBinding } from '../../intelligence/replica-bindings';
 import { validAuthorName } from '../../intelligence/user-author';
 import { RbookDatabaseClient } from './client';
 import { createError, createSuccess } from './errors';
-import { applyRemote, replicaMarks } from './record-apply';
-import type { AuthorityValue } from './record-authority';
-import { canonicalJson } from './record-capture';
-import { PROTOCOL_VERSION, recordOwnChanges } from './record-changes';
+import { replicaMarks } from './record-apply';
+import { PROTOCOL_VERSION } from './record-changes';
 import type { Hello, Peer } from './record-exchange';
 import type { LoggedChange } from './record-standing';
 import { freshBlock, listMembers, OWNER_MEMBER } from './record-membership';
-import { judgeUnjudged } from './record-judge';
 import { newestProtocol, UPGRADE_COMMAND } from './record-protocol-hold';
-import { recomputeEntities } from './record-recompute';
-import { mergeContext, REPLICA_ENTITY } from './record-standing';
-import { underApplyToken } from './record-token';
-import {
-  lostChanges,
-  reidentifyReplica,
-  replicaWriteRefusal,
-  type LostChanges,
-} from './replica-check';
-import { COPY_KEYS, writeCopyKey } from './replica-copy-keys';
-import { fileIdentity, REPLICA_ERROR_CODES } from './replica-identity';
+import { mergeContext } from './record-standing';
+import { setAsideCut } from './record-member-cuts';
+import { lostChanges, type LostChanges } from './replica-check';
+import { carriedRefusal, fileIdentity, REPLICA_ERROR_CODES } from './replica-identity';
+import { localCopyReport } from './record-copy-report';
 import type { RbookToolResult } from './types';
 import type { Opener } from './record-sync';
 
-const mintReplicaId = monotonicFactory();
+import { recoverAuthorityCore, recoveryCuts } from './record-recovery-core';
 
 export interface RecoveryInput {
   /** The member names the operator confirms the recovery works from; they must equal the record's. */
@@ -108,7 +98,12 @@ function latestReplicas(client: RbookDatabaseClient, memberId: string): string[]
   const replicas = [...ctx.members.values()].filter((member) => member.member === memberId);
   const succeeded = new Set(replicas.map((member) => member.previous).filter(Boolean));
   return replicas
-    .filter((member) => !succeeded.has(member.replicaId) && member.role !== 'removed')
+    .filter(
+      (member) =>
+        !succeeded.has(member.replicaId) &&
+        member.role !== 'removed' &&
+        setAsideCut(ctx, member.replicaId) === undefined
+    )
     .map((member) => member.replicaId);
 }
 
@@ -225,7 +220,17 @@ export async function recoverAuthority(
   // protocol's stops the recovery with this copy as it was. Later ones arrive as duplicates.
   const collectedFrom: Array<readonly LoggedChange[]> = [];
   for (const peer of peers) {
-    const changes = await peer.changesSince(before.marks);
+    let changes: LoggedChange[];
+    try {
+      changes = await peer.changesSince(before.marks, {
+        ...localCopyReport(),
+        requireComplete: true,
+      });
+    } catch (error) {
+      const refused = carriedRefusal(error);
+      if (refused) return createError(refused);
+      throw error;
+    }
     const newer = newestProtocol(
       changes.filter((change) => change.protocol_version > PROTOCOL_VERSION)
     );
@@ -242,71 +247,27 @@ export async function recoverAuthority(
     before.ctx.block + 1,
     ...[...hellos.values()].flatMap((hello) => Object.values(hello.blocks).map((b) => b + 1))
   );
-  const replicaId = mintReplicaId();
-  const made = await self((client) => {
-    return client.writeTransaction(() => {
-      reidentifyReplica(client, { block, authorityReceived: null, replicaId }, registry);
-      // The owner's copy writes as the owner, whichever member's copy it was made from.
-      if (ownerName) writeCopyKey(client, COPY_KEYS.author, ownerName);
-      return replicaWriteRefusal(client);
-    });
-  });
-  if (!made.success) return createError(made.error!);
-  if (made.data) return createError(made.data);
-  let collected = 0;
-  for (const changes of collectedFrom) {
-    // Collected whole and unjudged: this copy judges only once it is the authority.
-    const applied = await self((client) => importUnjudged(client, changes));
-    if (!applied.success) return createError(applied.error!);
-    collected += applied.data ?? 0;
-  }
-  const recorded = await self((client) => {
-    return client.writeTransaction(() => {
-      const ctx = mergeContext(client);
-      const cut = ctx.prefixes.get(old) ?? 0;
-      const cuts: Record<string, number> = {};
-      for (const member of listed.filter((member) => dropped.has(member.name)))
-        for (const latest of latestReplicas(client, member.memberId))
-          for (const dropReplica of [latest, untakenPredecessor(client, latest)])
-            if (dropReplica) cuts[dropReplica] = replicaMarks(client)[dropReplica] ?? 0;
-      const value: AuthorityValue = {
-        epoch: ctx.epoch + 1,
-        authority: ctx.ownReplica,
-        previous: old,
-        move: 'recovery',
-        block,
-        cut,
-        ...(Object.keys(cuts).length ? { dropped: cuts } : {}),
-        members: listed.map((member) => member.name),
-      };
-      recordOwnChanges(client, [
-        {
-          kind: 'authority',
-          entity: REPLICA_ENTITY,
-          entityId: ctx.ownReplica,
-          field: null,
-          value: canonicalJson(value),
-        },
-      ]);
-      return underApplyToken(client, () => {
-        const judged = judgeUnjudged(client);
-        // What a dropped copy wrote past its cut is quarantined now; the rest kept its standing.
-        const droppedTxns = client.getMany<{ txn_id: string }>(
-          'SELECT DISTINCT txn_id FROM record_changes WHERE replica_id IN (SELECT value FROM json_each(?))',
-          [JSON.stringify(Object.keys(cuts))]
-        );
-        recomputeEntities(
-          client,
-          mergeContext(client),
-          new Set([...judged, ...(droppedTxns.data ?? []).map((row) => row.txn_id)]),
-          new Set()
-        );
-        return { value, judged: judged.length };
-      });
-    });
-  });
+  const recorded = await recoverAuthorityCore(
+    self,
+    collectedFrom,
+    {
+      previous: old,
+      block,
+      ownerName,
+      members: listed.map((member) => member.name),
+      cuts: (client) => {
+        const copies: string[] = [];
+        for (const member of listed.filter((member) => dropped.has(member.name)))
+          for (const latest of latestReplicas(client, member.memberId))
+            for (const dropReplica of [latest, untakenPredecessor(client, latest)])
+              if (dropReplica) copies.push(dropReplica);
+        return recoveryCuts(client, copies);
+      },
+    },
+    registry
+  );
   if (!recorded.success || !recorded.data) return createError(recorded.error!);
-  const { value, judged } = recorded.data;
+  const { value, judged, collected } = recorded.data;
   // ADR s96 §8: a mark is trustworthy unless the folder came back with it, as one backup restores both.
   const lost =
     mark !== null && !restoredTogether
@@ -345,14 +306,4 @@ function newerRefusal(where: string, protocol: number): RbookToolResult<never> {
     message: `${where} holds changes written in record protocol ${protocol}, newer than this version's ${PROTOCOL_VERSION}, and a recovery takes in every copy's changes whole, so nothing was recovered.`,
     suggestion: `Upgrade Reasonbook here (${UPGRADE_COMMAND}), then run the recovery again.`,
   });
-}
-
-/** Store and recompute what a member holds, judging nothing: this copy is not the authority yet. */
-function importUnjudged(
-  client: RbookDatabaseClient,
-  changes: Parameters<typeof applyRemote>[1]
-): RbookToolResult<number> {
-  const applied = applyRemote(client, changes, { judge: false });
-  if (!applied.success || !applied.data) return createError(applied.error!);
-  return createSuccess(applied.data.stored);
 }

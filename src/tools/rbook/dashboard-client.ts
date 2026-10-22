@@ -513,6 +513,8 @@ const RELAY_UPLOAD_TIMEOUT_MS = 15 * 60 * 1000;
 const FIRST_COPY_MAX_BYTES = 4 * 1024 * 1024 * 1024;
 /** s97-m10: the most one peer call's answer may hold, after decompression; a page is far smaller. */
 const RELAY_MAX_RESPONSE_BYTES = 256 * 1024 * 1024;
+/** A project/capability directory is metadata, not a whole-store transfer. */
+const PROJECTS_MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 
 /** A response's text, or null once it holds more than `max` bytes; reading stops there. */
 async function boundedText(response: Response, max: number): Promise<string | null> {
@@ -1237,14 +1239,30 @@ export class DashboardClient {
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
 
     try {
-      const response = await fetch(url, {
+      let response = await fetch(url, {
         method,
         headers,
         body: body ? JSON.stringify(body) : undefined,
         signal: controller.signal,
+        ...(path === '/api/projects/me' ? { redirect: 'manual' as const } : {}),
       });
 
-      clearTimeout(timeout);
+      if (path === '/api/projects/me') {
+        // Keep the deadline alive through the body, including error bodies. Reusing a bounded
+        // response preserves the existing status-specific error envelopes below.
+        const raw = await boundedText(response, PROJECTS_MAX_RESPONSE_BYTES);
+        if (raw === null)
+          return createError(
+            RbookErrors.dashboardError(
+              `The projects response exceeds ${PROJECTS_MAX_RESPONSE_BYTES} bytes (4 MiB).`
+            )
+          );
+        response = new Response(raw, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: response.headers,
+        });
+      } else clearTimeout(timeout);
 
       if (response.status === 401) {
         // 401 = token expired/invalid server-side — clear the cache so the next call
@@ -1309,6 +1327,14 @@ export class DashboardClient {
     } catch (error: unknown) {
       clearTimeout(timeout);
 
+      if (controller.signal.aborted)
+        return createError(
+          RbookErrors.dashboardUnreachable(
+            this.baseUrl,
+            `Request timed out after ${this.timeoutMs}ms`
+          )
+        );
+
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
           return createError(
@@ -1322,6 +1348,8 @@ export class DashboardClient {
       }
 
       return createError(RbookErrors.dashboardUnreachable(this.baseUrl, 'Unknown network error'));
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
@@ -1809,6 +1837,59 @@ export class DashboardClient {
     }
   }
 
+  /** Upload one immutable recovery contribution; the host binds its receipt to this recovery and copy. */
+  async relayRecoveryCopy(
+    projectId: string,
+    call: { readonly recoveryId: string; readonly replicaId: string; readonly file: string }
+  ): Promise<RbookToolResult<{ status: number; body: unknown }>> {
+    const tokenResult = await this.getAuthToken();
+    if (!tokenResult.success) return createError(tokenResult.error!);
+    const query = new URLSearchParams({ recoveryId: call.recoveryId, replicaId: call.replicaId });
+    const url = `${this.baseUrl}/api/relay/projects/${encodeURIComponent(projectId)}/recovery/copy?${query}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), RELAY_UPLOAD_TIMEOUT_MS);
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${tokenResult.data!}`,
+          Accept: 'application/json',
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': String(statSync(call.file).size),
+        },
+        body: Readable.toWeb(createReadStream(call.file)) as unknown as RequestInit['body'],
+        duplex: 'half',
+        signal: controller.signal,
+        redirect: 'manual',
+      } as RequestInit & { duplex: 'half' });
+      const raw = await boundedText(response, RELAY_MAX_RESPONSE_BYTES);
+      if (raw === null) {
+        controller.abort();
+        return createError(
+          RbookErrors.dashboardError(
+            `the dashboard answered more than ${RELAY_MAX_RESPONSE_BYTES} bytes to one recovery upload, so this copy stopped reading`
+          )
+        );
+      }
+      let body: unknown = raw;
+      try {
+        body = raw ? JSON.parse(raw) : null;
+      } catch {
+        /* The caller reports a non-JSON status. */
+      }
+      return createSuccess({ status: response.status, body });
+    } catch (error: unknown) {
+      return createError(
+        RbookErrors.dashboardUnreachable(
+          this.baseUrl,
+          error instanceof Error ? error.message : 'Unknown network error'
+        )
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
   /**
    * s97-m11 (contract v1 D5): stream a dashboard-shared project's first copy to `destPath`, never
    * past `maxBytes`; a body that is not the copy (an error) comes back as the status and the answer.
@@ -1897,13 +1978,30 @@ export class DashboardClient {
    * project, or null when it names none.
    */
   async refereeProtocol(projectId: string): Promise<RbookToolResult<number | null>> {
+    const result = await this.refereeCapabilities(projectId);
+    return result.success ? createSuccess(result.data!.recordProtocol) : createError(result.error!);
+  }
+
+  /** Read both capability gates from the same authenticated project-list response. */
+  async refereeCapabilities(projectId: string): Promise<
+    RbookToolResult<{
+      readonly version: string | null;
+      readonly recordProtocol: number | null;
+    }>
+  > {
     const me = await this.request<{
-      projects?: Array<{ id?: unknown; referee?: { protocol?: { record?: unknown } } | null }>;
+      projects?: Array<{
+        id?: unknown;
+        referee?: { version?: unknown; protocol?: { record?: unknown } } | null;
+      }>;
     }>('GET', '/api/projects/me');
     if (!me.success) return createError(me.error!);
-    const record = (me.data?.projects ?? []).find((project) => project.id === projectId)?.referee
-      ?.protocol?.record;
-    return createSuccess(typeof record === 'number' && Number.isInteger(record) ? record : null);
+    const referee = (me.data?.projects ?? []).find((project) => project.id === projectId)?.referee;
+    const record = referee?.protocol?.record;
+    return createSuccess({
+      version: typeof referee?.version === 'string' ? referee.version : null,
+      recordProtocol: typeof record === 'number' && Number.isInteger(record) ? record : null,
+    });
   }
 
   /**

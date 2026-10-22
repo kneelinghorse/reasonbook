@@ -6,6 +6,7 @@ import type { RbookDatabaseClient } from '../tools/rbook/client';
 import { createSuccess } from '../tools/rbook/errors';
 import { replicaMarks } from '../tools/rbook/record-apply';
 import { crossRecordFindings, type CheckFinding } from '../tools/rbook/record-checks';
+import { copyReport, type CopyReport } from '../tools/rbook/record-copy-report';
 import { peerHealth } from '../tools/rbook/record-peers';
 import { changesSince } from '../tools/rbook/record-since';
 import { openConflicts, type OpenConflict } from '../tools/rbook/record-settle';
@@ -25,7 +26,7 @@ export interface RecentChange extends LoggedChange {
   readonly cause: string | null;
 }
 
-export interface CopyState {
+export interface CopyState extends CopyReport {
   readonly replicaId: string;
   readonly memberId: string | null;
   readonly accountId: string | null;
@@ -143,6 +144,8 @@ export function peers(location: RefereeLocation): Promise<RefereeOutcome<CopySta
         received_at: string | null;
         served_marks: string | null;
         served_at: string | null;
+        library_version?: string | null;
+        reads?: number | null;
       }>(client, 'SELECT * FROM referee_copies').map((row) => [row.replica_id, row])
     );
     // Only a copy's errors come from its own reports, which it may make about itself alone.
@@ -158,6 +161,7 @@ export function peers(location: RefereeLocation): Promise<RefereeOutcome<CopySta
           : {};
         const report = reported.get(member.replicaId);
         return {
+          ...copyReport({ libraryVersion: saw?.library_version, reads: saw?.reads }),
           replicaId: member.replicaId,
           memberId: memberOfReplica(ctx, member.replicaId),
           accountId: accountOfReplica(ctx, accounts, member.replicaId),

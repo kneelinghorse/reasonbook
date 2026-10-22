@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
 import fs from 'fs';
 import path from 'path';
 import { gzipSync } from 'zlib';
+import { REFEREE_PROTOCOL } from '../../src/referee';
 import { writeUserAuthor } from '../../src/intelligence/user-author';
 import { exchange } from '../../src/tools/rbook/record-exchange';
 import { buildFreshCopy } from '../../src/tools/rbook/record-fresh-copy';
@@ -72,9 +73,10 @@ const replicaNow = (copy: Copy) => () =>
   });
 
 async function sync(copy: Copy, token: string) {
+  const local = copyPeer(fixture.tmp, copy);
   const result = await exchange(
-    copyPeer(fixture.tmp, copy),
-    httpPeer(server, PROJECT, token, replicaNow(copy))
+    local,
+    httpPeer(server, PROJECT, token, replicaNow(copy), () => local.hello())
   );
   if (!result.success) throw new Error(`${copy.name}: ${JSON.stringify(result.error)}`);
   return result.data!;
@@ -250,9 +252,39 @@ describe('the referee library through the reference server, in its own process (
       return { joinRequest, answer: answer.data! };
     };
     const lost = await handInOnce();
+    // Reconstruct an unfinished hand-in saved before the invalid-cache marker existed.
+    await server.stop();
+    const stateFile = path.join(fixture.tmp, 'volume', 'server-state.json');
+    const saved = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    delete saved[PROJECT].membersInvalid;
+    saved[PROJECT].members = [];
+    saved[PROJECT].known.push('acct-darryl');
+    fs.writeFileSync(stateFile, JSON.stringify(saved));
+    const configFile = path.join(fixture.tmp, 'server', 'referee-server.json');
+    server = await spawnRefereeServer(
+      path.dirname(configFile),
+      JSON.parse(fs.readFileSync(configFile, 'utf8'))
+    );
+    const blocked = await request(server, `${route}/answer`, {
+      token: TOKENS.owner,
+      json: { answer: lost.answer },
+    });
+    expect(blocked.body.error?.code).toBe('REFEREE_NOT_READY');
+    const beforeDiscard = JSON.parse(fs.readFileSync(stateFile, 'utf8'))[PROJECT];
+    expect(beforeDiscard.membersInvalid).toBe(true);
+    expect((await request(server, route, { token: TOKENS.darryl, method: 'DELETE' })).status).toBe(
+      404
+    );
     expect((await request(server, route, { token: TOKENS.owner, method: 'DELETE' })).status).toBe(
       200
     );
+    expect(blocked.body.error?.suggestion).toMatch(/discard.*share/i);
+    expect(JSON.parse(fs.readFileSync(stateFile, 'utf8'))[PROJECT]).toEqual({
+      ...beforeDiscard,
+      shared: false,
+      head: null,
+      membersInvalid: false,
+    });
     // The first attempt's answer, retried, arrives after the discard: no referee, which is no lost store.
     const late = await request(server, `${route}/answer`, {
       token: TOKENS.owner,
@@ -298,6 +330,13 @@ describe('the referee library through the reference server, in its own process (
     expect(me.body.data!.projects).toEqual([
       expect.objectContaining({ dashboardShared: true, needsRecovery: false }),
     ]);
+    const storeFile = path.join(fixture.tmp, 'volume', 'referee', PROJECT, 'rbook.sqlite');
+    const joinedBytes = fs.readFileSync(storeFile);
+    const joinedState = fs.readFileSync(stateFile);
+    const joinedDiscard = await request(server, route, { token: TOKENS.owner, method: 'DELETE' });
+    expect(joinedDiscard.body.error?.code).toBe('REFEREE_METHOD_REFUSED');
+    expect(fs.readFileSync(storeFile)).toEqual(joinedBytes);
+    expect(fs.readFileSync(stateFile)).toEqual(joinedState);
   }, 300000);
 
   it('answers 401, 404, 413 and 409 as the contract says, and takes a gzip request', async () => {
@@ -335,7 +374,9 @@ describe('the referee library through the reference server, in its own process (
       expect.objectContaining({
         id: PROJECT,
         dashboardShared: true,
-        referee: expect.objectContaining({ protocol: { wire: 1, record: 1 } }),
+        referee: expect.objectContaining({
+          protocol: { wire: 1, record: REFEREE_PROTOCOL.record },
+        }),
       }),
     ]);
     // A restored volume: the store behind the head the server recorded is refused, and stays refused.
@@ -353,7 +394,7 @@ describe('the referee library through the reference server, in its own process (
     const lost = await request(server, route, { token: TOKENS.owner, json: hello });
     expect({ status: lost.status, code: lost.body.error?.code }).toEqual({
       status: 409,
-      code: 'REFEREE_NEEDS_RECOVERY',
+      code: 'REFEREE_RECOVERING',
     });
     expect((await request(server, route, { token: TOKENS.owner, json: hello })).status).toBe(409);
   }, 300000);

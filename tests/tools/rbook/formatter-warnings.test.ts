@@ -735,7 +735,9 @@ describe('s86-m02 Step 1 — the envelope warnings channel is universal', () => 
       // their public formatters remain covered by the universal rendering census above.
       // s97-m09: record-fresh-copy.ts attaches the sharing migrations' warnings to a fresh copy's
       // preparation; the referee library's answers carry them, and it has no formatter.
-    }).toEqual({ warningEnvelopeModules: 38, modulesWithFormatters: 29, formatters: 32 });
+      // s98-m18: client.ts and record-upgrade-judge.ts attach client-opening and upgrade-replay
+      // warnings; neither declares a formatter, so the formatter counts remain unchanged.
+    }).toEqual({ warningEnvelopeModules: 40, modulesWithFormatters: 29, formatters: 32 });
     expect(
       [...new Set(looseErrorPreambles.map((row) => row.errorPreambleCondition))].sort()
     ).toEqual(['!result.success || !result.data']);

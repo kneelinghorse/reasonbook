@@ -250,14 +250,26 @@ const EXPECTED_TOTALS = {
   // a new answer type, so only the file count changes; the full answer closure stays identical.
   // s98-m10: record-temp-copies.ts adds one source file and no answer type.
   // s98-m12: shared failure renderer adds one source file, with no exported answer root.
-  files: 283,
+  // s98-m15: dashboard recovery, recovery moves, lineage and recovery core add four tool-root
+  // files. Exported Error/Result roots, their closure and the answer snapshot are unchanged.
+  // s98-m16: dashboard history, share state and referee membership add three tool-root files.
+  // DashboardJoined becomes a union of a fresh join and reattachment, with a shared base:
+  // one more declaration/composition and one fewer direct property row. The anonymous union
+  // arms remain in the composition fingerprint. CHANGELOG discloses the new reattached arm.
+  // s98-m17: seven report/cut/extraction helpers join the tool root. ExchangeReport is re-exported
+  // unchanged from record-exchange-types.ts; its declaration identity changes, not its JSON shape.
+  // New referee/hello report fields and the set-aside API are outside these Result/Error roots;
+  // CHANGELOG names them, and their wire/CLI/reference-host tests verify the runtime surface.
+  // s98-m18: eleven tool-root helpers; recordProtocol adds four reachable declarations
+  // and sixteen properties, including inherited capability reports. CHANGELOG names the field.
+  files: 308,
   roots: 148,
-  declarations: 341,
-  compositions: 341,
+  declarations: 346,
+  compositions: 346,
   // s98-m11: bulk feedback receipts name the project and list already resolved skips.
   // s98-m12: ProjectTypeFields gains optional build_freshness_check, disclosed in CHANGELOG.
   // s98-m13: sprint-close adds implicitSessionsAtClose beside the direct-membership list.
-  rows: 1918,
+  rows: 1933,
 } as const;
 const EXPLICIT_OPAQUE_LEDGER = [
   'RbookToolError.providedValue = ANY',

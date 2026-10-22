@@ -92,6 +92,9 @@ const SINGLE_PROJECT_REPLICA = new Set([
   'record-share.ts',
   // s96-m13: a recovery reads and retires this machine's binding of the lost owner copy (ADR s96 §8).
   'record-recovery.ts',
+  // s98-m15: extracted recovery write step; its registry type is passed only to reidentifyReplica
+  // to check, retire and bind copies of the same recorded project, never to query another project.
+  'record-recovery-core.ts',
 ]);
 
 // Matches an import from the cross-store fan-out modules OR the project-graph registry —
@@ -135,8 +138,15 @@ describe('pin-scope convergence gate (Sprint 80 m04)', () => {
   });
 
   it('a replica module cannot gain portfolio queries under its registry-only exception', () => {
-    const fanOut = "import { queryAcrossStores } from '../../intelligence/cross-store-query';";
-    for (const name of SINGLE_PROJECT_REPLICA) expect(violatesScope(name, fanOut)).toBe(true);
+    for (const name of SINGLE_PROJECT_REPLICA) {
+      const content = fs.readFileSync(path.join(HANDLER_DIR, name), 'utf8');
+      expect(violatesScope(name, content)).toBe(false);
+      for (const specifier of ['cross-store-query', 'cross-store-queries']) {
+        const fanOut = `import { queryAcrossStores } from '../../intelligence/${specifier}';`;
+        expect(violatesScope(name, fanOut)).toBe(true);
+        expect(violatesScope(name, content + '\n' + fanOut)).toBe(true);
+      }
+    }
   });
 
   it('an upload helper cannot gain portfolio queries under its registry-only exception', () => {

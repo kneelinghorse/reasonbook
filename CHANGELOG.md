@@ -4,6 +4,79 @@ All notable changes to Reasonbook (published as `@aquex/cmos-mcp` before 4.0.0) 
 
 ## [Unreleased]
 
+## [4.5.0] — 2026-10-22
+
+This release finishes the client and referee library for hosted recovery, re-sharing, setting aside
+a gone copy, and arrival-based id claims. The dashboard must deploy its retained history, routes
+and owner controls before these flows are available through reasonbook.ai.
+
+### Changed
+
+- **Protocol status is separate from conflicts in the review.** `RbookReviewResult.recordProtocol`
+  adds the write protocol, counted switch, complete named blockers and explanatory text. Healthy
+  protocol status does not count as a state needing a person. The usual digest budget stays 4 KB;
+  an unusually long blocker list remains complete, with its exact size and explicit overage.
+  Compact shared-record summaries retain quarantined and other non-live transaction counts;
+  `SharedRecordReview.waitingCounts` adds optional typed counts for those states.
+  `SharedRecordReview.recoveryConditions` retains held-recovery condition names in compact
+  reviews beside the confirmation command and the instruction to correct invalid chains first.
+- **The referee library can recover a lost hosted record from surviving copies.** Intake, plan
+  and finalization validate streams against recorded head history, expose losses and missing
+  copies, and preserve quarantined work. Client uploads and recovery moves are supported; the
+  dashboard must deploy its routes, retained head history and owner confirmation controls before
+  this is available through reasonbook.ai.
+- **Shared records switch to arrival-based id claims when every active copy supports them.**
+  The library reads record protocol 2 but keeps writing protocol 1 until every active copy
+  reports `reads >= 2`. The review names blockers; a gone copy must be set aside. After the
+  switch, the first counted acceptance fixes a claim's position, including through handover.
+  Earlier claims keep their names and outrank later back-dated creates. An accepted id is final
+  once a copy holds the data of every earlier-positioned claim; predictable ids can still be
+  claimed first, and recovery judges unjudged transactions in clock order.
+- **Older readers receive only complete readable transactions.** Delivery stops each stream
+  before its first protocol-2 transaction, protecting 4.2.0 as well as later old clients.
+  Switched records refuse joins, successors, handovers and move-backs to older or unreported
+  readers. A downgrade after the switch can still upload local work but receives nothing past
+  that boundary and may rename local ids; an old authority holds members' protocol-2 changes.
+  Recovery preserves the switch only inside its adopted prefix. Checked writable opens and
+  authorized merges retry supported historical protocol refusals and unjudged newer-protocol
+  transactions, preserving unrelated refusals and current membership guards.
+- **Catch-up receipts name only a move the receiving copy actually holds.** Direct exchanges and
+  bundle imports distinguish a withheld move from a pending or competing move. Hello adds optional
+  `forks` entries with epoch, authority and change id for held competing moves; older hellos may
+  omit the field.
+  `ChangeRecipient.catchUp` adds an optional flag for an SSH recovery pull before a late join's
+  admission proof arrives. Its historical hello supplies delivery capacity only; it grants no
+  membership, ordinary stream access or complete recovery fetch.
+- **Owner copies that exchanged successfully count before a dashboard share.** A saved SSH
+  route or recorded work also counts, including an observed or routed former owner copy.
+  Dashboard-route rows, cut copies and this folder's former identities do not count. A refusal
+  names the copies that would be stranded and offers a preview of setting aside a gone copy.
+- **Set aside one gone copy without removing its person.** On the direct authority copy,
+  `reasonbook set-aside --replica <id>` previews the held cutoff and last exchange; add `--yes`
+  to record it. Role changes, removal and re-admission retain these cuts. Later writes stay
+  quarantined for the person to redo, and recovery does not wait for the cut copy. The referee
+  library's dashboard-only `setAside` requires `confirmGone: true` if the copy called in the
+  last seven days; it is unavailable through the peer API. A dashboard host must deploy this
+  operation before its owner page can offer it.
+- **Copies report their library version and supported record reads.** Reports travel in hello,
+  near-end SSH hello, exchange receipts, join requests and bundle headers; old or absent reports
+  remain unknown, and a downgrade replaces previous knowledge. With any set-aside held, a
+  planned handover requires the target to report library 4.5.0 or later, and a share checks that
+  referee version before uploading. A refused authority target returns `RECORD_COPY_TOO_OLD`;
+  peer answers keep the named version and direct the caller to upgrade its copy.
+  **Recovery run by a pre-4.5.0 binary can undo a set-aside**;
+  this guard covers planned moves, not recovery by an older installed engine.
+- **Joining can reattach a copy after the same dashboard project is shared again.**
+  `DashboardJoined` now has two mutually exclusive result arms: a new copy returns `joined`
+  as before, while an existing copy returns `reattached: { replicaId, block }` and omits
+  `joined`. Both retain `dashboard`, `dashboardProjectId` and `sync`. Consumers must check
+  which arm was returned. Reattachment preserves the existing store and local log; ordinary
+  sync can take a successor, and `reattached` reports the resulting replica and block. Existing
+  dashboard history requires the exact retained origin and project id, plus verified referee
+  history. A copy set aside before the first dashboard share has no such route: it may attach
+  only after an authenticated referee proves the same record, its admission and an explicit
+  cut. Ordinary handovers still require the returning person's confirmation.
+
 ## [4.4.0] — 2026-10-22
 
 This release checks tool calls before opening a store, makes CLI help safe to ask for, and
@@ -2413,6 +2486,7 @@ This is the section to read carefully if you've been tracking pre-1.0 internal b
 - **Custom `cmos_learnings(action="update")` callers** should pass at least one of `status` or `evergreen` per call (see Tool-surface changes above).
 
 [1.0.0]: https://github.com/kneelinghorse/cmos-mcp/releases/tag/v1.0.0
-[Unreleased]: https://github.com/kneelinghorse/reasonbook/compare/v4.3.0...HEAD
+[Unreleased]: https://github.com/kneelinghorse/reasonbook/compare/v4.5.0...HEAD
+[4.5.0]: https://github.com/kneelinghorse/reasonbook/compare/v4.4.0...v4.5.0
 [4.3.0]: https://github.com/kneelinghorse/reasonbook/releases/tag/v4.3.0
 [4.2.1]: https://github.com/kneelinghorse/reasonbook/releases/tag/v4.2.1

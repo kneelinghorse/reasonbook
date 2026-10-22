@@ -5,6 +5,7 @@
 import type { RbookDatabaseClient } from './client';
 import { authorityChain, termOf, type AuthorityTerm } from './record-authority';
 import { BASELINE_QUERY } from './record-baseline';
+import { mergeSetAsideCuts, type ReplicaCuts } from './record-member-cuts';
 import type { LoggedChange, Member, MergeContext } from './record-standing';
 import { readReplicaIdentity } from './replica-identity';
 
@@ -62,6 +63,7 @@ export function mergeContext(client: RbookDatabaseClient): MergeContext {
   ]);
   // s96-m13: a member change names a person's role; a removal carries a cut for each replica.
   const people = new Map<string, { role: string; cuts: Record<string, number> }>();
+  const setAsideCuts = new Map<string, ReplicaCuts>();
   for (const term of chain.terms) {
     // A pending move ends the current term's count where its cut falls (ADR §8).
     const reach = Math.min(
@@ -82,8 +84,15 @@ export function mergeContext(client: RbookDatabaseClient): MergeContext {
       [term.replicaId, reach]
     )) {
       if (change.kind === 'member') {
-        const value = json(change.value) as { role: string; cuts?: Record<string, number> };
-        people.set(String(change.entity_id), { role: String(value.role), cuts: value.cuts ?? {} });
+        const value = json(change.value) as {
+          role: string;
+          cuts?: Record<string, number>;
+          setAsideCuts?: unknown;
+        };
+        const person = String(change.entity_id);
+        people.set(person, { role: String(value.role), cuts: value.cuts ?? {} });
+        const cuts = mergeSetAsideCuts(setAsideCuts.get(person) ?? {}, value.setAsideCuts);
+        if (Object.keys(cuts).length) setAsideCuts.set(person, cuts);
         continue;
       }
       const value = json(change.value) as {
@@ -121,7 +130,11 @@ export function mergeContext(client: RbookDatabaseClient): MergeContext {
   const cut = (replicaId: string, at: number, reason: string, role?: string): void => {
     const member = members.get(replicaId);
     if (member)
-      members.set(replicaId, { ...member, ...(role ? { role } : {}), cut: at, cutReason: reason });
+      members.set(replicaId, {
+        ...member,
+        ...(role ? { role } : {}),
+        ...(member.cut === undefined || at < member.cut ? { cut: at, cutReason: reason } : {}),
+      });
   };
   for (const [replicaId, member] of members) {
     const latest = member.member ? people.get(member.member) : undefined;
@@ -132,6 +145,10 @@ export function mergeContext(client: RbookDatabaseClient): MergeContext {
     else if ((latest?.role === 'owner' || latest?.role === 'editor') && latest.role !== member.role)
       members.set(replicaId, { ...member, role: latest.role });
   }
+  for (const [person, cuts] of setAsideCuts)
+    for (const [replicaId, at] of Object.entries(cuts))
+      if (members.get(replicaId)?.member === person)
+        cut(replicaId, at, 'this copy was permanently set aside');
   for (const [replicaId, at] of Object.entries(chain.dropped))
     cut(replicaId, at, "the owner's recovery dropped this copy");
   for (const term of chain.terms)
@@ -167,6 +184,7 @@ export function mergeContext(client: RbookDatabaseClient): MergeContext {
     authority: current.replicaId,
     authorityPrefix: prefixOf(current.replicaId),
     members,
+    setAsideCuts,
     standings: new Map(),
     epoch: current.epoch,
     terms: chain.terms,

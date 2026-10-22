@@ -6,11 +6,14 @@ import os from 'os';
 import { DashboardClient, resolveDashboardBaseUrl } from './dashboard-client';
 import { createError, createSuccess } from './errors';
 import type { ApplyReport } from './record-apply';
-import { PROTOCOL_VERSION } from './record-changes';
+import { localCopyReport } from './record-copy-report';
+import { readableChanges } from './record-since';
+import { readDashboardChanges } from './record-dashboard-stream';
 import type { Hello, Peer } from './record-exchange';
 import { dashboardName, type DashboardRoute } from './record-dashboard-route';
 import { DASHBOARD_LIMIT_FLOOR, pagesOf } from './record-pages';
-import type { LoggedChange } from './record-standing';
+import type { MergeContext } from './record-standing';
+import { predecessorsOf } from './record-lineage';
 import type { WirePeer } from './record-wire';
 import { REPLICA_ERROR_CODES, ReplicaRefusal } from './replica-identity';
 import type { RbookToolError, RbookToolResult } from './types';
@@ -25,8 +28,13 @@ export interface DashboardPeerOptions {
   readonly projectRoot: string;
   /** This copy's replica now: a successor taken mid-exchange calls under its new identity. */
   readonly replicaIdNow: () => Promise<string>;
+  /** The local admitted lineage; production callers supply it for predecessor deliveries. */
+  readonly contextNow?: () => Promise<Pick<MergeContext, 'ownReplica' | 'members'>>;
+  /** Recovery contributions keep the original refusal and its actionable state visible. */
+  readonly recovering?: (error: RbookToolError, client: DashboardClient) => Promise<RbookToolError>;
   /** The record protocol this copy says it writes; tests name a newer one. */
   readonly recordProtocol?: number;
+  readonly recordProtocolNow?: () => Promise<number>;
   /** The most one sync takes in from the stream; tests name a small one. */
   readonly maxStreamBytes?: number;
   /**
@@ -225,6 +233,7 @@ export async function dashboardPeer(
 ): Promise<WirePeer> {
   const name = dashboardName(route);
   const client = await dashboardClientFor(options.projectRoot, route);
+  let remoteHello: Hello | null = null;
 
   const call = async (method: string, params?: unknown): Promise<RbookToolResult<unknown>> => {
     const replicaId = await options.replicaIdNow();
@@ -240,6 +249,21 @@ export async function dashboardPeer(
     // the dashboard's relay answers NOT_SHARED for a project with no referee store (its s62-m05).
     if (sent.data.status === 404) {
       const sharing = await client.dashboardSharing(route.projectId);
+      // s100-m01 (#717 item 2): a removed member's account is listed no project row at all, so the
+      // list cannot say the project moved back. A known removal also wins when a later explicit
+      // probe finds the project listed but no longer shared: direct access is not a remedy.
+      // A copy told of no removal keeps its route when signed in to another account.
+      if (
+        sharing.success &&
+        (!sharing.data?.listed || sharing.data.shared === false) &&
+        (await options.removedHere?.())
+      )
+        throw new ReplicaRefusal({
+          code: REPLICA_ERROR_CODES.ROUTE_ENDED,
+          message: `${name} no longer serves this project to this copy: its member was removed from the project, so its route is kept as ended.`,
+          suggestion:
+            "This copy keeps everything it holds, and syncs with no copy now; whether the project is shared with you again is the owner's to decide.",
+        });
       if (sharing.success && sharing.data?.listed && sharing.data.shared === false)
         throw new ReplicaRefusal({
           code: REPLICA_ERROR_CODES.ROUTE_ENDED,
@@ -247,19 +271,19 @@ export async function dashboardPeer(
           suggestion:
             "This copy keeps everything it holds, and now syncs with the owner's copy directly: reasonbook sync --ssh <host> --remote-root <folder>, or a bundle.",
         });
-      // s100-m01 (#717 item 2): a removed member's account is listed no project row at all, so the
-      // list cannot say the project moved back; the removal this copy was told of says the route
-      // serves it nothing, and it ends here too. A copy told of none keeps its route, as one signed
-      // in to another account must.
-      if (sharing.success && !sharing.data?.listed && (await options.removedHere?.()))
-        throw new ReplicaRefusal({
-          code: REPLICA_ERROR_CODES.ROUTE_ENDED,
-          message: `${name} no longer serves this project to this copy, whose member was removed, so this copy forgets its route there.`,
-          suggestion:
-            "This copy keeps everything it holds, and syncs with no copy now; whether the project is shared with you again is the owner's to decide.",
-        });
     }
-    if (isAnswer(sent.data.body)) return sent.data.body;
+    if (isAnswer(sent.data.body)) {
+      if (
+        sent.data.body.error &&
+        options.recovering &&
+        (sent.data.body.error.code === 'REFEREE_RECOVERING' ||
+          (sent.data.body.error.code === 'REFEREE_NEEDS_RECOVERY' &&
+            typeof sent.data.body.error.currentState === 'object' &&
+            sent.data.body.error.currentState?.state === 'cancelled'))
+      )
+        return createError(await options.recovering(sent.data.body.error, client));
+      return sent.data.body;
+    }
     throw dashboardRefusal(name, sent.data.status, sent.data.body);
   };
   const value = async <T>(method: string, params?: unknown): Promise<T> => {
@@ -283,47 +307,46 @@ export async function dashboardPeer(
     name,
     call: (method, params) => value(method, params),
     close: () => undefined,
-    hello: () =>
-      value<Hello>('hello', { recordProtocol: options.recordProtocol ?? PROTOCOL_VERSION }),
+    hello: async () => {
+      remoteHello = await value<Hello>('hello', {
+        ...localCopyReport(),
+        recordProtocol: options.recordProtocol ?? (await options.recordProtocolNow?.()) ?? 1,
+      });
+      return remoteHello;
+    },
     chains: (at) => value('chains', at),
     // The referee's stream comes back a page at a time; each page holds whole transactions.
-    changesSince: async (marks) => {
+    changesSince: async (marks, recipient) => {
       const limit = await budgetNow();
-      const since: Record<string, number> = { ...marks };
-      const all: LoggedChange[] = [];
-      let taken = 0;
-      for (;;) {
-        const page = await value<{ changes: LoggedChange[]; more: boolean } | LoggedChange[]>(
-          'changesSince',
-          { marks: since, maxBytes: limit }
-        );
-        if (Array.isArray(page)) return [...all, ...page];
-        all.push(...page.changes);
-        if (!page.more) return all;
-        // Past the cap, what came so far is a prefix of whole transactions: it is applied, and the
-        // next sync takes up the rest from there (critics, round 2).
-        taken += JSON.stringify(page.changes).length;
-        if (taken > (options.maxStreamBytes ?? MAX_STREAM_BYTES)) return all;
-        let moved = false;
-        for (const change of page.changes)
-          if (change.replica_seq > (since[change.replica_id] ?? 0)) {
-            since[change.replica_id] = change.replica_seq;
-            moved = true;
-          }
-        if (!moved)
-          throw refusal({
-            message: `${name} said more changes wait but sent none, so the sync stopped.`,
-            suggestion:
-              'Sync again; if this repeats, report it with the dashboard address and the time.',
-          });
-      }
+      return readDashboardChanges(
+        (since) =>
+          value('changesSince', {
+            marks: since,
+            maxBytes: limit,
+            ...(recipient?.requireComplete ? { requireComplete: true } : {}),
+          }),
+        marks,
+        {
+          maxStreamBytes: options.maxStreamBytes ?? MAX_STREAM_BYTES,
+          requireComplete: recipient?.requireComplete,
+          name,
+        }
+      );
     },
     // This copy's changes go a page at a time, every page but the last saying more follow. A
     // transaction larger than a page stays here with what follows it; the pages before it go, saying
     // more follow, so a catch-up they belong to stays unconfirmed (critics, round 1).
     apply: async (changes, flags = {}) => {
+      const own = await options.replicaIdNow();
+      const ctx = await options.contextNow?.();
+      const allowed = new Set([own, ...(ctx ? predecessorsOf(ctx, own) : [])]);
+      // Only the outgoing authority's relay forwards foreign streams. A former authority that
+      // now follows the referee, including an owner-role member, sends only its own lineage.
+      const relay =
+        remoteHello?.authority === own && remoteHello.replicaId !== remoteHello.authority;
+      const delivery = relay ? changes : changes.filter((change) => allowed.has(change.replica_id));
       const limit = await budgetNow();
-      const { pages, oversized } = pagesOf(changes, limit);
+      const { pages, oversized } = pagesOf(readableChanges(delivery, remoteHello ?? {}), limit);
       let report: ApplyReport | null = null;
       const warnings: string[] = [];
       for (const [index, page] of pages.entries()) {

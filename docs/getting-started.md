@@ -16,11 +16,11 @@ Pick one:
 
 ```bash
 # Recommended: a global install of this release. It starts from disk, with no registry lookup.
-npm install -g @aquex/reasonbook@4.4.0
+npm install -g @aquex/reasonbook@4.5.0
 
 # Or run on demand via npx: pinned, and preferring the local cache. The first launch downloads
 # the package; later launches reuse the npm cache.
-npx --prefer-offline -y @aquex/reasonbook@4.4.0
+npx --prefer-offline -y @aquex/reasonbook@4.5.0
 ```
 
 If the former package is installed globally, run `npm uninstall -g @aquex/cmos-mcp` first. Version 4 provides only the `reasonbook` command; update scripts and MCP configurations that use the old command.
@@ -30,7 +30,7 @@ Verify it starts:
 ```bash
 reasonbook --version  # if globally installed
 # or
-npx --prefer-offline -y @aquex/reasonbook@4.4.0 --version
+npx --prefer-offline -y @aquex/reasonbook@4.5.0 --version
 ```
 
 Semantic (vector) search is optional: without it, retrieval is keyword-only and the install is about
@@ -44,7 +44,7 @@ Claude Code and Codex are verified; the other blocks follow each client's own MC
 ### Claude Code
 
 ```bash
-claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.4.0"]}'
+claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.5.0"]}'
 claude mcp list   # confirm it's registered
 ```
 
@@ -62,7 +62,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS), 
       "args": [
         "--prefer-offline",
         "-y",
-        "@aquex/reasonbook@4.4.0",
+        "@aquex/reasonbook@4.5.0",
         "--project-root",
         "/absolute/path/to/your/project"
       ]
@@ -85,7 +85,7 @@ Edit `~/.cursor/mcp.json`:
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.4.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.5.0"]
     }
   }
 }
@@ -100,7 +100,7 @@ Edit your Zed `settings.json`:
   "context_servers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.4.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.5.0"]
     }
   }
 }
@@ -121,7 +121,7 @@ your terminal PATH, so the terminal route needs the standalone Claude CLI.
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.4.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.5.0"]
     }
   }
 }

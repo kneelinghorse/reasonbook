@@ -7,6 +7,8 @@ import type { RbookDatabaseClient } from './client';
 import { createError, createSuccess } from './errors';
 import { canonicalJson } from './record-capture';
 import { recordOwnChanges } from './record-changes';
+import { readerRefusal } from './record-reader-gate';
+import { reportedCopy } from './record-peer-report';
 import {
   freshBlock,
   listMembers,
@@ -96,6 +98,15 @@ export function admitSuccessor(
   client: RbookDatabaseClient,
   input: { readonly replicaId: string; readonly sameId?: boolean }
 ): RbookToolResult<Successor> {
+  const committed = client.writeTransaction(() => admitLocked(client, input));
+  if (!committed.success) return createError(committed.error!);
+  return committed.data!;
+}
+
+function admitLocked(
+  client: RbookDatabaseClient,
+  input: { readonly replicaId: string; readonly sameId?: boolean }
+): RbookToolResult<Successor> {
   const ctx = mergeContext(client);
   if (ctx.ownReplica !== ctx.authority)
     return refuse({
@@ -132,6 +143,9 @@ export function admitSuccessor(
       suggestion:
         "Invite its member, then join a fresh copy from the owner's: reasonbook copy and reasonbook join.",
     });
+  const report = reportedCopy(client, input.replicaId);
+  const oldReader = readerRefusal(client, input.replicaId, report, person.name, ctx);
+  if (oldReader) return createError(oldReader);
   if (!input.sameId) {
     const earlier = untakenSuccessor(client, ctx, input.replicaId);
     if (earlier) return createSuccess(earlier);
@@ -141,20 +155,24 @@ export function admitSuccessor(
   const replicaId = input.sameId ? input.replicaId : mintReplicaId();
   const block = freshBlock(client);
   const done = client.writeTransaction(() =>
-    recordOwnChanges(client, [
-      {
-        kind: 'replica_joined',
-        entity: REPLICA_ENTITY,
-        entityId: replicaId,
-        field: null,
-        value: canonicalJson({
-          block,
-          role,
-          member: person.memberId,
-          ...(input.sameId ? {} : { previous: input.replicaId }),
-        }),
-      },
-    ])
+    recordOwnChanges(
+      client,
+      [
+        {
+          kind: 'replica_joined',
+          entity: REPLICA_ENTITY,
+          entityId: replicaId,
+          field: null,
+          value: canonicalJson({
+            block,
+            role,
+            member: person.memberId,
+            ...(input.sameId ? {} : { previous: input.replicaId }),
+          }),
+        },
+      ],
+      { admittingReads: report.reads }
+    )
   );
   if (!done.success) return createError(done.error!);
   return createSuccess({ replicaId, block, role, member: person.memberId });

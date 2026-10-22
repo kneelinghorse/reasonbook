@@ -58,9 +58,14 @@ that member as a change's author. A change may name no author, and the feed then
 author; the owner's own copies are not held to the name; and a change's account id is not compared
 with the caller's account. It does not check the author fields of the rows a change writes, and it
 checks a change's time only against the member's admission and a week past its own clock. So a
-member who edits their own copy can put rows, and feed entries, under another member's name, and
-can claim a mission, sprint or session id with a back-dated time: the earliest create keeps an id,
-by its time rather than its arrival. Until reasonbook.ai runs Reasonbook 4.2.1, re-inviting a
+member who edits their own copy can put rows, and feed entries, under another member's name.
+Before a record switches to protocol 2, a back-dated create can win a mission, sprint or session id
+because claims use clock order. After the switch, the first counted acceptance fixes a claim's
+position, and pre-switch claims precede later ones. An accepted id is final once a copy holds every
+earlier-positioned claim's data. Predictable ids can still be claimed first, and recovery judges
+previously unjudged transactions in clock order. The switch requires every active copy to report
+support; the dashboard must pin the supporting library before hosted records can switch.
+Until reasonbook.ai runs Reasonbook 4.2.1, re-inviting a
 removed member accepts their set-aside changes whole, owner-only edits included.
 
 The owner shares and removes members on the dashboard. A copy shared through the dashboard exchanges
@@ -133,7 +138,7 @@ tree and why.
 
 ## Turning parts off
 
-- **The hooks in one project:** `npx --prefer-offline -y @aquex/reasonbook@4.4.0 ambient off`, run in that project,
+- **The hooks in one project:** `npx --prefer-offline -y @aquex/reasonbook@4.5.0 ambient off`, run in that project,
   with the version the plugin installed if it differs. The hooks still start and log their use locally, but add
   nothing. The command also updates the Reasonbook line in that project's `AGENTS.md`. `ambient on` turns
   them back on.

@@ -6,12 +6,15 @@ import type { RbookDatabaseClient } from './client';
 import { createError, createSuccess } from './errors';
 import { replicaMarks } from './record-apply';
 import { dashboardClientFor, dashboardPeer } from './record-dashboard-peer';
+import { contributeRecovery } from './record-dashboard-recovery';
+import { libraryAtLeast } from './record-dashboard-history';
 import { dashboardName, type DashboardRoute } from './record-dashboard-route';
 import { clientPeer, exchange, type ExchangeReport } from './record-exchange';
 import { OWNER_MEMBER } from './record-membership';
 import { confirmOwner, type Handover } from './record-moves';
-import { forgetPeers } from './record-peers';
+import { endDashboardRoute } from './record-peers';
 import { mergeContext } from './record-standing';
+import { currentWriteProtocol } from './record-protocol-state';
 import { takeSuccessor, type Successor, type SuccessorTaken } from './record-successor';
 import { syncRoute, type Opener } from './record-sync';
 import { withSyncLock } from './record-sync-trigger';
@@ -114,13 +117,16 @@ async function moveBack(
       projectRoot,
       replicaIdNow: () =>
         unchecked((client) => readReplicaIdentity(client, { fresh: true })?.replicaId ?? ''),
+      contextNow: () => unchecked((client) => mergeContext(client)),
+      recordProtocolNow: () => unchecked(currentWriteProtocol),
+      recovering: (error, dashboard) => contributeRecovery(unchecked, route, error, dashboard),
     });
   let successor: SuccessorTaken | null = null;
   let handover: Handover | null = null;
   const finish = async (report: ExchangeReport | null): Promise<RbookToolResult<MovedBack>> => {
     const done = await unchecked((client) => {
       const ctx = mergeContext(client);
-      forgetPeers(client, [ctx.terms[ctx.terms.length - 2]?.replicaId ?? '']);
+      endDashboardRoute(client, ctx.terms[ctx.terms.length - 2]?.replicaId ?? '');
       // A share's answer kept from before is spent: a later share starts fresh (critics, round 1).
       writeCopyKey(client, COPY_KEYS.dashboardShare, null);
       return ctx;
@@ -133,6 +139,20 @@ async function moveBack(
       suggestion:
         'Ask again to finish it: reasonbook move --to owner. Nothing is lost meanwhile, and members keep their changes.',
     });
+  // An already-applied move still finishes its archive; otherwise an old engine must refuse
+  // before a sync can admit or take a successor and change this copy's identity.
+  if (!(await unchecked((client) => stage(client))).holds) {
+    const capability = await (
+      await dashboardClientFor(projectRoot, route)
+    ).refereeCapabilities(route.projectId);
+    if (!capability.success) return createError(capability.error!);
+    if (!libraryAtLeast(capability.data!.version, '4.2.0'))
+      return refused({
+        message: `${name} must report Reasonbook library 4.2.0 or later before this copy moves back; it reported ${capability.data!.version ?? 'no version'}. Nothing moved.`,
+        suggestion:
+          'Ask the dashboard to upgrade its referee library, then retry reasonbook move --to owner.',
+      });
+  }
   // A sync first: every change this copy made goes to the referee, and a move asked again learns
   // how far it got, such as the referee's admission of this copy's successor or its handover.
   const first = await syncRoute(open, route, sync);
@@ -201,9 +221,17 @@ async function moveBack(
     }
   }
   const after = await unchecked((client) => stage(client));
-  if (!after.holds && !after.ctx.pending)
+  if (!after.holds && !after.ctx.pending) {
     // The referee hands the record to this copy's successor, which it names as this call's replica.
-    handover = (await (await peer()).call('moveBack', {})) as Handover;
+    // Its new identity must report its library before a record with permanent cuts can move to it.
+    const target = await peer();
+    try {
+      await target.hello();
+      handover = (await target.call('moveBack', {})) as Handover;
+    } finally {
+      target.close();
+    }
+  }
   if (!(await unchecked((client) => stage(client))).holds) {
     // The move, caught up here, and confirmed: asking for the move back was the owner's word. A
     // catch-up delivers nothing to the referee, so its note lets the dashboard archive nothing (D6).

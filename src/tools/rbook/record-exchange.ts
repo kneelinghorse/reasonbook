@@ -2,23 +2,23 @@
 // ABOUTME: One exchange between two copies of a shared record (ADR s96 §7), whatever carries it: the handshake, the
 // ABOUTME: chain and block checks, then the member's changes to the authority and the authority's stream back.
 
+import { localCopyReport } from './record-copy-report';
+import type { Hello, Peer, ExchangeReport } from './record-exchange-types';
+export type { Hello, Peer, ExchangeReport } from './record-exchange-types';
 import type { RbookDatabaseClient } from './client';
 import { createError, createSuccess } from './errors';
 import { changesSince, replicaMarks, type ApplyReport } from './record-apply';
-import { PROTOCOL_VERSION } from './record-changes';
+import { currentWriteProtocol } from './record-protocol-state';
 import { applyAndEmbed } from './record-apply-embed';
+import { authorityValue } from './record-authority';
 import { chainClashes, chainsAt, commonMarks, knownBlocks } from './record-chain';
 import { catchUp, settleBlocks, settleIdentity } from './record-exchange-steps';
 import { recordExchangeFailed } from './record-peers';
-import { mergeContext, type LoggedChange } from './record-standing';
+import { rememberCopyReport } from './record-peer-report';
+import { boundHello } from './record-peer-hello';
+import { mergeContext } from './record-standing';
 import { admitSuccessor } from './record-admit-successor';
-import {
-  reblockSelf,
-  takeSuccessor,
-  type Successor,
-  type SuccessorReason,
-  type SuccessorTaken,
-} from './record-successor';
+import { reblockSelf, takeSuccessor } from './record-successor';
 import { replicaWriteRefusal } from './replica-check';
 import { recordedProjectId, REPLICA_ERROR_CODES } from './replica-identity';
 import { newerProtocolWarning } from './record-protocol-hold';
@@ -27,108 +27,6 @@ import type { RbookToolError, RbookToolResult } from './types';
 /** The sync protocol two copies must share; a copy that speaks another is refused, never guessed at. */
 export const SYNC_PROTOCOL = 1;
 
-/** What each side says about itself before anything moves. */
-export interface Hello {
-  readonly protocol: number;
-  /** s97-m10 (design §Versions): the record protocol this copy writes; a 4.1.0 copy says none, and writes 1. */
-  readonly recordProtocol?: number;
-  readonly projectId: string;
-  readonly replicaId: string;
-  readonly block: number;
-  readonly authority: string;
-  readonly marks: Readonly<Record<string, number>>;
-  readonly blocks: Readonly<Record<string, number>>;
-  /** The replicas this copy's record shows as removed (ADR s96 §8): they receive nothing new. */
-  readonly removed: readonly string[];
-  /** s96-m13 (ADR s96 §8): the epoch this copy applies, and a move it holds unconfirmed. */
-  readonly epoch: number;
-  readonly pending: {
-    readonly epoch: number;
-    readonly authority: string;
-    readonly changeId: string;
-  } | null;
-  /** When each replica was admitted, by the hybrid clock: of two in one block, the later renumbers. */
-  readonly admitted: Readonly<Record<string, string>>;
-  /** Replicas cut but not removed, such as a dropped copy or a replaced owner copy: they re-identify. */
-  readonly cuts: Readonly<Record<string, number>>;
-  /** Replicas whose join no recovery saw. */
-  readonly unseen: readonly string[];
-  /** The replicas this copy counts as members, the authority included. */
-  readonly members: readonly string[];
-  /** This copy's own copy check, when it refuses this copy's writes. */
-  readonly refusal: string | null;
-  /** That check's own remedy, so another copy can quote it (s96-m13 critics, round 4). */
-  readonly remedy?: string | null;
-}
-
-/** One side of an exchange, in this process or at the far end of a channel. */
-export interface Peer {
-  /** How a person knows this copy, for the answer: a path, or a host and path. */
-  readonly name: string;
-  hello(): Promise<Hello>;
-  chains(at: Readonly<Record<string, number>>): Promise<Record<string, string | null>>;
-  changesSince(marks: Readonly<Record<string, number>>): Promise<LoggedChange[]>;
-  /** Apply what arrived; a catch-up between epochs applies without judging. */
-  apply(
-    changes: readonly LoggedChange[],
-    options?: { readonly judge?: boolean; readonly catchUp?: boolean }
-  ): Promise<RbookToolResult<ApplyReport>>;
-  /** On the authority: admit a copy's successor (ADR s96 §9), or itself at a fresh block. */
-  admitSuccessor(input: {
-    readonly replicaId: string;
-    readonly sameId?: boolean;
-  }): Promise<RbookToolResult<Successor>>;
-  reblockSelf(): Promise<RbookToolResult<{ readonly block: number; readonly renumbered: number }>>;
-  /** On the copy: take the successor the authority admitted. */
-  takeSuccessor(input: {
-    readonly successor: Successor;
-    readonly reason: SuccessorReason;
-    readonly authorityReceived: number | null;
-    readonly divergesFrom?: number;
-    readonly cut?: number;
-  }): Promise<RbookToolResult<SuccessorTaken>>;
-  /** Record, on this copy, an exchange the other copy's checks stopped, so its review shows it. */
-  failed(input: { readonly replicaId: string; readonly error: string }): Promise<void>;
-}
-
-export interface ExchangeReport {
-  /** The member's changes the owner's copy received, and how many it judged. */
-  readonly sent: number;
-  readonly judged: number;
-  /** The owner's stream the member received, verdicts included. */
-  readonly received: number;
-  readonly conflicts: number;
-  readonly findings: number;
-  /** The owner's stream up to the mark both copies hold, as both hash it (ADR §7's digest). */
-  readonly digest: { readonly mark: number; readonly hash: string | null };
-  readonly applied: { readonly authority: ApplyReport | null; readonly member: ApplyReport | null };
-  /**
-   * The member was removed, or is no member: its changes went in, quarantined past its cut or
-   * refused, and nothing came back (ADR s96 §8).
-   */
-  readonly removed: boolean;
-  /**
-   * s97-m14: which side's member the owner's copy lists as removed, when one is: this copy, or the
-   * one it exchanged with. Absent for a copy that is no member at all, whose changes are refused.
-   */
-  readonly removedCopy?: 'local' | 'remote';
-  /** Each side's identity and marks after the exchange: what each records of the other. */
-  readonly local: { readonly replicaId: string; readonly marks: Readonly<Record<string, number>> };
-  readonly remote: { readonly replicaId: string; readonly marks: Readonly<Record<string, number>> };
-  /** s96-m13: the copy behind an epoch received the move, and waits for its operator to confirm it. */
-  readonly caughtUp?: {
-    readonly copy: 'local' | 'remote';
-    readonly epoch: number;
-    readonly authority: string;
-    /** s97-m10: the copy behind confirmed the move itself, as the dashboard's referee does. */
-    readonly confirmed?: boolean;
-  };
-  /** s96-m13: the member took a new identity or block, and what its review now says. */
-  readonly reidentified?: SuccessorTaken;
-  /** s96-m13: each replica that renumbered into a fresh block after a block clash. */
-  readonly reblocked?: ReadonlyArray<{ readonly replicaId: string; readonly block: number }>;
-}
-
 /** This copy's side of an exchange, for any way of opening it. */
 export function hello(client: RbookDatabaseClient): Hello {
   const ctx = mergeContext(client);
@@ -136,7 +34,8 @@ export function hello(client: RbookDatabaseClient): Hello {
   const refused = replicaWriteRefusal(client);
   return {
     protocol: SYNC_PROTOCOL,
-    recordProtocol: PROTOCOL_VERSION,
+    recordProtocol: currentWriteProtocol(client, ctx),
+    ...localCopyReport(),
     projectId: recordedProjectId(client),
     replicaId: ctx.ownReplica,
     block: ctx.ownBlock,
@@ -152,6 +51,14 @@ export function hello(client: RbookDatabaseClient): Hello {
           changeId: ctx.pending.change.change_id,
         }
       : null,
+    ...(ctx.forks.length
+      ? {
+          forks: ctx.forks.map((change) => {
+            const value = authorityValue(change);
+            return { epoch: value.epoch, authority: value.authority, changeId: change.change_id };
+          }),
+        }
+      : {}),
     admitted: Object.fromEntries(
       [...ctx.unseen.values(), ...members]
         .filter((member) => member.admittedAt)
@@ -183,8 +90,14 @@ export function clientPeer(
     name,
     // Reads open without the check: a refused copy still says who it is and what it holds.
     hello: () => unchecked((client) => hello(client)),
+    observeHello: (near) =>
+      unchecked((client) => {
+        if (boundHello(client, near)?.current)
+          rememberCopyReport(client, near.replicaId, near, { called: true });
+      }),
     chains: (at) => unchecked((client) => chainsAt(client, at)),
-    changesSince: (marks) => unchecked((client) => changesSince(client, marks)),
+    changesSince: (marks, recipient = {}) =>
+      unchecked((client) => changesSince(client, marks, recipient)),
     apply: (changes, options = {}) =>
       // A copy its check refuses takes in nothing: it re-identifies first (ADR s96 §9). A catch-up
       // opens without the check, which the merge makes itself (record-token.ts). What the merge made
@@ -324,6 +237,8 @@ export async function exchange(
   let theirs = await remote.hello();
   const unpaired = pairRefusal(ours, theirs, remote.name, 'nothing was exchanged');
   if (unpaired) return createError<ExchangeReport>(unpaired);
+  await local.observeHello?.(theirs);
+  await remote.observeHello?.(ours);
   const stopped = async (error: RbookToolError): Promise<RbookToolResult<ExchangeReport>> => {
     // A clash is damage both operators must see: each side's review keeps it (ADR §7's digest).
     await local.failed({ replicaId: theirs.replicaId, error: error.message });
@@ -380,7 +295,7 @@ export async function exchange(
   if (clashed) return stopped(clashed);
 
   const [authorityHello, memberHello] = localJudges ? [ours, theirs] : [theirs, ours];
-  const sent = await member.changesSince(authorityHello.marks);
+  const sent = await member.changesSince(authorityHello.marks, authorityHello);
   const judged = await authority.apply(sent);
   // s97-m10: a transaction too large for the dashboard stays on its copy, which still takes in the
   // stream; the exchange then answers that refusal, so the copy's review shows it (critics, round 1).
@@ -399,7 +314,7 @@ export async function exchange(
   let adopted: ApplyReport | null = null;
   let adoptedWarnings: readonly string[] | undefined;
   if (!removed) {
-    const received = await authority.changesSince(memberHello.marks);
+    const received = await authority.changesSince(memberHello.marks, memberHello);
     const applied = await member.apply(received);
     if (!applied.success || !applied.data) return createError<ExchangeReport>(applied.error!);
     adopted = applied.data;

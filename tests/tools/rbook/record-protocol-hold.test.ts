@@ -24,11 +24,13 @@ import {
   joinThroughReferee,
   syncWithReferee,
 } from '../../helpers/referee-fixture';
+import { changesSince } from '../../../src/tools/rbook/record-apply';
 import { exchange } from '../../../src/tools/rbook/record-exchange';
 import {
   copyPeer,
   joinedCopy,
   ownerCopy,
+  onCopy,
   read,
   syncCopies,
   type Copy,
@@ -128,10 +130,20 @@ describe('a change in a newer record protocol is held, never refused or stored (
     await on(owner, 'rbook_decisions', { action: 'record', content: 'The owner, after the bump.' });
     await on(darryl, 'rbook_decisions', { action: 'record', content: 'Darryl, meanwhile.' });
 
-    // The sync says what waits, and what helps.
+    // A normal sender withholds the unreadable stream, so the receiver has no upgrade event.
     const said = await exchange(copyPeer(fixture.tmp, darryl), copyPeer(fixture.tmp, owner));
     expect(said.success).toBe(true);
-    expect(said.warnings?.join(' ')).toMatch(
+    expect((said.warnings ?? []).join(' ')).not.toMatch(/record protocol|Upgrade Reasonbook/);
+    // An older/unfiltered transport can still deliver it: the receiver must keep it out and warn.
+    const incoming = await exchange(copyPeer(fixture.tmp, darryl), {
+      ...copyPeer(fixture.tmp, owner),
+      changesSince: (marks) =>
+        onCopy(fixture.tmp, owner, (client) => changesSince(client, marks), {
+          replicaCheck: false,
+        }),
+    });
+    expect(incoming.success).toBe(true);
+    expect(incoming.warnings?.join(' ')).toMatch(
       new RegExp(
         `a record protocol newer than this copy's ${PROTOCOL_VERSION}.*Upgrade Reasonbook here`
       )

@@ -2,8 +2,8 @@
 // ABOUTME: The record protocol a copy writes and the change kinds it stores (ADR s96 §4), with the change log's DDL and the
 // ABOUTME: named upgrade seam (s100-m01) that raises both as a later release would, so a held change can be taken in.
 
-/** The change log's wire version (ADR s96 §4); only the upgrade seam below ever raises it. */
-export let PROTOCOL_VERSION = 1;
+/** This release's read capacity; per-record authority history chooses writes of protocol 1 or 2. */
+export let PROTOCOL_VERSION = 2;
 
 export const CHANGE_KINDS = [
   'create',

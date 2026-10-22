@@ -25,6 +25,7 @@ import {
 } from '../../intelligence/project-resolution';
 import type { RbookToolResult, DbHealthResult } from './types';
 import { createError, createSuccess, RbookErrors, RBOOK_ERROR_CODES } from './errors';
+import { attachWarnings } from './format-warnings';
 import { loadVecExtension } from './vec-loader';
 import { assertJestDbPathIsolated, RealStoreGuardError } from './real-store-guard';
 import { isReadOnlyAgentSession } from './read-only-agent-guard';
@@ -328,6 +329,21 @@ export class RbookDatabaseClient {
       // says which copy is live, and a confirmed copy takes the row from any other folder.
       const refused = client.refusedCopy(options);
       if (refused) return refused;
+      const upgradeWarnings: string[] = [];
+      if (opensToWrite(options) && isSharedStore(client)) {
+        try {
+          const { upgradeProtocolJudge } = await import('./record-upgrade-judge');
+          const upgraded = await upgradeProtocolJudge(client);
+          if (!upgraded.success) {
+            client.close();
+            return createError(upgraded.error!);
+          }
+          upgradeWarnings.push(...(upgraded.warnings ?? []));
+        } catch (error) {
+          client.close();
+          throw error;
+        }
+      }
       // s96-m12: a copy of a shared record this call opened, so its answer can name what a
       // person must know there: fields in conflict, and an id two copies created.
       if (currentToolCallActionMode() !== undefined && isSharedStore(client))
@@ -352,7 +368,7 @@ export class RbookDatabaseClient {
         }
       }
 
-      return createSuccess(client);
+      return createSuccess(client, upgradeWarnings);
     } catch (error) {
       // Sprint 70 m01: never mask the real-store isolation guard. ensureConnection()
       // throws RealStoreGuardError before opening; if we folded it into a
@@ -1009,7 +1025,7 @@ export async function withClient<T>(
 
   const client = clientResult.data;
   try {
-    return fn(client);
+    return attachWarnings(fn(client), clientResult.warnings ?? []);
   } finally {
     client.close();
   }
@@ -1033,7 +1049,7 @@ export async function withClientAsync<T>(
 
   const client = clientResult.data;
   try {
-    return await fn(client);
+    return attachWarnings(await fn(client), clientResult.warnings ?? []);
   } finally {
     client.close();
   }

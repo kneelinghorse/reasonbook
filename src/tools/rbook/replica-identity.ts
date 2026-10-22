@@ -27,6 +27,8 @@ export const REPLICA_ERROR_CODES = {
   GUARD_BROKEN: 'RECORD_GUARD_BROKEN',
   /** s96-m03: a write the change log cannot record, such as deleting a shared row. */
   WRITE_REFUSED: 'RECORD_WRITE_REFUSED',
+  /** A planned authority target has not reported the library required to retain permanent cuts. */
+  COPY_TOO_OLD: 'RECORD_COPY_TOO_OLD',
   /** s96-m12 (ADR s96 §7): a replica's sequence slot holds a different change on the two copies. */
   SLOT_CLASH: 'RECORD_SLOT_CLASH',
   /** s96-m12 (ADR s96 §5): a plain write to a field whose concurrent values are not settled. */

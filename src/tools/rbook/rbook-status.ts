@@ -22,6 +22,7 @@ import * as path from 'path';
 import { withClientAsync, type RbookDatabaseClient } from './client';
 import { isMembersCopy } from './record-membership';
 import { peerHealth, syncsWith } from './record-peers';
+import { dashboardName, isDashboardRoute } from './record-dashboard-route';
 import { isRecordedStore } from './record-recording';
 import { mergeContext } from './record-standing';
 import { COPY_KEYS, readCopyKey } from './replica-copy-keys';
@@ -154,7 +155,13 @@ function sharedSync(client: RbookDatabaseClient): NonNullable<RbookStatusResult[
   return peerHealth(client)
     .filter((peer) => syncsWith(ctx, peer.replicaId))
     .map((peer) => ({
-      peer: peer.replicaId === ctx.authority ? "the owner's copy" : (peer.name ?? peer.replicaId),
+      peer: isDashboardRoute(peer.route)
+        ? dashboardName(peer.route)
+        : !peer.route && peer.removedAt && peer.name
+          ? peer.name
+          : peer.replicaId === ctx.authority
+            ? "the owner's copy"
+            : (peer.name ?? peer.replicaId),
       last_synced_at: peer.lastOkAt,
       pending: peer.pending,
       last_error: peer.lastError,

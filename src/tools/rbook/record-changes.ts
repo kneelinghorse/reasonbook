@@ -31,6 +31,7 @@ import {
   takeReplicaSeqs,
 } from './replica-identity';
 import { PROTOCOL_VERSION } from './record-protocol';
+import { protocolForWrite, type RecordProtocolOptions } from './record-protocol-write';
 import type { RbookToolResult } from './types';
 
 // s100-m01: the record protocol, and the seam that raises it, live in record-protocol.ts; read live.
@@ -192,9 +193,10 @@ export function advanceClock(client: RbookDatabaseClient, received: string): voi
 /** s96-m12: record changes this copy authors outside a captured write, such as a verdict, in this transaction. */
 export function recordOwnChanges(
   client: RbookDatabaseClient,
-  changes: readonly RecordedChange[]
+  changes: readonly RecordedChange[],
+  options: RecordProtocolOptions = {}
 ): void {
-  recordChanges(client, transactionId(client), changes);
+  recordChanges(client, transactionId(client), changes, authorForWrite(client), options);
 }
 
 /**
@@ -314,12 +316,14 @@ export function recordChanges(
   client: RbookDatabaseClient,
   txnId: string,
   changes: readonly RecordedChange[],
-  author: { readonly name: string | null; readonly userId: string | null } = authorForWrite(client)
+  author: { readonly name: string | null; readonly userId: string | null } = authorForWrite(client),
+  options: RecordProtocolOptions = {}
 ): void {
   if (changes.length === 0) return;
   // Read under the write lock: another process may have re-identified the copy since it opened.
   const identity = readReplicaIdentity(client, { fresh: true });
   if (!identity) throw new Error('Only a copy of a shared record keeps a change log.');
+  const protocol = protocolForWrite(client, txnId, identity.replicaId, changes, options);
   const projectId = recordedProjectId(client);
   const hlc = transactionHlc(client, txnId);
   const firstSeq = takeReplicaSeqs(client, changes.length);
@@ -345,7 +349,7 @@ export function recordChanges(
         author.name,
         author.userId,
         hlc,
-        PROTOCOL_VERSION,
+        protocol,
         change.kind,
         change.entity,
         change.entityId,

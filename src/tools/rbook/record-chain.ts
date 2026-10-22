@@ -55,14 +55,23 @@ export function chainHash(
   replicaId: string,
   upTo: number
 ): string | null {
+  return chainHashOf(
+    rows<ChainedChange>(
+      client,
+      `SELECT ${CHAINED.join(', ')} FROM record_changes WHERE replica_id = ? AND replica_seq <= ?
+      ORDER BY replica_seq`,
+      [replicaId, upTo]
+    ),
+    upTo
+  );
+}
+
+/** The same chain over an ordered stream, such as the union of recovery inputs. */
+export function chainHashOf(changes: readonly ChainedChange[], upTo: number): string | null {
   let hash = '';
   let expected = 1;
-  for (const change of rows<ChainedChange>(
-    client,
-    `SELECT ${CHAINED.join(', ')} FROM record_changes WHERE replica_id = ? AND replica_seq <= ?
-      ORDER BY replica_seq`,
-    [replicaId, upTo]
-  )) {
+  for (const change of changes) {
+    if (Number(change.replica_seq) > upTo) break;
     if (change.replica_seq !== expected) return null;
     hash = link(hash, change);
     expected += 1;

@@ -1,211 +1,59 @@
 // SPDX-License-Identifier: Apache-2.0
-// ABOUTME: The reference server (s97-m09, design §R4): the dashboard's half of the referee contract on loopback, built on
-// ABOUTME: the same library, so where it and the dashboard disagree it shows the intended behaviour until both agree.
-import { createReadStream, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs';
+// ABOUTME: Run the reference host over loopback against source or an explicitly installed referee engine.
+// ABOUTME: Preserve ordinary hosting routes while recovery state and routes live in focused helpers.
+import {
+  createReadStream,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'fs';
 import http from 'http';
 import path from 'path';
-import { gunzipSync } from 'zlib';
+import type { JoinAnswer, RbookToolResult } from '../../src/referee';
+import { body, json, status } from './referee-server-http';
 import {
-  applyJoinAnswer,
-  archiveReferee,
-  conflicts,
-  createReferee,
-  discardReferee,
-  exportSnapshot,
-  invite,
-  makeFirstCopy,
-  members,
-  MIN_REQUEST_LIMIT_BYTES,
-  peer,
-  peers,
-  recentChanges,
-  REFEREE_ERROR_CODES,
-  REFEREE_PROTOCOL,
-  REFEREE_VERSION,
-  refereeStatus,
-  remove,
-  setRole,
-  waiting,
-  type JoinAnswer,
-  type RbookToolError,
-  type RbookToolResult,
-  type RefereeLocation,
-  type RefereeOutcome,
-  type StreamHead,
-} from '../../src/referee';
+  createHostState,
+  type RefereeEngine,
+  type RefereeServerConfig,
+} from './referee-server-state';
+import { recoveryOffer, recoveryRoute } from './referee-server-recovery';
+import { archiveMovedBack, reconcileCarriedMembers } from './referee-server-members';
+import { refereeViews } from './referee-server-views';
+export type { RefereeServerConfig } from './referee-server-state';
 
-export interface RefereeServerConfig {
-  /** The volume: referee stores at <root>/referee/<projectId>/rbook.sqlite, bindings at <root>/referee-config. */
-  readonly root: string;
-  /** Bearer token → the account it authenticates. */
-  readonly accounts: Readonly<Record<string, string>>;
-  /** Registry project id → the account that owns it (user_projects.user_id). */
-  readonly projects: Readonly<Record<string, { readonly ownerAccountId: string }>>;
-  /** The request limit after decompression, published in the capability (D9). */
-  readonly requestLimit?: number;
-  /** The port to listen on, so a restarted server answers at the same address; any free one by default. */
-  readonly port?: number;
-  /** The owner's upload at handover, which the dashboard limits by its file limit, not the request limit (D2). */
-  readonly uploadLimit?: number;
-  /** False to leave the request limit out of the capability, as a dashboard before D9 does. */
-  readonly publishLimit?: boolean;
-  /** Project addresses, `user/project` (either scheme), to the registry id each resolves to. */
-  readonly addresses?: Readonly<Record<string, string>>;
-  /** The record protocol the capability reports, for a test of an older dashboard; the library's by default. */
-  readonly reportedRecordProtocol?: number;
-}
-
-/** What the server keeps off the volume (D1: PostgreSQL there), so a restarted server picks it up. */
-interface SavedProject {
-  readonly head: StreamHead | null;
-  readonly shared: boolean;
-  readonly needsRecovery: RbookToolError | null;
-  readonly grants: Array<[string, string]>;
-  readonly known: string[];
-}
-
-interface ProjectState {
-  /** The head the last library call returned, kept off the volume (D1: PostgreSQL there). */
-  head: StreamHead | null;
-  shared: boolean;
-  /** The library's refusal that marked the store lost, answered again to every later call (D8). */
-  needsRecovery: RbookToolError | null;
-  /** Active direct shares: account → role. */
-  readonly grants: Map<string, string>;
-  /** Every account ever shared with: a removed one still reaches the library (D3). */
-  readonly known: Set<string>;
-  queue: Promise<unknown>;
-}
-
-const json = (response: http.ServerResponse, status: number, body: unknown): void => {
-  const text = JSON.stringify(body);
-  response.writeHead(status, {
-    'content-type': 'application/json',
-    'content-length': Buffer.byteLength(text),
-  });
-  response.end(text);
-};
-
-/**
- * The server's own refusal, before any library call, in the dashboard's own error shape
- * ({ success: false, error: "<text>" }, cmos-dashboard's api-respond): its error is text, not the
- * engine's { code, message, suggestion }, so a client says it by its status (contract v1 D2).
- * `code` is this server's own, for tests.
- */
-const status = (
-  code: string,
-  message: string,
-  httpStatus: number,
-  extra: Record<string, unknown> = {}
-) => ({
-  httpStatus,
-  body: {
-    success: false,
-    error: message,
-    hint: 'See the reference server contract.',
-    code,
-    ...extra,
-  },
-});
-
-export function startRefereeServer(
-  config: RefereeServerConfig
-): Promise<{ server: http.Server; port: number }> {
+export function startRefereeServer(config: RefereeServerConfig): Promise<{
+  server: http.Server;
+  port: number;
+  engine: { path: string; version: string; protocol: { wire: number; record: number } };
+}> {
+  const enginePath = realpathSync(require.resolve(config.engineModule ?? '../../src/referee'));
+  const engine = require(enginePath) as RefereeEngine;
+  const {
+    applyJoinAnswer,
+    createReferee,
+    discardReferee,
+    exportSnapshot,
+    invite,
+    makeFirstCopy,
+    MIN_REQUEST_LIMIT_BYTES,
+    peer,
+    REFEREE_PROTOCOL,
+    REFEREE_VERSION,
+    refereeStatus,
+    remove,
+    setRole,
+  } = engine;
   const limit = config.requestLimit ?? MIN_REQUEST_LIMIT_BYTES;
   const configDir = path.join(config.root, 'referee-config');
-  const savedFile = path.join(config.root, 'server-state.json');
-  let saved: Record<string, SavedProject> = {};
-  try {
-    saved = JSON.parse(readFileSync(savedFile, 'utf8')) as Record<string, SavedProject>;
-  } catch {
-    saved = {};
-  }
-  const state = new Map<string, ProjectState>(
-    Object.keys(config.projects).map((id) => [
-      id,
-      {
-        head: saved[id]?.head ?? null,
-        shared: saved[id]?.shared ?? false,
-        needsRecovery: saved[id]?.needsRecovery ?? null,
-        grants: new Map(saved[id]?.grants ?? []),
-        known: new Set(saved[id]?.known ?? []),
-        queue: Promise.resolve(),
-      },
-    ])
-  );
-  const save = (): void => {
-    mkdirSync(config.root, { recursive: true });
-    writeFileSync(
-      savedFile,
-      JSON.stringify(
-        Object.fromEntries(
-          [...state].map(([id, project]) => [
-            id,
-            {
-              head: project.head,
-              shared: project.shared,
-              needsRecovery: project.needsRecovery,
-              grants: [...project.grants],
-              known: [...project.known],
-            },
-          ])
-        )
-      )
-    );
-  };
-  /** Peer calls taken, by method, and the largest request body after decompression: a test's view of paging. */
+  const host = createHostState(config, engine);
+  const { state, save, storeOf, locate, serialized } = host;
   const calls: Record<string, number> = {};
   let largestRequest = 0;
-  const storeOf = (projectId: string) =>
-    path.join(config.root, 'referee', projectId, 'rbook.sqlite');
-  const locate = (projectId: string): RefereeLocation => ({
-    storePath: storeOf(projectId),
-    configDir,
-    expectedHead: state.get(projectId)!.head,
-  });
-
-  /** Engine calls for one project run one at a time (D1), and every head they return is recorded. */
-  function serialized<T>(
-    projectId: string,
-    call: () => Promise<RefereeOutcome<T>>
-  ): Promise<RefereeOutcome<T>> {
-    const project = state.get(projectId)!;
-    const run = project.queue.then(call, call);
-    project.queue = run.catch(() => undefined);
-    return run.then((outcome) => {
-      if (outcome.head) project.head = outcome.head;
-      // Only a referee store the project has can be lost (D8): a late call after a discard is not one.
-      if (project.shared && outcome.result.error?.code === REFEREE_ERROR_CODES.NEEDS_RECOVERY)
-        project.needsRecovery = outcome.result.error;
-      save();
-      return outcome;
-    });
-  }
-
   const answer = (response: http.ServerResponse, result: RbookToolResult<unknown>): void =>
     json(response, refereeStatus(result), result);
-
-  /** The request body, decompressed when gzip, refused past the published limit (D2). */
-  async function body(
-    request: http.IncomingMessage,
-    limit: number
-  ): Promise<Buffer | 'too large' | 'corrupt'> {
-    const chunks: Buffer[] = [];
-    let size = 0;
-    for await (const chunk of request) {
-      size += (chunk as Buffer).length;
-      if (size > limit) return 'too large';
-      chunks.push(chunk as Buffer);
-    }
-    const raw = Buffer.concat(chunks);
-    if (request.headers['content-encoding'] !== 'gzip') return raw;
-    try {
-      return gunzipSync(raw, { maxOutputLength: limit });
-    } catch (error) {
-      // Past the limit after decompression is too large; anything else is a body that is not gzip.
-      return (error as { code?: string }).code === 'ERR_BUFFER_TOO_LARGE' ? 'too large' : 'corrupt';
-    }
-  }
 
   const server = http.createServer(async (request, response) => {
     // s98-m08: one request per connection. Under two concurrent full suites a client whose event
@@ -241,7 +89,7 @@ export function startRefereeServer(
                 dashboardShared: project.shared,
                 needsRecovery: project.needsRecovery !== null,
                 referee: {
-                  version: REFEREE_VERSION,
+                  version: config.reportedLibraryVersion ?? REFEREE_VERSION,
                   protocol:
                     config.reportedRecordProtocol === undefined
                       ? REFEREE_PROTOCOL
@@ -260,11 +108,18 @@ export function startRefereeServer(
       const member = owner || project.grants.has(account);
       if (!owner && !member && !project.known.has(account))
         return json(response, 404, status('NOT_FOUND', 'No such project.', 404).body);
-      const upload = area === 'relay' && rest === 'referee';
-      const incoming =
-        request.method === 'POST'
-          ? await body(request, upload ? (config.uploadLimit ?? 256 * 1024 * 1024) : limit)
-          : Buffer.alloc(0);
+      // Recovery permissions are settled before any potentially large body is consumed.
+      const recovery = rest === 'recovery' || rest.startsWith('recovery/');
+      if (
+        recovery &&
+        (!member ||
+          ((area === 'test' || rest === 'recovery/confirm' || request.method === 'DELETE') &&
+            !owner))
+      )
+        return json(response, 404, status('NOT_FOUND', 'No such project.', 404).body);
+      const upload = area === 'relay' && (rest === 'referee' || rest === 'recovery/copy');
+      const bodyLimit = upload ? (config.uploadLimit ?? 256 * 1024 * 1024) : limit;
+      const incoming = request.method === 'POST' ? await body(request, bodyLimit) : Buffer.alloc(0);
       if (incoming === 'corrupt')
         return json(
           response,
@@ -277,9 +132,9 @@ export function startRefereeServer(
           413,
           status(
             'TOO_LARGE',
-            `A request may hold at most ${limit} bytes after decompression.`,
+            `A request may hold at most ${bodyLimit} bytes after decompression.`,
             413,
-            { limit }
+            { limit: bodyLimit }
           ).body
         );
       let body0: Record<string, unknown> = {};
@@ -306,7 +161,15 @@ export function startRefereeServer(
           const created = await serialized(projectId, () =>
             createReferee(
               { storePath: storeOf(projectId), configDir },
-              { copyFile: upload, ownerAccountId: account }
+              {
+                copyFile: upload,
+                ownerAccountId: account,
+                members: project.members.map(({ memberId, accountId }) => ({
+                  memberId,
+                  accountId,
+                })),
+                formerRefereeReplicaIds: project.formerRefereeReplicaIds,
+              }
             )
           );
           if (created.result.success) {
@@ -319,6 +182,19 @@ export function startRefereeServer(
           rmSync(upload, { force: true });
         }
       }
+      // The host's grant is independent of the archived record; preserve the binding for re-share.
+      const revokedWhileUnshared = /^shares\/(.+)$/.exec(rest);
+      if (
+        !project.shared &&
+        area === 'test' &&
+        revokedWhileUnshared &&
+        request.method === 'DELETE' &&
+        owner
+      ) {
+        project.grants.delete(revokedWhileUnshared[1]);
+        save();
+        return json(response, 200, { success: true });
+      }
       // A project with no referee store has nothing for the library to answer: it was never shared
       // through the dashboard, or its referee was discarded (critics, round 3).
       if (!project.shared && !(area === 'test' && (rest === 'head' || rest === 'requests')))
@@ -330,14 +206,41 @@ export function startRefereeServer(
       // A referee that never joined is thrown away, so the owner can hand in again (D6).
       if (area === 'relay' && rest === 'referee' && request.method === 'DELETE') {
         if (!owner) return json(response, 404, status('NOT_FOUND', 'No such project.', 404).body);
-        const discarded = await serialized(projectId, () => discardReferee(locate(projectId)));
-        if (discarded.result.success) {
-          project.shared = false;
-          project.head = null;
-          save();
-        }
+        // The library permits only never-joined stores; an invalid cache must not block this reset.
+        const discarded = await host.serialize(projectId, async () => {
+          const outcome = await discardReferee(locate(projectId));
+          if (outcome.result.success) {
+            project.shared = false;
+            project.head = null;
+            project.membersInvalid = false;
+            save();
+          }
+          return outcome;
+        });
         return answer(response, discarded.result);
       }
+      if (
+        await recoveryRoute(
+          {
+            area,
+            rest,
+            method: request.method ?? 'GET',
+            url,
+            projectId,
+            account,
+            owner,
+            incoming,
+            parsed: parsed(),
+            response,
+          },
+          host,
+          engine,
+          config
+        )
+      )
+        return;
+      const collecting = recoveryOffer(host, engine, projectId);
+      if (collecting) return answer(response, collecting);
       if (project.needsRecovery !== null)
         return json(response, 409, { success: false, error: project.needsRecovery });
       if (area === 'relay' && rest === 'referee/answer' && request.method === 'POST') {
@@ -351,28 +254,14 @@ export function startRefereeServer(
         const call = parsed();
         calls[String(call.method)] = (calls[String(call.method)] ?? 0) + 1;
         largestRequest = Math.max(largestRequest, incoming.length);
-        const outcome = await serialized(projectId, () =>
-          peer(locate(projectId), String(call.method), call.params, {
-            accountId: account,
-            replicaId: String(call.replicaId),
-          })
-        );
+        const outcome = await serialized(projectId, async () => {
+          const caller = { accountId: account, replicaId: String(call.replicaId) };
+          const refused = await reconcileCarriedMembers(host, engine, config, projectId, caller);
+          return refused ?? peer(locate(projectId), String(call.method), call.params, caller);
+        });
         // The owner's copy holds the record again and synced here at the new epoch: archive (D6).
-        if (outcome.movedBack) {
-          const archived = await serialized(projectId, () =>
-            archiveReferee(
-              locate(projectId),
-              path.join(config.root, 'archive', projectId, `${Date.now()}.sqlite`)
-            )
-          );
-          if (archived.result.success) {
-            project.shared = false;
-            project.head = null;
-            project.needsRecovery = null;
-            save();
-          }
-        }
-        return answer(response, outcome.result);
+        if (outcome.movedBack) await archiveMovedBack(host, engine, config, projectId, outcome);
+        return answer(response, recoveryOffer(host, engine, projectId) ?? outcome.result);
       }
       if (area === 'relay' && rest === 'first-copy' && request.method === 'GET') {
         if (!member) return json(response, 404, status('NOT_FOUND', 'No such project.', 404).body);
@@ -391,6 +280,15 @@ export function startRefereeServer(
       }
       // The dashboard's sharing page and views, as test controls (D4, D7): the owner shares and removes.
       if (area === 'test') {
+        if (rest === 'set-aside' && request.method === 'POST' && owner) {
+          const cut = await serialized(projectId, () =>
+            engine.setAside(locate(projectId), {
+              replicaId: String(parsed().replicaId ?? ''),
+              confirmGone: parsed().confirmGone === true,
+            })
+          );
+          return answer(response, cut.result);
+        }
         if (rest === 'shares' && request.method === 'POST' && owner) {
           const share = parsed();
           const invited = await serialized(projectId, () =>
@@ -431,17 +329,7 @@ export function startRefereeServer(
           }
           return answer(response, removed.result);
         }
-        const views: Record<
-          string,
-          (location: RefereeLocation) => Promise<RefereeOutcome<unknown>>
-        > = {
-          members,
-          changes: (location) =>
-            recentChanges(location, { sinceChangeId: url.searchParams.get('since') }),
-          conflicts,
-          peers,
-          waiting,
-        };
+        const views = refereeViews(engine, url);
         if (rest in views && request.method === 'GET' && member) {
           const viewed = await serialized(projectId, () => views[rest](locate(projectId)));
           return answer(response, viewed.result);
@@ -474,7 +362,11 @@ export function startRefereeServer(
   return new Promise((resolve) => {
     server.listen(config.port ?? 0, '127.0.0.1', () => {
       const address = server.address();
-      resolve({ server, port: typeof address === 'object' && address ? address.port : 0 });
+      resolve({
+        server,
+        port: typeof address === 'object' && address ? address.port : 0,
+        engine: { path: enginePath, version: REFEREE_VERSION, protocol: REFEREE_PROTOCOL },
+      });
     });
   });
 }
@@ -482,8 +374,8 @@ export function startRefereeServer(
 /** Run as its own process: the config file named first, the port said on the first line of stdout. */
 export async function main(configFile: string): Promise<void> {
   const config = JSON.parse(readFileSync(configFile, 'utf8')) as RefereeServerConfig;
-  const { server, port } = await startRefereeServer(config);
-  process.stdout.write(`${JSON.stringify({ port })}\n`);
+  const { server, port, engine } = await startRefereeServer(config);
+  process.stdout.write(`${JSON.stringify({ port, engine })}\n`);
   const stop = () => server.close(() => process.exit(0));
   process.on('SIGTERM', stop);
   process.stdin.on('end', stop);

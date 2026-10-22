@@ -8,35 +8,61 @@ import path from 'path';
 import { resolveRecordPaths } from '../../intelligence/legacy-compat';
 import { RbookDetector } from '../../intelligence/rbook-detector';
 import { isContextlessDirectory } from '../../intelligence/resolution-policy';
+import { registerResolvedProjectStore } from '../../intelligence/project-resolution';
 import { resolveDashboardBaseUrl } from './dashboard-client';
 import { createError, createSuccess } from './errors';
 import { buildFreshCopy, FreshCopyRefused } from './record-fresh-copy';
-import { dashboardClientFor, relayAnswer } from './record-dashboard-peer';
-import { dashboardName, type DashboardRoute } from './record-dashboard-route';
+import { dashboardClientFor, dashboardPeer, relayAnswer } from './record-dashboard-peer';
+import { dashboardName, isDashboardRoute, type DashboardRoute } from './record-dashboard-route';
 import { dashboardSharingOff } from './record-dashboard-share';
 import type { ExchangeReport } from './record-exchange';
 import { applyJoin, requestJoin, type JoinAnswer, type JoinApplied } from './record-join';
-import { rememberPeer } from './record-peers';
+import { peerHealth, rememberPeer } from './record-peers';
+import { isRecordedStore } from './record-recording';
+import { replicaWriteRefusal } from './replica-check';
 import { mergeContext } from './record-standing';
+import { currentWriteProtocol } from './record-protocol-state';
 import { storeOpener, syncRoute } from './record-sync';
 import { sweepStaleRecordCopies } from './record-temp-copies';
 import { COPY_KEYS, writeCopyKey } from './replica-copy-keys';
-import { REPLICA_ERROR_CODES } from './replica-identity';
+import { readReplicaIdentity, recordedProjectId, REPLICA_ERROR_CODES } from './replica-identity';
 import type { RbookToolResult } from './types';
 
-export interface DashboardJoined {
+interface DashboardJoinBase {
   readonly dashboard: string;
   /** The dashboard's id for the project, not the store's own project_id (s97-m14 live test). */
   readonly dashboardProjectId: string;
-  readonly joined: JoinApplied;
   /** The first sync after the join; a failure here leaves the join made, to sync again. */
   readonly sync: ExchangeReport | null;
 }
+export type DashboardJoined = DashboardJoinBase &
+  (
+    | { readonly joined: JoinApplied; readonly reattached?: never }
+    | {
+        readonly joined?: never;
+        readonly reattached: { readonly replicaId: string; readonly block: number };
+      }
+  );
 
 /** The store a join wrote and could not finish, taken away so the join can be asked again. */
 function removeStore(dbPath: string): void {
   for (const suffix of ['', '-wal', '-shm', '-journal'])
     fs.rmSync(`${dbPath}${suffix}`, { force: true });
+}
+
+/** A completed join stays completed if this machine's project list cannot be updated. */
+async function registerJoinedFolder(folder: string): Promise<string[]> {
+  try {
+    await registerResolvedProjectStore(folder, {
+      requireStoredIdentity: true,
+      confirmedCopy: true,
+    });
+    return [];
+  } catch (error) {
+    return [
+      `This copy was kept, but its local project-list registration failed (${error instanceof Error ? error.message : String(error)}). Restore access to this machine's Reasonbook configuration directory, then run join --dashboard again in this folder.`,
+    ];
+  }
 }
 
 /**
@@ -62,12 +88,7 @@ export async function joinThroughDashboard(input: {
       suggestion: 'Join into a folder of its own for this project.',
     });
   const { dbPath } = resolveRecordPaths(folder);
-  if (fs.existsSync(dbPath))
-    return createError({
-      code: REPLICA_ERROR_CODES.WRITE_REFUSED,
-      message: `${folder} holds a Reasonbook store already, so no project is joined into it.`,
-      suggestion: 'Join into an empty folder.',
-    });
+  const existing = fs.existsSync(dbPath);
   const client = await dashboardClientFor(folder);
   const origin = new URL(resolveDashboardBaseUrl()).origin;
   const resolved = await client.resolveAddress({ address: input.address });
@@ -81,6 +102,7 @@ export async function joinThroughDashboard(input: {
     });
   const route: DashboardRoute = { kind: 'dashboard', url: origin, projectId };
   const name = dashboardName(route);
+  if (existing) return reattach(dbPath, folder, route, input.address.trim());
   // The first copy comes in to a folder of this join's own, and the member's store is built from it
   // with this version's schema, every change checked: nothing the file holds runs here (#1492).
   const download = fs.mkdtempSync(path.join(os.tmpdir(), 'reasonbook-join-'));
@@ -163,6 +185,7 @@ async function joinWith(
     return done;
   });
   if (!applied.success || !applied.data) return createError(applied.error!);
+  const registrationWarnings = await registerJoinedFolder(folder);
   const synced = await syncRoute(storeOpener(dbPath), route, {
     unchecked: copy,
     projectRoot: folder,
@@ -175,10 +198,122 @@ async function joinWith(
       sync: synced.success ? synced.data! : null,
     },
     [
+      ...registrationWarnings,
       ...(applied.warnings ?? []),
       ...(synced.success
         ? (synced.warnings ?? [])
         : [`The first sync after the join did not finish (${synced.error?.message}); sync again.`]),
     ]
+  );
+}
+
+/** Re-attachment neither downloads a store nor applies a fresh join to an already identified copy. */
+async function reattach(
+  dbPath: string,
+  folder: string,
+  route: DashboardRoute,
+  address: string
+): Promise<RbookToolResult<DashboardJoined>> {
+  const copy = storeOpener(dbPath, { replicaCheck: false });
+  const here = await copy((store) => {
+    if (!isRecordedStore(store)) return null;
+    const refused = replicaWriteRefusal(store);
+    if (
+      refused?.code === REPLICA_ERROR_CODES.NOT_JOINED ||
+      refused?.code === REPLICA_ERROR_CODES.SECOND_COPY
+    )
+      return { refused };
+    const dashboardRoutes = peerHealth(store).filter((peer) => isDashboardRoute(peer.route));
+    return {
+      identity: readReplicaIdentity(store, { fresh: true })!,
+      projectId: recordedProjectId(store),
+      hasDashboardHistory: dashboardRoutes.length > 0,
+      route: dashboardRoutes.find(
+        (peer) =>
+          isDashboardRoute(peer.route) &&
+          peer.route.url === route.url &&
+          peer.route.projectId === route.projectId
+      )?.route,
+    };
+  });
+  if (here && 'refused' in here) return createError(here.refused!);
+  if (!here || (!here.route && here.hasDashboardHistory))
+    return createError({
+      code: REPLICA_ERROR_CODES.WRITE_REFUSED,
+      message:
+        'This folder has no retained route for that exact dashboard project ID, so its existing store was not re-attached.',
+      suggestion:
+        'Use the existing copy’s original dashboard project. Join a different project into an empty folder; an address alone cannot replace a retained project identity.',
+    });
+  const peer = await dashboardPeer(route, {
+    projectRoot: folder,
+    replicaIdNow: async () => here.identity.replicaId,
+    recordProtocolNow: () => copy(currentWriteProtocol),
+  });
+  try {
+    const remote = await peer.hello();
+    if (remote.projectId !== here.projectId)
+      return createError({
+        code: REPLICA_ERROR_CODES.EXCHANGE_REFUSED,
+        message: `The dashboard serves a different record (${remote.projectId}) from this copy (${here.projectId}), so nothing was re-attached.`,
+        suggestion:
+          'Check the project with its owner; keep this existing copy and join a different project into an empty folder.',
+      });
+    if (
+      typeof remote.replicaId !== 'string' ||
+      !remote.replicaId ||
+      remote.replicaId !== remote.authority
+    )
+      return createError({
+        code: REPLICA_ERROR_CODES.EXCHANGE_REFUSED,
+        message:
+          'The dashboard does not hold this project’s record yet, so this copy was not re-attached.',
+        suggestion: 'Ask the owner to finish sharing the project, then join --dashboard again.',
+      });
+    if (!here.route) {
+      // A direct copy set aside before the first hosted share has no route to retain. Only the
+      // authenticated referee's admission and explicit cut can authorize its first attachment;
+      // this exception never replaces existing dashboard provenance or confirms an owner move.
+      const own = here.identity.replicaId;
+      const cut = remote.cuts?.[own];
+      if (
+        !Array.isArray(remote.members) ||
+        !remote.members.includes(own) ||
+        !Array.isArray(remote.removed) ||
+        remote.removed.includes(own) ||
+        !Object.prototype.hasOwnProperty.call(remote.cuts ?? {}, own) ||
+        !Number.isSafeInteger(cut) ||
+        cut < 0
+      )
+        return createError({
+          code: REPLICA_ERROR_CODES.WRITE_REFUSED,
+          message:
+            'This copy has no dashboard history, and the authenticated referee does not name it as an admitted, nonremoved copy with an explicit cut, so nothing was re-attached.',
+          suggestion:
+            'Check this copy and the project with the owner. Keep this existing store; join a different project into an empty folder. A returning set-aside copy can re-attach only to the referee that knows its admission and cut.',
+        });
+    }
+  } finally {
+    peer.close();
+  }
+  const synced = await syncRoute(storeOpener(dbPath), here.route ?? route, {
+    unchecked: copy,
+    projectRoot: folder,
+  });
+  if (!synced.success || !synced.data) return createError(synced.error!);
+  const identity = await copy((store) => {
+    if (!here.route) rememberPeer(store, synced.data!.remote.replicaId, { route });
+    writeCopyKey(store, COPY_KEYS.joinedAddress, address);
+    return readReplicaIdentity(store, { fresh: true })!;
+  });
+  const registrationWarnings = await registerJoinedFolder(folder);
+  return createSuccess(
+    {
+      dashboard: dashboardName(route),
+      dashboardProjectId: route.projectId,
+      reattached: identity,
+      sync: synced.data,
+    },
+    [...registrationWarnings, ...(synced.warnings ?? [])]
   );
 }

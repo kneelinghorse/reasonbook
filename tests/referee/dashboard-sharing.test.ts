@@ -26,6 +26,7 @@ import { dashboardPeer } from '../../src/tools/rbook/record-dashboard-peer';
 import { listMembers } from '../../src/tools/rbook/record-membership';
 import { inviteMember } from '../../src/tools/rbook/record-membership';
 import { isRecordedStore } from '../../src/tools/rbook/record-recording';
+import { currentWriteProtocol } from '../../src/tools/rbook/record-protocol-state';
 import { mergeContext } from '../../src/tools/rbook/record-standing';
 import { takeSuccessor } from '../../src/tools/rbook/record-successor';
 import { COPY_KEYS, writeCopyKey } from '../../src/tools/rbook/replica-copy-keys';
@@ -49,7 +50,14 @@ import {
   useMachine,
   type ReplicaFixture,
 } from '../helpers/replica-fixture';
-import { joinedCopy, onCopy, ownerCopy, read, type Copy } from '../helpers/shared-copies';
+import {
+  joinedCopy,
+  onCopy,
+  ownerCopy,
+  read,
+  shareExisting,
+  type Copy,
+} from '../helpers/shared-copies';
 import { farEndsExited, routeTo as sshRouteTo, standinSsh } from '../helpers/standin-ssh';
 import { PassThrough } from 'stream';
 import { createInterface } from 'readline';
@@ -59,6 +67,8 @@ import { handOverRoute } from '../../src/tools/rbook/record-move-routes';
 import * as freshCopy from '../../src/tools/rbook/record-fresh-copy';
 import { ownersOtherCopies } from '../../src/tools/rbook/record-owner-copies';
 import { refereeingDashboard, serveSync } from '../../src/tools/rbook/record-wire';
+import { peerHealth } from '../../src/tools/rbook/record-peers';
+import * as applyEmbed from '../../src/tools/rbook/record-apply-embed';
 
 const PROJECT = 'proj-share';
 const ADDRESS = 'rbook://derek/shared';
@@ -81,6 +91,7 @@ function startServer(options: { port?: number; reportedRecordProtocol?: number }
     projects: { [PROJECT]: { ownerAccountId: ACCOUNTS.owner } },
     addresses: { 'derek/shared': PROJECT },
     requestLimit: LIMIT,
+    reportedLibraryVersion: '4.5.0',
     ...options,
   });
 }
@@ -367,8 +378,14 @@ describe('sharing through the dashboard (s97-m11)', () => {
     expect(refused.error?.message).toMatch(/shared directly with Darryl/);
     const port = Number(new URL(server.url).port);
     await server.stop();
-    server = await startServer({ port, reportedRecordProtocol: 0 });
-    const owner = await soloOwner();
+    server = await startServer({ port, reportedRecordProtocol: 1 });
+    const solo = await soloOwner();
+    const owner = await shareExisting(fixture.tmp, solo.root, solo.name, 'Owner');
+    expect(
+      (await on(owner, 'rbook_decisions', { action: 'record', content: 'Requires protocol two.' }))
+        .success
+    ).toBe(true);
+    expect(await onCopy(fixture.tmp, owner, currentWriteProtocol)).toBe(2);
     const old = await on(owner, 'rbook_project', {
       action: 'share',
       via: 'dashboard',
@@ -1092,6 +1109,9 @@ describe('a member that missed the move back (s100-m01, F7)', () => {
     const first = await syncAndRoute(open, toDarryl, { ssh, unchecked });
     if (!first.success) throw new Error(JSON.stringify(first.error));
     expect(first.data!.caughtUp).toMatchObject({ copy: 'remote' });
+    expect(first.warnings ?? []).not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/did not note this exchange/)])
+    );
     expect(first.data!.caughtUp!.confirmed).toBeUndefined();
     // A catch-up only stores: darryl holds the move until its person confirms it.
     const pending = () =>
@@ -1099,6 +1119,15 @@ describe('a member that missed the move back (s100-m01, F7)', () => {
         replicaCheck: false,
       });
     expect(await pending()).toBe(true);
+    const ownerNow = await onCopy(fixture.tmp, owner, (client) => hello(client).replicaId);
+    expect(
+      await onCopy(
+        fixture.tmp,
+        darryl,
+        (client) => peerHealth(client).find((peer) => peer.replicaId === ownerNow)?.lastOkAt,
+        { replicaCheck: false }
+      )
+    ).toEqual(expect.any(String));
     expect(decisions(owner, 'Darryl, unsynced.')).toBe(0);
     expect(decisions(darryl, 'The owner, moved back.')).toBe(0);
     // darryl's person confirms the owner's copy (the live test records whose word this is, #1545).
@@ -1121,7 +1150,7 @@ describe('a member that missed the move back (s100-m01, F7)', () => {
     expect(logOf(darryl)).toEqual(logOf(owner));
   }, 600000);
 
-  it('a far end the dashboard referees serves only hello, chains, changesSince and a catch-up apply, and only to an owner copy at a later move', async () => {
+  it('a far end the dashboard referees serves catch-up reads and apply to the later owner, and only its post-apply exchange receipt', async () => {
     const owner = await soloOwner();
     await shared(owner);
     const darryl = await joined('darryl');
@@ -1170,6 +1199,36 @@ describe('a member that missed the move back (s100-m01, F7)', () => {
       { method: 'failed', params: { replicaId: 'r-owner-new', error: 'x' } },
       { method: 'exchanged', params: {} },
     ];
+    const receipts = await ask(ahead, [
+      { method: 'exchanged', params: { replicaId: ahead.replicaId } },
+      { method: 'apply', params: { changes: [], catchUp: true } },
+      { method: 'exchanged', params: { replicaId: 'another-copy' } },
+      { method: 'exchanged', params: { replicaId: ahead.replicaId } },
+    ]);
+    expect(receipts.map((answer) => 'result' in answer)).toEqual([false, true, false, true]);
+    // A failed later delivery cannot borrow an earlier delivery's permission to report success.
+    // A store-open/apply exception must behave like an ordinary returned failure.
+    const actualApply = applyEmbed.applyAndEmbed;
+    const apply = jest
+      .spyOn(applyEmbed, 'applyAndEmbed')
+      .mockImplementationOnce(actualApply)
+      .mockRejectedValueOnce(new Error('the second catch-up could not open its store'));
+    try {
+      const failedDelivery = await ask(ahead, [
+        { method: 'apply', params: { changes: [], catchUp: true } },
+        { method: 'apply', params: { changes: [], catchUp: true } },
+        { method: 'exchanged', params: { replicaId: ahead.replicaId } },
+      ]);
+      expect(failedDelivery[0]).toHaveProperty('result.success', true);
+      expect(failedDelivery[1]).toHaveProperty(
+        'error.message',
+        'the second catch-up could not open its store'
+      );
+      expect(failedDelivery[2]).toHaveProperty('error');
+      expect(failedDelivery[2]).not.toHaveProperty('result');
+    } finally {
+      apply.mockRestore();
+    }
     const served = await ask(ahead, probes);
     expect(served.map((answer) => 'result' in answer)).toEqual([
       true,
@@ -1310,7 +1369,7 @@ describe('a handover to a copy behind a move (s100-m01, critics round 1)', () =>
 });
 
 describe('a removed member after a move back (s100-m01, #717 item 2)', () => {
-  it('forgets its dashboard route on the 404 the dashboard answers it, as a member does when the project moves back', async () => {
+  it('retains its ended dashboard route and removal notice on the dashboard’s 404 after moving back', async () => {
     const owner = await soloOwner();
     await shared(owner);
     const darryl = await joined('darryl');
@@ -1365,10 +1424,15 @@ describe('a removed member after a move back (s100-m01, #717 item 2)', () => {
       (status.data as unknown as { shared_sync: Array<{ removed_at?: string }> }).shared_sync[0]
         ?.removed_at
     ).toEqual(expect.any(String));
-    // Its next sync says why it syncs with no one, and asks for no route.
+    // Its next explicit sync probes the retained endpoint but preserves the removal remedy.
     const next = await syncNow(darryl);
     expect(next.error?.message).toMatch(/member was removed from the project/);
     expect(next.error?.suggestion).not.toMatch(/--ssh|bundle/);
+    expect(
+      await onCopy(fixture.tmp, darryl, (client) => peerHealth(client)[0].route, {
+        replicaCheck: false,
+      })
+    ).toMatchObject({ kind: 'dashboard', ended: true, projectId: PROJECT });
   }, 600000);
 
   it('keeps its route on a 404 while it knows of no removal, as when this machine is signed in to another account', async () => {
