@@ -54,7 +54,7 @@ function encodeDisclosureValue(value: string): string {
  *   find ~ -maxdepth 7 -path '*\/rbook/db/rbook.sqlite' -not -path '*\/node_modules/*'
  * → 45 stores; 32 resolve via a non-empty `project_id`; 13 collapse to the literal; 0 are
  * unclassifiable. The fallback has already fired in
- * production: `derekn.com`'s store carries 217 rows stamped `unknown-project` across six tables.
+ * production: one measured store carries 217 rows stamped `unknown-project` across six tables.
  *
  * The RULING stands and is reaffirmed; only its PREMISE is amended (#1017). Sprint 87 changed the
  * fallback LABEL, added stderr once per store, and corrected the SEED that manufactures new

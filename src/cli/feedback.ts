@@ -58,6 +58,12 @@ export async function runFeedback(argv: readonly string[], io: CliIo): Promise<n
       })
     );
   }
+  const { rbookSessionSchema } = await import('../tools/rbook/rbook-session');
+  const { validateRbookArguments } = await import('../tools/rbook/tool-validation');
+  const checked = validateRbookArguments(rbookSessionSchema.pick({ agentFeedback: true }), {
+    agentFeedback: content,
+  });
+  if (!checked.success) return finish(createError(checked.error!));
   if (!dryRun && isReadOnlyAgentSession(io.env)) {
     return finish(
       createError({

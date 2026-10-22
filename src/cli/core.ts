@@ -8,6 +8,9 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { performance } from 'perf_hooks';
+import { oneLine } from '../utils/one-line';
+
+export { oneLine };
 
 import {
   findEnclosingStore,
@@ -90,12 +93,6 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     }
   }
   return { positional, flags };
-}
-
-/** One line, so a hook's single stderr line never becomes two. */
-export function oneLine(text: string, max = 300): string {
-  const flat = text.replace(/\s+/g, ' ').trim();
-  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
 
 /**

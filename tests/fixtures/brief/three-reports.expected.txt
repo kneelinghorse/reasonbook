@@ -21,6 +21,7 @@
 - sync: 3 new rows (Birch Notes (birch-7f3a) 3)
 - surfacing: 2 new rows (Atlas (atlas) 2)
 - payload: 1 new row (Atlas (atlas) 1)
+- unclassified: 1 new row (Atlas (atlas) 1)
 
 ## What moved
 - Atlas (atlas): 9 decisions, 2 learnings, 3 missions completed, 1 sprint closed

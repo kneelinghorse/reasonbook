@@ -17,6 +17,8 @@ const PRIVATE = requiresPrivateEvidence({
     manifest: 'rbook/research/2026-10-s94-m06/frozen-labels/manifest.json',
     parserReview: 'rbook/research/2026-10-s94-m06/labels-v5-review/manifest.json',
     reviewLabels: 'rbook/research/2026-10-s94-m06/labels-v5-review/labels.json',
+    currentParserReview: 'rbook/research/2026-10-s94-m06/labels-v6-review/manifest.json',
+    currentReviewLabels: 'rbook/research/2026-10-s94-m06/labels-v6-review/labels.json',
   },
 });
 const root = path.resolve(__dirname, '../..');
@@ -30,6 +32,9 @@ PRIVATE.describe('sealed private retrieval acceptance evidence', () => {
     const manifest = JSON.parse(fs.readFileSync(PRIVATE.paths.manifest, 'utf8'));
     expect(labels.queries).toHaveLength(manifest.counts.queries);
     expect(fs.readFileSync(PRIVATE.paths.reviewLabels)).toEqual(
+      fs.readFileSync(PRIVATE.paths.labels)
+    );
+    expect(fs.readFileSync(PRIVATE.paths.currentReviewLabels)).toEqual(
       fs.readFileSync(PRIVATE.paths.labels)
     );
     for (const population of ['primary', 'mission', 'mixed'])

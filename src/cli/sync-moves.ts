@@ -3,7 +3,7 @@
 // ABOUTME: the operator's word, and how the sync commands say a move, a new identity or a renumber.
 
 import fs from 'fs';
-import { parseArgs, resolveCliProject, type CliIo } from './core';
+import { oneLine, parseArgs, resolveCliProject, type CliIo } from './core';
 import type { RbookDatabaseClient } from '../tools/rbook/client';
 import { removalNote, type ExchangeReport } from '../tools/rbook/record-exchange';
 import { handOverRoute, recoverRoutes } from '../tools/rbook/record-move-routes';
@@ -28,10 +28,10 @@ export function confirmedText(data: Confirmed): string {
   return [
     data.isAuthority
       ? `Confirmed: this copy is the owner's copy now (move ${data.epoch}), and judged ${data.judged} change(s) no verdict had reached.`
-      : `Confirmed: the owner's copy is ${data.authority} from move ${data.epoch}.`,
+      : `Confirmed: the owner's copy is ${oneLine(data.authority)} from move ${data.epoch}.`,
     ...(data.next
       ? [
-          `Another move waits after it, to ${data.next.authority}: confirm it too once you trust it.`,
+          `Another move waits after it, to ${oneLine(data.next.authority)}: confirm it too once you trust it.`,
         ]
       : []),
   ].join(' ');
@@ -43,15 +43,17 @@ export function exchangeText(report: ExchangeReport): string {
   if (report.caughtUp)
     parts.push(
       report.caughtUp.confirmed
-        ? `${report.caughtUp.copy === 'local' ? 'This copy' : 'That copy'} took in a move of the owner's copy to ${report.caughtUp.authority} and confirmed it itself.`
-        : `${report.caughtUp.copy === 'local' ? 'This copy' : 'That copy'} took in a move of the owner's copy to ${report.caughtUp.authority}; confirm it ${report.caughtUp.copy === 'local' ? 'here' : 'there'} with reasonbook sync --confirm-owner, then sync the two copies again.`
+        ? `${report.caughtUp.copy === 'local' ? 'This copy' : 'That copy'} took in a move of the owner's copy to ${oneLine(report.caughtUp.authority)} and confirmed it itself.`
+        : `${report.caughtUp.copy === 'local' ? 'This copy' : 'That copy'} took in a move of the owner's copy to ${oneLine(report.caughtUp.authority)}; confirm it ${report.caughtUp.copy === 'local' ? 'here' : 'there'} with reasonbook sync --confirm-owner, then sync the two copies again.`
     );
   if (report.reidentified)
     parts.push(
-      `The member's copy took a new identity in block ${report.reidentified.block}: ${report.reidentified.summary}`
+      `The member's copy took a new identity in block ${report.reidentified.block}: ${oneLine(report.reidentified.summary)}`
     );
   for (const moved of report.reblocked ?? [])
-    parts.push(`Replica ${moved.replicaId} moved to block ${moved.block} after a block clash.`);
+    parts.push(
+      `Replica ${oneLine(moved.replicaId)} moved to block ${moved.block} after a block clash.`
+    );
   const removal = report.caughtUp ? null : removalNote(report);
   parts.push(
     `${report.caughtUp ? `The copy behind took in ${report.received}` : removal ? removal.charAt(0).toUpperCase() + removal.slice(1) : `The owner's copy took in ${report.sent}, and the member's took in ${report.received}`}${report.conflicts ? `; ${report.conflicts} field(s) in conflict` : ''}.`
@@ -109,7 +111,7 @@ function said<T>(io: CliIo, result: RbookToolResult<T>, text: (data: T) => strin
     return 0;
   }
   io.stderr(
-    `${result.error?.message ?? 'It failed.'}${result.error?.suggestion ? ` ${result.error.suggestion}` : ''}`
+    `${oneLine(result.error?.message ?? 'It failed.')}${result.error?.suggestion ? ` ${oneLine(result.error.suggestion)}` : ''}`
   );
   return 1;
 }
@@ -136,7 +138,7 @@ export async function runHandover(argv: readonly string[], io: CliIo): Promise<n
     io,
     moved,
     (data) =>
-      `Handed the owner's copy over to ${route.host} (move ${data.handover.epoch}); it confirmed and holds this copy's routes. This copy is a member now: ${exchangeText(data.sync)}`
+      `Handed the owner's copy over to ${oneLine(route.host)} (move ${data.handover.epoch}); it confirmed and holds this copy's routes. This copy is a member now: ${exchangeText(data.sync)}`
   );
 }
 
@@ -162,6 +164,6 @@ export async function runRecover(argv: readonly string[], io: CliIo): Promise<nu
     io,
     recovered,
     (data) =>
-      `This copy is the owner's copy now (move ${data.epoch}, block ${data.block}), with ${data.collected} change(s) collected and ${data.judged} judged again. ${data.lost.summary} Each member confirms at its next sync.`
+      `This copy is the owner's copy now (move ${data.epoch}, block ${data.block}), with ${data.collected} change(s) collected and ${data.judged} judged again. ${oneLine(data.lost.summary)} Each member confirms at its next sync.`
   );
 }

@@ -259,7 +259,8 @@ it('serves two simultaneous application processes against one store without SQLi
       })
     )
   );
-  expect(results.every((result) => result.structuredContent.success)).toBe(true);
+  // s98-m08 (#660 item 6): match each whole answer, so a refusal prints its code and message.
+  for (const result of results) expect(result.structuredContent).toMatchObject({ success: true });
   expect(snapshot(dbPath)).toEqual(before);
   snapshot(path.join(config, 'project-graph.sqlite'));
   expect([first.rootsCalls, second.rootsCalls]).toEqual([0, 0]);

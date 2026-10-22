@@ -11,6 +11,7 @@
  * @module tools/rbook/rbook-constraints
  */
 
+import { formatToolFailure } from './format-failure';
 import { withClient, type RbookDatabaseClient } from './client';
 import type { RbookToolResult } from './types';
 import { createError, createSuccess, RbookErrors, RBOOK_ERROR_CODES } from './errors';
@@ -508,8 +509,7 @@ export function formatConstraintsForLLM(result: RbookToolResult<ConstraintsResul
  */
 function renderConstraintsBody(result: RbookToolResult<ConstraintsResult>): string {
   if (!result.success || !result.data) {
-    const error = result.error;
-    return `Failed to manage constraints: ${error?.message ?? 'Unknown error'}`;
+    return formatToolFailure('Failed to manage constraints', result.error);
   }
 
   const d = result.data;

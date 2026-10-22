@@ -402,6 +402,10 @@ describe('cross-store fan-out read API (Sprint 69 m06)', () => {
     const missions = await activeMissionsAcrossProjects({ registry });
     expect(missions.results).toHaveLength(5);
     expect(missions.results.every((m) => m.status === 'In Progress')).toBe(true);
+    const expired = await activeMissionsAcrossProjects({ registry, deadlineAtMs: Date.now() - 1 });
+    expect(expired.results).toEqual([]);
+    expect(expired.errors).toHaveLength(5);
+    expect(expired.errors.every((error) => /deadline/.test(error.error))).toBe(true);
 
     // (c) learnings tagged 'technical' → 5.
     const learnings = await learningsTaggedAcrossProjects('technical', { registry });

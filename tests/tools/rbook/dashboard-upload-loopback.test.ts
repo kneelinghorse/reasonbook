@@ -17,6 +17,7 @@ import {
 } from '../../../src/tools/rbook/checkpoint-backfill';
 import { readDashboardUploadStatus } from '../../../src/tools/rbook/dashboard-upload-scheduler';
 import { seedRbookDb } from '../../helpers/seedRbookDb';
+import { rbookDbBackfill } from '../../../src/tools/rbook/rbook-db-backfill';
 
 let root: string;
 let dbPath: string;
@@ -169,6 +170,30 @@ function assertSnapshot(request: (typeof requests)[number]): void {
     db.close();
   }
 }
+
+it.each(['off', 'false', '0', 'no', 'OFF'])(
+  'manual backfill honors RBOOK_CHECKPOINT_SYNC=%s without any dashboard request or store write',
+  async (value) => {
+    process.env.RBOOK_CHECKPOINT_SYNC = value;
+    const before = [hash(dbPath), hash(dbPath + '-wal')];
+    const result = await rbookDbBackfill({ projectRoot: root, force: true });
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe('CHECKPOINT_SYNC_DISABLED');
+    expect(result.error?.message).toContain('RBOOK_CHECKPOINT_SYNC');
+    expect(requests).toHaveLength(0);
+    expect([hash(dbPath), hash(dbPath + '-wal')]).toEqual(before);
+  }
+);
+
+it('manual backfill with uploads enabled sends a usable SQLite copy to the loopback dashboard', async () => {
+  // Manual backfill currently reads the main file directly; its separate WAL omission is recorded.
+  writer.pragma('wal_checkpoint(TRUNCATE)');
+  const result = await rbookDbBackfill({ projectRoot: root });
+  expect(result.success).toBe(true);
+  const uploaded = requests.filter((r) => r.url === '/api/sync/sqlite-backfill');
+  expect(uploaded).toHaveLength(1);
+  assertSnapshot(uploaded[0]!);
+});
 
 it('two uploads use a real snapshot, include WAL rows and leave source sha256 unchanged', async () => {
   const before = [hash(dbPath), hash(dbPath + '-wal')];

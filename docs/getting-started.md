@@ -16,11 +16,11 @@ Pick one:
 
 ```bash
 # Recommended: a global install of this release. It starts from disk, with no registry lookup.
-npm install -g @aquex/reasonbook@4.3.0
+npm install -g @aquex/reasonbook@4.4.0
 
 # Or run on demand via npx: pinned, and preferring the local cache. The first launch downloads
 # the package; later launches reuse the npm cache.
-npx --prefer-offline -y @aquex/reasonbook@4.3.0
+npx --prefer-offline -y @aquex/reasonbook@4.4.0
 ```
 
 If the former package is installed globally, run `npm uninstall -g @aquex/cmos-mcp` first. Version 4 provides only the `reasonbook` command; update scripts and MCP configurations that use the old command.
@@ -30,7 +30,7 @@ Verify it starts:
 ```bash
 reasonbook --version  # if globally installed
 # or
-npx --prefer-offline -y @aquex/reasonbook@4.3.0 --version
+npx --prefer-offline -y @aquex/reasonbook@4.4.0 --version
 ```
 
 Semantic (vector) search is optional: without it, retrieval is keyword-only and the install is about
@@ -44,7 +44,7 @@ Claude Code and Codex are verified; the other blocks follow each client's own MC
 ### Claude Code
 
 ```bash
-claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.3.0"]}'
+claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.4.0"]}'
 claude mcp list   # confirm it's registered
 ```
 
@@ -62,7 +62,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS), 
       "args": [
         "--prefer-offline",
         "-y",
-        "@aquex/reasonbook@4.3.0",
+        "@aquex/reasonbook@4.4.0",
         "--project-root",
         "/absolute/path/to/your/project"
       ]
@@ -85,7 +85,7 @@ Edit `~/.cursor/mcp.json`:
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.3.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.4.0"]
     }
   }
 }
@@ -100,7 +100,7 @@ Edit your Zed `settings.json`:
   "context_servers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.3.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.4.0"]
     }
   }
 }
@@ -121,7 +121,7 @@ your terminal PATH, so the terminal route needs the standalone Claude CLI.
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.3.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.4.0"]
     }
   }
 }
@@ -209,16 +209,28 @@ The transition tool surfaces relevant past decisions via FTS5 keyword overlap wh
 
 ## 7. Complete the work
 
-When you're done coding, finish the mission with notes only, then record what you decided in its own call:
+If this project's code runs directly from source and has no build output to watch, set its
+build-freshness preference once:
 
+```text
+rbook_context(action="update", contextType="project_identity",
+              fieldUpdates=[{"path":"type_fields.build_freshness_check","value":false}])
 ```
-rbook_mission_transition(action="complete", missionId="s01-m01",
-                        notes="Built feature X, added tests, snapshotted DB before migration")
-```
+
+Review and sprint close then omit that project's build advisory. Setting the value to `true`
+restores it; an absent or null value keeps the check enabled. This changes the project's advisory,
+not its own release or validation requirements.
+
+When the work is verified, record what you decided in its own call, then finish the mission with notes only:
 
 ```
 rbook_decisions(action="record", missionId="s01-m01",
                content="Chose event sourcing for the audit trail")
+```
+
+```
+rbook_mission_transition(action="complete", missionId="s01-m01",
+                        notes="Built feature X, added tests, snapshotted DB before migration")
 ```
 
 Keep the two apart. Some hosts drop a closing tag when a long free-text parameter and an array share
@@ -267,8 +279,11 @@ stores make the coverage partial; absent feedback tables count as zero. All rows
 without deduplication or subject filtering. Each list also counts the rows by kind
 (`countsByKind`: ceremony, surfacing, identity, sync, payload), by published rules over each
 row's text, with `unclassified` beside them. Local triage accepts `resolutionNote`, and `resolve`
-takes `feedbackIds` for up to 200 rows at once; an unknown id resolves none. For a sibling
-disposition, request action through an explicitly authorized message to that project.
+takes local `feedbackIds` for up to 200 rows at once; an unknown id resolves none. Its receipt
+names the project and lists skipped rows that were already resolved, preserving their first
+resolution time and note. Fleet entries use opaque project-qualified ids such as
+`project-id:feedback:12`, which local mutation calls refuse. For a sibling disposition, request
+action through an explicitly authorized message to that project.
 
 ## What needs a person, across your projects
 
@@ -292,13 +307,23 @@ projects, in its portfolio.
 
 The signals come from a library, `@aquex/reasonbook/signals`: `readSignals(storePath, { now })`
 reads one store file at the time given. It never writes the store or starts anything, and the same
-file, time and draft runtime give the same report.
+file, time and draft runtime give the same report. SQLite may create `-shm` and empty `-wal`
+sidecars. The report uses one consistent read transaction: on a rollback-journal store its
+shared lock lasts until the report finishes, so a writer with a shorter busy timeout (including
+250 ms) can fail. `rbook_review` skips locked sibling stores without waiting and stops admitting
+portfolio stores after one second; unfinished coverage is reported as unreadable. This deadline
+is checked between synchronous reads, so it cannot interrupt a query already executing.
 
 `reasonbook brief` turns those reports into a one-page weekly brief: what needs a decision, what is
 stuck, what has gone quiet, what is drifting, the week's friction and what moved, five items a
 section with every listed row named by its id. `--days` sets the window (7 by default) and
 `--format json` prints the sections as data. The same renderer, `renderBrief`, gives the same bytes
 for the same reports on any machine.
+
+The brief labels older reports with their age and reports that counted a different window with
+that window. Friction includes unclassified feedback. Text display removes control characters,
+neutralizes automatic links and caps names and ids; JSON retains the full ids and report provenance.
+The rendered brief stays within 60 lines and says when additional items or caveats were omitted.
 
 ## Local usage statistics
 
@@ -521,7 +546,7 @@ whole.
 
 The dashboard at [reasonbook.ai](https://reasonbook.ai) adds four things on top of local mode:
 
-- **Dashboard mirror** — `rbook_db(action="backfill")` uploads a consistent snapshot of the whole SQLite file for the dashboard to display.
+- **Dashboard mirror** — `rbook_db(action="backfill")` uploads the live SQLite main file for the dashboard to display; it does not include outstanding WAL pages, so it is not a consistent snapshot. Automatic checkpoint uploads use a SQLite snapshot instead.
 - **Project registry** — addressable `rbook://you/project-name` URIs across all your machines.
 - **Messaging** — `rbook_message(action="send")` between your own projects.
 - **Sharing** — share a project's record with editors through it, as [Share a project's record](#share-a-projects-record) describes.

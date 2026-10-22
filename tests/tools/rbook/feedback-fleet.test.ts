@@ -12,7 +12,15 @@ import { readDigestV2 } from '../../../src/tools/rbook/digest-v2-store';
 import { renderDigestV2 } from '../../../src/tools/rbook/digest-v2';
 import { seedRbookDb } from '../../helpers/seedRbookDb';
 import { executeMissionProtocolTool } from '../../../src/index';
-import { feedbackDigestLine, readFeedbackFleet } from '../../../src/tools/rbook/feedback-fleet';
+import * as crossStore from '../../../src/intelligence/cross-store-query';
+import {
+  FLEET_DIGEST_BUDGET_MS,
+  feedbackDigestLine,
+  readFeedbackFleet,
+} from '../../../src/tools/rbook/feedback-fleet';
+
+/** s98-m08 (#747): room for a fleet read that load cannot spend. */
+const FLEET_ROOM_MS = 20_000;
 
 let root: string;
 let savedConfig: string | undefined;
@@ -129,6 +137,19 @@ it('returns globally capped rows with exact full counts and trusted source-store
   const entries = (result.data as unknown as { entries: Array<Record<string, unknown>> }).entries;
   expect(entries).toHaveLength(2);
   expect(entries.map((entry) => entry.sourceProjectId)).toEqual(['alpha', 'beta']);
+  expect(entries.map((entry) => entry.id)).toEqual(['alpha:feedback:1', 'beta:feedback:1']);
+  // A fleet id cannot accidentally resolve this project's row with the same local number.
+  const refused = await executeMissionProtocolTool(
+    'rbook_feedback',
+    {
+      action: 'resolve',
+      feedbackIds: entries.map((entry) => entry.id),
+      projectRoot: root,
+    },
+    {} as never
+  );
+  expect(refused.isError).toBe(true);
+  expect(JSON.stringify(refused)).toContain('INVALID_PARAMETER');
   expect(entries[0]).toMatchObject({
     projectId: null,
     provenance: { source: 'proj:alpha', trust: 'foreign' },
@@ -275,14 +296,35 @@ it('shows the open fleet count in the shared digest with stable bytes and explic
   insert(a, 1);
   insert(a, 2, 'triaged');
   const env = { RBOOK_CONFIG_DIR: process.env.RBOOK_CONFIG_DIR };
-  const first = renderDigestV2(await readDigestV2(local, env));
-  expect(first.text).toContain('Fleet feedback: 1 open; 1/1 stores');
-  expect(first.text.length).toBeLessThanOrEqual(4000);
-  expect(renderDigestV2(await readDigestV2(local, env)).text).toBe(first.text);
+  // s98-m08 (#747): each read gets room load cannot spend; a read that ran out of the production
+  // 100 ms said "coverage incomplete" and the bytes differed. The next test checks the 100 ms.
+  const read = async () =>
+    renderDigestV2(await readDigestV2(local, env, Infinity, FLEET_ROOM_MS)).text;
+  const first = await read();
+  expect(first).toContain('Fleet feedback: 1 open; 1/1 stores');
+  expect(first.length).toBeLessThanOrEqual(4000);
+  expect(await read()).toBe(first);
   store('gone', 'missing');
-  expect(renderDigestV2(await readDigestV2(local, env)).text).toContain(
-    'Fleet feedback: coverage incomplete.'
-  );
+  expect(await read()).toContain('Fleet feedback: coverage incomplete.');
+});
+
+it("gives the digest's fleet read 100 ms by default, and a sooner hook deadline wins", async () => {
+  store('alpha');
+  const env = { RBOOK_CONFIG_DIR: process.env.RBOOK_CONFIG_DIR };
+  const query = jest.spyOn(crossStore, 'queryAcrossStores');
+  try {
+    const before = Date.now();
+    await feedbackDigestLine(env);
+    const after = Date.now();
+    expect(FLEET_DIGEST_BUDGET_MS).toBe(100);
+    expect(query.mock.calls[0][0].deadlineAtMs).toBeGreaterThanOrEqual(before + 100);
+    expect(query.mock.calls[0][0].deadlineAtMs).toBeLessThanOrEqual(after + 100);
+    const hookDeadline = Date.now() + 60_000;
+    await feedbackDigestLine(env, hookDeadline, 120_000);
+    expect(query.mock.calls[1][0].deadlineAtMs).toBe(hookDeadline);
+  } finally {
+    query.mockRestore();
+  }
 });
 
 it('serves fleet reads through MCP without requiring a local project or mutating a sibling', async () => {

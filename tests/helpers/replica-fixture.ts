@@ -11,6 +11,7 @@ import { RbookDetector } from '../../src/intelligence/rbook-detector';
 import { writeUserAuthor } from '../../src/intelligence/user-author';
 import { RbookDatabaseClient } from '../../src/tools/rbook/client';
 import { shareRecord } from '../../src/tools/rbook/record-share';
+import { __resetSharedSyncScheduler } from '../../src/tools/rbook/record-sync-scheduler';
 import { moveReplicaBlock } from '../../src/tools/rbook/replica-copy-keys';
 import {
   establishReplica,
@@ -32,6 +33,10 @@ export function replicaFixture(prefix: string): ReplicaFixture {
   return {
     tmp,
     restore() {
+      // s98-m08: stop the shared-sync timer a test's tool calls may have started. It outlived its
+      // file in the jest worker, synced a removed copy and wrote its failure inside a later file's
+      // hook, whose one stderr line then was not its own.
+      __resetSharedSyncScheduler();
       ProjectGraphRegistry.resetInstance();
       RbookDetector.resetInstance();
       if (saved === undefined) delete process.env.RBOOK_CONFIG_DIR;

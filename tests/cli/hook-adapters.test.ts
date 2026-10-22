@@ -28,6 +28,8 @@ async function run(harness: string, event: string, input: object) {
   const code = await runCli(['hook', event, '--harness', harness], {
     cwd: root,
     env: { RBOOK_CONFIG_DIR: path.join(tmp, 'config') },
+    // s98-m08: room load cannot spend (#1558); this test checks what the hook does, not its deadline.
+    startedAtMs: Date.now() + 20_000,
     readStdin: async () => JSON.stringify(input),
     stdout: (text) => {
       stdout += text;

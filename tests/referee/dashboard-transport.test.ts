@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // ABOUTME: s97-m10 (design §R2) — copies exchange through the reference server, in its own process, with the client's own
 // ABOUTME: dashboard peer: the 4.1.0 checks, paging both ways, a transaction too large, the dashboard down, a newer copy.
-import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from '@jest/globals';
 import { runCli } from '../../src/cli';
 import type { CliIo } from '../../src/cli/core';
 import fs from 'fs';
@@ -38,7 +38,12 @@ import {
 } from '../../src/tools/rbook/record-sync-scheduler';
 import { serveSync, wirePeer } from '../../src/tools/rbook/record-wire';
 import { readReplicaIdentity } from '../../src/tools/rbook/replica-identity';
-import { request, spawnRefereeServer, type RunningServer } from '../helpers/referee-http';
+import {
+  recordNetworkFailures,
+  request,
+  spawnRefereeServer,
+  type RunningServer,
+} from '../helpers/referee-http';
 import {
   call,
   dbOf,
@@ -75,6 +80,16 @@ function startServer(
     ...(port ? { port } : {}),
   });
 }
+
+/** s98-m08: what the network said when a dashboard call failed (see recordNetworkFailures). */
+let network: ReturnType<typeof recordNetworkFailures>;
+beforeAll(() => {
+  network = recordNetworkFailures();
+});
+beforeEach(() => {
+  network.failures.length = 0;
+});
+afterAll(() => network.restore());
 
 let switchWas: string | undefined;
 let dashboardWas: string | undefined;
@@ -145,7 +160,10 @@ function syncNow(copy: Copy, options: { readonly auto?: boolean } = {}) {
 
 async function synced(copy: Copy): Promise<ExchangeReport> {
   const result = await syncNow(copy);
-  if (!result.success) throw new Error(`${copy.name}: ${JSON.stringify(result.error)}`);
+  if (!result.success)
+    throw new Error(
+      `${copy.name}: ${JSON.stringify(result.error)}; the network said: ${network.failures.join(' | ') || 'nothing'}`
+    );
   return result.data!.peers[0].report!;
 }
 
@@ -464,8 +482,13 @@ function fakeEntry(): { readonly bin: string; readonly marker: string } {
   return { bin: path.join(dist, 'bin.js'), marker };
 }
 
-async function launched(marker: string): Promise<unknown> {
-  for (let tries = 0; tries < 60 && !fs.existsSync(marker); tries += 1)
+/**
+ * The sync a hook launched, as the fake entry recorded it. s98-m08: a launched process can take
+ * seconds to start on a loaded machine, so a launch gets 20 s; a check that nothing launched keeps
+ * 3 s, which the launch it guards against would have used.
+ */
+async function launched(marker: string, waitMs = 20_000): Promise<unknown> {
+  for (const until = Date.now() + waitMs; !fs.existsSync(marker) && Date.now() < until; )
     await new Promise((resolve) => setTimeout(resolve, 50));
   return fs.existsSync(marker) ? JSON.parse(fs.readFileSync(marker, 'utf8')) : null;
 }
@@ -475,6 +498,8 @@ async function hook(copy: Copy, event: string): Promise<void> {
   await runCli(['hook', event, '--format', 'text'], {
     env: process.env,
     cwd: copy.root,
+    // s98-m08: room load cannot spend (#1558); a hook that ran out of its deadline launched nothing.
+    startedAtMs: Date.now() + 20_000,
     readStdin: async () =>
       JSON.stringify({ cwd: copy.root, session_id: `hook-${event}`, source: 'startup' }),
     stdout: () => undefined,
@@ -782,7 +807,7 @@ describe('what starts a sync through the dashboard (s97-m10)', () => {
       process.env.RBOOK_SHARED_SYNC = 'off';
       fs.rmSync(marker, { force: true });
       await hook(darryl, 'session-end');
-      expect(await launched(marker)).toBeNull();
+      expect(await launched(marker, 3_000)).toBeNull();
       await on(darryl, 'rbook_decisions', { action: 'record', content: 'Written while off.' });
       await __runSharedSync(darryl.root);
       await synced(owner);

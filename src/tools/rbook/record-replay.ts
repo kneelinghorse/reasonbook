@@ -15,6 +15,7 @@ import {
   RECORDED_TABLES,
   type SharedTable,
 } from './record-columns';
+import { sweepStaleRecordCopies } from './record-temp-copies';
 
 interface LoggedChange {
   readonly change_id: string;
@@ -219,12 +220,15 @@ function compare(live: Db, replayed: Db): string[] {
  * store itself is only read, in one read transaction.
  */
 export function replayCheck(storePath: string, replayBase: string): ReplayReport {
+  sweepStaleRecordCopies();
   const folder = mkdtempSync(path.join(os.tmpdir(), 'rbook-replay-'));
   const scratchPath = path.join(folder, 'replay.sqlite');
-  copyFileSync(replayBase, scratchPath);
-  const replayed = new Database(scratchPath);
-  const live = new Database(storePath, { readonly: true });
+  let replayedDb: Db | undefined;
+  let liveDb: Db | undefined;
   try {
+    copyFileSync(replayBase, scratchPath);
+    const replayed = (replayedDb = new Database(scratchPath));
+    const live = (liveDb = new Database(storePath, { readonly: true }));
     const triggers = replayed
       .prepare(
         "SELECT name FROM sqlite_master WHERE type = 'trigger' AND (name LIKE 'record\\_guard\\_%' ESCAPE '\\' OR name LIKE 'record\\_capture\\_%' ESCAPE '\\')"
@@ -257,8 +261,8 @@ export function replayCheck(storePath: string, replayBase: string): ReplayReport
       return { applied: changes.length, mismatches: [...failures, ...compare(live, replayed)] };
     })();
   } finally {
-    live.close();
-    replayed.close();
+    liveDb?.close();
+    replayedDb?.close();
     rmSync(folder, { recursive: true, force: true });
   }
 }

@@ -3,7 +3,7 @@
 // ABOUTME: first that classifies every row, and with --apply this copy's own writes; the copy's folder is only read.
 
 import * as path from 'path';
-import { parseArgs, resolveCliProject, type CliIo } from './core';
+import { oneLine, parseArgs, resolveCliProject, type CliIo } from './core';
 import { canonicalJson } from '../tools/rbook/record-capture';
 import { importCopy, type ImportReport } from '../tools/rbook/record-import';
 import type { FieldChange } from '../tools/rbook/record-import-plan';
@@ -14,7 +14,7 @@ const USAGE =
   'reasonbook import --from <folder> [--apply] [--include <table>:<id>,...] [--project-root <root>]: bring in a copy made before sharing, a dry run unless --apply.';
 
 const shown = (value: unknown): string => {
-  const text = JSON.stringify(value ?? null);
+  const text = oneLine(JSON.stringify(value ?? null));
   return text.length > 60 ? `${text.slice(0, 57)}...` : text;
 };
 
@@ -25,7 +25,7 @@ function fieldLines(heading: string, fields: readonly FieldChange[], writes = fa
     heading,
     ...fields.map(
       (field) =>
-        `  ${field.table} ${field.id} ${field.field}: the copy holds ${shown(field.copy)}, the record ${shown(field.owner)}${!writes || canonicalJson(field.write ?? null) === canonicalJson(field.copy ?? null) ? '' : `; applying writes ${shown(field.write)}`}${field.afterMarker ? "; the copy's row carries a time after the marker, so this may be its own change" : ''}`
+        `  ${oneLine(field.table)} ${oneLine(field.id)} ${oneLine(field.field)}: the copy holds ${shown(field.copy)}, the record ${shown(field.owner)}${!writes || canonicalJson(field.write ?? null) === canonicalJson(field.copy ?? null) ? '' : `; applying writes ${shown(field.write)}`}${field.afterMarker ? "; the copy's row carries a time after the marker, so this may be its own change" : ''}`
     ),
   ];
 }
@@ -59,7 +59,7 @@ function baseLines(report: ImportReport): string[] {
     .filter((field) => !field.based).length;
   return [
     report.base
-      ? `Base: ${path.basename(report.base)}, which both folders hold: a field only one side changed since takes that side's value and one both changed is raised, unless the record's own history shows it changed the field after holding the copy's value, or ${KINDS_BASED}.${unbased ? ` ${unbased} raised field(s) are on rows or columns the base does not hold, so they are raised as with no base.` : ''}`
+      ? `Base: ${oneLine(path.basename(report.base))}, which both folders hold: a field only one side changed since takes that side's value and one both changed is raised, unless the record's own history shows it changed the field after holding the copy's value, or ${KINDS_BASED}.${unbased ? ` ${unbased} raised field(s) are on rows or columns the base does not hold, so they are raised as with no base.` : ''}`
       : `Base: none that both folders hold, so a field the two hold differently is raised, unless the record's own history shows it changed the field after holding the copy's value, or ${KINDS}.`,
     ...(held
       ? [
@@ -75,10 +75,10 @@ function baseLines(report: ImportReport): string[] {
  */
 export function importText(report: ImportReport, again?: string): string {
   const lines = [
-    `${report.applied ? 'Imported' : 'Dry run of the import of'} ${report.from} (its store ${path.relative(report.from, report.store) || path.basename(report.store)}).`,
+    `${report.applied ? 'Imported' : 'Dry run of the import of'} ${oneLine(report.from)} (its store ${oneLine(path.relative(report.from, report.store) || path.basename(report.store))}).`,
     ...baseLines(report),
     report.marker
-      ? `Marker: context snapshot ${report.marker.id} (${report.marker.createdAt}); a row only the copy holds, dated at or before it, was deleted on the owner, as was one the record's log shows it removed.`
+      ? `Marker: context snapshot ${report.marker.id} (${oneLine(report.marker.createdAt)}); a row only the copy holds, dated at or before it, was deleted on the owner, as was one the record's log shows it removed.`
       : "Marker: none, so a row only the copy holds reads as its own, unless the record's log shows it removed it.",
   ];
   for (const table of report.tables) {
@@ -115,8 +115,8 @@ export function importText(report: ImportReport, again?: string): string {
     ].filter(Boolean);
     lines.push(
       table.absent
-        ? `${table.table}: the copy has no such table; the record's ${table.targetRows} stay as they are.`
-        : `${table.table}: ${table.copyRows} in the copy: ${parts.join('; ')}.${table.lacked.length ? ` Taken from the record, which the copy never had: ${table.lacked.join(', ')}.` : ''}`
+        ? `${oneLine(table.table)}: the copy has no such table; the record's ${table.targetRows} stay as they are.`
+        : `${oneLine(table.table)}: ${table.copyRows} in the copy: ${parts.join('; ')}.${table.lacked.length ? ` Taken from the record, which the copy never had: ${table.lacked.map((field) => oneLine(field)).join(', ')}.` : ''}`
     );
   }
   const all = report.tables;
@@ -163,8 +163,8 @@ export function importText(report: ImportReport, again?: string): string {
       .filter((entry) => !entry.waits)
       .map((entry) =>
         entry.cites
-          ? `  ${entry.row} ${entry.column} cites ${entry.names}, which the import leaves out: the citation keeps the number the copy wrote, which in the record names another row or none`
-          : `  ${entry.row} ${entry.column} names ${entry.names}: ${entry.brought ? (RECORD_LINK.test(entry.row) ? 'the link is left out' : 'brought in without it') : 'the record keeps its own value'}${entry.afterMarker ? "; the copy's row carries a time after the marker, so this may be its own change" : ''}`
+          ? `  ${oneLine(entry.row)} ${oneLine(entry.column)} cites ${oneLine(entry.names)}, which the import leaves out: the citation keeps the number the copy wrote, which in the record names another row or none`
+          : `  ${oneLine(entry.row)} ${oneLine(entry.column)} names ${oneLine(entry.names)}: ${entry.brought ? (RECORD_LINK.test(entry.row) ? 'the link is left out' : 'brought in without it') : 'the record keeps its own value'}${entry.afterMarker ? "; the copy's row carries a time after the marker, so this may be its own change" : ''}`
       )
   );
   if (leftOut.length)
@@ -175,7 +175,9 @@ export function importText(report: ImportReport, again?: string): string {
   const waitingRefs = all.flatMap((table) =>
     table.leftOut
       .filter((entry) => entry.waits)
-      .map((entry) => `  ${entry.row} ${entry.column} names ${entry.names}`)
+      .map(
+        (entry) => `  ${oneLine(entry.row)} ${oneLine(entry.column)} names ${oneLine(entry.names)}`
+      )
   );
   if (waitingRefs.length)
     lines.push(
@@ -185,7 +187,7 @@ export function importText(report: ImportReport, again?: string): string {
   const deleted = all.flatMap((table) =>
     table.deletedOnOwner.map(
       (row) =>
-        `  ${quoted(`${table.table}:${row.id}`)}${row.at ? ` (${row.at})` : ''}${row.to ? `, brought in by --include${row.to !== row.id ? ` as ${row.to}` : ''}` : table.heldBack.some((held) => held.id === row.id) ? ', named by --include, and waiting with a row it names (below)' : ''}`
+        `  ${quoted(oneLine(`${table.table}:${row.id}`))}${row.at ? ` (${oneLine(row.at)})` : ''}${row.to ? `, brought in by --include${row.to !== row.id ? ` as ${oneLine(row.to)}` : ''}` : table.heldBack.some((held) => held.id === row.id) ? ', named by --include, and waiting with a row it names (below)' : ''}`
     )
   );
   if (deleted.length)
@@ -196,17 +198,17 @@ export function importText(report: ImportReport, again?: string): string {
   const own = all.flatMap((table) =>
     table.own.map(
       (row) =>
-        `  ${table.table}:${row.id}${row.to !== row.id ? ` as ${row.to}` : ''}${row.at ? '' : '; undated, so it may be a row the owner deleted'}`
+        `  ${oneLine(table.table)}:${oneLine(row.id)}${row.to !== row.id ? ` as ${oneLine(row.to)}` : ''}${row.at ? '' : '; undated, so it may be a row the owner deleted'}`
     )
   );
   if (own.length) lines.push('Its own rows:', ...own);
   lines.push(...waitingLines(all));
   if (report.alreadyIn.length)
     lines.push(
-      `--include names ${report.alreadyIn.join(', ')}, which the record already holds, so it brings in nothing for them.`
+      `--include names ${report.alreadyIn.map((id) => oneLine(id)).join(', ')}, which the record already holds, so it brings in nothing for them.`
     );
   const twice = all.flatMap((table) =>
-    table.broughtTwice.map((entry) => `  ${table.table} ${entry}`)
+    table.broughtTwice.map((entry) => `  ${oneLine(table.table)} ${oneLine(entry)}`)
   );
   if (twice.length)
     lines.push(
@@ -215,7 +217,9 @@ export function importText(report: ImportReport, again?: string): string {
     );
   const keep = keepLine(all);
   if (report.applied) {
-    const renamed = Object.entries(report.applied.renamed).map(([from, to]) => `${from} as ${to}`);
+    const renamed = Object.entries(report.applied.renamed).map(
+      ([from, to]) => `${oneLine(from)} as ${oneLine(to)}`
+    );
     lines.push(
       `Applied: ${report.applied.created} row(s) created, ${report.applied.set} field(s) set, and ${report.applied.conflicts} raised as conflicts.${report.applied.conflicts ? ' Reads keep the record\'s value until each is settled with rbook_db(action="settle").' : ''}`,
       ...(renamed.length ? [`Renumbered: ${renamed.join(', ')}.`] : []),
@@ -223,7 +227,13 @@ export function importText(report: ImportReport, again?: string): string {
     );
     return lines.join('\n');
   }
-  const command = again ?? `reasonbook import --from ${quoted(report.store)} --apply`;
+  const rawCommand = again ?? `reasonbook import --from ${quoted(report.store)} --apply`;
+  // A cleaned/truncated shell argument could name a different row or folder. Omit unsafe display
+  // arguments rather than offering an altered command; the actual invocation remains untouched.
+  const command =
+    oneLine(rawCommand) === rawCommand
+      ? rawCommand
+      : 'the original reasonbook import command with --apply (arguments omitted from this display)';
   const total = (fields: (table: (typeof all)[number]) => number) =>
     all.reduce((sum, table) => sum + fields(table), 0);
   const sets = total((table) => table.copyChanged.length);
@@ -329,12 +339,12 @@ export async function runImport(argv: readonly string[], io: CliIo): Promise<num
       '--apply',
     ].join(' ');
     io.stdout(`${importText(result.data, again)}\n`);
-    for (const warning of result.warnings ?? []) io.stderr(`Note: ${warning}`);
+    for (const warning of result.warnings ?? []) io.stderr(`Note: ${oneLine(warning)}`);
     return 0;
   }
-  const message = result.error?.message ?? 'The import failed.';
+  const message = oneLine(result.error?.message ?? 'The import failed.');
   io.stderr(
-    `${message}${/[.!?]$/.test(message) ? '' : '.'}${result.error?.suggestion ? ` ${result.error.suggestion}` : ''}`
+    `${message}${/[.!?]$/.test(message) ? '' : '.'}${result.error?.suggestion ? ` ${oneLine(result.error.suggestion)}` : ''}`
   );
   return 1;
 }

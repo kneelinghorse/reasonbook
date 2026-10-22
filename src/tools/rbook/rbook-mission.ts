@@ -1,3 +1,6 @@
+// ABOUTME: Route consolidated mission actions through the published input contract.
+// ABOUTME: Preserve supported field clears while validating declared types and bounds.
+
 /**
  * rbook_mission Tool
  *
@@ -8,6 +11,7 @@
  * @module tools/rbook/rbook-mission
  */
 
+import { formatToolFailure } from './format-failure';
 import { z } from 'zod';
 import { createError, RbookErrors } from './errors';
 import { findWrongTypedStringParam } from './param-type-guard';
@@ -123,17 +127,26 @@ const rbookMissionFieldsSchema = z
   .object({
     name: z.string().optional().describe('Mission name/title'),
     status: z.string().optional().describe('Mission status'),
-    objective: z.string().optional().describe('Mission objective'),
+    objective: z.string().nullable().optional().describe('Mission objective'),
     context: z
       .union([z.string(), z.record(z.string(), z.unknown())])
+      .nullable()
       .optional()
       .describe('Background context'),
-    successCriteria: z.array(z.string()).optional().describe('Success criteria'),
-    deliverables: z.array(z.string()).optional().describe('Deliverables'),
-    referenceDocs: z.array(z.string()).optional().describe('Reference docs'),
-    domainFields: z.record(z.string(), z.unknown()).optional().describe('Domain-specific fields'),
-    notes: z.string().optional().describe('Notes'),
-    metadata: z.record(z.string(), z.unknown()).optional().describe('Additional metadata'),
+    successCriteria: z.array(z.string()).nullable().optional().describe('Success criteria'),
+    deliverables: z.array(z.string()).nullable().optional().describe('Deliverables'),
+    referenceDocs: z.array(z.string()).nullable().optional().describe('Reference docs'),
+    domainFields: z
+      .record(z.string(), z.unknown())
+      .nullable()
+      .optional()
+      .describe('Domain-specific fields'),
+    notes: z.string().nullable().optional().describe('Notes'),
+    metadata: z
+      .record(z.string(), z.unknown())
+      .nullable()
+      .optional()
+      .describe('Additional metadata'),
   })
   .strict();
 
@@ -303,22 +316,26 @@ export const rbookMissionToolDefinition = {
         properties: {
           name: { type: 'string', description: 'Mission name/title' },
           status: { type: 'string', description: 'Mission status' },
-          objective: { type: 'string', description: 'Mission objective' },
-          context: { type: ['string', 'object'], description: 'Background context' },
+          objective: { type: ['string', 'null'], description: 'Mission objective' },
+          context: { type: ['string', 'object', 'null'], description: 'Background context' },
           successCriteria: {
-            type: 'array',
+            type: ['array', 'null'],
             items: { type: 'string' },
             description: 'Success criteria',
           },
-          deliverables: { type: 'array', items: { type: 'string' }, description: 'Deliverables' },
+          deliverables: {
+            type: ['array', 'null'],
+            items: { type: 'string' },
+            description: 'Deliverables',
+          },
           referenceDocs: {
-            type: 'array',
+            type: ['array', 'null'],
             items: { type: 'string' },
             description: 'Reference docs',
           },
-          domainFields: { type: 'object', description: 'Domain-specific fields' },
-          notes: { type: 'string', description: 'Notes' },
-          metadata: { type: 'object', description: 'Additional metadata' },
+          domainFields: { type: ['object', 'null'], description: 'Domain-specific fields' },
+          notes: { type: ['string', 'null'], description: 'Notes' },
+          metadata: { type: ['object', 'null'], description: 'Additional metadata' },
         },
         additionalProperties: false,
       },
@@ -498,7 +515,8 @@ export function formatMissionForLLM(
     case 'undepends':
       return formatMissionUndependsForLLM(result as RbookToolResult<MissionUndependsResult>);
     default: {
-      if (!result.success) return '❌ Failed to execute rbook_mission';
+      if (!result.success)
+        return formatToolFailure('❌ Failed to execute rbook_mission', result.error);
       const lines = ['✓ Mission action completed'];
       appendWarnings(lines, result);
       return lines.join('\n');

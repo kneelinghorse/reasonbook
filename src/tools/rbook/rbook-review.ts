@@ -75,7 +75,11 @@ import { rbookAgentOnboard, type RbookAgentOnboardResult } from './rbook-agent-o
 import { AUTHOR_BEFORE_RECORDED, AUTHOR_NOT_RECORDED, writerName } from './author-name';
 import type { SelfCaptureGap } from './self-capture-guard';
 import { rbookMissionStatus, type StatusMissionItem } from './rbook-mission-status';
-import { checkBuildFreshness, type BuildFreshnessReport } from './build-freshness';
+import {
+  checkBuildFreshness,
+  projectChecksBuildFreshness,
+  type BuildFreshnessReport,
+} from './build-freshness';
 import { resolveProjectRootEnhanced } from '../../intelligence/project-resolution';
 import {
   ProjectGraphRegistry,
@@ -373,7 +377,7 @@ export type RbookReviewParams = z.infer<typeof rbookReviewSchema>;
 export const rbookReviewToolDefinition = {
   name: 'rbook_review',
   description:
-    'Bundled session-opener digest (≤4KB). Replaces the older three-step opener (rbook_agent_onboard + rbook_context(action="view") + rbook_mission(action="status")) with one payload. Top-3 next_actions are promoted to a flat top-level field. Includes an always-on cross-store `portfolio` rollup (active missions across your registered projects) built on the graph-backed queryAcrossStores; it degrades to null for a single-project setup.',
+    'Bundled session-opener digest (≤4KB). Replaces the older three-step opener (rbook_agent_onboard + rbook_context(action="view") + rbook_mission(action="status")) with one payload. Top-3 next_actions are promoted to a flat top-level field. Includes an always-on cross-store `portfolio` rollup (active missions and signals needing a person across your registered projects) built on the graph-backed queryAcrossStores; it degrades to null for a single-project setup.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -415,6 +419,9 @@ const PORTFOLIO_TOP_N = 5;
 
 /** s79-m06 — per-store fan-out cap for the portfolio active-missions count (bounded, latency-fenced). */
 const PORTFOLIO_FETCH_LIMIT = 50;
+
+/** Optional portfolio work stops admitting stores after one second; locked stores never wait. */
+const PORTFOLIO_READ_BUDGET_MS = 1000;
 
 /** s79-m06 — cap on a portfolio mission name (tighter than the local work-queue cap to protect the budget). */
 const PORTFOLIO_MISSION_NAME_CAP_CHARS = 60;
@@ -496,6 +503,15 @@ export async function rbookReview(
 
   const projectRoot = params.projectRoot;
 
+  const onboardPromise = rbookAgentOnboard({
+    ...(projectRoot ? { projectRoot } : {}),
+    ...(internalOpts.advertisedRoots ? { advertisedRoots: internalOpts.advertisedRoots } : {}),
+    ...(internalOpts.callerProvidedProjectRoot !== undefined
+      ? { callerProvidedProjectRoot: internalOpts.callerProvidedProjectRoot }
+      : {}),
+    ...(internalOpts.offline ? { offline: true } : {}),
+  });
+
   const [
     onboardResult,
     missionStatusResult,
@@ -507,18 +523,15 @@ export async function rbookReview(
     reflagged,
     sharedRecord,
   ] = await Promise.all([
-    rbookAgentOnboard({
-      ...(projectRoot ? { projectRoot } : {}),
-      ...(internalOpts.advertisedRoots ? { advertisedRoots: internalOpts.advertisedRoots } : {}),
-      ...(internalOpts.callerProvidedProjectRoot !== undefined
-        ? { callerProvidedProjectRoot: internalOpts.callerProvidedProjectRoot }
-        : {}),
-      ...(internalOpts.offline ? { offline: true } : {}),
-    }),
+    onboardPromise,
     rbookMissionStatus(
       projectRoot ? { projectRoot, includeBlocked: true } : { includeBlocked: true }
     ),
-    resolveReviewFreshness(projectRoot),
+    onboardPromise.then((result) =>
+      projectChecksBuildFreshness(result.data?.projectIdentity)
+        ? resolveReviewFreshness(projectRoot)
+        : null
+    ),
     // s79-m06 — the always-on cross-store portfolio rollup (active missions across
     // the registered projects). Runs in the same parallel batch as onboard/status
     // so it adds no serial latency; latency-fenced to the active-missions query.
@@ -1265,6 +1278,8 @@ async function buildPortfolioSection(
     const fanout = await activeMissionsAcrossProjects<PortfolioProbe>({
       limit: PORTFOLIO_FETCH_LIMIT,
       registry,
+      timeoutMs: 0,
+      deadlineAtMs: Date.now() + PORTFOLIO_READ_BUDGET_MS,
       // s87-m03 (#529) — read the CONTENT on the connection the fan-out already opens. This is
       // the whole fix: the drift signal stops being a file mtime that this very call creates.
       // s97-m01 — the person-needing signals are read on the same connection.

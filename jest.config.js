@@ -37,9 +37,14 @@ module.exports = {
   testEnvironment: 'node',
   // DB-heavy integration suites (bdd/rbook-session-start.steps, sprint-status-sync,
   // tier-config, sync-locks, …) occasionally exceed the 5s default under 220+-suite
-  // parallel CPU contention, producing rotating timeout flakes. 30s gives headroom
+  // parallel CPU contention, producing rotating timeout flakes. 30s gave headroom
   // without masking real hangs; a file-level jest.setTimeout still overrides per suite.
-  testTimeout: 30000,
+  // s98-m08: a hang guard, not a speed budget. Under two concurrent full suites on a Mac that was
+  // swapping, ordinary tests in index.runtime, session-ops, snapshot-diet, record-links-writers,
+  // structured-decision-record, tool-effects and rbook-agent-onboard ran past 30 s, and a shared-record
+  // test in record-derived past 120 s; across four such suites 32 tests took over 120 s and the
+  // slowest 314 s. 300 s still fails a real hang.
+  testTimeout: 300000,
   roots: ['<rootDir>/tests'],
   testMatch: ['**/*.test.ts'],
   // s77-m10: the heavy first-run E2E (tests/e2e/*.e2e.ts) runs under jest.e2e.config.js

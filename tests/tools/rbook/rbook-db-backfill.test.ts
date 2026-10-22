@@ -75,12 +75,18 @@ describe('rbookDbBackfill', () => {
 
   beforeEach(() => {
     // Save and set env vars
-    for (const key of ['RBOOK_DASHBOARD_URL', 'RBOOK_DASHBOARD_USER', 'RBOOK_DASHBOARD_PASSWORD']) {
+    for (const key of [
+      'RBOOK_DASHBOARD_URL',
+      'RBOOK_DASHBOARD_USER',
+      'RBOOK_DASHBOARD_PASSWORD',
+      'RBOOK_CHECKPOINT_SYNC',
+    ]) {
       ENV_BACKUP[key] = process.env[key];
     }
     process.env.RBOOK_DASHBOARD_URL = 'https://test-dashboard.example.com';
     process.env.RBOOK_DASHBOARD_USER = 'test@example.com';
     process.env.RBOOK_DASHBOARD_PASSWORD = 'test-password';
+    process.env.RBOOK_CHECKPOINT_SYNC = 'on';
 
     // Create temp dir with Reasonbook structure
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rbook-backfill-test-'));
@@ -1225,7 +1231,7 @@ describe('rbookDbPurge', () => {
   });
 
   describe('formatPurgeForLLM', () => {
-    it('should format successful purge', () => {
+    it('reports a successful purge without recommending that the deleted data be uploaded again', () => {
       const result: RbookToolResult<PurgeResult> = {
         success: true,
         data: {
@@ -1238,7 +1244,8 @@ describe('rbookDbPurge', () => {
       const output = formatPurgeForLLM(result);
       expect(output).toContain('Purge Complete: test-project');
       expect(output).toContain('Rows deleted: 15');
-      expect(output).toContain('backfill');
+      expect(output).not.toContain('backfill');
+      expect(output).not.toContain('force');
     });
 
     it('should format failed purge', () => {

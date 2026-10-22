@@ -1,6 +1,7 @@
 // ABOUTME: Handlers for rbook_context(contextType="project_identity") — view and update actions.
-// Wraps project-identity.ts core functions into the standard RbookToolResult response shape.
+// ABOUTME: Validates protected identity updates before wrapping the core writes in standard results.
 
+import { formatToolFailure } from './format-failure';
 import { withClient, withClientValidated } from './client';
 import type { RbookToolResult } from './types';
 import { createError, createSuccess, RBOOK_ERROR_CODES } from './errors';
@@ -101,10 +102,22 @@ export async function rbookContextViewProjectIdentity(
 export async function rbookContextUpdateProjectIdentity(
   params: ProjectIdentityUpdateParams
 ): Promise<RbookToolResult<ProjectIdentityUpdateResult>> {
+  const fieldUpdates = params.fieldUpdates ?? [];
+  const nullIdentity = fieldUpdates.find(
+    (update) =>
+      (update.path === 'project_name' || update.path === 'project_id') && update.value === null
+  );
+  if (nullIdentity) {
+    return createError({
+      code: RBOOK_ERROR_CODES.INVALID_PARAMETER,
+      field: nullIdentity.path,
+      providedValue: null,
+      message: `The project's ${nullIdentity.path} cannot be cleared with null.`,
+      suggestion: `Provide a string value for ${nullIdentity.path}, or omit that fieldUpdates entry to keep its current value.`,
+    });
+  }
   return withClientValidated(
     (client) => {
-      const fieldUpdates = params.fieldUpdates ?? [];
-
       if (fieldUpdates.length === 0) {
         return createError<ProjectIdentityUpdateResult>({
           code: RBOOK_ERROR_CODES.INVALID_PARAMETER,
@@ -158,7 +171,7 @@ export function formatProjectIdentityViewForLLM(
   result: RbookToolResult<ProjectIdentityViewResult>
 ): string {
   if (!result.success || !result.data) {
-    return `❌ Failed to view project_identity: ${result.error?.message ?? 'Unknown error'}`;
+    return formatToolFailure('❌ Failed to view project_identity', result.error);
   }
 
   const { projectIdentity, seeded, stored, joinedAddress } = result.data;
@@ -245,7 +258,7 @@ export function formatProjectIdentityUpdateForLLM(
   result: RbookToolResult<ProjectIdentityUpdateResult>
 ): string {
   if (!result.success || !result.data) {
-    return `❌ Failed to update project_identity: ${result.error?.message ?? 'Unknown error'}`;
+    return formatToolFailure('❌ Failed to update project_identity', result.error);
   }
 
   const { fieldsUpdated, message } = result.data;

@@ -53,7 +53,7 @@ export const UNRECORDED_PROJECT_ID = 'unknown-project';
  *
  * `proj:unknown-project` named a project that does not exist, on the prompt-injection defence
  * surface. That is worse than unhelpful: an agent that repeatedly sees a fence attributed to a
- * project it can never find learns to discount the fence. Nine of `derekn.com`'s fourteen own
+ * project it can never find learns to discount the fence. Nine of one measured store's fourteen own
  * sessions render this way.
  *
  * THE FENCE IS UNCHANGED, and the distinction is load-bearing. A row carrying the literal is

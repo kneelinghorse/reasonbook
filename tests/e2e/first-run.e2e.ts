@@ -143,8 +143,15 @@ describe('first-run E2E: pack -> install -> drive quickstart over stdio (s77-m10
       );
       await quietClient.connect(quietTransport);
       await quietClient.listTools();
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      // s98-m08 (#660 item 3): wait for the startup's last line, then count every line the server
+      // wrote before it exited, rather than what had arrived after a 300 ms sleep.
+      for (const until = Date.now() + 10_000; !/project: /.test(stderr) && Date.now() < until; )
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      const ended = new Promise<void>((resolve) =>
+        quietTransport.stderr?.once('end', () => resolve())
+      );
       await quietClient.close();
+      await ended;
       return stderr.split('\n').filter((line) => line.trim().length > 0);
     };
 

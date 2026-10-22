@@ -18,6 +18,8 @@ export interface ProjectTypeFields {
   deployment_env?: string;
   repo_branch_strategy?: string;
   test_framework?: string;
+  /** False for a project that runs from source and has no build to keep fresh. */
+  build_freshness_check?: boolean;
   // research
   research_questions?: string[];
   active_hypotheses?: string[];

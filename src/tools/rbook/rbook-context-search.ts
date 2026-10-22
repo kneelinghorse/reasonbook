@@ -2,6 +2,7 @@
 // Sprint 66 m05: routes through HybridRetriever (BM25 + sqlite-vec via RRF k=60)
 // across decisions / learnings / missions. Async — see IAsyncRetriever.
 
+import { formatToolFailure } from './format-failure';
 import { withClientAsync } from './client';
 import type { RbookToolResult } from './types';
 import { createError, createSuccess, RBOOK_ERROR_CODES } from './errors';
@@ -176,7 +177,7 @@ export async function rbookContextSearch(
 
 export function formatContextSearchForLLM(result: RbookToolResult<ContextSearchResult>): string {
   if (!result.success || !result.data) {
-    return `❌ Search failed: ${result.error?.message ?? 'Unknown error'}`;
+    return formatToolFailure('❌ Search failed', result.error);
   }
 
   const { query, results, count, options, backend, localProjectId } = result.data;

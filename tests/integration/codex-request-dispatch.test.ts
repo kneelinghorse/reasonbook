@@ -115,6 +115,8 @@ async function hook(event: string, session: string, fields: Record<string, unkno
   await runCli(['hook', event, '--harness', 'codex'], {
     env: { ...process.env },
     cwd: project,
+    // s98-m08: room load cannot spend (#1558); this test checks what the hook does, not its deadline.
+    startedAtMs: Date.now() + 20_000,
     readStdin: async () => JSON.stringify({ session_id: session, cwd: project, ...fields }),
     stdout: () => {},
     stderr: () => {},

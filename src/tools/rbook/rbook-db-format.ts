@@ -2,6 +2,7 @@
 // ABOUTME: The text answer of each rbook_db action, kept apart from the tool's dispatch (s96-m12) so each module
 // ABOUTME: stays small; the shared record's conflicts and settle answers list what they name.
 
+import { formatToolFailure } from './format-failure';
 import { appendWarnings } from './format-warnings';
 import type { RbookToolResult } from './types';
 import type { RbookDbResult } from './rbook-db';
@@ -83,7 +84,7 @@ export function formatDbForLLM(
     case 'settle':
       return formatSettleForLLM(result as RbookToolResult<RbookDbSettleResult>);
     default: {
-      if (!result.success) return '❌ Failed to execute rbook_db';
+      if (!result.success) return formatToolFailure('❌ Failed to execute rbook_db', result.error);
       const lines = ['✓ Database action completed'];
       appendWarnings(lines, result);
       return lines.join('\n');

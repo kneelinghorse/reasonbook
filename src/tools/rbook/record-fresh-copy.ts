@@ -136,9 +136,13 @@ class Source {
   /** The columns of a plain table, or null when it is absent; anything else refuses the source. */
   columns(table: string): Set<string> | null {
     const object = this.db
-      .prepare('SELECT type FROM sqlite_master WHERE name = ? COLLATE NOCASE')
+      .prepare(
+        "SELECT type FROM pragma_table_list WHERE schema = 'main' AND name = ? COLLATE NOCASE"
+      )
       .get(table) as { type: string } | undefined;
     if (!object) return null;
+    if (object.type === 'virtual')
+      throw new FreshCopyRefused(`${table} is a virtual table in that store, not a plain table.`);
     if (object.type !== 'table')
       throw new FreshCopyRefused(`${table} is a ${object.type} in that store, not a table.`);
     const info = this.db.prepare(`PRAGMA table_xinfo("${table}")`).all() as Array<{

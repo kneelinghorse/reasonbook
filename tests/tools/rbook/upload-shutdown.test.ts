@@ -3,6 +3,7 @@
 // ABOUTME: Proves graceful shutdown removes only the process's upload copy and preserves its source.
 
 import Database from 'better-sqlite3';
+import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as http from 'http';
 import * as os from 'os';
@@ -15,6 +16,64 @@ const repo = path.resolve(__dirname, '../../..');
 let directory: string;
 let child: RawStdioServer | undefined;
 let dashboard: http.Server | undefined;
+let compiled: string;
+
+/**
+ * s98-m08 (#733): load the TypeScript source, compiled once per test file. Each child used to
+ * transpile src/index.ts and its imports itself inside its 25 s budget, and under two concurrent
+ * full suites that alone spent it ("Upload did not start"). The children now read what the warm-up
+ * below compiled, keyed by path and content, so the budget covers starting and uploading only.
+ */
+const loader = (): string => `const fs = require('fs');
+const crypto = require('crypto');
+const ts = require(${JSON.stringify(require.resolve('typescript'))});
+require.extensions['.ts'] = (module, file) => {
+  const source = fs.readFileSync(file, 'utf8');
+  const key = crypto.createHash('sha256').update(file).update(source).digest('hex');
+  const cached = require('path').join(${JSON.stringify(compiled)}, key + '.js');
+  let output;
+  try {
+    output = fs.readFileSync(cached, 'utf8');
+  } catch {
+    output = ts.transpileModule(source, {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true }
+    }).outputText;
+    fs.writeFileSync(cached + '.' + process.pid, output);
+    fs.renameSync(cached + '.' + process.pid, cached);
+  }
+  module._compile(output, file);
+};
+`;
+
+beforeAll(() => {
+  compiled = fs.mkdtempSync(path.join(os.tmpdir(), 'rbook-upload-shutdown-compiled-'));
+  const warm = spawnSync(
+    process.execPath,
+    [
+      '-e',
+      `${loader()}
+for (const file of ['src/index.ts', 'src/tools/rbook/dashboard-client.ts', 'src/tools/rbook/dashboard-upload.ts'])
+  require(require('path').join(${JSON.stringify(repo)}, file));`,
+    ],
+    {
+      encoding: 'utf8',
+      timeout: 150_000,
+      env: {
+        PATH: process.env.PATH ?? path.dirname(process.execPath),
+        RBOOK_CONFIG_DIR: path.join(compiled, 'config'),
+        RBOOK_CHECKPOINT_SYNC: 'off',
+        RBOOK_SHARED_SYNC: 'off',
+      },
+    }
+  );
+  expect({ status: warm.status, signal: warm.signal, stderr: warm.stderr }).toEqual({
+    status: 0,
+    signal: null,
+    stderr: '',
+  });
+}, 180_000);
+
+afterAll(() => fs.rmSync(compiled, { recursive: true, force: true }));
 
 beforeEach(() => {
   directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rbook-upload-shutdown-'));
@@ -65,17 +124,12 @@ it.each(['SIGINT', 'SIGTERM', 'stdin close'] as const)(
     await new Promise<void>((resolve) => dashboard!.listen(0, '127.0.0.1', resolve));
     const port = (dashboard.address() as { port: number }).port;
 
-    // Load actual TypeScript without writing the real dist or mocking server lifecycle. This
-    // follows the source loader used by the SSH acceptance helper.
+    // Load actual TypeScript without writing the real dist or mocking server lifecycle, from the
+    // source the warm-up compiled.
     const bootstrap = path.join(directory, 'server.cjs');
     fs.writeFileSync(
       bootstrap,
-      `const fs = require('fs');
-const ts = require(${JSON.stringify(require.resolve('typescript'))});
-require.extensions['.ts'] = (module, file) => module._compile(
-  ts.transpileModule(fs.readFileSync(file, 'utf8'), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true }
-  }).outputText, file);
+      `${loader()}
 (async () => {
   await require(${JSON.stringify(path.join(repo, 'src/index.ts'))}).__test__.main(['--project-root', ${JSON.stringify(project)}]);
   const { DashboardClient } = require(${JSON.stringify(path.join(repo, 'src/tools/rbook/dashboard-client.ts'))});

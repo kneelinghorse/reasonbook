@@ -4,6 +4,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { inspectNpmPack } from '../docs/npm-pack-inspection';
+import { deriveEnvReads } from '../helpers/env-reads';
 
 const root = path.resolve(__dirname, '../..');
 const json = (file: string) => JSON.parse(fs.readFileSync(path.join(root, file), 'utf8'));
@@ -58,6 +59,13 @@ test('trusted hook definitions remain exact and contain no release version', () 
       },
     ]);
   }
+});
+
+test('Codex forwards exactly the RBOOK settings the server reads, including consent switches', () => {
+  const forwarded: string[] = json(`${plugin}/codex.mcp.json`).mcpServers.rbook.env_vars;
+  expect(forwarded.filter((name) => name.startsWith('RBOOK_')).sort()).toEqual(
+    [...deriveEnvReads(path.join(root, 'src'))].sort()
+  );
 });
 
 test('the OpenAI marketplace names both plugin subtrees and ships in npm', () => {

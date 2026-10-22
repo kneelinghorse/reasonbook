@@ -96,9 +96,9 @@ Reasonbook runtime and plugin installation make outbound requests in these situa
      pauses automatic retries until an explicit close succeeds. Event replay is retired: a missing project slug or a failed file upload never
      falls back to replay. A later checkpoint can retry the file upload. Implicit process-exit closes do not upload; explicitly completing an
      implicit session through the tool does. Set
-     **`RBOOK_CHECKPOINT_SYNC=off`** to disable these automatic upload paths
+     **`RBOOK_CHECKPOINT_SYNC=off`** to disable these automatic upload paths and manual backfill
      (`triggerCheckpointBackfill` in [checkpoint-backfill.ts](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/checkpoint-backfill.ts)).
-   - **Calls you make.** Messaging, status and sync health, `rbook_db` dashboard actions (backfill and purge), sprint carry-forward, and the onboard and review summaries of messages.
+   - **Calls you make.** Messaging, status and sync health, `rbook_db` dashboard actions (backfill and purge), sprint carry-forward, and the onboard and review summaries of messages. Backfill honors `RBOOK_CHECKPOINT_SYNC=off`; the other calls remain available. Logout leaves project keys valid for these calls until separately revoked.
    - **Startup key recovery**, when a registered project and a usable user-scoped credential exist
      but the project's key is missing. Member copies of a shared record refuse recovery.
    - **Retired dashboard collaboration.** The old lock, pull and mutable-push paths refuse
@@ -155,7 +155,9 @@ Reasonbook runtime and plugin installation make outbound requests in these situa
    Owner/editor roles hold among honest copies using the supported protocol over SSH or bundles;
    they do not defend against a member altering their store or software. Removal stops delivery of
    new changes to that member and quarantines their changes beyond the removal cut, but cannot
-   retract data already copied. Re-inviting permits exchange again, and from 4.2.1 judges those
+   retract data already copied. Quarantined change bodies remain in the shared log and reach active
+   members even while those changes do not become live records. Re-inviting permits exchange again,
+   and from 4.2.1 judges those
    quarantined changes again, refusing what the member's role does not allow
    ([record-membership.ts](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/record-membership.ts)).
    See [Trust](docs/trust.md#shared-copies) for the measured support scope and content boundary.
@@ -533,4 +535,4 @@ subagent type (e.g. the `Explore` agent) — that is a mitigation, not the machi
 
 ---
 
-_Last verified against the source for release 4.3.0._
+_Last verified against the source for release 4.4.0._

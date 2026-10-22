@@ -3,7 +3,7 @@
 // ABOUTME: Explicit extra projects enable pooling; export emits aggregate counts and fixed measurement rules.
 
 import * as path from 'path';
-import { parseArgs, resolveCliProject, type CliIo } from './core';
+import { oneLine, parseArgs, resolveCliProject, type CliIo } from './core';
 import {
   collectTelemetryStats,
   exportTelemetryStats,
@@ -92,34 +92,36 @@ function humanReport(report: TelemetryStatistics): string {
   ];
   for (const project of report.projects) {
     lines.push(
-      `Project: ${project.root}`,
+      `Project: ${oneLine(project.root)}`,
       `Telemetry: ${project.telemetry.records} window records in ${project.telemetry.files} retained monthly files; ${project.telemetry.available ? 'available' : 'unavailable'}.`
     );
     lines.push(
       `Decision timing: ${JSON.stringify(project.store.timing)}; proposals: ${
         project.store.proposals.status === 'measured'
           ? `${project.store.proposals.created} drafts, acceptance ${project.store.proposals.acceptanceRate ?? 'n/a'}`
-          : project.store.proposals.reason
+          : oneLine(project.store.proposals.reason)
       }.`
     );
     for (const hit of project.rules.hits)
-      lines.push(`Rules: ${hit.path}: ${hit.patternIds.join(', ')}`);
+      lines.push(
+        `Rules: ${oneLine(hit.path)}: ${hit.patternIds.map((id) => oneLine(id)).join(', ')}`
+      );
     for (const item of project.store.friction.items)
-      lines.push(`Friction #${item.id} (${item.createdAt}): ${item.body}`);
+      lines.push(`Friction #${item.id} (${oneLine(item.createdAt)}): ${oneLine(item.body)}`);
     for (const warning of [
       ...project.telemetry.warnings,
       ...project.rules.warnings,
       ...project.store.warnings,
     ])
-      lines.push(`Unavailable/diagnostic: ${warning}`);
+      lines.push(`Unavailable/diagnostic: ${oneLine(warning)}`);
   }
   for (const item of report.events.repeatedNeverCited.items)
     lines.push(
-      `Repeated without observed use: store ${item.target}, ${item.id}, ${item.sessions} sessions.`
+      `Repeated without observed use: store ${oneLine(item.target)}, ${oneLine(item.id)}, ${item.sessions} sessions.`
     );
   for (const session of report.events.injectionSessions)
     lines.push(
-      `Injected characters: store ${session.target}, session ${session.session}: ${session.characters}.`
+      `Injected characters: store ${oneLine(session.target)}, session ${oneLine(session.session)}: ${session.characters}.`
     );
   return `${lines.join('\n')}\n`;
 }
@@ -147,7 +149,9 @@ export async function runStats(argv: readonly string[], io: CliIo): Promise<numb
     );
     return 0;
   } catch (error) {
-    io.stderr(`reasonbook stats: ${error instanceof Error ? error.message : String(error)}`);
+    io.stderr(
+      `reasonbook stats: ${oneLine(error instanceof Error ? error.message : String(error))}`
+    );
     return 1;
   }
 }

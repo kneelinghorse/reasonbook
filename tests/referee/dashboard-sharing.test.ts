@@ -2,7 +2,16 @@
 // ABOUTME: s97-m11 (design §The client design) — sharing, joining and moving back through the reference server in its own
 // ABOUTME: process: a dry run first, a join by address, owner-role identity edits, the move back and each refusal.
 import Database from 'better-sqlite3';
-import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  jest,
+} from '@jest/globals';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -26,7 +35,12 @@ import { sharedRecordReview } from '../../src/tools/rbook/record-review';
 import { exchangeText } from '../../src/cli/sync-moves';
 import type { ExchangeReport } from '../../src/tools/rbook/record-exchange';
 import { __resetSharedSyncScheduler } from '../../src/tools/rbook/record-sync-scheduler';
-import { request, spawnRefereeServer, type RunningServer } from '../helpers/referee-http';
+import {
+  recordNetworkFailures,
+  request,
+  spawnRefereeServer,
+  type RunningServer,
+} from '../helpers/referee-http';
 import {
   call,
   dbOf,
@@ -36,7 +50,7 @@ import {
   type ReplicaFixture,
 } from '../helpers/replica-fixture';
 import { joinedCopy, onCopy, ownerCopy, read, type Copy } from '../helpers/shared-copies';
-import { routeTo as sshRouteTo, standinSsh } from '../helpers/standin-ssh';
+import { farEndsExited, routeTo as sshRouteTo, standinSsh } from '../helpers/standin-ssh';
 import { PassThrough } from 'stream';
 import { createInterface } from 'readline';
 import { hello } from '../../src/tools/rbook/record-exchange';
@@ -91,6 +105,7 @@ afterEach(async () => {
   for (const [key, value] of Object.entries(saved))
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
+  await farEndsExited(fixture.tmp);
   fixture.restore();
 });
 
@@ -147,6 +162,16 @@ async function soloOwner(): Promise<Copy> {
   return owner;
 }
 
+/** s98-m08: what the network said when a dashboard call failed (see recordNetworkFailures). */
+let network: ReturnType<typeof recordNetworkFailures>;
+beforeAll(() => {
+  network = recordNetworkFailures();
+});
+beforeEach(() => {
+  network.failures.length = 0;
+});
+afterAll(() => network.restore());
+
 /** Share the solo project through the dashboard, confirmed; answer its result. */
 async function shared(owner: Copy) {
   const answer = await on(owner, 'rbook_project', {
@@ -154,7 +179,10 @@ async function shared(owner: Copy) {
     via: 'dashboard',
     confirm: true,
   });
-  if (!answer.success) throw new Error(JSON.stringify(answer.error));
+  if (!answer.success)
+    throw new Error(
+      `${JSON.stringify(answer.error)}; the network said: ${network.failures.join(' | ') || 'nothing'}`
+    );
   return answer.data as unknown as { refereeReplica: string; handover: { epoch: number } };
 }
 

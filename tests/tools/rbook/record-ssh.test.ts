@@ -14,13 +14,16 @@ import {
   type ReplicaFixture,
 } from '../../helpers/replica-fixture';
 import { memberCopy, onCopy, ownerCopy, read, type Copy } from '../../helpers/shared-copies';
-import { routeTo, standinSsh } from '../../helpers/standin-ssh';
+import { farEndsExited, routeTo, standinSsh } from '../../helpers/standin-ssh';
 
 let fixture: ReplicaFixture;
 beforeEach(() => {
   fixture = replicaFixture('rbook-ssh-');
 });
-afterEach(() => fixture.restore());
+afterEach(async () => {
+  await farEndsExited(fixture.tmp);
+  fixture.restore();
+});
 
 async function ok(copy: Copy, tool: string, args: Record<string, unknown>) {
   useMachine(fixture.tmp, copy.machine);
@@ -52,10 +55,10 @@ describe('the remote command', () => {
   });
 
   it('asks ssh for no terminal, no password prompt and a bounded connect, and refuses a host ssh would read as an option', () => {
-    const args = sshArgs({ host: 'darryl@M4.local', root: '/p' }, ['sync', '--serve']);
+    const args = sshArgs({ host: 'member@workstation.local', root: '/p' }, ['sync', '--serve']);
     // No terminal: a user's RequestTTY setting would otherwise mangle the wire.
     expect(args.slice(0, 5)).toEqual(['-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10']);
-    expect(args[5]).toBe('darryl@M4.local');
+    expect(args[5]).toBe('member@workstation.local');
     expect(routeProblem({ host: '-oProxyCommand=touch /tmp/x', root: '/p' })).toMatch(
       /may not start with "-"/
     );

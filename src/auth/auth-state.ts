@@ -184,7 +184,7 @@ export async function computeAuthState(options: ComputeAuthStateOptions = {}): P
       'Run rbook_auth(action=reissue) for this project to migrate to project-scoped key.';
   } else if (identitySource === 'none' && !projectKey && !userScopedKey) {
     warning =
-      'No dashboard credentials configured. Run the device code bootstrap to mint a user-scoped key.';
+      'No dashboard credentials configured. Run rbook_auth(action="login_init"), then rbook_auth(action="login_complete"), to mint a user-scoped key.';
   } else if (options.projectRoot && !projectKey && newestUser) {
     warning =
       'No project-scoped key for this project root yet. Sends will use the user-scoped key until /api/projects/register auto-issues one.';

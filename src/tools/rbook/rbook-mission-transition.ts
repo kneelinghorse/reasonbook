@@ -9,6 +9,7 @@
  * @module tools/rbook/rbook-mission-transition
  */
 
+import { formatToolFailure } from './format-failure';
 import { z } from 'zod';
 import { createError, RbookErrors } from './errors';
 import { findWrongTypedStringParam } from './param-type-guard';
@@ -351,7 +352,8 @@ export function formatMissionTransitionForLLM(
     case 'defer':
       return formatMissionDeferForLLM(result as RbookToolResult<MissionDeferResult>);
     default: {
-      if (!result.success) return '❌ Failed to execute rbook_mission_transition';
+      if (!result.success)
+        return formatToolFailure('❌ Failed to execute rbook_mission_transition', result.error);
       const lines = ['✓ Mission transition completed'];
       appendWarnings(lines, result);
       return lines.join('\n');

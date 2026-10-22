@@ -593,6 +593,45 @@ describe('rbookContextUpdateProjectIdentity', () => {
     cleanup(tempDir);
   });
 
+  it.each(['project_name', 'project_id'])(
+    'refuses null %s before any earlier field in the batch can be written',
+    async (identityPath) => {
+      const seeded = await rbookContextUpdateProjectIdentity({
+        fieldUpdates: [
+          { path: 'project_name', value: 'Stable project' },
+          { path: 'project_id', value: 'stable-project' },
+          { path: 'description', value: 'Keep this description.' },
+        ],
+        projectRoot: tempDir,
+      });
+      expect(seeded.success).toBe(true);
+      const dbPath = path.join(tempDir, 'rbook', 'db', 'rbook.sqlite');
+      const before = fs.readFileSync(dbPath);
+      const result = await rbookContextUpdateProjectIdentity({
+        fieldUpdates: [
+          { path: 'description', value: 'Must not be partially written.' },
+          { path: identityPath, value: null },
+        ],
+        projectRoot: tempDir,
+      });
+      expect(result.success).toBe(false);
+      expect(result.error).toMatchObject({
+        code: 'INVALID_PARAMETER',
+        suggestion: expect.stringContaining(identityPath),
+      });
+      expect(fs.readFileSync(dbPath)).toEqual(before);
+    }
+  );
+
+  it('still permits null to clear an ordinary identity field', async () => {
+    const result = await rbookContextUpdateProjectIdentity({
+      fieldUpdates: [{ path: 'type_fields.detail', value: null }],
+      projectRoot: tempDir,
+    });
+    expect(result.success).toBe(true);
+    expect(result.data?.projectIdentity.type_fields.detail).toBeNull();
+  });
+
   it('updates fields via fieldUpdates and returns updated identity', async () => {
     const result = await rbookContextUpdateProjectIdentity({
       fieldUpdates: [

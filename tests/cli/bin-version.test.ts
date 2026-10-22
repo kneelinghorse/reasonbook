@@ -18,7 +18,7 @@ beforeAll(() => {
   const output = path.join(fixture, 'dist');
   fs.mkdirSync(output);
   // Compile only the tested entry and its lightweight helper, never the real dist/ tree.
-  for (const name of ['bin', 'server-version']) {
+  for (const name of ['bin', 'server-version', 'cli/usage']) {
     const source = path.resolve(__dirname, `../../src/${name}.ts`);
     const compiled = ts.transpileModule(fs.readFileSync(source, 'utf8'), {
       compilerOptions: {
@@ -27,6 +27,7 @@ beforeAll(() => {
         esModuleInterop: true,
       },
     });
+    fs.mkdirSync(path.dirname(path.join(output, `${name}.js`)), { recursive: true });
     fs.writeFileSync(path.join(output, `${name}.js`), compiled.outputText);
   }
   // A CLI probe records what the real router passed; loading it is allowed only for those tests.
@@ -41,7 +42,7 @@ beforeAll(() => {
     `const Module = require('module');
 const fs = require('fs');
 const path = require('path');
-const allowed = new Set(['fs', 'path', 'module', path.join(__dirname, 'dist/bin.js'), './server-version']);
+const allowed = new Set(['fs', 'path', 'module', path.join(__dirname, 'dist/bin.js'), './server-version', './cli/usage']);
 if (process.env.VERSION_TEST_ALLOW_CLI === '1') allowed.add('./cli');
 const originalLoad = Module._load;
 Module._load = function(request, parent, isMain) {
@@ -141,12 +142,38 @@ describe('the bin answers server --version without loading the server', () => {
     expect(JSON.parse(result.stdout)).toEqual(expected);
   });
 
-  it.each([[], ['serve'], ['--help'], ['-v']])(
-    'still attempts the server for non-version arguments %j',
+  it.each([[], ['serve']])('still attempts the server for non-version arguments %j', (...argv) => {
+    const result = run(argv);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('DEPENDENCY_DENIED: ./index');
+  });
+
+  it.each([
+    ['--help'],
+    ['-h'],
+    ['serve', '--help'],
+    ['serve', '-h'],
+    ['init', '--help'],
+    ['init', '-h'],
+    ['hook', 'prompt', '--help'],
+    ['--project-root', '/uninitialized/project', '--help'],
+  ])('help %j is a zero-write, no-server usage exit', (...argv) => {
+    const result = run(argv);
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('Usage: reasonbook');
+    expect(result.stdout).toContain('init');
+  });
+
+  it.each([['--f9-unknown'], ['-v'], ['serve', '--f9-unknown=value']])(
+    'unsupported server options %j never load the server',
     (...argv) => {
       const result = run(argv);
-      expect(result.status).not.toBe(0);
-      expect(result.stderr).toContain('DEPENDENCY_DENIED: ./index');
+      expect(result.status).toBe(1);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toMatch(/unknown option.*--help/i);
+      expect(result.stderr).not.toContain('DEPENDENCY_DENIED');
     }
   );
 

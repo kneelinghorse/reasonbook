@@ -28,6 +28,8 @@ import {
 } from '../../../src/tools/rbook/rbook-session-capture';
 import { rbookSessionComplete } from '../../../src/tools/rbook/rbook-session-complete';
 import { RbookDatabaseClient } from '../../../src/tools/rbook/client';
+import { RbookErrors } from '../../../src/tools/rbook/errors';
+import type { RbookToolResult } from '../../../src/tools/rbook/types';
 import { importCopy } from '../../../src/tools/rbook/record-import';
 import { replayCheck } from '../../../src/tools/rbook/record-replay';
 import { shareRecord } from '../../../src/tools/rbook/record-share';
@@ -553,7 +555,7 @@ describe('s100-m03 — the capture reaches the right store and the right session
 
     setSessionOwnerForTesting(ownerB);
     const refusals = [];
-    for (const category of ['decision', 'next-step'] as const) {
+    for (const category of ['decision', 'learning', 'next-step'] as const) {
       const intrusion = await rbookSessionCapture({
         sessionId: sessionA,
         category,
@@ -580,7 +582,7 @@ describe('s100-m03 — the capture reaches the right store and the right session
     const before = query(root, 'SELECT captures FROM sessions WHERE id = ?', sessionA);
 
     const refusals = [];
-    for (const category of ['decision', 'next-step'] as const) {
+    for (const category of ['decision', 'learning', 'next-step'] as const) {
       // The check before the unit passes; the same check under the write lock finds another owner.
       jest
         .spyOn(sessionOwner, 'heldByAnotherProcess')
@@ -597,9 +599,93 @@ describe('s100-m03 — the capture reaches the right store and the right session
       refusals.push(raced.error);
     }
     expect(refusals[1]).toEqual(refusals[0]);
-    expect(refusals[1]!.message).toMatch(/Session is owned by another process$/);
+    expect(refusals).toEqual([
+      RbookErrors.sessionOwnedByAnotherProcess(sessionA),
+      RbookErrors.sessionOwnedByAnotherProcess(sessionA),
+      RbookErrors.sessionOwnedByAnotherProcess(sessionA),
+    ]);
     expect(query(root, 'SELECT id FROM next_steps')).toEqual([]);
     expect(query(root, 'SELECT captures FROM sessions WHERE id = ?', sessionA)).toEqual(before);
+  });
+});
+
+describe('s98-m13 — capture races preserve the session refusal after rollback', () => {
+  it.each(
+    (['decision', 'learning', 'next-step'] as const).flatMap((category) =>
+      (['closed', 'taken'] as const).map((race) => ({ category, race }))
+    )
+  )('$category capture racing a $race session writes nothing', async ({ category, race }) => {
+    const root = buildStore();
+    const opened = await rbookSessionCapture({
+      category: 'context',
+      content: 'Open',
+      projectRoot: root,
+    });
+    expect(opened.success).toBe(true);
+    const sessionId = opened.data!.sessionId;
+    const state = () =>
+      Object.fromEntries(
+        [
+          'sessions',
+          'session_events',
+          'session_missions',
+          'strategic_decisions',
+          'learnings',
+          'next_steps',
+          'record_links',
+        ].map((table) => [
+          table,
+          query(root, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", table)
+            .length
+            ? query(root, `SELECT * FROM ${table} ORDER BY rowid`)
+            : null,
+        ])
+      );
+    let before: ReturnType<typeof state> | undefined;
+    let injected = false;
+    const real = RbookDatabaseClient.prototype.writeTransaction;
+    jest.spyOn(RbookDatabaseClient.prototype, 'writeTransaction').mockImplementation(function <T>(
+      this: RbookDatabaseClient,
+      fn: () => T
+    ) {
+      // Preflight has finished; another connection wins immediately before the real write lock.
+      if (!injected && fn.name === 'captureUnit') {
+        injected = true;
+        if (race === 'closed')
+          run(root, "UPDATE sessions SET status = 'completed' WHERE id = ?", sessionId);
+        else run(root, 'UPDATE sessions SET owner_key = ? WHERE id = ?', ownerB.key, sessionId);
+        before = state();
+        return real.call(this, () => {
+          // An in-unit canary proves the refusal throws through SQLite rollback, not just returns.
+          expect(
+            this.execute('UPDATE sessions SET title = ? WHERE id = ?', [
+              'must roll back',
+              sessionId,
+            ]).success
+          ).toBe(true);
+          return fn();
+        }) as RbookToolResult<T>;
+      }
+      return real.call(this, fn) as RbookToolResult<T>;
+    });
+    const refused = await rbookSessionCapture({
+      sessionId,
+      category,
+      content: `Refuse the ${race} ${category}`,
+      missionId: MISSION,
+      projectRoot: root,
+    });
+    jest.restoreAllMocks();
+    expect(injected).toBe(true);
+    expect(refused.success).toBe(false);
+    expect(refused.error).toEqual(
+      race === 'closed'
+        ? RbookErrors.sessionNotActive(sessionId)
+        : RbookErrors.sessionOwnedByAnotherProcess(sessionId)
+    );
+    expect(state()).toEqual(before);
+    expect(formatSessionCaptureForLLM(refused)).toContain(refused.error!.suggestion);
+    expect(formatSessionCaptureForLLM(refused)).not.toContain('citation-link');
   });
 });
 

@@ -70,7 +70,7 @@ export const SIGNAL_RULES: Readonly<Record<SignalKind | 'window' | 'feedbackKind
   });
 
 /**
- * The rules of a report read without this machine's draft runtime, as the dashboard reads an
+ * The rules of a report read without this machine's draft runtime, for a host reading an
  * upload: drafts expire by age only, and the rule says so.
  */
 export const SIGNAL_RULES_AGE_ONLY: Readonly<
@@ -267,8 +267,10 @@ export function unreadableReport(options: ComputeSignalsOptions, reason: string)
 
 /**
  * One store file in, one signals report out. The file is opened read-only and must exist; it is
- * never migrated or written (in WAL mode a read may create the -shm sidecar). The same file, the
- * same `now` and the same draft runtime give the same report, byte for byte.
+ * never migrated or written. SQLite may create -shm and empty -wal sidecars in WAL mode.
+ * One read transaction keeps the report consistent; in rollback-journal mode it holds a shared
+ * lock until the report finishes, so a writer with a shorter busy timeout (including 250 ms)
+ * can fail. The same file, `now` and draft runtime give the same report, byte for byte.
  */
 export function readSignals(
   storePath: string,

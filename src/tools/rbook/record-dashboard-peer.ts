@@ -175,7 +175,7 @@ export async function dashboardClientFor(
     throw refusal({
       message: `This copy sends ${name} no sign-in, since ${unsafe}; nothing was sent.`,
       suggestion:
-        'If the project moved to that dashboard, set RBOOK_DASHBOARD_URL to its https address and sign in there; if this copy came from elsewhere, join the project again from your own dashboard.',
+        'If the project moved to that dashboard, set RBOOK_DASHBOARD_URL to its https address, run rbook_auth(action="login_init"), then rbook_auth(action="login_complete"); if this copy came from elsewhere, join the project again from your own dashboard.',
     });
   const resolved = await DashboardClient.fromEnvForProject(projectRoot, {
     baseUrl: new URL(target.url).origin,

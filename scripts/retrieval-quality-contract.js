@@ -54,6 +54,17 @@ function hashed(file, expected) {
     throw new Error(`sealed hash mismatch or missing evidence: ${file}`);
   return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
+function originalSource(bytes, rename, relative) {
+  let original = bytes.toString('utf8');
+  // Only the recorded finite rename is reversible; never normalize algorithm changes.
+  for (const { from, to, count } of [...(rename?.replacements ?? [])].reverse()) {
+    const pieces = original.split(to);
+    if (pieces.length - 1 !== count)
+      throw new Error(`source rename occurrence mismatch: ${relative}`);
+    original = pieces.join(from);
+  }
+  return original;
+}
 function hashMap(root, expected, renames = {}) {
   if (!expected || !Object.keys(expected).length) throw new Error('empty sealed hash inventory');
   const currentHashes = {};
@@ -64,16 +75,9 @@ function hashMap(root, expected, renames = {}) {
     if (!HASH.test(hash) || !fs.existsSync(file))
       throw new Error(`sealed hash mismatch or missing source: ${relative}`);
     const bytes = fs.readFileSync(file);
-    let original = bytes.toString('utf8');
     // Only the finite recorded rename may differ. Reconstruct the historical bytes; do not
     // replace an old seal with a hash of today's source or normalize arbitrary whitespace.
-    for (const { from, to, count } of [...(rename?.replacements ?? [])].reverse()) {
-      const pieces = original.split(to);
-      if (pieces.length - 1 !== count)
-        throw new Error(`source rename occurrence mismatch: ${relative}`);
-      original = pieces.join(from);
-    }
-    if (sha(original) !== hash)
+    if (sha(originalSource(bytes, rename, relative)) !== hash)
       throw new Error(`sealed hash mismatch or missing source: ${relative}`);
     currentHashes[current] = sha(bytes);
   }
@@ -122,6 +126,7 @@ function readContract(root) {
       'evidenceHashes',
       'parserHashes',
       'parserReview',
+      'currentParserReview',
       'evaluatorHashes',
       'baselineConfig',
       'candidateConfig',
@@ -131,7 +136,7 @@ function readContract(root) {
     'contract fields'
   );
   if (
-    contract.schemaVersion !== 2 ||
+    contract.schemaVersion !== 3 ||
     contract.mission !== 's94-m06' ||
     contract.fixtureRoot !== FIXTURE
   )
@@ -155,6 +160,16 @@ function readContract(root) {
     !HASH.test(contract.parserReview.generatorSha256 ?? '')
   )
     throw new Error('unsealed parser review');
+  same(
+    Object.keys(contract.currentParserReview ?? {}).sort(),
+    ['file', 'sha256'],
+    'current parser review fields'
+  );
+  if (
+    contract.currentParserReview.file !== 'labels-v6-review/manifest.json' ||
+    !HASH.test(contract.currentParserReview.sha256 ?? '')
+  )
+    throw new Error('unsealed current parser review');
   const sealedSources = {
     ...contract.parserHashes,
     ...contract.evaluatorHashes,
@@ -274,7 +289,6 @@ function verifyCandidateSource(root, report, contract, before) {
 function verifyEvidence(root, contract) {
   const fixture = localPath(root, contract.fixtureRoot);
   hashMap(fixture, contract.evidenceHashes);
-  hashMap(root, contract.parserHashes, contract.sourceRenames);
   hashMap(root, contract.evaluatorHashes, contract.sourceRenames);
   const baseline = hashed(path.join(fixture, contract.baseline.file), contract.baseline.sha256);
   const labels = JSON.parse(
@@ -284,18 +298,37 @@ function verifyEvidence(root, contract) {
     path.join(fixture, contract.parserReview.file),
     contract.parserReview.sha256
   );
-  hashMap(
+  const generator = hashMap(
     root,
     { 'scripts/build-retrieval-labels.js': contract.parserReview.generatorSha256 },
     contract.sourceRenames
   );
+  const current = hashed(
+    path.join(fixture, contract.currentParserReview.file),
+    contract.currentParserReview.sha256
+  );
+  same(
+    Object.keys(current.extractorSources ?? {}).sort(),
+    Object.keys(contract.parserHashes)
+      .map((name) => contract.sourceRenames[name]?.path ?? name)
+      .sort(),
+    'source rename/current parser inventory'
+  );
+  // V5 retains historical parser provenance. V6 independently binds every current dependency;
+  // its generated label bytes must still equal the frozen labels. Rename counts remain guarded.
+  hashMap(root, current.extractorSources);
+  for (const name of Object.keys(contract.parserHashes)) {
+    const rename = contract.sourceRenames[name];
+    originalSource(fs.readFileSync(localPath(root, rename?.path ?? name)), rename, name);
+  }
+  same(current.generatorSha256, Object.values(generator)[0], 'current label generator');
   same(review.extractorSources, contract.parserHashes, 'review parser inventory');
   same(
     Object.keys(labels.extractorSources).sort(),
     Object.keys(contract.parserHashes).sort(),
     'original parser inventory'
   );
-  for (const manifest of [labels, review]) {
+  for (const manifest of [labels, review, current]) {
     same(
       manifest.corpusSha256,
       contract.evidenceHashes['acceptance-fixture/corpus.json'],
@@ -306,10 +339,16 @@ function verifyEvidence(root, contract) {
       contract.evidenceHashes['frozen-labels/labels.json'],
       'manifest labels'
     );
-    same(manifest.generatorSha256, contract.parserReview.generatorSha256, 'label generator');
+    if (manifest !== current)
+      same(manifest.generatorSha256, contract.parserReview.generatorSha256, 'label generator');
     for (const name of ['primary', 'mission', 'mixed'])
       same(manifest.counts[name], contract.counts[name], 'manifest denominator');
   }
+  same(current.counts, labels.counts, 'current manifest denominator');
+  hashed(
+    path.join(fixture, 'labels-v6-review/labels.json'),
+    contract.evidenceHashes['frozen-labels/labels.json']
+  );
   hashed(
     path.join(fixture, 'labels-v5-review/labels.json'),
     contract.evidenceHashes['frozen-labels/labels.json']

@@ -1,3 +1,5 @@
+// ABOUTME: Creates and lists database snapshots with bounded retention.
+// ABOUTME: Refuses invalid explicit retention before opening the store or changing snapshot files.
 /**
  * rbook_db_snapshot Tool
  *
@@ -155,6 +157,18 @@ export const rbookDbSnapshotToolDefinition = {
 export async function rbookDbSnapshot(
   params: RbookDbSnapshotParams = {}
 ): Promise<RbookToolResult<RbookDbSnapshotResult>> {
+  if (
+    params.maxSnapshots !== undefined &&
+    (!Number.isInteger(params.maxSnapshots) || params.maxSnapshots < 1)
+  ) {
+    return createError({
+      code: 'INVALID_PARAMETER',
+      field: 'maxSnapshots',
+      providedValue: params.maxSnapshots,
+      message: "Invalid value for parameter 'maxSnapshots'",
+      suggestion: 'Provide maxSnapshots as an integer of at least 1, or omit it for the default.',
+    });
+  }
   const maxSnapshots = resolveMaxSnapshots(params.maxSnapshots);
   const listOnly = params.listOnly === true;
 

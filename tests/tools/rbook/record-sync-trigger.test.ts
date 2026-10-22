@@ -35,7 +35,7 @@ import {
   type ReplicaFixture,
 } from '../../helpers/replica-fixture';
 import { onCopy, ownerCopy, read, type Copy } from '../../helpers/shared-copies';
-import { routeTo, standinSsh } from '../../helpers/standin-ssh';
+import { farEndsExited, routeTo, standinSsh } from '../../helpers/standin-ssh';
 import Database from 'better-sqlite3';
 
 let fixture: ReplicaFixture;
@@ -46,10 +46,11 @@ beforeEach(() => {
   previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   for (const key of keys) delete process.env[key];
 });
-afterEach(() => {
+afterEach(async () => {
   for (const key of keys)
     if (previous[key] === undefined) delete process.env[key];
     else process.env[key] = previous[key];
+  await farEndsExited(fixture.tmp);
   fixture.restore();
 });
 
@@ -198,8 +199,9 @@ describe('what starts a sync (s96-m13 build-time critics)', () => {
     return { bin: path.join(dist, 'bin.js'), marker };
   }
 
+  /** s98-m08: a launched process can take seconds to start on a loaded machine; 20 s, not 5. */
   async function launched(marker: string): Promise<unknown> {
-    for (let tries = 0; tries < 100 && !fs.existsSync(marker); tries += 1)
+    for (const until = Date.now() + 20_000; !fs.existsSync(marker) && Date.now() < until; )
       await new Promise((resolve) => setTimeout(resolve, 50));
     return fs.existsSync(marker) ? JSON.parse(fs.readFileSync(marker, 'utf8')) : null;
   }
@@ -225,6 +227,8 @@ describe('what starts a sync (s96-m13 build-time critics)', () => {
         await runCli(['hook', event, '--format', 'text'], {
           env: process.env,
           cwd: owner.root,
+          // s98-m08: room load cannot spend (#1558); a hook out of its deadline launched nothing.
+          startedAtMs: Date.now() + 20_000,
           readStdin: async () =>
             JSON.stringify({ cwd: owner.root, session_id: `hook-${event}`, source: 'startup' }),
           stdout: () => undefined,

@@ -17,6 +17,40 @@ export interface RunningServer {
   stop(): Promise<void>;
 }
 
+/**
+ * s98-m08: keeps what the network said each time a test's fetch failed, with how long the call had
+ * run. Under jest the dashboard client reads every fetch failure as "Unknown network error", because
+ * the error comes from another realm and fails its instanceof check, so a test prints these beside
+ * the refusal. Install in beforeAll, empty in beforeEach, and restore in afterAll.
+ */
+export function recordNetworkFailures(): { readonly failures: string[]; restore(): void } {
+  const failures: string[] = [];
+  const realFetch = global.fetch;
+  global.fetch = (async (...args: Parameters<typeof fetch>) => {
+    const started = Date.now();
+    try {
+      return await realFetch(...args);
+    } catch (error) {
+      const failed = error as {
+        name?: string;
+        message?: string;
+        cause?: { code?: string; message?: string };
+      };
+      const cause = failed.cause
+        ? ` (${failed.cause.code ?? ''} ${failed.cause.message ?? ''})`
+        : '';
+      failures.push(`${failed.name}: ${failed.message}${cause} after ${Date.now() - started} ms`);
+      throw error;
+    }
+  }) as typeof fetch;
+  return {
+    failures,
+    restore: () => {
+      global.fetch = realFetch;
+    },
+  };
+}
+
 /** Start the reference server in its own process, as a client meets the dashboard: by URL only. */
 export async function spawnRefereeServer(
   dir: string,

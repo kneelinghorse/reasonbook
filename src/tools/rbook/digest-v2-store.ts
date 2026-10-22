@@ -24,7 +24,7 @@ import { readProjectLevel } from './project-level';
 import { firstReady, orderByRequires } from './work-queue-order';
 import { storedTimeMs } from './stored-time';
 import { captureToolCall } from './tool-call-context';
-import { feedbackDigestLine } from './feedback-fleet';
+import { FLEET_DIGEST_BUDGET_MS, feedbackDigestLine } from './feedback-fleet';
 import { openDraftRuntime, startsSince } from './draft-runtime';
 import { clientRunner, isExpired, pendingDrafts } from './proposals';
 import { authorForWrite } from './author-name';
@@ -341,7 +341,8 @@ function pendingUnexpired(
 export async function readDigestV2(
   root: string,
   env: NodeJS.ProcessEnv = process.env,
-  deadlineAtMs = Infinity
+  deadlineAtMs = Infinity,
+  fleetBudgetMs = FLEET_DIGEST_BUDGET_MS
 ): Promise<DigestV2Model> {
   return (
     await captureToolCall('read', async () => {
@@ -364,7 +365,7 @@ export async function readDigestV2(
         return {
           ...result.data,
           legacyRecord: resolveRecordPaths(root).legacy,
-          feedback: await feedbackDigestLine(env, deadlineAtMs),
+          feedback: await feedbackDigestLine(env, deadlineAtMs, fleetBudgetMs),
         };
       } finally {
         client.close();

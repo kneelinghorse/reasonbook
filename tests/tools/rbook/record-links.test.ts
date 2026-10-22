@@ -13,6 +13,7 @@ import {
 } from '../../../src/tools/rbook/record-links';
 import { captureToolCall } from '../../../src/tools/rbook/tool-call-context';
 import { RECORD_LINKS_TABLE_SQL } from '../../../src/tools/rbook/record-link-schema';
+import * as linkStore from '../../../src/tools/rbook/record-link-store';
 
 let root: string, client: RbookDatabaseClient;
 const t = (offset: number) => new Date(Date.now() + offset).toISOString();
@@ -182,6 +183,33 @@ it('does not turn NULL time or foreign origins into local edges', () => {
 });
 
 import { readRecordLinks } from '../../../src/tools/rbook/record-links';
+it.each([false, true])(
+  'indexes the collision inventory once per read (persisted=%s)',
+  (persisted) => {
+    client.execute(
+      'INSERT INTO strategic_decisions(id,decision_text,created_at,project_id) VALUES(21,?,?,?)',
+      ['d:12', t(-5000), 'local']
+    );
+    if (persisted) ensureRecordLinks(client);
+    const inventory = linkStore.loadLinkInventory(client);
+    let iterations = 0;
+    const identities = new Proxy(inventory.identities, {
+      get(target, key, receiver) {
+        if (key === Symbol.iterator) {
+          iterations += 1;
+          return target[Symbol.iterator].bind(target);
+        }
+        return Reflect.get(target, key, receiver);
+      },
+    });
+    jest.spyOn(linkStore, 'loadLinkInventory').mockReturnValue({ ...inventory, identities });
+    const read = readRecordLinks(client);
+    expect(read.available).toBe(true);
+    expect(read.links.map((edge) => edge.from_id).sort()).toEqual([20, 21]);
+    // More citing records must not rescan the whole collision inventory for each source/edge.
+    expect(iterations).toBe(1);
+  }
+);
 it('readonly fallback is typed-only and absence does not poison a later migrated read', () => {
   client.execute('UPDATE strategic_decisions SET decision_text=? WHERE id=20', ['#12']);
   expect(readRecordLinks(client)).toMatchObject({

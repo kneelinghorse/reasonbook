@@ -421,7 +421,8 @@ describe('actual process and initialization boundaries', () => {
         error += String(chunk);
       });
       const done = new Promise<{ code: number | null; output: string; error: string }>((resolve) =>
-        child.once('exit', (code) => {
+        // s98-m08 (#660 item 7): 'close', not 'exit', which Node documents can fire before stdio closes.
+        child.once('close', (code) => {
           if (!output.includes('ready\n')) readyReject(new Error(error));
           resolve({ code, output, error });
         })

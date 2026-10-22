@@ -26,6 +26,7 @@ import { shareProject } from './record-share-action';
 import { mergeContext } from './record-standing';
 import { syncRoute, type Opener } from './record-sync';
 import { withSyncLock } from './record-sync-trigger';
+import { sweepStaleRecordCopies } from './record-temp-copies';
 import { refereeingDashboard } from './record-wire';
 import { COPY_KEYS, writeCopyKey } from './replica-copy-keys';
 import { REPLICA_ERROR_CODES, storeFolder } from './replica-identity';
@@ -227,6 +228,7 @@ export async function shareThroughDashboard(
   dbPath: string,
   options: { readonly confirm?: boolean; readonly projectId?: string; readonly authorName?: string }
 ): Promise<RbookToolResult<{ readonly plan: DashboardSharePlan } | DashboardShared>> {
+  sweepStaleRecordCopies();
   const off = dashboardSharingOff();
   if (off) return createError(off);
   // No other sync of this copy runs in the middle of a share (critics, round 1).

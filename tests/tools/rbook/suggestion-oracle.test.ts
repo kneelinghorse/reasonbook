@@ -94,6 +94,13 @@
  *     critics found one, in replica-check.ts; it was rewritten as a PropertyAssignment, and the
  *     census arm below fails on any shorthand `suggestion` in src rather than reading it.
  *
+ *  10. s98-m13's member-answer.ts translation inherits an arbitrary error code, so this census
+ *      classifies its one authored site UNTYPED. Its five mapped remedies and generic fallback
+ *      are covered by member-remedies.test.ts, including real peer preflight/dispatch, but that
+ *      separate suite grants this router oracle no examined-site or wire credit. The two new
+ *      sprint-close schema/query refusals remain FAULT, with injected tests in sprint-close-audit-receipt.
+ *
+ *
  * THE MIRROR IS NOT A BUILD. Provenance comes from an AST source transform into a gitignored
  * CommonJS mirror under `node_modules/.cache/` — ZERO `src/` edits — and it proves itself faithful
  * run. See `tests/helpers/suggestion-mirror.ts` for why a structured `remedy` field was rejected.
@@ -137,6 +144,7 @@ import {
   buildSuggestionMirror,
   installSuggestionSink,
   MIRROR_ROOT,
+  removeSuggestionMirror,
   type SuggestionMirrorResult,
   type SuggestionSink,
 } from '../../helpers/suggestion-mirror';
@@ -365,8 +373,8 @@ const SITES_BY_MISSION = {
   // restore; and the CLI's bundle for a member (nine of the 72 added at the build-time critics' folds).
   's96-m13': [
     'src/cli/sync.ts:157',
-    'src/tools/rbook/rbook-db-backfill.ts:813',
-    'src/tools/rbook/rbook-db-backfill.ts:138',
+    'src/tools/rbook/rbook-db-backfill.ts:822',
+    'src/tools/rbook/rbook-db-backfill.ts:147',
     'src/tools/rbook/rbook-db-restore.ts:226',
     'src/tools/rbook/rbook-project-shared.ts:146',
     'src/tools/rbook/rbook-project-shared.ts:175',
@@ -462,8 +470,8 @@ const SITES_BY_MISSION = {
   // s99-m10: scoped and global reconciliation refuse an unrecognized table-count payload.
   // Both inherit DASHBOARD_ERROR, are driven by the portable HTTP arm, and prescribe no tool call.
   's99-m10': [
-    'src/tools/rbook/rbook-db-backfill.ts:470',
-    'src/tools/rbook/rbook-db-backfill.ts:552',
+    'src/tools/rbook/rbook-db-backfill.ts:479',
+    'src/tools/rbook/rbook-db-backfill.ts:561',
   ],
   // s96-m08: one common retirement remedy, a local hook-read fault, and owner-key gates.
   // The message-get remedy changes text at its existing site; it is not an added site.
@@ -510,16 +518,16 @@ const SITES_BY_MISSION = {
     'src/referee/open.ts:226',
     'src/referee/open.ts:278',
     'src/referee/open.ts:287',
-    'src/referee/peer.ts:69',
-    'src/referee/peer.ts:135',
-    'src/referee/peer.ts:142',
-    'src/referee/peer.ts:214',
-    'src/referee/peer.ts:237',
-    'src/referee/peer.ts:251',
-    'src/referee/peer.ts:372',
+    'src/referee/peer.ts:70',
+    'src/referee/peer.ts:136',
+    'src/referee/peer.ts:143',
+    'src/referee/peer.ts:215',
+    'src/referee/peer.ts:238',
+    'src/referee/peer.ts:252',
+    'src/referee/peer.ts:373',
     'src/referee/views.ts:69',
     'src/referee/views.ts:97',
-    'src/tools/rbook/record-fresh-copy.ts:402',
+    'src/tools/rbook/record-fresh-copy.ts:406',
   ],
   // s97-m10: the dashboard transport's refusals (a sign-in, a project, a limit, a status, a route to
   // another dashboard, no sign-in, a password, no answer, too much, an empty page, a transaction too
@@ -548,13 +556,13 @@ const SITES_BY_MISSION = {
   's97-m11': [
     'src/referee/handover.ts:259',
     'src/referee/membership.ts:183',
-    'src/referee/peer.ts:291',
+    'src/referee/peer.ts:292',
     'src/tools/rbook/rbook-project-shared.ts:274',
     'src/tools/rbook/rbook-project-shared.ts:319',
-    'src/tools/rbook/record-dashboard-join.ts:67',
-    'src/tools/rbook/record-dashboard-join.ts:78',
-    'src/tools/rbook/record-dashboard-join.ts:105',
-    'src/tools/rbook/record-dashboard-join.ts:60',
+    'src/tools/rbook/record-dashboard-join.ts:69',
+    'src/tools/rbook/record-dashboard-join.ts:80',
+    'src/tools/rbook/record-dashboard-join.ts:107',
+    'src/tools/rbook/record-dashboard-join.ts:62',
     'src/tools/rbook/record-dashboard-move.ts:90',
     'src/tools/rbook/record-dashboard-move.ts:99',
     'src/tools/rbook/record-dashboard-move.ts:159',
@@ -566,14 +574,14 @@ const SITES_BY_MISSION = {
     'src/tools/rbook/record-dashboard-move.ts:166',
     'src/tools/rbook/record-dashboard-peer.ts:211',
     'src/tools/rbook/record-dashboard-peer.ts:248',
-    'src/tools/rbook/record-dashboard-share.ts:103',
-    'src/tools/rbook/record-dashboard-share.ts:151',
-    'src/tools/rbook/record-dashboard-share.ts:163',
-    'src/tools/rbook/record-dashboard-share.ts:180',
-    'src/tools/rbook/record-dashboard-share.ts:214',
-    'src/tools/rbook/record-dashboard-share.ts:238',
-    'src/tools/rbook/record-dashboard-share.ts:294',
-    'src/tools/rbook/record-dashboard-share.ts:317',
+    'src/tools/rbook/record-dashboard-share.ts:104',
+    'src/tools/rbook/record-dashboard-share.ts:152',
+    'src/tools/rbook/record-dashboard-share.ts:164',
+    'src/tools/rbook/record-dashboard-share.ts:181',
+    'src/tools/rbook/record-dashboard-share.ts:215',
+    'src/tools/rbook/record-dashboard-share.ts:240',
+    'src/tools/rbook/record-dashboard-share.ts:296',
+    'src/tools/rbook/record-dashboard-share.ts:319',
     'src/tools/rbook/record-membership.ts:279',
     'src/tools/rbook/record-membership.ts:285',
     'src/tools/rbook/record-membership.ts:300',
@@ -586,7 +594,7 @@ const SITES_BY_MISSION = {
   // protocol, a handover to a copy behind a move or from one, a removed copy's sync, and a member's
   // reconcile.
   's100-m01': [
-    'src/tools/rbook/record-dashboard-share.ts:174',
+    'src/tools/rbook/record-dashboard-share.ts:175',
     'src/tools/rbook/record-dashboard-peer.ts:259',
     'src/tools/rbook/record-decide.ts:127',
     'src/tools/rbook/record-join.ts:127',
@@ -594,13 +602,13 @@ const SITES_BY_MISSION = {
     'src/tools/rbook/record-move-routes.ts:59',
     'src/tools/rbook/record-move-routes.ts:53',
     'src/tools/rbook/record-sync.ts:287',
-    'src/tools/rbook/rbook-db-backfill.ts:431',
+    'src/tools/rbook/rbook-db-backfill.ts:440',
   ],
   // s100-m02: a share of a project the dashboard does not hold yet, refused signed out or with
   // uploads off, where a session close would upload nothing (the s97 review's finding 7).
   's100-m02': [
-    'src/tools/rbook/record-dashboard-share.ts:203',
-    'src/tools/rbook/record-dashboard-share.ts:209',
+    'src/tools/rbook/record-dashboard-share.ts:204',
+    'src/tools/rbook/record-dashboard-share.ts:210',
   ],
   // s100-m03: a next-step capture whose table or genesis columns cannot be prepared before the
   // write lock, now that the capture writes its row (#712).
@@ -608,6 +616,31 @@ const SITES_BY_MISSION = {
   // s97-m07: a bulk resolve whose feedbackIds is not a list of row ids, and one naming a row that
   // does not exist, which resolves none.
   's97-m07': ['src/tools/rbook/rbook-feedback.ts:278', 'src/tools/rbook/rbook-feedback.ts:350'],
+  // s98-m09: protected identity clears, invalid explicit snapshot retention, and the shared
+  // whole-schema validator's type/bound remedy. The validator spreads `error`, so this census's
+  // sibling-code rule classifies its site UNTYPED; its separate unit/dispatch tests grant this
+  // router matrix no examined-site or wire credit. The two handler sites have reasons below.
+  's98-m09': [
+    'src/tools/rbook/rbook-context-project-identity.ts:116',
+    'src/tools/rbook/rbook-db-snapshot.ts:169',
+    'src/tools/rbook/tool-validation.ts:55',
+  ],
+  // s98-m10: manual backfill refuses before any upload when checkpoint sync is explicitly off.
+  's98-m10': ['src/tools/rbook/rbook-db-backfill.ts:137'],
+  // s98-m11: reject unreadable expiry before a capture opens or writes a store.
+  's98-m11': ['src/tools/rbook/rbook-session-capture.ts:411'],
+  // s98-m12: an already-answered message refuses another response with a read-current-message
+  // remedy. The portable HTTP arm drives its 409 and executes that exact message's get remedy.
+  's98-m12': ['src/tools/rbook/dashboard-client.ts:1468'],
+  // s98-m13: two failed session-schema/query reads refuse closeout (FAULT; injected in
+  // sprint-close-audit-receipt.test.ts). The peer remedy translator spreads an arbitrary engine
+  // code, so it is UNTYPED by this gate's sibling-code rule. member-remedies.test.ts covers its
+  // five host-code branches plus fallback and caller-safe controls; no router or wire credit.
+  's98-m13': [
+    'src/tools/rbook/rbook-sprint-complete.ts:618',
+    'src/tools/rbook/rbook-sprint-complete.ts:634',
+    'src/referee/member-answer.ts:52',
+  ],
 } as const satisfies Readonly<Record<string, readonly string[]>>;
 const RATIFIED_SITE_ADDS = Object.values(SITES_BY_MISSION).flat();
 
@@ -666,6 +699,7 @@ const EXTERNAL_CODES = new Set([
   'NOT_COLLAB_STORE',
   'PROJECT_ID_MISMATCH',
   'PROJECT_NOT_REGISTERED',
+  'MESSAGE_RESPONSE_CONFLICT',
 ]);
 const EXTERNAL_PREFIXES = ['DASHBOARD_', 'DEVICE_CODE_', 'CREDENTIAL_'];
 
@@ -692,8 +726,8 @@ const CONSUMER_RESOLVED_CODES: Readonly<Record<string, string>> = {
   'src/tools/rbook/rbook-context-update.ts:818': 'INVALID_PARAMETER',
   'src/tools/rbook/errors.ts:386': '<expr>',
   // These objects spread dashboardError before overriding its suggestion; proven below.
-  'src/tools/rbook/rbook-db-backfill.ts:470': 'DASHBOARD_ERROR',
-  'src/tools/rbook/rbook-db-backfill.ts:552': 'DASHBOARD_ERROR',
+  'src/tools/rbook/rbook-db-backfill.ts:479': 'DASHBOARD_ERROR',
+  'src/tools/rbook/rbook-db-backfill.ts:561': 'DASHBOARD_ERROR',
 };
 
 type TriggerClass = 'VALIDATION' | 'STATE' | 'FAULT' | 'EXTERNAL' | 'UNTYPED';
@@ -858,6 +892,7 @@ function mkTmp(prefix: string): string {
 }
 afterAll(() => {
   for (const dir of tmpDirs) fs.rmSync(dir, { recursive: true, force: true });
+  removeSuggestionMirror();
 });
 
 function copyStoreBundle(sourceDb: string, destinationDb: string): void {
@@ -917,7 +952,8 @@ interface DrivenCall {
  * Bound EVERY router call. A plan-time probe with no timeout hung indefinitely inside a
  * `rbook_project` action after 430 of 642 calls and produced no output at all.
  */
-const CALL_TIMEOUT_MS = 20_000;
+// s98-m08: a hang guard, not a speed budget. Under two concurrent full suites one call ran past 20 s.
+const CALL_TIMEOUT_MS = 120_000;
 
 type MirrorRouters = Record<string, (params: Record<string, unknown>) => Promise<unknown>>;
 
@@ -1588,6 +1624,24 @@ const MATRIX: MatrixCase[] = [
       {
         tool: 'rbook_project',
         params: { action: 'init', projectRoot: ctx.projectRoot, projectId: 'not-this-project' },
+      },
+    ],
+  },
+  {
+    axis: '6 parameter-value',
+    name: 's98-m11: a capture expiry uses locale prose that SQLite cannot compare',
+    reachable:
+      'ordinary: an agent supplies a natural-language expiry instead of a calendar timestamp',
+    calls: (ctx) => [
+      {
+        tool: 'rbook_session',
+        params: {
+          action: 'capture',
+          category: 'constraint',
+          content: 'Keep the expiry comparable.',
+          expiresAt: 'next Tuesday',
+          projectRoot: ctx.projectRoot,
+        },
       },
     ],
   },
@@ -2567,13 +2621,14 @@ const EXTERNAL_RESIDUAL_REASONS: Readonly<Record<string, string>> = {
 };
 
 const HTTP_EXTERNAL_SITES = new Set([
-  'src/tools/rbook/rbook-db-backfill.ts:470',
-  'src/tools/rbook/rbook-db-backfill.ts:552',
+  'src/tools/rbook/dashboard-client.ts:1468',
+  'src/tools/rbook/rbook-db-backfill.ts:479',
+  'src/tools/rbook/rbook-db-backfill.ts:561',
   'src/tools/rbook/rbook-auth.ts:633',
   'src/tools/rbook/rbook-auth.ts:1222',
   'src/tools/rbook/rbook-auth.ts:1231',
   'src/tools/rbook/rbook-auth.ts:1239',
-  'src/tools/rbook/rbook-message.ts:1092',
+  'src/tools/rbook/rbook-message.ts:1094',
   'src/tools/rbook/errors.ts:430',
   'src/tools/rbook/errors.ts:446',
   'src/tools/rbook/errors.ts:465',
@@ -2616,6 +2671,20 @@ describe('s89-m08 CENSUS — the universe re-derives at build time, never from a
       RATIFIED_AUTHORED_BASE + RATIFIED_SITE_ADDS.length - RATIFIED_SITE_REMOVALS.length
     );
     expect(SITES_BY_MISSION['s90-m07']).toEqual([]);
+    for (const site of [
+      ...SITES_BY_MISSION['s98-m09'],
+      ...SITES_BY_MISSION['s98-m10'],
+      ...SITES_BY_MISSION['s98-m11'],
+      ...SITES_BY_MISSION['s98-m12'],
+      ...SITES_BY_MISSION['s98-m13'],
+    ]) {
+      expect(CENSUS.some((row) => row.site === site)).toBe(true);
+    }
+    expect(
+      SITES_BY_MISSION['s98-m13'].map(
+        (site) => CENSUS.find((row) => row.site === site)?.triggerClass
+      )
+    ).toEqual(['FAULT', 'FAULT', 'UNTYPED']);
   });
 
   it('finds no shorthand suggestion property, which this census cannot read (profile 9)', () => {
@@ -2833,15 +2902,16 @@ describe('s89-m08 T5 — every authored suggestion naming a shipped tool yields 
     // Pin the seven surviving witnesses themselves, so a missing surface cannot hide in a count.
     // s97-m07: rbook-feedback.ts's witness (the missing-feedbackId suggestion) moved from :324 to
     // :497 when the bulk-resolve helpers were added above it; s97-m08 moved it to :485 when
-    // kindCounts left the file for feedback-fleet.ts. The text is unchanged.
+    // kindCounts left the file for feedback-fleet.ts; s98-m09 moved it to :484 by removing the
+    // unpublished feedbackIds minimum from the schema. The text is unchanged.
     expect(narrowOffenders).toEqual([
       'src/tools/rbook/errors.ts:402',
       'src/tools/rbook/errors.ts:411',
       'src/tools/rbook/rbook-decisions-update.ts:81',
-      'src/tools/rbook/rbook-feedback.ts:485',
+      'src/tools/rbook/rbook-feedback.ts:506',
       'src/tools/rbook/rbook-learnings-reaffirm.ts:91',
       'src/tools/rbook/rbook-learnings-update.ts:104',
-      'src/tools/rbook/rbook-sprint-complete.ts:577',
+      'src/tools/rbook/rbook-sprint-complete.ts:583',
     ]);
   });
 
@@ -2927,6 +2997,7 @@ interface PortableReplay {
 }
 
 const portableEvidence: PortableEvidence[] = [];
+const CONFLICT_MESSAGE_ID = '55555555-5555-4555-8555-555555555555';
 const portableReplays: PortableReplay[] = [];
 const blockedOutboundUrls: string[] = [];
 const blockedTriggerOutboundUrls: string[] = [];
@@ -3164,10 +3235,36 @@ function externalReplayParams(
     params.maxWaitSeconds = 1;
   }
   if (prescription.action === 'revoke') params.keyId = 'project-key-1';
+  if (prescription.tool === 'rbook_message' && prescription.action === 'get')
+    params.messageId = CONFLICT_MESSAGE_ID;
   return params;
 }
 
 function externalReplayScenario(prescription: PrescribedCall): DashboardScenario {
+  if (prescription.tool === 'rbook_message' && prescription.action === 'get') {
+    return {
+      kind: 'http',
+      expected: {
+        method: 'GET',
+        path: `/api/messages/${CONFLICT_MESSAGE_ID}`,
+        authorization: 'Bearer cmk_project_fixture',
+      },
+      status: 200,
+      body: {
+        type: 'json',
+        value: {
+          id: CONFLICT_MESSAGE_ID,
+          type: 'question',
+          status: 'accepted',
+          summary: 'A response is already recorded',
+          senderUserId: 'sender-user',
+          senderProjectId: 'sender-project',
+          targetUserId: 'target-user',
+          targetProjectId: 'target-project',
+        },
+      },
+    };
+  }
   if (['login', 'login_init', 'login_complete'].includes(prescription.action ?? '')) {
     return { kind: 'device-terminal', expectedAuthorization: '', outcome: 'approved' };
   }
@@ -3975,6 +4072,47 @@ describe('s90-m07 PORTABLE EXTERNAL + FIRST-RUN LEDGER — loopback, never live 
       tool: 'rbook_message',
       params: ({ projectRoot }) => ({ action: 'directory', projectRoot }),
     });
+
+    await runPortableCase({
+      name: 'an already-answered message refuses another response',
+      family: 'external-http',
+      expectedCode: 'MESSAGE_RESPONSE_CONFLICT',
+      expectsHttp: true,
+      scenario: {
+        kind: 'http',
+        expected: {
+          method: 'POST',
+          path: `/api/messages/${CONFLICT_MESSAGE_ID}/respond`,
+          authorization: PROJECT_AUTH,
+        },
+        status: 409,
+        body: { type: 'json', value: { error: 'Message already has a response' } },
+      },
+      seed: { credentials: 'project' },
+      tool: 'rbook_message',
+      params: ({ projectRoot }) => ({
+        action: 'respond',
+        messageId: CONFLICT_MESSAGE_ID,
+        respondStatus: 'accepted',
+        projectRoot,
+      }),
+    });
+    const conflict = portableEvidence[portableEvidence.length - 1];
+    expect(conflict.fired).toContain(SITES_BY_MISSION['s98-m12'][0]);
+    expect(conflict.suggestion).toContain(
+      `rbook_message(action="get", messageId="${CONFLICT_MESSAGE_ID}")`
+    );
+    const conflictReplay = portableReplays.filter(
+      (replay) => replay.site === SITES_BY_MISSION['s98-m12'][0]
+    );
+    expect(conflictReplay).toHaveLength(1);
+    expect(conflictReplay[0]).toMatchObject({
+      tool: 'rbook_message',
+      action: 'get',
+      outcome: 'SUCCEEDS',
+    });
+    expect(conflictReplay[0].requests).toHaveLength(1);
+    expect(conflictReplay[0].requests[0].url).toBe(`/api/messages/${CONFLICT_MESSAGE_ID}`);
 
     let mismatchedAdvertisedRoot = '';
     await runPortableCase({
@@ -4985,13 +5123,25 @@ interface Replay {
  * The shape is `migration-warning-reachability.test.ts`'s.
  */
 const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
+  // ── s98-m09: focused handler fixtures outside this router matrix ──
+  'src/tools/rbook/rbook-context-project-identity.ts:116':
+    'A project_identity update with null project_name or project_id. This is an ordinary reachable ' +
+    'input that the current matrix does not send, not an unreachable branch. project-identity.test.ts ' +
+    'drives both protected fields and checks that an earlier batch entry cannot partially write; ' +
+    'those focused tests give this matrix no examined-site or wire credit.',
+  'src/tools/rbook/rbook-db-snapshot.ts:169':
+    'An invalid explicit snapshot retention value. The current matrix sends no such value; ' +
+    'rbook-db-snapshot.test.ts drives zero, negative, fractional, NaN, string and null values ' +
+    'directly and verifies snapshot/store preservation. Dispatcher validation masks non-null ' +
+    'invalid values before this handler, and normalizes top-level null to omission. Those focused ' +
+    'tests give this matrix no examined-site or wire credit.',
   // ── s100-m02: a share refused before any upload could put the project there ──
-  'src/tools/rbook/record-dashboard-share.ts:203':
+  'src/tools/rbook/record-dashboard-share.ts:204':
     'A share through the dashboard of a project the dashboard does not hold yet, from a machine with no dashboard credential. rbook_project reaches it; dashboard-sharing.test.ts shares from a machine that never signed in.',
-  'src/tools/rbook/record-dashboard-share.ts:209':
+  'src/tools/rbook/record-dashboard-share.ts:210':
     'The same share on a signed-in machine with RBOOK_CHECKPOINT_SYNC=off. rbook_project reaches it; dashboard-sharing.test.ts shares with uploads off.',
   // ── s100-m01: the sharing fixes ──
-  'src/tools/rbook/record-dashboard-share.ts:174':
+  'src/tools/rbook/record-dashboard-share.ts:175':
     "A share through the dashboard while the owner's other copies wrote or are routed to. rbook_project reaches it; stranded.test.ts shares with a second copy that wrote, one routed, and a former owner copy.",
   'src/tools/rbook/record-dashboard-peer.ts:259':
     "A removed member's dashboard sync answered 404 with no project listed for its account. The dashboard peer only; dashboard-sharing.test.ts answers it through a double of the deployed dashboard.",
@@ -5007,38 +5157,38 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     "A handover over SSH from a copy behind the far copy's move, which a fork of the owner copy's moves makes. reasonbook handover only, never routed; no test constructs the fork, and the far copy's own check refuses it first in every one that does.",
   'src/tools/rbook/record-sync.ts:287':
     "A sync from a copy told its member was removed whose route ended. rbook_project reaches it; dashboard-sharing.test.ts syncs such a copy after the dashboard's 404.",
-  'src/tools/rbook/rbook-db-backfill.ts:431':
+  'src/tools/rbook/rbook-db-backfill.ts:440':
     "A reconcile on a member's copy of a shared record, which has no dashboard mirror of its own. rbook_db reaches it with a dashboard credential; dashboard-sharing.test.ts reconciles a member's copy.",
   // ── s97-m11: sharing, joining and moving back through the dashboard ──
   'src/referee/handover.ts:259':
     "An archive asked of a referee whose project has not moved back. A dashboard call at the end of a move back, never routed; dashboard-sharing.test.ts archives only after the owner's copy synced.",
   'src/referee/membership.ts:183':
     'A role change for an account that is no member. A dashboard sharing call, never routed; roles.test.ts names an unknown account.',
-  'src/referee/peer.ts:291':
+  'src/referee/peer.ts:292':
     "A move back asked while the referee does not hold the record, or a move is pending. The dashboard's peer route only; no test constructs one.",
   'src/tools/rbook/rbook-project-shared.ts:274':
     'A join through the dashboard with no folder or no address. rbook_project reaches it; no test sends one without.',
-  'src/tools/rbook/record-dashboard-join.ts:60':
+  'src/tools/rbook/record-dashboard-join.ts:62':
     'A join through the dashboard into a folder that is no project folder, such as home. rbook_project reaches it; dashboard-sharing.test.ts joins into a stand-in home.',
   'src/tools/rbook/record-successor.ts:312':
     "A move back's take of its successor while the copy wrote past the dashboard's mark of it. The move back only, which syncs and asks again; dashboard-sharing.test.ts writes in that window.",
-  'src/tools/rbook/record-dashboard-join.ts:67':
+  'src/tools/rbook/record-dashboard-join.ts:69':
     'A join through the dashboard into a folder that holds a store. rbook_project reaches it; no test joins into a used folder.',
-  'src/tools/rbook/record-dashboard-join.ts:78':
+  'src/tools/rbook/record-dashboard-join.ts:80':
     'An address the dashboard does not resolve for this account. rbook_project reaches it; no test sends an unknown address.',
-  'src/tools/rbook/record-dashboard-join.ts:105':
+  'src/tools/rbook/record-dashboard-join.ts:107':
     'A first copy the dashboard sent that this version builds no store from, such as a damaged file. rbook_project reaches it; no test sends a damaged first copy.',
   'src/tools/rbook/record-dashboard-peer.ts:248':
     'A dashboard that lists the project but no longer shares it, after its owner moved it back. A sync through the dashboard only; dashboard-sharing.test.ts syncs a member after the move back.',
-  'src/tools/rbook/record-dashboard-share.ts:103':
+  'src/tools/rbook/record-dashboard-share.ts:104':
     "A share or a join through the dashboard on a machine whose switch is not on. rbook_project reaches it; dashboard-sharing.test.ts shares and joins with the switch off, and the healthy-store matrix runs without the dashboard's routes.",
-  'src/tools/rbook/record-dashboard-share.ts:151':
+  'src/tools/rbook/record-dashboard-share.ts:152':
     'A share through the dashboard of a project it already referees, with no answer kept from a share that stopped. rbook_project reaches it; dashboard-sharing.test.ts shares a second time only to finish one that stopped.',
-  'src/tools/rbook/record-dashboard-share.ts:163':
+  'src/tools/rbook/record-dashboard-share.ts:164':
     'A share through the dashboard of a project shared directly with members. rbook_project reaches it; dashboard-sharing.test.ts shares one with a member.',
-  'src/tools/rbook/record-dashboard-share.ts:180':
+  'src/tools/rbook/record-dashboard-share.ts:181':
     "A share through the dashboard from a member's copy. rbook_project reaches it; no test shares from one.",
-  'src/tools/rbook/record-dashboard-share.ts:214':
+  'src/tools/rbook/record-dashboard-share.ts:215':
     'A share through the dashboard of a project the dashboard does not know yet. rbook_project reaches it; dashboard-sharing.test.ts shares one before its first upload.',
   'src/tools/rbook/record-membership.ts:279':
     "A role change from a copy that is no authority. The referee library's setRole only, on the authority; no test constructs one.",
@@ -5129,25 +5279,25 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     'A step that failed for a reason no refusal names, such as a first copy written over a file already there. Every library call; remedies.test.ts asks for one.',
   'src/referee/open.ts:287':
     'A call that could not start, such as a bindings folder that cannot be made. Every library call; remedies.test.ts names a file as the folder.',
-  'src/referee/peer.ts:69':
+  'src/referee/peer.ts:70':
     "A request that is not well formed. The dashboard's peer route only; who-may-call.test.ts sends a join request for another replica.",
-  'src/referee/peer.ts:135':
+  'src/referee/peer.ts:136':
     "A caller whose replica is not its account's. The dashboard's peer route only; who-may-call.test.ts presents four strangers.",
-  'src/referee/peer.ts:142':
+  'src/referee/peer.ts:143':
     "A method no caller may run through the peer route. The dashboard's peer route only; who-may-call.test.ts names twelve.",
-  'src/referee/peer.ts:214':
+  'src/referee/peer.ts:215':
     "A join from an account with no active share. The dashboard's peer route only; who-may-call.test.ts joins as an unknown and a removed account.",
-  'src/referee/peer.ts:237':
+  'src/referee/peer.ts:238':
     "A copy whose record protocol is newer than the referee's, at its hello. The dashboard's peer route only; intake.test.ts says hello as one.",
-  'src/referee/peer.ts:251':
+  'src/referee/peer.ts:252':
     "A removed member asking for what members receive. The dashboard's peer route only; who-may-call.test.ts and reference-server.test.ts ask as one.",
-  'src/referee/peer.ts:372':
+  'src/referee/peer.ts:373':
     "A peer call on a referee that has not joined. The dashboard's peer route only; remedies.test.ts says hello before the join and after.",
   'src/referee/views.ts:69':
     'A view of a referee that has not joined. A dashboard page call, never routed; remedies.test.ts asks before the join and after.',
   'src/referee/views.ts:97':
     'The activity feed asked from a change the referee does not hold. A dashboard page call, never routed; remedies.test.ts asks from one, then from the start.',
-  'src/tools/rbook/record-fresh-copy.ts:402':
+  'src/tools/rbook/record-fresh-copy.ts:406':
     "A fresh copy's own schema that the sharing preparation cannot make current, which only a broken install leaves. The referee library and the share's upload build it, never a router; no test constructs one.",
   // The CLI's offline migration is outside the router matrix; its refusal/retry cases run
   // against real SQLite stores and child processes in tests/cli/migrate*.test.ts.
@@ -5262,7 +5412,7 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
   'src/tools/rbook/session-owner.ts:187':
     "A write to, or a close of, a session another copy started. A peer's session arrives only by a merge from another copy; record-derived.test.ts completes and captures into a peer's session on the owner's copy.",
   // ── s96-m13: the sync, sharing and joining refusals a single store cannot reach ──────────────
-  'src/tools/rbook/rbook-db-backfill.ts:138':
+  'src/tools/rbook/rbook-db-backfill.ts:147':
     "The old backfill on a member's copy of a shared record, which never uploads. The healthy-store matrix drives routed calls on one store, and builds no member's copy; record-gates.test.ts joins one and drives the backfill to this refusal.",
   'src/tools/rbook/record-bundle.ts:101':
     'A bundle file that is not JSON. Bundles travel through reasonbook sync --bundle-in, no routed tool; record-refusals.test.ts reads one.',
@@ -5356,7 +5506,7 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     'A successor taken by a store that is no copy of a shared record. Successors are taken inside a direct exchange; record-refusals.test.ts tries one.',
   'src/cli/sync.ts:157':
     'A bundle --for a removed member, a member with no copy, or a name that is none. Bundles travel through reasonbook sync --bundle-out, no routed tool; record-bundle.test.ts asks for each.',
-  'src/tools/rbook/rbook-db-backfill.ts:813':
+  'src/tools/rbook/rbook-db-backfill.ts:822':
     "A purge of the dashboard mirror from a member's copy. The healthy-store matrix drives routed calls on one store, and only a member's copy reaches this; record-gates.test.ts purges from one.",
   'src/tools/rbook/record-admit-successor.ts:125':
     'A join a recovery never saw, for an invite it never saw either. The healthy-store matrix builds no recovery; record-recovery.test.ts drives it, invites the member again, and the copy then re-identifies.',
@@ -5424,13 +5574,13 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
   'src/tools/rbook/client.ts:871':
     'FOREIGN-KEY-constraint mapping inside RbookDatabaseClient. Same shape as :679 — no supported call ' +
     'sequence against a healthy store reaches an FK violation. Needs the fault-injection instrument.',
-  'src/tools/rbook/rbook-context-project-identity.ts:72':
+  'src/tools/rbook/rbook-context-project-identity.ts:73':
     'MEASURED: unreachable by deleting the row. On a write `ensureProjectIdentityRow(client)` runs ' +
     'first and RECREATES it, and on a read (s93-m11) the identity is derived in memory, so the ' +
     'null-identity branch needs the row to be both uncreatable and unreadable — a database fault, ' +
     'not a state this matrix can establish.',
-  'src/tools/rbook/rbook-context-project-identity.ts:141':
-    'Same fault-shaped precondition as :64, one frame later: `getProjectIdentity` returning null ' +
+  'src/tools/rbook/rbook-context-project-identity.ts:154':
+    'Same fault-shaped precondition as :72, one frame later: `getProjectIdentity` returning null ' +
     'AFTER a write that already succeeded.',
 
   // ── DISPATCHER-PREFLIGHT SITES (false-negative item 7: this matrix drives routers, not stdio) ──
@@ -5443,17 +5593,17 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
   // ── CONSTRUCTION-MASKED PRECONDITIONS inside a VALIDATION/STATE-coded site ───────────────────
   // Driveable by CODE, but dispatcher and collab gates mask the triggers from every supported
   // construction the portable m07 instrument can establish. Four former entries moved to E.
-  'src/tools/rbook/rbook-message.ts:1069':
+  'src/tools/rbook/rbook-message.ts:1071':
     'A defensive branch whose own message says the dispatcher should have caught the condition via ' +
     'resolveSenderContext. Reaching it means reaching a state the dispatcher forbids.',
   // ── MASKED BY AN EARLIER REFUSAL ON EVERY PATH THIS MATRIX CAN DRIVE ─────────────────────────
   // s92-m02, s92-m05 and s92-m03 moved these two down (planned-end-date receipt fields; the
   // archive param; a comment on implicit sessions); same branches.
-  'src/tools/rbook/rbook-sprint-complete.ts:673':
+  'src/tools/rbook/rbook-sprint-complete.ts:709':
     'MEASURED: masked. With master_context deleted and the sprint made closable, closeout refuses at ' +
-    'the shared errors.ts contextNotFound BEFORE reaching this sprint-local branch, so :666 is ' +
+    'the shared errors.ts contextNotFound BEFORE reaching this sprint-local branch, so :709 is ' +
     'unreachable while that earlier guard stands.',
-  'src/tools/rbook/rbook-sprint-complete.ts:684': 'Same masking as :666, for project_context.',
+  'src/tools/rbook/rbook-sprint-complete.ts:720': 'Same masking as :709, for project_context.',
 };
 
 const FAULT_SHAPED_DRIVEABLE_RESIDUALS = new Set([
@@ -5472,8 +5622,8 @@ const FAULT_SHAPED_DRIVEABLE_RESIDUALS = new Set([
 
   'src/tools/rbook/client.ts:860',
   'src/tools/rbook/client.ts:871',
-  'src/tools/rbook/rbook-context-project-identity.ts:72',
-  'src/tools/rbook/rbook-context-project-identity.ts:141',
+  'src/tools/rbook/rbook-context-project-identity.ts:73',
+  'src/tools/rbook/rbook-context-project-identity.ts:154',
 ]);
 const INTERNAL_FAULT_RESUME_TRIGGER =
   'any one of these codes reported from the field by an external adopter, or any in-repo incident that reaches one on a healthy store.';

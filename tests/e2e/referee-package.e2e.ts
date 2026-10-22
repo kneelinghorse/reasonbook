@@ -1,16 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-// ABOUTME: s97-m09 (design §R1, R5) — a consumer of the packed tarball imports @aquex/reasonbook/referee under the dashboard's
-// ABOUTME: own compiler settings (module commonjs, node10 resolution), compiles with real types, and requires it at runtime.
+// ABOUTME: A packed @aquex/reasonbook/referee consumer checks all declarations with modern module resolution.
+// ABOUTME: Consumers install only Reasonbook; its public types must bring their own declaration dependencies.
 
 /**
- * Why here: the tarball is the dashboard's input, so the check runs against what npm packs from the
- * built dist/, in the e2e lane that builds first (npm run build && npm run test:e2e-firstrun).
- * The consumer's tsconfig is cmos-dashboard's own (module commonjs, strict, skipLibCheck), with
- * moduleResolution set to node10 as the contract names. `@ts-expect-error` lines prove the types
- * resolved: were they `any`, those directives would themselves fail the compile.
+ * Compile the actual tarball with skipLibCheck: false under Node16 and bundler. The consumer
+ * declares only Reasonbook, never @types/better-sqlite3; any required types must arrive through
+ * the package's production dependencies. Negative checks reject accidental any exports.
  */
 
-import { afterAll, expect, it } from '@jest/globals';
+import { afterAll, beforeAll, expect, it } from '@jest/globals';
 import { spawnSync } from 'child_process';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
@@ -102,15 +100,18 @@ export const wrongHead: StreamHead = { replicaId: 'r', seq: 'one', hash: null };
 export const wrongCaller: Caller = { accountId: 'a' };
 `;
 
+let artifact: ReturnType<typeof installPackedArtifact>;
+beforeAll(() => {
+  artifact = installPackedArtifact(REPO_ROOT, mkTmp);
+}, 600000);
+
 const TSCONFIG = {
   compilerOptions: {
     target: 'ES2022',
-    module: 'commonjs',
-    moduleResolution: 'node10',
     lib: ['ES2022'],
     strict: true,
     esModuleInterop: true,
-    skipLibCheck: true,
+    skipLibCheck: false,
     forceConsistentCasingInFileNames: true,
     resolveJsonModule: true,
     noEmit: true,
@@ -119,39 +120,69 @@ const TSCONFIG = {
   include: ['src/**/*'],
 };
 
-it('compiles a consumer of the packed tarball under commonjs and node10, with real types, and requires it', () => {
-  const artifact = installPackedArtifact(REPO_ROOT, mkTmp);
-  const hash = crypto.createHash('sha256').update(fs.readFileSync(artifact.tarball)).digest('hex');
-  process.stdout.write(`[s97-m09] packed ${path.basename(artifact.tarball)} sha256 ${hash}\n`);
-  fs.mkdirSync(path.join(artifact.hostDir, 'src'), { recursive: true });
-  fs.writeFileSync(path.join(artifact.hostDir, 'src', 'use-referee.ts'), CONSUMER);
-  fs.writeFileSync(path.join(artifact.hostDir, 'tsconfig.json'), JSON.stringify(TSCONFIG, null, 2));
-  const tsc = spawnSync(
-    process.execPath,
-    [path.join(REPO_ROOT, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', artifact.hostDir],
-    { encoding: 'utf8' }
-  );
-  expect({ status: tsc.status, out: `${tsc.stdout}${tsc.stderr}` }).toEqual({ status: 0, out: '' });
+it.each(['node16', 'bundler'] as const)(
+  '%s checks declarations and runtime',
+  (resolution) => {
+    const consumerPackage = JSON.parse(
+      fs.readFileSync(path.join(artifact.hostDir, 'package.json'), 'utf8')
+    );
+    expect(Object.keys(consumerPackage.dependencies)).toEqual(['@aquex/reasonbook']);
+    expect(consumerPackage.devDependencies).toBeUndefined();
+    const hash = crypto
+      .createHash('sha256')
+      .update(fs.readFileSync(artifact.tarball))
+      .digest('hex');
+    process.stdout.write(`[s97-m09] packed ${path.basename(artifact.tarball)} sha256 ${hash}\n`);
+    fs.mkdirSync(path.join(artifact.hostDir, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(artifact.hostDir, 'src', 'use-referee.ts'), CONSUMER);
+    fs.writeFileSync(
+      path.join(artifact.hostDir, 'tsconfig.json'),
+      JSON.stringify(
+        {
+          ...TSCONFIG,
+          compilerOptions: {
+            ...TSCONFIG.compilerOptions,
+            module: resolution === 'node16' ? 'Node16' : 'ESNext',
+            moduleResolution: resolution,
+          },
+        },
+        null,
+        2
+      )
+    );
+    const tsc = spawnSync(
+      process.execPath,
+      [path.join(REPO_ROOT, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', artifact.hostDir],
+      { encoding: 'utf8' }
+    );
+    expect({ status: tsc.status, out: `${tsc.stdout}${tsc.stderr}` }).toEqual({
+      status: 0,
+      out: '',
+    });
 
-  // At runtime Node resolves the subpath through exports; loading it starts no server.
-  const probe = spawnSync(
-    process.execPath,
-    [
-      '-e',
-      `const r = require('@aquex/reasonbook/referee');
+    // At runtime Node resolves the subpath through exports; loading it starts no server.
+    const probe = spawnSync(
+      process.execPath,
+      [
+        '-e',
+        `const r = require('@aquex/reasonbook/referee');
        r.members({ storePath: ${JSON.stringify(path.join(artifact.hostDir, 'none', 'rbook.sqlite'))}, configDir: ${JSON.stringify(path.join(artifact.hostDir, 'config'))}, expectedHead: null })
          .then((outcome) => process.stdout.write(JSON.stringify({ version: r.REFEREE_VERSION, protocol: r.REFEREE_PROTOCOL, code: outcome.result.error.code, head: outcome.head })));`,
-    ],
-    { cwd: artifact.hostDir, encoding: 'utf8', timeout: 60000 }
-  );
-  expect(probe.status).toBe(0);
-  const version = (
-    JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8')) as { version: string }
-  ).version;
-  expect(JSON.parse(probe.stdout)).toEqual({
-    version,
-    protocol: { wire: 1, record: 1 },
-    code: 'REFEREE_NEEDS_RECOVERY',
-    head: null,
-  });
-}, 600000);
+      ],
+      { cwd: artifact.hostDir, encoding: 'utf8', timeout: 60000 }
+    );
+    expect(probe.status).toBe(0);
+    const version = (
+      JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8')) as {
+        version: string;
+      }
+    ).version;
+    expect(JSON.parse(probe.stdout)).toEqual({
+      version,
+      protocol: { wire: 1, record: 1 },
+      code: 'REFEREE_NEEDS_RECOVERY',
+      head: null,
+    });
+  },
+  600000
+);

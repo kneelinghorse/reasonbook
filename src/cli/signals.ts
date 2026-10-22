@@ -31,14 +31,18 @@ function entryLine(entry: SignalEntry): string {
   const notes: string[] = [];
   if (entry.lapseDue) notes.push(`${entry.lapseDue} lapse at the next close`);
   if (entry.byKind) {
-    for (const [kind, n] of Object.entries(entry.byKind)) if (n > 0) notes.push(`${kind} ${n}`);
+    for (const [kind, n] of Object.entries(entry.byKind))
+      if (n > 0) notes.push(`${oneLine(kind)} ${n}`);
     if (entry.unclassified) notes.push(`${entry.unclassified} unclassified`);
   }
   if (entry.undated) notes.push(`${entry.undated} undated`);
   if (entry.sinceUnknown) notes.push(`${entry.sinceUnknown} blocked since an unknown time`);
   if (entry.removed) notes.push('a peer reported this copy removed');
   if (entry.reason) notes.push(oneLine(entry.reason));
-  const ids = entry.ids.slice(0, TEXT_IDS).join(', ');
+  const ids = entry.ids
+    .slice(0, TEXT_IDS)
+    .map((id) => oneLine(id, 100))
+    .join(', ');
   const more = entry.ids.length > TEXT_IDS || (entry.count ?? 0) > entry.ids.length ? ', …' : '';
   return (
     `  ${entry.kind}: ${entry.count}` +
@@ -50,7 +54,7 @@ function entryLine(entry: SignalEntry): string {
 function reportText(report: SignalsReport): string[] {
   const name = report.project.name ?? report.project.id;
   return [
-    `${frameForeignInline(oneLine(name, 60), `proj:${report.project.id}`)}`,
+    `${frameForeignInline(oneLine(name, 60), `proj:${oneLine(report.project.id, 100)}`)}`,
     ...report.signals.map(entryLine),
   ];
 }
@@ -73,7 +77,7 @@ function render(
   for (const store of unreadable)
     lines.push(
       '',
-      `Unreadable: proj:${store.projectId} (${store.storePath}): ${oneLine(store.error)}`
+      `Unreadable: proj:${oneLine(store.projectId, 100)} (${oneLine(store.storePath)}): ${oneLine(store.error)}`
     );
   io.stdout(`${lines.join('\n')}\n`);
   return 0;

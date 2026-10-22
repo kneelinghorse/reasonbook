@@ -334,6 +334,8 @@ describe('s93-m11 class 5 — every stored-timestamp comparison and ordering is 
    */
   const TIME_NAMED = /(^ts$|^since$|^until$|At$|_at$|_date$|Date$|[tT]imestamp$|^cursor$|Cursor$)/;
   const JS_SAFE: Readonly<Record<string, string>> = {
+    'tools/rbook/proposals.ts|recordedAt':
+      'integer array position from chain.findIndex, not a stored timestamp',
     'intelligence/cross-store-query.ts|Cursor': 'a type argument (BinaryHeap<Cursor>), not a value',
     'tools/rbook/rbook-message.ts|hit.fetchedAt': 'epoch milliseconds (Date.now())',
     'tools/rbook/dashboard-client.ts|this.tokenExpiresAt': 'epoch milliseconds',

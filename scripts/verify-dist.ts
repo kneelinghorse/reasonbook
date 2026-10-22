@@ -246,6 +246,14 @@ async function main(): Promise<void> {
       title: 'SV1',
       focus: 'verify',
     });
+    const implicitCapture = h.dataOf(
+      await h.callOk('rbook_session', {
+        action: 'capture',
+        category: 'context',
+        content: 'Concurrent implicit work remains visible during sprint close.',
+        projectRoot: projectDir3,
+      })
+    ) as { sessionId?: string };
     const closeData = h.dataOf(
       await h.callOk('rbook_sprint', {
         action: 'complete',
@@ -254,6 +262,16 @@ async function main(): Promise<void> {
         summary: 'verify:dist reconcile-receipt shape',
       })
     ) as Record<string, unknown>;
+    check(
+      's98-m13: built sprint close names active implicit sessions beside direct sprint membership',
+      typeof implicitCapture.sessionId === 'string' &&
+        Array.isArray(closeData.activeSessionsAtClose) &&
+        Array.isArray(closeData.implicitSessionsAtClose) &&
+        closeData.implicitSessionsAtClose.some(
+          (session: { id?: string }) => session.id === implicitCapture.sessionId
+        ),
+      `implicitSessionsAtClose=${JSON.stringify(closeData.implicitSessionsAtClose)}`
+    );
     const nextStepsSurvey = closeData?.nextStepsSurvey as
       | {
           available?: unknown;
@@ -1179,10 +1197,8 @@ async function main(): Promise<void> {
       `got [${m04Props('rbook_learnings').category?.enum}]`
     );
 
-    // PROBE BEFORE ENCODING (Process Hardening #5). Next-step #501 asserts "an MCP host validating
-    // against the published schema accepts pageSize=2.5 and the server then rejects it." Nothing in
-    // the server rejects it — the consolidated schemas are never parsed. Drive it and RECORD what
-    // actually happens, so the release notes describe an observation rather than an assumption.
+    // s86-m04 proved this was accepted by the server despite the published integer constraint.
+    // s98-m09 now parses the whole schema at dispatch; pin the changed built-server behavior.
     const floatPage = await h.callTool('rbook_learnings', {
       action: 'list',
       pageSize: 2.5,
@@ -1193,9 +1209,13 @@ async function main(): Promise<void> {
         `isError=${floatPage.isError === true}; text="${textOf(floatPage).slice(0, 160).replace(/\n/g, ' ')}"`
     );
     check(
-      'dist: a non-integer pageSize is NOT rejected by the server (only client-side validation exists)',
-      floatPage.isError !== true,
-      "the server rejected it — #501's claim would then be true and the CHANGELOG must say so"
+      'dist: a non-integer pageSize is rejected by whole-schema server validation',
+      floatPage.isError === true &&
+        (floatPage.structuredContent as { error?: { code?: string; field?: string } })?.error
+          ?.code === 'INVALID_PARAMETER' &&
+        (floatPage.structuredContent as { error?: { field?: string } })?.error?.field ===
+          'pageSize',
+      'Expected INVALID_PARAMETER naming pageSize before its handler runs'
     );
 
     // REAL-STORE POSITIVE FIRE on a tmpdir COPY. The widened enum has to work against the live

@@ -173,7 +173,8 @@ describe('rbook_mission_status', () => {
       expect(inProgressMission?.sprint).toBeDefined();
       expect(inProgressMission?.sprint?.id).toBe('sprint-12');
       expect(inProgressMission?.sprint?.title).toBe('Sprint 12 - Reasonbook Tools');
-      expect(inProgressMission?.sprint?.focus).toBe('Implement Reasonbook MCP tools');
+      expect(inProgressMission?.sprint?.focus).toBeNull();
+      expect(result.data?.activeSprint?.focus).toBe('Implement Reasonbook MCP tools');
     });
 
     it('should return null sprint for standalone missions', async () => {

@@ -142,7 +142,7 @@ export function resolveCurrentSprintId(client: RbookDatabaseClient): string | nu
  * stamp: on a store whose sprints are all Completed they hand a dead sprint to the write
  * path, and the row keeps that label forever. Live evidence: this store has 76 sprints and
  * ZERO open; six planning sessions were stamped to sprints completed weeks earlier. An
- * external report (parts-town, 2026-07-30) independently found three months of engagement
+ * external report (2026-07-30) independently found three months of engagement
  * work absorbed by a sprint closed in April — and on a Managed-tier project, which has no
  * sprints by design, there is never an open sprint to catch a session, so the mislabel is
  * guaranteed rather than incidental.

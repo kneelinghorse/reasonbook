@@ -61,8 +61,31 @@ export const MIRROR_ROOT = path.join(
   REPO_ROOT,
   'node_modules',
   '.cache',
-  'rbook-suggestion-mirror'
+  // s98-m08: one mirror per process. Two full suites at once in this checkout rebuilt one shared
+  // folder, and one suite's rmSync met the other's writes (ENOTEMPTY), failing the oracle in both.
+  `rbook-suggestion-mirror-${process.pid}`
 );
+
+/** Removes the mirrors of processes that have ended; a live suite's mirror is left alone. */
+function removeEndedMirrors(): void {
+  const cache = path.dirname(MIRROR_ROOT);
+  if (!fs.existsSync(cache)) return;
+  for (const name of fs.readdirSync(cache)) {
+    const pid = Number(/^rbook-suggestion-mirror-(\d+)$/.exec(name)?.[1]);
+    if (!pid || pid === process.pid) continue;
+    try {
+      process.kill(pid, 0);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ESRCH')
+        fs.rmSync(path.join(cache, name), { recursive: true, force: true });
+    }
+  }
+}
+
+/** The mirror's own folder, removed once its suite is done with it. */
+export function removeSuggestionMirror(): void {
+  fs.rmSync(MIRROR_ROOT, { recursive: true, force: true });
+}
 
 /** The global the transform calls. Declared here so both the sink and the wrapper agree on it. */
 export const SINK_NAME = '__RBOOK_SUGGESTION_SITE__';
@@ -251,6 +274,7 @@ function stripInserted(
  * a harness that silently stops testing the shipped code.
  */
 export function buildSuggestionMirror(): SuggestionMirrorResult {
+  removeEndedMirrors();
   fs.rmSync(MIRROR_ROOT, { recursive: true, force: true });
   fs.mkdirSync(MIRROR_ROOT, { recursive: true });
   // Node resolves `<mirror>/**` as CommonJS regardless of the repo's own package type.

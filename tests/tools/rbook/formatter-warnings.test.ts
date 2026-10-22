@@ -1039,7 +1039,9 @@ describe('s86-m02 Step 1 — the channel renders exactly once, through the real 
         success: false,
         error: { code: 'DB_QUERY_FAILED', message: 'forced failure' },
       });
-      expect(`${fallback.name}: ${failed}`).toBe(`${fallback.name}: ${fallback.failure}`);
+      expect(`${fallback.name}: ${failed}`).toBe(
+        `${fallback.name}: ${fallback.failure}: forced failure`
+      );
     }
   });
 

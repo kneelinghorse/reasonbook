@@ -361,8 +361,9 @@ const EXPECTED_WRITER_KEYS: readonly WriterKeySite[] = sortSourceSites([
   {
     // s93-m01: the hook CLI's ambient switch — a constant key, never the label.
     // s96-m12: down 14 lines (relevant marks a row whose fields are in conflict).
+    // s98-m09: down 12 lines (capture validates before its handler); writer and key unchanged.
     file: 'cli/commands.ts',
-    line: 374,
+    line: 387,
     role: 'ambient',
     callee: 'metadata.execute',
     key: 'AMBIENT_METADATA_KEY',
@@ -395,8 +396,9 @@ const EXPECTED_WRITER_KEYS: readonly WriterKeySite[] = sortSourceSites([
   {
     // s96-m03: down two lines, and read through recordedExecute, which records the change.
     // s96-m12: down one more (its refusal on a member's copy is imported).
+    // s98-m12: down one more for the shared failure-renderer import; the write is unchanged.
     file: 'tools/rbook/rbook-project-update.ts',
-    line: 74,
+    line: 75,
     role: 'rbookProjectUpdate',
     callee: 'metadata.execute',
     key: "'project_type'",

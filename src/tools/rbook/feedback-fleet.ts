@@ -75,7 +75,7 @@ export interface FeedbackFleetOptions {
 /** No de-duplication or subject filter: every matching row in each active registered store counts. */
 export async function readFeedbackFleet(
   options: FeedbackFleetOptions = {}
-): Promise<RbookFeedbackListResult> {
+): Promise<RbookFeedbackListResult<string>> {
   const stores = listRegisteredStoresReadOnly(options.env);
   const limit = options.limit ?? 50;
   const counts = new Map<string, FeedbackCounts>();
@@ -196,9 +196,10 @@ export async function readFeedbackFleet(
       for (const [key, n] of Object.entries(count.countsByKind) as Array<[FeedbackRowKind, number]>)
         countsByKind[key] += n;
   }
-  const entries: AgentFeedbackEntry[] = result.results.map(
+  const entries: AgentFeedbackEntry<string>[] = result.results.map(
     ({ occurred_at: _time, origin_seq: _seq, project_id: source, ...entry }) => ({
       ...entry,
+      id: `${encodeURIComponent(source)}:feedback:${entry.id}`,
       body: frameForeignText(entry.body, provenanceTag(source)),
       toolName: frameForeignText(entry.toolName, provenanceTag(source)),
       resolutionNote:
@@ -220,16 +221,20 @@ export async function readFeedbackFleet(
   };
 }
 
+/** How long the digest's fleet read may take, inside the hook's own deadline. */
+export const FLEET_DIGEST_BUDGET_MS = 100;
+
 /** Section 8 has 100 characters; uncertainty is retained before any count or optional detail. */
 export async function feedbackDigestLine(
   env: NodeJS.ProcessEnv = process.env,
-  deadlineAtMs = Infinity
+  deadlineAtMs = Infinity,
+  budgetMs = FLEET_DIGEST_BUDGET_MS
 ): Promise<string | null> {
   if (Date.now() >= deadlineAtMs) return 'Fleet feedback unavailable: hook deadline reached.';
   try {
     const result = await readFeedbackFleet({
       countOnly: true,
-      deadlineAtMs: Math.min(Date.now() + 100, deadlineAtMs),
+      deadlineAtMs: Math.min(Date.now() + budgetMs, deadlineAtMs),
       env,
     });
     const coverage = result.fleet!;

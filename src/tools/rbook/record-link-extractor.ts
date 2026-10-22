@@ -57,78 +57,96 @@ export function extractRecordLinkCandidates(
   localProjectId: string | null,
   options: { typedOnly?: boolean } = {}
 ): { links: RecordLink[]; discarded: CitationDiscards } {
-  const discarded: CitationDiscards = {
-    unknownTime: 0,
-    foreign: 0,
-    missing: 0,
-    ambiguous: 0,
-    unsupported: 0,
-    notEarlier: 0,
-  };
-  const links = new Map<string, RecordLink>();
-  const local = (row: CitationIdentity): boolean =>
-    row.project_id == null || (localProjectId !== null && row.project_id === localProjectId);
-  const sourceTime = storedTimeMs(source.created_at);
+  return createRecordLinkExtractor(inventory, localProjectId)(fields, source, options);
+}
+
+/** One inventory index for one read; never retained across reads of a changing store. */
+export function createRecordLinkExtractor(
+  inventory: readonly (CitationIdentity & { kind: InventoryKind })[],
+  localProjectId: string | null
+): (
+  fields: readonly string[],
+  source: CitationIdentity,
+  options?: { typedOnly?: boolean }
+) => { links: RecordLink[]; discarded: CitationDiscards } {
   const byId = new Map<number, (CitationIdentity & { kind: InventoryKind })[]>();
-  for (const row of inventory) byId.set(row.id, [...(byId.get(row.id) ?? []), row]);
-  for (const field of fields)
-    for (const candidate of citationCandidates(field)) {
-      const { prefix, id } = candidate;
-      if (prefix === 'blocked' || prefix === 'c' || prefix === 'n') {
-        discarded.unsupported++;
-        continue;
+  for (const row of inventory) {
+    const rows = byId.get(row.id);
+    if (rows) rows.push(row);
+    else byId.set(row.id, [row]);
+  }
+  return (fields, source, options = {}) => {
+    const discarded: CitationDiscards = {
+      unknownTime: 0,
+      foreign: 0,
+      missing: 0,
+      ambiguous: 0,
+      unsupported: 0,
+      notEarlier: 0,
+    };
+    const links = new Map<string, RecordLink>();
+    const local = (row: CitationIdentity): boolean =>
+      row.project_id == null || (localProjectId !== null && row.project_id === localProjectId);
+    const sourceTime = storedTimeMs(source.created_at);
+    for (const field of fields)
+      for (const candidate of citationCandidates(field)) {
+        const { prefix, id } = candidate;
+        if (prefix === 'blocked' || prefix === 'c' || prefix === 'n') {
+          discarded.unsupported++;
+          continue;
+        }
+        if (options.typedOnly && prefix === null) continue;
+        if (!local(source)) {
+          discarded.foreign++;
+          continue;
+        }
+        if (!Number.isFinite(sourceTime)) {
+          discarded.unknownTime++;
+          continue;
+        }
+        const rows = byId.get(id) ?? [];
+        const kind = prefix === 'd' ? 'decision' : prefix === 'l' ? 'learning' : null;
+        if (!kind && rows.some((row) => !Number.isFinite(storedTimeMs(row.created_at)))) {
+          discarded.unknownTime++;
+          continue;
+        }
+        if (!kind && rows.length > 1) {
+          discarded.ambiguous++;
+          continue;
+        }
+        const target = kind ? rows.find((row) => row.kind === kind) : rows[0];
+        if (!target) {
+          discarded.missing++;
+          continue;
+        }
+        if (target.kind !== 'decision' && target.kind !== 'learning') {
+          discarded.unsupported++;
+          continue;
+        }
+        if (!local(target)) {
+          discarded.foreign++;
+          continue;
+        }
+        const targetTime = storedTimeMs(target.created_at);
+        if (!Number.isFinite(targetTime)) {
+          discarded.unknownTime++;
+          continue;
+        }
+        if (targetTime >= sourceTime) {
+          discarded.notEarlier++;
+          continue;
+        }
+        const key = `${target.kind}:${id}`;
+        const resolution = kind ? 'typed' : 'bare';
+        if (links.get(key)?.resolution !== 'typed')
+          links.set(key, {
+            from_kind: source.kind,
+            from_id: source.id,
+            to_kind: target.kind,
+            to_id: id,
+            resolution,
+          });
       }
-      if (options.typedOnly && prefix === null) continue;
-      if (!local(source)) {
-        discarded.foreign++;
-        continue;
-      }
-      if (!Number.isFinite(sourceTime)) {
-        discarded.unknownTime++;
-        continue;
-      }
-      const rows = byId.get(id) ?? [];
-      const kind = prefix === 'd' ? 'decision' : prefix === 'l' ? 'learning' : null;
-      if (!kind && rows.some((row) => !Number.isFinite(storedTimeMs(row.created_at)))) {
-        discarded.unknownTime++;
-        continue;
-      }
-      if (!kind && rows.length > 1) {
-        discarded.ambiguous++;
-        continue;
-      }
-      const target = kind ? rows.find((row) => row.kind === kind) : rows[0];
-      if (!target) {
-        discarded.missing++;
-        continue;
-      }
-      if (target.kind !== 'decision' && target.kind !== 'learning') {
-        discarded.unsupported++;
-        continue;
-      }
-      if (!local(target)) {
-        discarded.foreign++;
-        continue;
-      }
-      const targetTime = storedTimeMs(target.created_at);
-      if (!Number.isFinite(targetTime)) {
-        discarded.unknownTime++;
-        continue;
-      }
-      if (targetTime >= sourceTime) {
-        discarded.notEarlier++;
-        continue;
-      }
-      const key = `${target.kind}:${id}`;
-      const resolution = kind ? 'typed' : 'bare';
-      if (links.get(key)?.resolution !== 'typed')
-        links.set(key, {
-          from_kind: source.kind,
-          from_id: source.id,
-          to_kind: target.kind,
-          to_id: id,
-          resolution,
-        });
-    }
-  return { links: [...links.values()], discarded };
+    return { links: [...links.values()], discarded };
+  };
 }

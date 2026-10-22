@@ -8,6 +8,7 @@
  * @module tools/rbook/rbook-context
  */
 
+import { formatToolFailure } from './format-failure';
 import { z } from 'zod';
 import { createError, RbookErrors } from './errors';
 import { findWrongTypedStringParam } from './param-type-guard';
@@ -689,7 +690,8 @@ export function formatContextForLLM(
     case 'search':
       return formatContextSearchForLLM(result as RbookToolResult<ContextSearchResult>);
     default: {
-      if (!result.success) return '❌ Failed to execute rbook_context';
+      if (!result.success)
+        return formatToolFailure('❌ Failed to execute rbook_context', result.error);
       const lines = ['✓ Context action completed'];
       appendWarnings(lines, result);
       return lines.join('\n');

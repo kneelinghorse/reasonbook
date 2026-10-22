@@ -1,3 +1,5 @@
+// ABOUTME: Closes a sprint atomically and returns its readiness, lifecycle and audit receipt.
+// ABOUTME: Keeps concurrent session visibility and producing-build evidence at the close boundary.
 /**
  * rbook_sprint_complete Tool
  *
@@ -34,8 +36,10 @@ import {
 import {
   checkBuildFreshness,
   isBlockingStaleness,
+  projectChecksBuildFreshness,
   type BuildFreshnessReport,
 } from './build-freshness';
+import { readProjectIdentity } from './project-identity';
 import { getServerHealth, getServerProjectRoot } from '../../server-health';
 import { resolveProjectRootEnhanced } from '../../intelligence/project-resolution';
 import * as path from 'path';
@@ -85,7 +89,7 @@ interface ActiveSessionAtCloseRow {
   captures: string | null;
 }
 
-/** An active session directly scoped to the sprint at the instant close began. */
+/** An active session observed at the instant close began. */
 export interface ActiveSessionAtClose {
   id: string;
   title: string;
@@ -270,6 +274,8 @@ export interface RbookSprintCompleteResult {
   completedAt: string;
   /** Active sessions whose own sessions.sprint_id named this sprint when close began. */
   activeSessionsAtClose: ActiveSessionAtClose[];
+  /** All active implicit sessions in this project at the same locked close boundary. */
+  implicitSessionsAtClose: ActiveSessionAtClose[];
   /** Build timestamp captured by this producing server process, or null without a manifest. */
   startupBuildTime: string | null;
   /** Producer build drift in whole minutes; zero when current, null without both manifests. */
@@ -601,26 +607,56 @@ export async function rbookSprintComplete(
         });
       }
 
-      const activeSessionsAtClose: ActiveSessionAtClose[] = (activeSessionsResult.data ?? []).map(
-        (session) => {
-          // s100-m03: a next step captured since 4.2.1 already has its row, so it is not deferred.
-          const summary = summarizeSessionCaptures(
-            session.captures,
-            nextStepRowLookup(client, session.id)
+      // Implicit sessions span sprints. Report them separately without assigning membership or
+      // ending another process's work. A legacy schema lacks this column; a failed read is not
+      // evidence of its absence and must refuse the close.
+      const sessionColumns = client.getMany<{ name: string }>('PRAGMA table_info(sessions)');
+      if (!sessionColumns.success) {
+        return fail({
+          code: RBOOK_ERROR_CODES.DB_QUERY_FAILED,
+          message: `Failed to inspect the sessions schema: ${sessionColumns.error?.message ?? 'unknown database error'}`,
+          suggestion: 'Check database connectivity and the sessions schema before retrying.',
+        });
+      }
+      const implicitSessionsResult = sessionColumns.data?.some(
+        (column) => column.name === 'implicit'
+      )
+        ? client.getMany<ActiveSessionAtCloseRow>(
+            `SELECT id, title, captures FROM sessions
+             WHERE implicit = 1 AND status = 'active'
+             ORDER BY julianday(started_at) ASC, id ASC`
+          )
+        : createSuccess<ActiveSessionAtCloseRow[]>([]);
+      if (!implicitSessionsResult.success) {
+        return fail({
+          code: RBOOK_ERROR_CODES.DB_QUERY_FAILED,
+          message: `Failed to query active implicit sessions: ${implicitSessionsResult.error?.message ?? 'unknown database error'}`,
+          suggestion: 'Check database connectivity and the sessions schema before retrying.',
+        });
+      }
+
+      const summarizeActiveSession = (session: ActiveSessionAtCloseRow): ActiveSessionAtClose => {
+        // s100-m03: a next step captured since 4.2.1 already has its row, so it is not deferred.
+        const summary = summarizeSessionCaptures(
+          session.captures,
+          nextStepRowLookup(client, session.id)
+        );
+        if (summary.malformed) {
+          warnings.push(
+            `Active session '${session.id}' has malformed or non-array captures JSON; ` +
+              'captureCount and deferredCaptureCount are unknown.'
           );
-          if (summary.malformed) {
-            warnings.push(
-              `Active session '${session.id}' has malformed or non-array captures JSON; ` +
-                'captureCount and deferredCaptureCount are unknown.'
-            );
-          }
-          return {
-            id: session.id,
-            title: session.title,
-            captureCount: summary.captureCount,
-            deferredCaptureCount: summary.deferredCaptureCount,
-          };
         }
+        return {
+          id: session.id,
+          title: session.title,
+          captureCount: summary.captureCount,
+          deferredCaptureCount: summary.deferredCaptureCount,
+        };
+      };
+      const activeSessionsAtClose = (activeSessionsResult.data ?? []).map(summarizeActiveSession);
+      const implicitSessionsAtClose = (implicitSessionsResult.data ?? []).map(
+        summarizeActiveSession
       );
 
       const missionsResult = client.getMany<SprintMissionRow>(
@@ -980,6 +1016,7 @@ export async function rbookSprintComplete(
         summary,
         completedAt,
         activeSessionsAtClose,
+        implicitSessionsAtClose,
         startupBuildTime,
         driftMinutes,
         readiness,
@@ -1038,7 +1075,10 @@ export async function rbookSprintComplete(
       // s84-m05: build-freshness is a build-tier concern — skip it entirely for a general/
       // managed project (no `dist/` to keep fresh). Gate on getProjectType (local store defaults
       // 'build', so it keeps the signal). Both signals (A source-newer, B server-stale) are gated.
-      if (getProjectType(client) === 'build') {
+      if (
+        getProjectType(client) === 'build' &&
+        projectChecksBuildFreshness(readProjectIdentity(client))
+      ) {
         try {
           const freshnessRoot = await resolveFreshnessProjectRoot(params.projectRoot);
           if (freshnessRoot) {
@@ -1911,12 +1951,12 @@ export function formatSprintCompleteForLLM(
       : `${data.startupBuildTime}; drift ${
           data.driftMinutes === null ? 'unavailable' : `${data.driftMinutes} minute(s)`
         }`;
-  const activeSessionsAtClose =
-    data.activeSessionsAtClose.length === 0
-      ? ['Active sessions at close: none']
+  const sessionLines = (label: string, sessions: ActiveSessionAtClose[]): string[] =>
+    sessions.length === 0
+      ? [`${label}: none`]
       : [
-          `Active sessions at close: ${data.activeSessionsAtClose.length}`,
-          ...data.activeSessionsAtClose.map(
+          `${label}: ${sessions.length}`,
+          ...sessions.map(
             (session) =>
               `  - ${session.id} (${session.title}): ` +
               `${session.captureCount === null ? 'unknown' : session.captureCount} capture(s), ` +
@@ -1943,7 +1983,8 @@ export function formatSprintCompleteForLLM(
     `Pre-close snapshot (undo handle): ${data.lifecycle.preCloseSnapshotId ?? 'FAILED — this close is not reversible from a snapshot'}`,
     `DB snapshot: ${data.lifecycle.dbSnapshotId ?? 'failed'}`,
     `Runtime build at close: ${runtimeBuildAtClose}`,
-    ...activeSessionsAtClose,
+    ...sessionLines('Active sessions at close', data.activeSessionsAtClose),
+    ...sessionLines('Implicit sessions at close', data.implicitSessionsAtClose),
     '',
     `master_context: ${data.contexts.masterContext.beforeSize.sizeKb.toFixed(2)}KB → ${data.contexts.masterContext.afterSize.sizeKb.toFixed(2)}KB, trimmed ${data.contexts.masterContext.nextStepsCleared} oldest next-step item(s) by count`,
     `project_context: ${data.contexts.projectContext.beforeSize.sizeKb.toFixed(2)}KB → ${data.contexts.projectContext.afterSize.sizeKb.toFixed(2)}KB, trimmed ${data.contexts.projectContext.nextStepsCleared} oldest next-step item(s) by count`,

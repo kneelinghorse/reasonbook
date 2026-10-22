@@ -388,9 +388,11 @@ export function formatSharedProjectForLLM(
       }
       if ('plan' in data) {
         const { plan } = data as unknown as { plan: DashboardSharePlan };
+        const omittedRows = rows(plan.stays);
+        const omitted = `${omittedRows === 'nothing' ? '' : `${omittedRows}, `}the search index and the other context documents`;
         lines.push(
           `Dry run: sharing through ${plan.dashboard} sends the shared record: ${rows(plan.up)}${'record_changes' in plan.up ? '' : ', with the change log sharing starts for it'}.`,
-          `The shared record leaves out ${rows(plan.stays)}, the search index and the other context documents. Until the handover, this copy's uploads to ${plan.dashboard} send its whole store, those included, as its registration there did; after it, they stop.`,
+          `The shared record leaves out ${omitted}. Until the handover, this copy's uploads to ${plan.dashboard} send its whole store, those included, as its registration there did; after it, they stop.`,
           'Nothing was sent. Show this to the person; send it with rbook_project(action="share", via="dashboard", confirm=true) only on their word.'
         );
         break;
@@ -404,7 +406,7 @@ export function formatSharedProjectForLLM(
     case 'move': {
       const moved = data as unknown as MovedBack;
       lines.push(
-        `✓ Moved back from ${moved.dashboard}: this copy holds the record again (move ${moved.epoch}), and the dashboard archived its copy. Members sync with this copy directly from now on, over SSH or bundles.`
+        `✓ Moved back from ${moved.dashboard}: this copy holds the record again (move ${moved.epoch}), and the dashboard archived its copy. Catch each member's copy up from this copy over SSH or bundles; its operator then confirms the move with reasonbook sync --confirm-owner. After confirmation it syncs directly with this copy.`
       );
       break;
     }

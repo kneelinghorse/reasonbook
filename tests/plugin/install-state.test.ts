@@ -14,7 +14,7 @@ describe('plugin installation readiness', () => {
 
   function run(body: string) {
     const result = node(`import fs from 'node:fs'; import path from 'node:path';
-      import {createContext, validateInstall, writeMarker, findReady, writePointer, validatePackage, findPathPackage} from ${moduleUrl('install-state.mjs')};
+      import {createContext, validateInstall, writeMarker, findReady, writePointer, validatePackage, findPathPackage, PATH_CHECK_BUDGET_MS} from ${moduleUrl('install-state.mjs')};
       ${contextCode(root)} ${body}`);
     expect(result.stderr).toBe('');
     expect(result.status).toBe(0);
@@ -93,19 +93,24 @@ describe('plugin installation readiness', () => {
     ).toEqual({ former: false, current: true });
   });
 
-  test('a valid CLI that loads beyond 200ms remains eligible within the shared 400ms budget', () => {
+  test('a valid CLI that loads beyond 200ms remains eligible within the shared budget', () => {
+    // s98-m08 (#660 item 4): the check gets room load cannot spend. With the production 400 ms a
+    // loaded suite spent the budget on process startup, and the test accepted the refusal without
+    // testing this case; the next test checks the 400 ms itself.
     const result =
       run(`${packageCode('ctx.installRoot')} const bin=path.join(ctx.dataRoot,'bin'); fs.mkdirSync(bin);
       const cli=path.join(ctx.installRoot,'node_modules/@aquex/reasonbook/dist/bin.js');
       fs.writeFileSync(cli,'setTimeout(()=>console.log('+JSON.stringify('reasonbook '+ctx.version)+'),225)');
       fs.symlinkSync(cli,path.join(bin,'reasonbook'));
-      const started=Date.now();const ready=!!findPathPackage(ctx,{PATH:bin});
+      const started=Date.now();const ready=!!findPathPackage(ctx,{PATH:bin},20000);
       console.log(JSON.stringify({ready,elapsed:Date.now()-started}));`);
-    // Under a loaded full suite, process startup alone can spend the 400ms; a refusal then is the
-    // budget's. A refusal before the budget ran out is the per-step cutoff this test exists to catch.
-    expect({ readyOrBudgetSpent: result.ready || result.elapsed >= 400 }).toEqual({
-      readyOrBudgetSpent: true,
-    });
+    // A refusal here is the per-step cutoff this test exists to catch.
+    expect(result.ready).toBe(true);
+    expect(result.elapsed).toBeGreaterThanOrEqual(225);
+  });
+
+  test('the production check shares one 400ms budget', () => {
+    expect(run('console.log(JSON.stringify(PATH_CHECK_BUDGET_MS))')).toBe(400);
   });
 
   test.each(['mismatch', 'timeout'])(

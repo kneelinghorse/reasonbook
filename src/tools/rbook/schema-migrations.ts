@@ -2401,7 +2401,7 @@ function occurredAtExpr(client: RbookDatabaseClient, table: FirehoseTable): stri
  * record an identity, so the fallback only ever fired on misconfigured or test stores. Measured
  * with immutable SQLite inspection across every Reasonbook store on this machine (#1038): 45 stores,
  * 32 resolving via a recorded identity, 13 collapsing to the fallback label, 0 unclassifiable.
- * The fallback fires on thirteen, and it has already fired in production — derekn.com's store
+ * The fallback fires on thirteen, and it has already fired in production — one measured store
  * carries 217 rows stamped with the label across six tables.
  *
  * WHAT IS UNCHANGED: the fallback itself. Ruling #736 — fall back and warn rather than throw —

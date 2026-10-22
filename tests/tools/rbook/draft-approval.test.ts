@@ -963,6 +963,18 @@ describe('the approval chain settles through declined, answered and recorded dra
     expect(decisions()).toBe(2);
   });
 
+  it('a follow-on line recorded first leaves the earlier approved choice recordable', async () => {
+    await proposeAndAnswer('approved');
+    await stop('s-one', reply(REVISED));
+    await say('s-one', 'how would merging work?');
+    await stop('s-one', `Git merges line by line.\n\nWould record: ${FOLLOW_ON}`);
+    await say('s-one', 'approved');
+    expect((await record({ content: FOLLOW_ON, fromDraft: 'P3' })).success).toBe(true);
+    expect(proposal(1).outcome).toBe('pending');
+    expect((await record({ content: DRAFT, fromDraft: 'P1' })).success).toBe(true);
+    expect(decisions()).toBe(2);
+  });
+
   it('a refusal names where the chain stands: its end recorded, or its revision declined', async () => {
     await proposeAndAnswer('approved');
     await stop('s-one', reply(REVISED));

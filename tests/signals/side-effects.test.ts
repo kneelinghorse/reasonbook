@@ -200,6 +200,7 @@ describe('the signals library has no side effects of its own (s97-m01)', () => {
       [
         'src/server-version.ts',
         'src/signals/brief.ts',
+        'src/signals/brief-text.ts',
         'src/signals/feedback-kinds.ts',
         'src/signals/index.ts',
         'src/signals/read-signals.ts',
@@ -220,6 +221,7 @@ describe('the signals library has no side effects of its own (s97-m01)', () => {
         'src/tools/rbook/store-key.ts',
         'src/tools/rbook/stored-time.ts',
         'src/tools/rbook/terminal-status.ts',
+        'src/utils/one-line.ts',
       ].sort()
     );
     expect(outside).toEqual([]);

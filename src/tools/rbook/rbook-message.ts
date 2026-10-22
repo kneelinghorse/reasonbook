@@ -11,6 +11,7 @@
  * @module tools/rbook/rbook-message
  */
 
+import { formatToolFailure } from './format-failure';
 import { normalizeAddressScheme } from '../../intelligence/legacy-compat';
 import { getSetting } from '../../intelligence/legacy-compat';
 import { z } from 'zod';
@@ -428,6 +429,7 @@ export const rbookMessageToolDefinition = {
     'get (full body + notes + evidence for one message by id), ' +
     'respond (accept/decline/reply to a message), ack (mark a pending message read/acknowledged), ' +
     'directory (discover addressable projects), whoami (diagnose sender attribution). ' +
+    'Each message accepts one response; send a new message for a follow-up. ' +
     'Send auto-detects senderProjectId, normalizes addresses (spaces→hyphens, lowercase), ' +
     'and validates target against the project directory before sending. ' +
     'Needs a dashboard sign-in: run rbook_auth(action="login_init"), then login_complete. ' +
@@ -525,7 +527,7 @@ function isMessageAction(value: string): value is RbookMessageAction {
 /**
  * Normalize a rbook:// address: lowercase, replace spaces with hyphens,
  * collapse multiple hyphens, trim whitespace from segments.
- * Handles input like "rbook://Derek/Reasonbook Dashboard" → "rbook://derek/cmos-dashboard".
+ * Handles input like "rbook://Alex/Example Project" → "rbook://alex/example-project".
  */
 function normalizeAddress(address: string): string {
   address = normalizeAddressScheme(address);
@@ -911,7 +913,7 @@ async function loadDirectoryForAmbiguity(client: DashboardClient): Promise<Direc
   return projects;
 }
 
-/** `'CMOS-MCP Pro' (rbook://derek/cmos-mcp-pro)` — name when the directory knows one, address always. */
+/** `'Example Project' (rbook://alex/example-project)` — name when the directory knows one, address always. */
 function labelForAddress(projects: readonly DirectoryProject[], address: string): string {
   const match = projects.find(
     (p) => normalizeAddressScheme(p.address) === normalizeAddressScheme(address)
@@ -973,7 +975,7 @@ async function getSuggestedAddresses(
     return [];
   }
 
-  // Extract the project slug from the target (e.g. "cmos-dashboard" from "rbook://derek/cmos-dashboard")
+  // Extract the project slug from the target (e.g. "example-project" from "rbook://alex/example-project")
   const parts = targetAddress.replace('rbook://', '').split('/');
   const targetSlug = parts[1] ?? '';
   const targetOwner = parts[0] ?? '';
@@ -1788,8 +1790,8 @@ function formatWhoamiForLLM(result: RbookToolResult<MessageWhoamiResult>): strin
     lines.push(`  Next outbound send would attribute as: ${sender}${senderId}`);
   } else {
     lines.push('  Next outbound send would fail closed');
-    if (result.error?.message) {
-      lines.push(`  Error: ${result.error.message}`);
+    if (result.error) {
+      lines.push(formatToolFailure('  Error', result.error));
     }
   }
 
@@ -1866,7 +1868,8 @@ export function formatMessageForLLM(
     case 'whoami':
       return formatWhoamiForLLM(result as RbookToolResult<MessageWhoamiResult>);
     default: {
-      if (!result.success) return 'Failed to execute rbook_message';
+      if (!result.success)
+        return formatToolFailure('Failed to execute rbook_message', result.error);
       const lines = ['Message action completed'];
       appendWarnings(lines, result);
       return lines.join('\n');

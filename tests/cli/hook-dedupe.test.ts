@@ -19,6 +19,10 @@ let tmp: string;
 let root: string;
 let dbPath: string;
 let env: NodeJS.ProcessEnv;
+let psTimeouts: Array<number | undefined>;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const childProcess = require('child_process') as typeof import('child_process');
+const realExecFileSync = childProcess.execFileSync;
 beforeEach(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'rbook-hook-dedupe-'));
   root = path.join(tmp, 'project');
@@ -30,8 +34,28 @@ beforeEach(() => {
     CLAUDE_PID: String(process.pid),
   };
   verb.mockReset().mockResolvedValue('Delivered context.');
+  // s98-m08 (#660 item 5), s96-m10's #645 pattern: the harness epoch reads real ps, under a 10 s
+  // timeout, because a loaded machine ran it past the production 100 ms, the epoch went unproven,
+  // and a losing source delivered its context. The production timeout is recorded first and
+  // asserted after each test, outside the catch paths it would fall into.
+  psTimeouts = [];
+  jest.spyOn(childProcess, 'execFileSync').mockImplementation(((file, args, options) => {
+    if (file !== '/bin/ps') return realExecFileSync(file, args, options);
+    psTimeouts.push(options?.timeout);
+    return realExecFileSync(file, args, { ...options, timeout: 10_000 });
+  }) as typeof childProcess.execFileSync);
 });
-afterEach(() => fs.rmSync(tmp, { recursive: true, force: true }));
+afterEach(() => {
+  try {
+    for (const timeout of psTimeouts) {
+      expect(timeout).toBeGreaterThan(0);
+      expect(timeout).toBeLessThanOrEqual(100);
+    }
+  } finally {
+    jest.restoreAllMocks();
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
 async function hook(
   event: string,
   source = 'rbook-plugin',
@@ -56,6 +80,8 @@ async function hook(
     stderr: (text) => {
       stderr.push(text);
     },
+    // Room load cannot spend (#1558): a slow ps would otherwise spend the prompt hook's 800 ms.
+    startedAtMs: Date.now() + 20_000,
     ...override,
   });
   return { code, stdout, stderr };
@@ -73,6 +99,8 @@ it('a losing source has no output, telemetry or verb effects, even after duplica
   await hook('session-end');
   expect((await hook('session-start', 'other-adapter')).stdout).toBe('');
   expect(verb).toHaveBeenCalledTimes(3);
+  // The election ran on real ps, so the production timeout checked after each test was seen.
+  expect(psTimeouts.length).toBeGreaterThan(0);
 });
 it('all winning compact and resume calls remain eligible even with the previous prompt ID', async () => {
   for (const source of ['compact', 'compact', 'resume', 'resume']) {

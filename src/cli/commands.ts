@@ -10,6 +10,7 @@ import * as path from 'path';
 import {
   AMBIENT_METADATA_KEY,
   AMBIENT_MODES,
+  oneLine,
   parseArgs,
   readAmbient,
   resolveCliProject,
@@ -227,7 +228,7 @@ async function relevant(
     `${items
       .map(
         (item) =>
-          `#${item.id} ${item.kind} [${item.status}] ${conflictMark(item.conflicts)}— ${item.text}`
+          `#${item.id} ${item.kind} [${oneLine(item.status)}] ${conflictMark(item.conflicts)}— ${oneLine(item.text)}`
       )
       .join('\n')}\n` +
       'Read one in full with rbook_decisions(action="show") or rbook_learnings(action="show").\n' +
@@ -257,15 +258,27 @@ async function capture(
   const owner = await import('../tools/rbook/session-owner');
   const context = await import('../tools/rbook/tool-call-context');
   const sessions = await import('../tools/rbook/rbook-session');
+  const { validateRbookArguments } = await import('../tools/rbook/tool-validation');
+  const args = {
+    action: 'capture',
+    category,
+    content,
+    ...(flags.mission && flags.mission !== 'true' ? { missionId: flags.mission } : {}),
+    projectRoot: store.projectRoot,
+  };
+  const checked = validateRbookArguments(sessions.rbookSessionSchema, args);
+  if (!checked.success) {
+    observeCliResult(io, 'rbook_session', args, checked);
+    if (flags.format === 'json') io.stdout(`${JSON.stringify(checked)}\n`);
+    else
+      io.stderr(
+        `reasonbook capture: ${checked.error!.message}. ${checked.error!.suggestion ?? ''}`
+      );
+    return 1;
+  }
   owner.setExternalSessionOwner(rawSessionId);
   const result = await context.captureToolCall('write', () =>
-    sessions.rbookSession({
-      action: 'capture',
-      category: category as 'decision' | 'learning' | 'constraint' | 'context' | 'next-step',
-      content,
-      ...(flags.mission && flags.mission !== 'true' ? { missionId: flags.mission } : {}),
-      projectRoot: store.projectRoot,
-    })
+    sessions.rbookSession(checked.data! as Parameters<typeof sessions.rbookSession>[0])
   );
   observeCliResult(io, 'rbook_session', { action: 'capture', category, content }, result.value);
   io.stdout(`${sessions.formatSessionForLLM('capture', result.value)}\n`);
@@ -441,10 +454,17 @@ async function init(flags: Readonly<Record<string, string>>, io: CliIo): Promise
     return 1;
   }
   const { rbookProjectInit } = await import('../tools/rbook/rbook-project-init');
+  // An unnamed new record takes its folder's name; re-init keeps stored/restored identity.
+  const projectName =
+    flags.name && flags.name !== 'true'
+      ? flags.name
+      : policy.storeAt(target)
+        ? undefined
+        : path.basename(target);
   const result = await rbookProjectInit(
     {
       projectRoot: target,
-      ...(flags.name && flags.name !== 'true' ? { projectName: flags.name } : {}),
+      ...(projectName !== undefined ? { projectName } : {}),
       ...(level ? { projectType: rules.LEVEL_TIERS[level as keyof typeof rules.LEVEL_TIERS] } : {}),
     },
     { hooks: flags['no-hooks'] !== 'true', cliSource: explicit ? 'explicit' : 'cwd' }

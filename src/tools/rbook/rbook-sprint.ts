@@ -8,6 +8,7 @@
  * @module tools/rbook/rbook-sprint
  */
 
+import { formatToolFailure } from './format-failure';
 import { z } from 'zod';
 import { createError, RbookErrors } from './errors';
 import { findWrongTypedStringParam } from './param-type-guard';
@@ -467,7 +468,8 @@ export function formatSprintForLLM(
     case 'analytics':
       return formatSprintAnalyticsForLLM(result as RbookToolResult<SprintAnalyticsResult>);
     default: {
-      if (!result.success) return '❌ Failed to execute rbook_sprint';
+      if (!result.success)
+        return formatToolFailure('❌ Failed to execute rbook_sprint', result.error);
       const lines = ['✓ Sprint action completed'];
       appendWarnings(lines, result);
       return lines.join('\n');

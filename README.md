@@ -41,7 +41,7 @@ Requires Node.js 20 or newer.
 1. Install the pinned CLI:
 
    ```sh
-   npm install -g @aquex/reasonbook@4.3.0
+   npm install -g @aquex/reasonbook@4.4.0
    ```
 
    Ensure the global npm bin directory is on your PATH. If the former package is installed globally, run `npm uninstall -g @aquex/cmos-mcp` first. Version 4 provides only the `reasonbook` command; update scripts and MCP configurations that use the old command.
@@ -159,8 +159,10 @@ upload of the **whole file**, including pending and declined proposals. For a re
 MCP tool writes also schedule an upload after 5 quiet minutes or 30 minutes of continuous writes;
 the next poll starts it within 60 seconds when no upload lease or failure backoff blocks it.
 Transfer time follows. See the timing and failure details under [Optional: hosted dashboard](#optional-hosted-dashboard).
-`RBOOK_CHECKPOINT_SYNC=off` stops automatic uploads, not requested network actions or
-shared-record exchanges. Implicit process-exit closes do not upload. A project shared through
+`RBOOK_CHECKPOINT_SYNC=off` stops automatic uploads and manual `rbook_db(action="backfill")`
+uploads. Other requested network actions and shared-record exchanges remain available.
+Logging out leaves project keys valid, so manual backfill can still upload with one unless this
+switch is off. Implicit process-exit closes do not upload. A project shared through
 reasonbook.ai keeps uploading its whole file until the share hands its record to the dashboard's
 referee copy, then sends only the shared record's changes until it is moved back. [Full network and data disclosure](SECURITY.md#outbound-network).
 
@@ -188,7 +190,7 @@ Recommended: a global install of this release. The server then starts from disk,
 lookup on launch:
 
 ```bash
-npm install -g @aquex/reasonbook@4.3.0
+npm install -g @aquex/reasonbook@4.4.0
 ```
 
 If the former package is installed globally, run `npm uninstall -g @aquex/cmos-mcp` first. Version 4 provides only the `reasonbook` command; update scripts and MCP configurations that use the old command.
@@ -197,7 +199,7 @@ Or run it on demand with `npx`. Pin the version and prefer the local cache: an u
 can look the package up again on every launch.
 
 ```bash
-npx --prefer-offline -y @aquex/reasonbook@4.3.0
+npx --prefer-offline -y @aquex/reasonbook@4.4.0
 ```
 
 Semantic (vector) search is optional. Without it, retrieval is keyword-only, and the install is
@@ -216,7 +218,7 @@ arguments (keep `--project-root` where an example has it).
 ### Claude Code
 
 ```bash
-claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.3.0"]}'
+claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.4.0"]}'
 ```
 
 ### Claude Desktop
@@ -231,7 +233,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
       "args": [
         "--prefer-offline",
         "-y",
-        "@aquex/reasonbook@4.3.0",
+        "@aquex/reasonbook@4.4.0",
         "--project-root",
         "/absolute/path/to/your/project"
       ]
@@ -255,7 +257,7 @@ Add to `~/.cursor/mcp.json`:
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.3.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.4.0"]
     }
   }
 }
@@ -268,7 +270,7 @@ Add to `~/.cursor/mcp.json`:
   "context_servers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.3.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.4.0"]
     }
   }
 }
@@ -289,7 +291,7 @@ your terminal PATH, so the terminal route needs the standalone Claude CLI.
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.3.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.4.0"]
     }
   }
 }
@@ -303,8 +305,8 @@ Project tools work on a folder that has a Reasonbook database, so a new project 
 rbook_project(action="init", projectRoot="/absolute/path/to/your/project")
 ```
 
-`init` creates `rbook/db/rbook.sqlite`, the seed files, and an `AGENTS.md` at the project root (unless
-one is already there). In a folder without that database, the tools that read or write a project
+`init` creates `rbook/db/rbook.sqlite`, the seed files, an `AGENTS.md` and a `CLAUDE.md` that imports it at the project root
+(keeping either file if it already exists). In a folder without that database, the tools that read or write a project
 refuse and name `init`; registry and sign-in actions need no project.
 
 Then run `rbook_agent_onboard` once: on a new project it walks the first-session setup. Open every
@@ -322,23 +324,23 @@ The full walkthrough — install → config → init → first sprint/mission/se
 
 Reasonbook exposes 15 consolidated tools. 12 use an `action` parameter to select the operation; `rbook_agent_onboard`, `rbook_status` and `rbook_review` take no `action`. [TOOL_REFERENCE.md](TOOL_REFERENCE.md) publishes one parameter table per action, so it says which parameters actually apply to a given call.
 
-| Tool                       | Purpose                                                                       |
-| -------------------------- | ----------------------------------------------------------------------------- |
-| `rbook_review`             | Session digest: identity, current sprint, work queue, decisions               |
-| `rbook_agent_onboard`      | Cold-start payload: identity, active sprint, missions, decisions, suggestions |
-| `rbook_status`             | Diagnostic snapshot: rbook_address, dashboard_url, auth_tier, sync timestamps |
-| `rbook_mission`            | Missions — create, update, query, and link dependencies                       |
-| `rbook_mission_transition` | Mission state machine — start, complete, block, unblock, drop, defer          |
-| `rbook_sprint`             | Sprints — CRUD, closeout, retro, and cross-sprint analytics                   |
-| `rbook_session`            | Work sessions (optional) — start, capture insights, complete, list, search    |
-| `rbook_context`            | Master/project context — view, update, condense, snapshot, and search         |
-| `rbook_decisions`          | Strategic decisions — record, show, list, search, update, staleness review    |
-| `rbook_learnings`          | Cross-cutting learnings — list, search, show, update, and reaffirm            |
-| `rbook_db`                 | Database ops — health, snapshot/restore, sync, and a context-snapshot prune   |
-| `rbook_project`            | Projects — init, register, list, validate; share, invite, join, members, sync |
-| `rbook_auth`               | Dashboard credential lifecycle — device-code login, rotate, revoke            |
-| `rbook_message`            | Cross-project messaging (requires the hosted dashboard)                       |
-| `rbook_feedback`           | Agent-feedback channel — list, triage, resolve, archive                       |
+| Tool                       | Purpose                                                                         |
+| -------------------------- | ------------------------------------------------------------------------------- |
+| `rbook_review`             | Session digest: identity, sprint, work, decisions, other projects' signals      |
+| `rbook_agent_onboard`      | Cold-start payload: identity, active sprint, missions, decisions, suggestions   |
+| `rbook_status`             | Diagnostic snapshot: rbook_address, dashboard_url, auth_tier, sync timestamps   |
+| `rbook_mission`            | Missions — create, update, query, and link dependencies                         |
+| `rbook_mission_transition` | Mission state machine — start, complete, block, unblock, drop, defer            |
+| `rbook_sprint`             | Sprints — CRUD, closeout, retro, and cross-sprint analytics                     |
+| `rbook_session`            | Work sessions (optional) — start, capture insights, complete, list, search      |
+| `rbook_context`            | Master/project context — view, update, condense, snapshot, and search           |
+| `rbook_decisions`          | Strategic decisions — record, show, list, search, update, staleness review      |
+| `rbook_learnings`          | Cross-cutting learnings — list, search, show, update, and reaffirm              |
+| `rbook_db`                 | Database ops — health, snapshot/restore, backfill, and a context-snapshot prune |
+| `rbook_project`            | Projects — init, register, list, validate; share, invite, join, members, sync   |
+| `rbook_auth`               | Dashboard credential lifecycle — device-code login, rotate, revoke              |
+| `rbook_message`            | Cross-project messaging (requires the hosted dashboard)                         |
+| `rbook_feedback`           | Agent-feedback channel — list, triage, resolve, archive                         |
 
 See **[TOOL_REFERENCE.md](TOOL_REFERENCE.md)** for the exact per-action parameter reference — it is generated from the tool definitions on every build, so it never drifts from the shipped surface.
 
@@ -390,7 +392,7 @@ Then run `rbook_auth(action="login_init")` from your agent. It returns a one-tim
 
 With a stored user-scoped dashboard key or legacy environment credentials, explicit `rbook_session(action="complete")` and `rbook_sprint(action="complete")` calls attempt a background upload and may register the project first. For a registered project, an MCP tool call that actually writes its store also schedules an upload. It becomes due after 5 quiet minutes or 30 minutes of continuous writes, and starts within the next 60 seconds when no upload lease or failure backoff blocks it. A running server must have opened the project; work owed by a short-lived process survives for the next server. Each upload sends a consistent snapshot of the whole SQLite file, including pending, declined and expired proposals. Transfer time is additional, and concurrent servers share one upload lease per project.
 
-Upload results and failures appear in `rbook_status` and `rbook_review`. HTTP 401, 402 or 403 pauses automatic retries until an explicit close succeeds. A failed upload does not fail the local write or close. Implicit process-exit closes do not upload. Set `RBOOK_CHECKPOINT_SYNC=off` in the server environment to disable automatic uploads; it does not disable explicit sync, messaging, sign-in, shared-record exchanges or other requested network actions. See [SECURITY.md](SECURITY.md#outbound-network).
+Upload results and failures appear in `rbook_status` and `rbook_review`. HTTP 401, 402 or 403 pauses automatic retries until an explicit close succeeds. A failed upload does not fail the local write or close. Implicit process-exit closes do not upload. Set `RBOOK_CHECKPOINT_SYNC=off` in the server environment to disable automatic uploads and manual backfill; it does not disable explicit sync, messaging, sign-in or shared-record exchanges. Logging out revokes a user-scoped key, leaving project keys valid for requested dashboard calls. See [SECURITY.md](SECURITY.md#outbound-network).
 
 ## Project resolution
 
@@ -534,7 +536,7 @@ Every tool returns a uniform envelope:
 - SQLite is the source of truth; the dashboard holds the owner's uploaded mirror. Shared copies exchange their record with `reasonbook sync`, through reasonbook.ai, over SSH or by bundle.
 - Through reasonbook.ai, moving a project back was measured with one member and automatic syncs off: the owner's copy caught the member's copy up over SSH before that copy had synced with the dashboard since the move. With automatic syncs on, the member's copy may well sync first. Not measured: a member's copy that syncs with the dashboard first, whose sync then says to sync with the owner's copy over SSH or with a bundle, and a member's copy the owner's machine cannot reach over SSH. The dashboard's activity feed shows 50 entries a page by default and at most 100, and its decisions page 20 decisions a page; older entries are on later pages.
 - A project shared through reasonbook.ai changes through its members' agents; the dashboard's pages show the record but do not change it. If reasonbook.ai loses its copy of a shared project, sharing through it stops and this release has no step that shares that project through it again; every member keeps their own copy. After a move back, sharing the project through reasonbook.ai again cannot include the people it was shared with: the share refuses a project that still has members, and once they are removed, the new referee copy refuses their usernames.
-- A share through reasonbook.ai refuses, naming each copy, while the owner still uses another copy of the project, such as one on a second machine, since that copy could no longer sync. The old `rbook_db(action="clone")` and `rbook_db(action="pull")` actions refuse with `LEGACY_SYNC_RETIRED`; their action values remain until 5.0.0.
+- A share through reasonbook.ai refuses over the owner's other copies it can identify from their own recorded changes or a saved SSH route, naming each. A copy that has only synced, written no changes and has no saved route can still be stranded by a share. Counting those copies and a step to set a copy aside are planned together for 4.5.0. The old `rbook_db(action="clone")` and `rbook_db(action="pull")` actions refuse with `LEGACY_SYNC_RETIRED`; their action values remain until 5.0.0.
 
 ## Documentation
 

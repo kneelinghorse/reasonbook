@@ -75,6 +75,16 @@ export async function readDashboardUploadStatus(projectRoot: string): Promise<st
     if (!projectId) return null;
     const state = graph.readUploadState(projectId);
     if (!state) return null;
+    // Registration alone is not an upload attempt. Keep actual debt and failure history visible.
+    if (
+      state.lastSyncedAt === null &&
+      state.lastAttemptAt === null &&
+      state.firstOwedAt === null &&
+      state.lastOutcome === null &&
+      state.lastError === null &&
+      !state.blocked
+    )
+      return null;
     const last = state.lastSyncedAt === null ? 'never' : new Date(state.lastSyncedAt).toISOString();
     return (
       `Dashboard upload: last success ${last}` +

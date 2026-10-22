@@ -2,7 +2,7 @@
 // ABOUTME: Shared lease and consistent SQLite snapshot for explicit and automatic dashboard uploads;
 // ABOUTME: keeps pending work across failure or exit, and removes active or day-old abandoned copies.
 
-import { LEGACY, isUploadCopyName, resolveRecordPaths } from '../../intelligence/legacy-compat';
+import { LEGACY, resolveRecordPaths } from '../../intelligence/legacy-compat';
 import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -12,6 +12,12 @@ import type { UploadOutcome } from '../../intelligence/project-upload-state';
 import { isSameDirectory } from '../../intelligence/resolution-policy';
 import { RbookDatabaseClient } from './client';
 import { isMembersCopy } from './record-membership';
+import {
+  sweepStaleRecordCopies as sweepStaleUploadCopies,
+  type RecordCopySweepOptions as UploadSweepOptions,
+} from './record-temp-copies';
+
+export { sweepStaleUploadCopies, type UploadSweepOptions };
 
 export interface UploadProject {
   readonly projectId: string;
@@ -88,54 +94,6 @@ export function readUploadProject(projectRoot: string): UploadProject | null {
 const UPLOAD_COPY_PREFIX = 'rbook-dashboard-upload-';
 const activeUploadCopies = new Set<string>();
 let uploadsStopped = false;
-/** An upload runs for seconds and its lease lasts five minutes, so a day-old copy is no live upload's. */
-const STALE_UPLOAD_COPY_MS = 24 * 60 * 60 * 1000;
-
-/** s95-m08: what the stale-copy sweep reads; a test injects lstat and the user id. */
-export interface UploadSweepOptions {
-  readonly tmpdir?: string;
-  readonly now?: number;
-  readonly lstat?: (file: string) => Pick<fs.Stats, 'isDirectory' | 'uid' | 'mtimeMs'>;
-  /** This user's id; undefined where the platform has none (Windows), which keeps everything. */
-  readonly uid?: number;
-}
-
-/**
- * s95-m08: remove the upload copies a process that died mid-upload left behind (the temp-leak next
- * step, #1313): direct children of the temp folder named like ours, real directories (lstat, so a
- * symlink is kept), owned by this user and older than 24 hours. Best effort: a copy that cannot be
- * removed is reported and left. Without user ids (Windows) ownership cannot be checked, so
- * everything is kept. Returns what was removed.
- */
-export function sweepStaleUploadCopies(options: UploadSweepOptions = {}): string[] {
-  const uid = 'uid' in options ? options.uid : process.getuid?.();
-  if (uid === undefined) return [];
-  const tmp = options.tmpdir ?? os.tmpdir();
-  const now = options.now ?? Date.now();
-  const lstat = options.lstat ?? fs.lstatSync;
-  const removed: string[] = [];
-  let names: string[];
-  try {
-    names = fs.readdirSync(tmp);
-  } catch (error) {
-    uploadLog(`Could not list ${tmp} for old upload copies: ${errorText(error)}`);
-    return removed;
-  }
-  for (const name of names) {
-    if (!isUploadCopyName(name)) continue;
-    const directory = path.join(tmp, name);
-    try {
-      const stat = lstat(directory);
-      if (!stat.isDirectory() || stat.uid !== uid || now - stat.mtimeMs < STALE_UPLOAD_COPY_MS)
-        continue;
-      fs.rmSync(directory, { recursive: true, force: true });
-      removed.push(directory);
-    } catch (error) {
-      uploadLog(`Could not remove the old upload copy ${directory}: ${errorText(error)}`);
-    }
-  }
-  return removed;
-}
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);

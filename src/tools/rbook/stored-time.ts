@@ -14,7 +14,11 @@ import type { RbookToolError } from './types';
  * spelling as UTC; these helpers do the same, so a sort or filter in JavaScript matches it.
  */
 
-const ZONELESS_DATE_TIME = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)$/;
+// SQLite's calendar grammar: no leading whitespace, uppercase T/ASCII whitespace between date
+// and time, and optional Z/z or HH:MM offset. Numeric Julian dates, time-only and "now" are not
+// stored calendar timestamps. Do not pass other spellings to V8's locale-dependent Date.parse.
+const STORED_CALENDAR_TIME =
+  /^(-?\d{4})-(\d{2})-(\d{2})[ T\t\n\v\f\r]*(?:(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,308}))?)?(?:[ \t\n\v\f\r]*(?:[Zz]|([+-])(\d{2}):(\d{2})))?[ \t\n\v\f\r]*)?$/;
 
 /**
  * Milliseconds since the epoch for a stored time, or NaN where julianday() would give NULL. A
@@ -22,10 +26,51 @@ const ZONELESS_DATE_TIME = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2}(?:\.\d
  */
 export function storedTimeMs(value: string | null | undefined): number {
   if (typeof value !== 'string') return NaN;
-  const raw = value.trim();
-  if (raw === '') return NaN;
-  const zoneless = ZONELESS_DATE_TIME.exec(raw);
-  return Date.parse(zoneless ? `${zoneless[1]}T${zoneless[2]}Z` : raw);
+  const match = STORED_CALENDAR_TIME.exec(value);
+  if (!match) return NaN;
+  const [, y, mo, d, h = '0', mi = '0', s = '0', fraction = '0', sign, zh = '0', zm = '0'] = match;
+  const [year, month, day, hour, minute, second, zoneHour, zoneMinute] = [
+    y,
+    mo,
+    d,
+    h,
+    mi,
+    s,
+    zh,
+    zm,
+  ].map(Number);
+  if (
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31 ||
+    hour > 24 ||
+    minute > 59 ||
+    second > 59 ||
+    zoneHour > 14 ||
+    zoneMinute > 59
+  )
+    return NaN;
+
+  // SQLite normalizes day 29–31 overflow and hour 24. setUTCFullYear avoids Date.UTC's special
+  // 1900-based interpretation of years 0–99. SQLite rounds milliseconds, clamping fractions at
+  // .999 before rounding so .9999 never rolls into the next second (parseHhMmSs/computeJD).
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
+  // The same decimal accumulation as SQLite, bounded to 308 digits so its scale stays finite.
+  // Longer fractions hit engine-dependent floating-point overflow; refuse them explicitly.
+  let numerator = 0;
+  let scale = 1;
+  for (const digit of fraction) {
+    numerator = numerator * 10 + Number(digit);
+    scale *= 10;
+  }
+  const milliseconds = Math.floor((second + Math.min(numerator / scale, 0.999)) * 1000 + 0.5);
+  date.setUTCHours(hour, minute, 0, milliseconds);
+  const offset = (zoneHour * 60 + zoneMinute) * 60_000 * (sign === '-' ? -1 : 1);
+  const result = date.getTime() - offset;
+  // SQLite's valid Julian-day interval, expressed as Unix milliseconds.
+  return result >= -210866760000000 && result <= 253402300799999 ? result : NaN;
 }
 
 /**
@@ -60,9 +105,12 @@ export function timeBound(value: string, edge: 'since' | 'until'): string | null
     const year = Number(period[1]);
     const month = period[2] === undefined ? null : Number(period[2]) - 1;
     if (month !== null && (month < 0 || month > 11)) return null;
-    const start = Date.UTC(year, month ?? 0, 1);
-    const next = month === null ? Date.UTC(year + 1, 0, 1) : Date.UTC(year, month + 1, 1);
-    return new Date(edge === 'since' ? start : next - 1).toISOString();
+    const start = new Date(0);
+    start.setUTCFullYear(year, month ?? 0, 1);
+    const next = new Date(start);
+    if (month === null) next.setUTCFullYear(year + 1);
+    else next.setUTCMonth(month + 1);
+    return new Date(edge === 'since' ? start.getTime() : next.getTime() - 1).toISOString();
   }
   return TIME_BOUND.test(raw) && !Number.isNaN(storedTimeMs(raw)) ? raw : null;
 }

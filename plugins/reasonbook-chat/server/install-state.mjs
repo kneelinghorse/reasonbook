@@ -141,10 +141,13 @@ export function writePointer(ctx) {
   fs.renameSync(temporary, ctx.pointerPath);
 }
 
-export function findPathPackage(ctx, env = process.env) {
+/** The one budget every PATH candidate's --version check shares (a test may pass more room). */
+export const PATH_CHECK_BUDGET_MS = 400;
+
+export function findPathPackage(ctx, env = process.env, budgetMs = PATH_CHECK_BUDGET_MS) {
   // A fresh CLI may load its server modules to print --version; one shared budget admits
   // that measured startup cost without allowing multiple candidates to multiply it.
-  const deadline = Date.now() + 400;
+  const deadline = Date.now() + budgetMs;
   const seen = new Set();
   for (const directory of (env.PATH || '').split(path.delimiter).filter(path.isAbsolute)) {
     if (Date.now() >= deadline) return undefined;

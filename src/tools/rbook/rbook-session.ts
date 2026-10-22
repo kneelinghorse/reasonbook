@@ -8,6 +8,7 @@
  * @module tools/rbook/rbook-session
  */
 
+import { formatToolFailure } from './format-failure';
 import { z } from 'zod';
 import { createError, RbookErrors, VALID_SESSION_TYPES } from './errors';
 import { findWrongTypedStringParam } from './param-type-guard';
@@ -496,7 +497,8 @@ export function formatSessionForLLM(
     case 'search':
       return formatSessionSearchForLLM(result as RbookToolResult<RbookSessionSearchResult>);
     default: {
-      if (!result.success) return '❌ Failed to execute rbook_session';
+      if (!result.success)
+        return formatToolFailure('❌ Failed to execute rbook_session', result.error);
       const lines = ['✓ Session action completed'];
       appendWarnings(lines, result);
       return lines.join('\n');

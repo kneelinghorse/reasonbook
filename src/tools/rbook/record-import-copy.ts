@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { RECORDED_TABLES } from './record-columns';
+import { sweepStaleRecordCopies } from './record-temp-copies';
 
 /** The copy as its own schema held it, before anything migrated it. */
 export interface ImportCopy {
@@ -87,6 +88,7 @@ function metadataValue(db: Database.Database, key: string): string | null {
  * person's folder is only ever read by the copy (fact 3, 2026-10-17).
  */
 export function openImportCopy(from: string): ImportCopy {
+  sweepStaleRecordCopies();
   const store = storeOfFolder(from);
   if (!store) throw new Error(`no store under ${from}`);
   const folder = fs.statSync(from).isFile() ? folderOfStore(store) : from;

@@ -13,7 +13,7 @@ import { ensureDecisionShapeColumns } from './schema-migrations';
 import { z } from 'zod';
 import { withClientAsync } from './client';
 import { prepareRecordLinkWrite, requireRecordLinks, recordLinkFailure } from './record-link-write';
-import type { RbookToolResult, Session } from './types';
+import type { RbookToolError, RbookToolResult, Session } from './types';
 import { createError, createSuccess, RbookErrors, RBOOK_ERROR_CODES } from './errors';
 import { sanitizeContentField, type SanitizedField } from '../../intelligence/content-sanitizer';
 import { ensureMissionIdColumn } from './rbook-mission-complete';
@@ -45,6 +45,7 @@ import {
 } from './implicit-session-lifecycle';
 import { recordedTransaction } from './record-changes';
 import { LEASED_STATUS_SQL } from './next-step-lease';
+import { storedTimeMs } from './stored-time';
 
 /**
  * Valid capture categories matching the Python session_runtime.
@@ -400,6 +401,17 @@ export async function rbookSessionCapture(
     return createError(RbookErrors.missingParameter('content'));
   }
 
+  if (params.expiresAt !== undefined && !Number.isFinite(storedTimeMs(params.expiresAt))) {
+    return createError<RbookSessionCaptureResult>({
+      code: RBOOK_ERROR_CODES.INVALID_PARAMETER,
+      message: "Parameter 'expiresAt' must be a valid calendar date or date-time",
+      field: 'expiresAt',
+      providedValue: params.expiresAt,
+      suggestion:
+        'Use YYYY-MM-DD or YYYY-MM-DDTHH:MM:SSZ (a zone-less date-time is UTC), or omit expiresAt.',
+    });
+  }
+
   if (params.evergreen !== undefined && params.category !== 'learning') {
     return createError<RbookSessionCaptureResult>({
       code: RBOOK_ERROR_CODES.INVALID_PARAMETER,
@@ -583,6 +595,7 @@ export async function rbookSessionCapture(
       // A capture that writes its row under the write lock re-reads its session there.
       const lockedCategory = linkedCategory || category === 'next-step';
       const pendingEmbeddings: Array<{ kind: 'decision' | 'learning'; id: number }> = [];
+      let sessionRefusal: RbookToolError | undefined;
       const captureUnit = (): RbookSessionCaptureResult => {
         if (lockedCategory) {
           const current = client.getOne<
@@ -591,10 +604,19 @@ export async function rbookSessionCapture(
             'SELECT id, status, captures, sprint_id, started_at, implicit, owner_key FROM sessions WHERE id = ?',
             [sessionId]
           );
-          if (!current.success || !current.data || current.data.status !== 'active')
-            throw new Error(current.error?.message ?? 'Session is no longer active');
-          if (heldByAnotherProcess(client, current.data, 'write'))
-            throw new Error('Session is owned by another process');
+          if (!current.success)
+            throw new Error(current.error?.message ?? 'Failed to query session');
+          // Throw to roll back the whole unit; preserve the session's remedy outside the transaction.
+          if (!current.data || current.data.status !== 'active') {
+            sessionRefusal = current.data
+              ? RbookErrors.sessionNotActive(sessionId)
+              : RbookErrors.sessionNotFound(sessionId);
+            throw new Error(sessionRefusal.message);
+          }
+          if (heldByAnotherProcess(client, current.data, 'write')) {
+            sessionRefusal = RbookErrors.sessionOwnedByAnotherProcess(sessionId);
+            throw new Error(sessionRefusal.message);
+          }
           session = current.data;
         }
         // Parse existing captures
@@ -1010,6 +1032,7 @@ export async function rbookSessionCapture(
       // s96-m01: a shared record's refusal (a full number block) keeps its own code and remedy.
       if (isReplicaRefusal(captured.error))
         return createError<RbookSessionCaptureResult>(captured.error!);
+      if (sessionRefusal) return createError<RbookSessionCaptureResult>(sessionRefusal);
       if (!captured.success || !captured.data)
         return recordLinkFailure(captured.error?.message ?? 'Capture rolled back');
       const resultData = captured.data;

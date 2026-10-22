@@ -6,6 +6,7 @@
  * @module tools/rbook/rbook-project-update
  */
 
+import { formatToolFailure } from './format-failure';
 import * as path from 'path';
 
 import { withClient } from './client';
@@ -148,7 +149,7 @@ export async function rbookProjectUpdate(
 
 export function formatProjectUpdateForLLM(result: RbookToolResult<ProjectUpdateResult>): string {
   if (!result.success) {
-    return `Failed to update project: ${result.error?.message ?? 'Unknown error'}`;
+    return formatToolFailure('Failed to update project', result.error);
   }
 
   const entries = Object.entries(result.data?.updated ?? {});

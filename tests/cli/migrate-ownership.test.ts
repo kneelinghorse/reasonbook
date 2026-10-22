@@ -17,6 +17,34 @@ import { seedLegacyMigrationStore } from '../helpers/legacyMigrationStore';
 
 let tmp: string;
 let root: string;
+
+/**
+ * s98-m08: the child's first output, or a failure naming what it said if it exits first. Under two
+ * concurrent full suites one of these tests ran 167 s past jest's timeout waiting for a child that
+ * had not said it was ready, with nothing to say why.
+ */
+async function ready(child: childProcess.ChildProcess): Promise<void> {
+  let stderr = '';
+  child.stderr?.on('data', (chunk) => (stderr += String(chunk)));
+  await new Promise<void>((resolve, reject) => {
+    child.stdout!.once('data', () => resolve());
+    child.once('exit', (code, signal) =>
+      reject(new Error(`the child exited (${code ?? signal}) before it was ready: ${stderr}`))
+    );
+  });
+}
+
+/** Ends a child this test started, unless it has already exited. */
+async function end(child: childProcess.ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  const exited = once(child, 'exit');
+  child.kill();
+  await exited;
+}
+
+/** s98-m08: a hang guard sized for two concurrent full suites on a Mac that is paging. */
+const HANG_GUARD_MS = 300_000;
+
 beforeEach(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'rbook-migration-ownership-'));
   root = path.join(tmp, 'project');
@@ -28,48 +56,51 @@ afterEach(() => {
 });
 
 describe('migration coordination survives competing recovery', () => {
-  it('refuses a second process before it can remove the first recovery owner guard', async () => {
-    const file = migrationCoordinatorPath(root);
-    const journal = path.join(root, JOURNAL);
-    const stale = JSON.stringify({
-      pid: 2147483647,
-      source: path.join(root, LEGACY.recordDirectory),
-      destination: path.join(root, 'rbook'),
-      phase: 'prepared',
-    });
-    fs.writeFileSync(journal, stale);
-    const lock = path.join(root, '.rbook-migration.lock');
-    fs.mkdirSync(lock);
-    const child = childProcess.spawn(
-      process.execPath,
-      [
-        '-e',
-        'const DB=require(process.argv[1]);const db=new DB(process.argv[2]);db.exec("BEGIN EXCLUSIVE");process.stdout.write("ready");setInterval(()=>{},1000);',
-        require.resolve('better-sqlite3'),
-        file,
-      ],
-      { stdio: ['ignore', 'pipe', 'pipe'] }
-    );
-    try {
-      await once(child.stdout!, 'data');
-      const result = await migrateProject({
-        projectRoot: root,
-        env: { HOME: tmp },
-        apply: true,
-        checkProcesses: false,
+  it(
+    'refuses a second process before it can remove the first recovery owner guard',
+    async () => {
+      const file = migrationCoordinatorPath(root);
+      const journal = path.join(root, JOURNAL);
+      const stale = JSON.stringify({
+        pid: 2147483647,
+        source: path.join(root, LEGACY.recordDirectory),
+        destination: path.join(root, 'rbook'),
+        phase: 'prepared',
       });
-      expect(result.success).toBe(false);
-      expect(result.error?.message).toContain('Another migration owns');
-      expect(fs.readFileSync(journal, 'utf8')).toBe(stale);
-      expect(fs.existsSync(lock)).toBe(true);
-      const alias = path.join(tmp, 'alias');
-      fs.symlinkSync(root, alias);
-      expect(migrationCoordinatorPath(alias)).toBe(file);
-    } finally {
-      child.kill();
-      await once(child, 'exit');
-    }
-  });
+      fs.writeFileSync(journal, stale);
+      const lock = path.join(root, '.rbook-migration.lock');
+      fs.mkdirSync(lock);
+      const child = childProcess.spawn(
+        process.execPath,
+        [
+          '-e',
+          'const DB=require(process.argv[1]);const db=new DB(process.argv[2]);db.exec("BEGIN EXCLUSIVE");process.stdout.write("ready");setInterval(()=>{},1000);',
+          require.resolve('better-sqlite3'),
+          file,
+        ],
+        { stdio: ['ignore', 'pipe', 'pipe'] }
+      );
+      try {
+        await ready(child);
+        const result = await migrateProject({
+          projectRoot: root,
+          env: { HOME: tmp },
+          apply: true,
+          checkProcesses: false,
+        });
+        expect(result.success).toBe(false);
+        expect(result.error?.message).toContain('Another migration owns');
+        expect(fs.readFileSync(journal, 'utf8')).toBe(stale);
+        expect(fs.existsSync(lock)).toBe(true);
+        const alias = path.join(tmp, 'alias');
+        fs.symlinkSync(root, alias);
+        expect(migrationCoordinatorPath(alias)).toBe(file);
+      } finally {
+        await end(child);
+      }
+    },
+    HANG_GUARD_MS
+  );
 });
 
 describe('a shipped renamed seed does not move paths in docs-only mode', () => {
@@ -105,75 +136,88 @@ describe('a shipped renamed seed does not move paths in docs-only mode', () => {
 });
 
 describe('offline cutover rejects cached paths before any handle opens', () => {
-  it('names a live 4.x runtime holding only a path and never renames its database', async () => {
-    const runtime = path.join(tmp, 'runtime');
-    fs.mkdirSync(path.join(runtime, 'dist'), { recursive: true });
-    fs.writeFileSync(
-      path.join(runtime, 'package.json'),
-      JSON.stringify({ name: '@aquex/reasonbook', version: '4.0.0' })
-    );
-    const entry = path.join(runtime, 'dist/bin.js');
-    fs.writeFileSync(
-      entry,
-      'const DB=require(process.argv[2]);const cached=process.argv[3];process.stdout.write("ready");process.stdin.once("data",()=>{const db=new DB(cached,{fileMustExist:true});db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES (?,?)").run("cached-path-writer","survived");db.close();process.exit(0);});'
-    );
-    const oldDb = path.join(root, LEGACY.recordDirectory, 'db', LEGACY.databaseFile);
-    const child = childProcess.spawn(
-      process.execPath,
-      [entry, require.resolve('better-sqlite3'), oldDb],
-      { stdio: ['pipe', 'pipe', 'pipe'] }
-    );
-    try {
-      await once(child.stdout!, 'data');
-      const guard =
-        require('../../src/cli/migrate-guard') as typeof import('../../src/cli/migrate-guard');
-      expect(() => guard.assertNoOpenFiles(path.join(root, LEGACY.recordDirectory))).not.toThrow();
-      const spawnSync = childProcess.spawnSync;
-      jest.spyOn(childProcess, 'spawnSync').mockImplementation(((
-        command: string,
-        args: string[],
-        opts: any
-      ) => {
-        const result = spawnSync(command, args, opts);
-        if (command !== 'ps') return result;
-        return {
-          ...result,
-          stdout: String(result.stdout)
-            .split('\n')
-            .filter((line) => line.trim().startsWith(`${child.pid} `))
-            .join('\n'),
-        };
-      }) as any);
-      const inspect = guard.assertNoRecordProcesses;
-      const inspected = jest.spyOn(guard, 'assertNoRecordProcesses').mockImplementation(() => {
-        expect(fs.existsSync(path.join(root, '.rbook-migration.lock'))).toBe(true);
-        inspect();
-      });
-      const result = await migrateProject({ projectRoot: root, env: { HOME: tmp }, apply: true });
-      // s100-m02: this failed once in a full suite with no message kept, and 0 of 14 runs under two
-      // concurrent suites reproduced it; a failure now prints the whole answer.
-      expect({ success: result.success, error: result.error }).toEqual({
-        success: false,
-        error: expect.objectContaining({ message: expect.stringContaining(String(child.pid)) }),
-      });
-      expect(inspected).toHaveBeenCalled();
-      expect(fs.existsSync(oldDb)).toBe(true);
-      expect(fs.existsSync(path.join(root, 'rbook'))).toBe(false);
-      const done = once(child, 'exit');
-      child.stdin!.write('continue');
-      expect((await done)[0]).toBe(0);
-      const db = new Database(oldDb, { readonly: true });
-      expect(
-        db.prepare("SELECT value FROM metadata WHERE key = 'cached-path-writer'").get()
-      ).toEqual({ value: 'survived' });
-      db.close();
-    } finally {
-      if (child.exitCode === null) {
-        child.kill();
-        await once(child, 'exit');
+  it(
+    'names a live 4.x runtime holding only a path and never renames its database',
+    async () => {
+      const runtime = path.join(tmp, 'runtime');
+      fs.mkdirSync(path.join(runtime, 'dist'), { recursive: true });
+      fs.writeFileSync(
+        path.join(runtime, 'package.json'),
+        JSON.stringify({ name: '@aquex/reasonbook', version: '4.0.0' })
+      );
+      const entry = path.join(runtime, 'dist/bin.js');
+      fs.writeFileSync(
+        entry,
+        'const DB=require(process.argv[2]);const cached=process.argv[3];process.stdout.write("ready");process.stdin.once("data",()=>{const db=new DB(cached,{fileMustExist:true});db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES (?,?)").run("cached-path-writer","survived");db.close();process.exit(0);});'
+      );
+      const oldDb = path.join(root, LEGACY.recordDirectory, 'db', LEGACY.databaseFile);
+      const child = childProcess.spawn(
+        process.execPath,
+        [entry, require.resolve('better-sqlite3'), oldDb],
+        { stdio: ['pipe', 'pipe', 'pipe'] }
+      );
+      try {
+        await ready(child);
+        const guard =
+          require('../../src/cli/migrate-guard') as typeof import('../../src/cli/migrate-guard');
+        const record = path.join(root, LEGACY.recordDirectory);
+        // s98-m08: under two concurrent full suites the guard once failed closed here; a failure now
+        // says what lsof says when run again at once.
+        try {
+          guard.assertNoOpenFiles(record);
+        } catch (error) {
+          const again = childProcess.spawnSync('lsof', ['-nP', '-Fpcn', '+D', record], {
+            encoding: 'utf8',
+          });
+          throw new Error(
+            `${(error as Error).message} lsof again: status ${again.status}, error ${again.error?.message ?? 'none'}, stderr ${String(again.stderr).slice(0, 500)}`
+          );
+        }
+        const spawnSync = childProcess.spawnSync;
+        jest.spyOn(childProcess, 'spawnSync').mockImplementation(((
+          command: string,
+          args: string[],
+          opts: any
+        ) => {
+          const result = spawnSync(command, args, opts);
+          if (command !== 'ps') return result;
+          return {
+            ...result,
+            stdout: String(result.stdout)
+              .split('\n')
+              .filter((line) => line.trim().startsWith(`${child.pid} `))
+              .join('\n'),
+          };
+        }) as any);
+        const inspect = guard.assertNoRecordProcesses;
+        const inspected = jest.spyOn(guard, 'assertNoRecordProcesses').mockImplementation(() => {
+          expect(fs.existsSync(path.join(root, '.rbook-migration.lock'))).toBe(true);
+          inspect();
+        });
+        const result = await migrateProject({ projectRoot: root, env: { HOME: tmp }, apply: true });
+        // s100-m02: this failed once in a full suite with no message kept, and 0 of 14 runs under two
+        // concurrent suites reproduced it; a failure now prints the whole answer.
+        expect({ success: result.success, error: result.error }).toEqual({
+          success: false,
+          error: expect.objectContaining({ message: expect.stringContaining(String(child.pid)) }),
+        });
+        expect(inspected).toHaveBeenCalled();
+        expect(fs.existsSync(oldDb)).toBe(true);
+        expect(fs.existsSync(path.join(root, 'rbook'))).toBe(false);
+        const done = once(child, 'exit');
+        child.stdin!.write('continue');
+        expect((await done)[0]).toBe(0);
+        const db = new Database(oldDb, { readonly: true });
+        expect(
+          db.prepare("SELECT value FROM metadata WHERE key = 'cached-path-writer'").get()
+        ).toEqual({ value: 'survived' });
+        db.close();
+      } finally {
+        await end(child);
       }
-    }
-  });
+    },
+    HANG_GUARD_MS
+  );
 });
 
 describe('supported global and plugin launch forms stay offline', () => {

@@ -38,13 +38,16 @@ import {
   type ReplicaFixture,
 } from '../../helpers/replica-fixture';
 import { backUp, onCopy, ownerCopy, read, type Copy } from '../../helpers/shared-copies';
-import { routeTo, standinSsh } from '../../helpers/standin-ssh';
+import { farEndsExited, routeTo, standinSsh } from '../../helpers/standin-ssh';
 
 let fixture: ReplicaFixture;
 beforeEach(() => {
   fixture = replicaFixture('rbook-routes-');
 });
-afterEach(() => fixture.restore());
+afterEach(async () => {
+  await farEndsExited(fixture.tmp);
+  fixture.restore();
+});
 
 const configOf = (machine: string) => path.join(fixture.tmp, `config-${machine}`);
 

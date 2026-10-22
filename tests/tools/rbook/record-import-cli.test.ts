@@ -9,6 +9,7 @@ import * as path from 'path';
 import { runCli } from '../../../src/cli';
 import type { CliIo } from '../../../src/cli/core';
 import { importText } from '../../../src/cli/import';
+import { quoted } from '../../../src/cli/import-waits';
 import { importCopy } from '../../../src/tools/rbook/record-import';
 import { COMPARED } from '../../../src/tools/rbook/record-import-fields';
 import { RECORD_COLUMNS, RECORDED_TABLES } from '../../../src/tools/rbook/record-columns';
@@ -43,6 +44,14 @@ async function cli(argv: string[], cwd: string) {
   };
   const code = await runCli(argv, io);
   return { code, out, err };
+}
+
+/** The display contract, independent of the machine's temporary-root length. */
+function expectedReplay(args: readonly string[]): string {
+  const command = ['reasonbook', ...args.map(quoted)].join(' ');
+  return command.length <= 300
+    ? command
+    : 'the original reasonbook import command with --apply (arguments omitted from this display)';
 }
 
 describe('reasonbook import', () => {
@@ -95,8 +104,9 @@ describe('reasonbook import', () => {
     expect(dry.out).toMatch(
       /missions i-m01 name: the copy holds "Renamed on the copy", the record "Before the copy"/
     );
+    const replay = expectedReplay([...args, '--apply']);
     expect(dry.out).toContain(
-      `This copy holds no row of its own: archive it and join a fresh copy (reasonbook copy on the owner's machine, then reasonbook join). Archiving drops the 1 field(s) listed above. Applying instead (reasonbook import --from ${zip.root} --project-root ${owner.root} --apply) sets 0 and raises 1 for you to settle.`
+      `This copy holds no row of its own: archive it and join a fresh copy (reasonbook copy on the owner's machine, then reasonbook join). Archiving drops the 1 field(s) listed above. Applying instead (${replay}) sets 0 and raises 1 for you to settle.`
     );
     expect(read(owner, 'SELECT count(*) AS n FROM record_conflicts')).toEqual([{ n: 0 }]);
     // The working folder's project is never the one written: it keeps no change log.
@@ -348,8 +358,18 @@ describe("reasonbook import's text", () => {
     );
     expect(included.out).toContain('missions:i-m03');
     expect(included.out).toMatch(/missions:i-m03 \(.*\), brought in by --include/);
+    const replay = expectedReplay([
+      'import',
+      '--from',
+      copied.root,
+      '--include',
+      'missions:i-m03',
+      '--project-root',
+      owner.root,
+      '--apply',
+    ]);
     expect(included.out).toContain(
-      `This copy holds 0 row(s) of its own, and --include brings in 1 deleted on the owner: bring them in with reasonbook import --from ${copied.root} --include missions:i-m03 --project-root ${owner.root} --apply.`
+      `This copy holds 0 row(s) of its own, and --include brings in 1 deleted on the owner: bring them in with ${replay}.`
     );
   }, 240000);
 });
@@ -475,7 +495,7 @@ describe("reasonbook import's text after an import, and its commands", () => {
     );
   }, 240000);
 
-  it('prints a command a shell runs as written, quoting a pair and a folder that holds a dollar sign; repeated --include flags add up', async () => {
+  it('omits an overlong replay command while repeated --include flags add up and listed pairs stay quoted', async () => {
     const place = await preShare(fixture.tmp, {});
     await onPlace(fixture.tmp, place, 'rbook_mission', {
       action: 'add',
@@ -490,7 +510,8 @@ describe("reasonbook import's text after an import, and its commands", () => {
     );
     await onPlace(fixture.tmp, place, 'rbook_context', { action: 'snapshot', source: 'marker' });
     const made = zipOf(fixture.tmp, place);
-    const strange = path.join(fixture.tmp, 'a $HOME copy', 'owner');
+    // Force the omission branch even under a short TMPDIR; path length is not a quoting oracle.
+    const strange = path.join(fixture.tmp, `a $HOME copy ${'x'.repeat(180)}`, 'owner');
     fs.mkdirSync(path.dirname(strange), { recursive: true });
     fs.renameSync(made.root, strange);
     onFile(
@@ -519,27 +540,12 @@ describe("reasonbook import's text after an import, and its commands", () => {
     expect(dry.out).toMatch(/--include brings in 2 deleted on the owner/);
     // The deleted rows' list quotes a pair, so it can be typed into a shell as shown.
     expect(dry.out).toContain(`  'session_missions:${session}|i-m03'`);
-    const command = /bring them in with (.*)\.$/m.exec(dry.out)![1];
-    // The shell reads every argument back as the CLI was given it.
-    const words = execFileSync(
-      'bash',
-      ['-c', `printf '%s\\n' ${command.replace(/^reasonbook /, '')}`],
-      {
-        encoding: 'utf8',
-      }
-    )
-      .trim()
-      .split('\n');
-    expect(words).toEqual([
-      'import',
-      '--from',
-      strange,
-      '--include',
-      `missions:i-m03,session_missions:${session}|i-m03`,
-      '--project-root',
-      owner.root,
-      '--apply',
-    ]);
+    const rawCommand = `reasonbook import --from '${strange}' --include 'missions:i-m03,session_missions:${session}|i-m03' --project-root ${owner.root} --apply`;
+    expect(rawCommand.length).toBeGreaterThan(300);
+    expect(dry.out).toContain(
+      'bring them in with the original reasonbook import command with --apply (arguments omitted from this display).'
+    );
+    expect(dry.out).not.toContain(rawCommand);
   }, 240000);
 
   it('says which listed fields sit on rows the copy changed after the marker, which columns the copy never had, and what it renumbered', async () => {

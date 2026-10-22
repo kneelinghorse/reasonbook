@@ -32,13 +32,16 @@ import {
 import { requiresPrivateEvidence } from '../../helpers/public-mirror';
 import { reidentifyRbookTestStore } from '../../helpers/seedRbookDb';
 import { onCopy, ownerCopy, read, recordedState, type Copy } from '../../helpers/shared-copies';
-import { routeTo, standinSsh } from '../../helpers/standin-ssh';
+import { farEndsExited, routeTo, standinSsh } from '../../helpers/standin-ssh';
 
 let fixture: ReplicaFixture;
 beforeEach(() => {
   fixture = replicaFixture('rbook-join-');
 });
-afterEach(() => fixture.restore());
+afterEach(async () => {
+  await farEndsExited(fixture.tmp);
+  fixture.restore();
+});
 
 async function ok(
   copy: Pick<Copy, 'root' | 'machine' | 'name'>,

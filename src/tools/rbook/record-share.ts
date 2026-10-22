@@ -77,7 +77,7 @@ export function shareBlocker(client: RbookDatabaseClient): string | null {
   if (unindexed.length) return `its stable ids are not held unique in ${unindexed.join(', ')}`;
   // ADR §4: the baseline names the owner by author name.
   if (!authorForWrite(client).name)
-    return 'it has no author name to name its owner: set one with reasonbook config author <name>, or sign in';
+    return 'it has no author name to name its owner: set one with reasonbook config author <name>, or sign in with rbook_auth(action="login_init"), then rbook_auth(action="login_complete")';
   return null;
 }
 

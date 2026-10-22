@@ -1,3 +1,6 @@
+// ABOUTME: Route consolidated project actions and publish their complete input shapes.
+// ABOUTME: Keep action-specific requiredness in handlers and preserve unscheduled initial missions.
+
 /**
  * rbook_project Tool
  *
@@ -10,6 +13,7 @@
  * @module tools/rbook/rbook-project
  */
 
+import { formatToolFailure } from './format-failure';
 import { z } from 'zod';
 import { createError, RbookErrors } from './errors';
 import { findWrongTypedStringParam } from './param-type-guard';
@@ -133,8 +137,8 @@ export type RbookProjectResult =
 
 const initialSprintSchema = z
   .object({
-    id: z.string(),
-    title: z.string(),
+    id: z.string().optional(),
+    title: z.string().optional(),
     focus: z.string().optional(),
     status: z.string().optional(),
   })
@@ -142,9 +146,9 @@ const initialSprintSchema = z
 
 const initialMissionSchema = z
   .object({
-    id: z.string(),
-    name: z.string(),
-    sprintId: z.string(),
+    id: z.string().optional(),
+    name: z.string().optional(),
+    sprintId: z.string().nullable().optional(),
     objective: z.string().optional(),
     successCriteria: z.array(z.string()).optional(),
     deliverables: z.array(z.string()).optional(),
@@ -278,7 +282,7 @@ export const rbookProjectToolDefinition = {
           properties: {
             id: { type: 'string', description: 'Mission ID' },
             name: { type: 'string', description: 'Mission name' },
-            sprintId: { type: 'string', description: 'Owning sprint ID' },
+            sprintId: { type: ['string', 'null'], description: 'Owning sprint ID' },
             objective: { type: 'string', description: 'Mission objective' },
             successCriteria: {
               type: 'array',
@@ -524,7 +528,8 @@ export function formatProjectForLLM(
         result as RbookToolResult<SharedProjectResult>
       );
     default: {
-      if (!result.success) return '❌ Failed to execute rbook_project';
+      if (!result.success)
+        return formatToolFailure('❌ Failed to execute rbook_project', result.error);
       const lines = ['✓ Project action completed'];
       appendWarnings(lines, result);
       return lines.join('\n');

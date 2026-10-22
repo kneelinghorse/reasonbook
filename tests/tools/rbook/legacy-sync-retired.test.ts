@@ -175,6 +175,16 @@ describe('local edits with an old collab_role', () => {
 });
 
 describe('backfill keeps the SQLite upload and refuses event replay', () => {
+  let previousSync: string | undefined;
+  beforeEach(() => {
+    previousSync = process.env.RBOOK_CHECKPOINT_SYNC;
+    process.env.RBOOK_CHECKPOINT_SYNC = 'on';
+  });
+  afterEach(() => {
+    if (previousSync === undefined) delete process.env.RBOOK_CHECKPOINT_SYNC;
+    else process.env.RBOOK_CHECKPOINT_SYNC = previousSync;
+  });
+
   function dashboard(ok: boolean) {
     const upload = jest.fn(async () =>
       ok

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "mission": "s94-m06",
   "fixtureRoot": "rbook/research/2026-10-s94-m06",
   "baseline": {
@@ -319,5 +319,9 @@
         }
       ]
     }
+  },
+  "currentParserReview": {
+    "file": "labels-v6-review/manifest.json",
+    "sha256": "e0dbe8c24fec352f8cf860afa8cfff48df9b7178e0289504fdb33a3cd2a8629a"
   }
 }

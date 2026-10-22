@@ -246,11 +246,18 @@ const EXPECTED_TOTALS = {
   // ten rows, all additive, for the 4.3.0 CHANGELOG. CrossStoreProbe's value becomes a type
   // parameter defaulting to CrossStoreProbeValue, so one fan-out reads drift and signals on one
   // connection; that in-process row moves from the mixed-kind ledger to the generic holes.
-  files: 279,
+  // s98-m09: tool-schemas.ts and tool-validation.ts join the analyzed folder. Neither declares
+  // a new answer type, so only the file count changes; the full answer closure stays identical.
+  // s98-m10: record-temp-copies.ts adds one source file and no answer type.
+  // s98-m12: shared failure renderer adds one source file, with no exported answer root.
+  files: 283,
   roots: 148,
   declarations: 341,
   compositions: 341,
-  rows: 1913,
+  // s98-m11: bulk feedback receipts name the project and list already resolved skips.
+  // s98-m12: ProjectTypeFields gains optional build_freshness_check, disclosed in CHANGELOG.
+  // s98-m13: sprint-close adds implicitSessionsAtClose beside the direct-membership list.
+  rows: 1918,
 } as const;
 const EXPLICIT_OPAQUE_LEDGER = [
   'RbookToolError.providedValue = ANY',
@@ -267,6 +274,9 @@ const GENERIC_HOLE_LEDGER = [
   'SingleCurrentSprintResult.data = GENERIC',
   // s97-m01: a probe's value is what its caller's probe returns (the drift stamp by default).
   'CrossStoreProbe.value = GENERIC',
+  // s98-m11: Id is constrained to number|string, defaulting to number for local lists;
+  // fleet lists specialize it to their project-qualified string identifier.
+  'AgentFeedbackEntry.id = GENERIC',
 ] as const;
 const MIXED_KIND_LEDGER = [
   {

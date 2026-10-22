@@ -6,21 +6,28 @@ import { storedTimeMs } from '../tools/rbook/stored-time';
 import { FEEDBACK_KINDS, type FeedbackKind } from './feedback-kinds';
 import type { SignalEntry, SignalKind, SignalsReport } from './report';
 import { QUIET_SILENT_DAYS } from './rules-activity';
+import {
+  BRIEF_MAX_LINES,
+  BRIEF_SECTION_ITEMS,
+  renderBriefText,
+  plain,
+  projectLabel,
+  reportCaveats,
+  type BriefReportCaveat,
+} from './brief-text';
+
+export { BRIEF_MAX_LINES, BRIEF_SECTION_ITEMS };
+export type { BriefReportCaveat };
 
 /**
- * WHY NOTHING HERE READS THE MACHINE. The dashboard renders this brief from its stored reports and
- * `reasonbook brief` from this machine's, and the two must give the same bytes (#1550). So the
+ * WHY NOTHING HERE READS THE MACHINE. A host can render this brief from its stored reports and
+ * `reasonbook brief` from this machine's, and the two must give the same bytes. So the
  * renderer reads no clock (the time comes in as `now`), no time zone (dates are ISO in UTC), no
  * locale (no localeCompare, no toLocaleString) and no environment.
  */
 
-/** Items a section lists before "and N more" (settled item 12). */
-export const BRIEF_SECTION_ITEMS = 5;
 /** Row ids a line names for one signal before "…". */
 export const BRIEF_LINE_IDS = 3;
-/** The brief's longest length in lines (settled item 12). */
-export const BRIEF_MAX_LINES = 60;
-const NAME_CAP = 40;
 const DAY_MS = 86_400_000;
 
 export interface BriefOptions {
@@ -67,6 +74,8 @@ export interface Brief {
   readonly unreadable: readonly string[];
   /** Projects that had a signal fail; their other signals are in the sections. */
   readonly partly: readonly string[];
+  /** Reports whose age or counted window differs; raw provenance remains available in JSON. */
+  readonly reportCaveats: readonly BriefReportCaveat[];
   readonly sections: readonly BriefSection[];
 }
 
@@ -79,26 +88,6 @@ function nowMsOf(now: BriefOptions['now']): number {
 }
 
 const day = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
-
-/** Text from another store, made inert in markdown: one line, its markup escaped. */
-function inert(text: string): string {
-  return text
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/([\\`*_{}[\]()#+!|<>~])/g, '\\$1');
-}
-
-/** A name from another store, inert and capped. */
-function plain(text: string): string {
-  const flat = text.replace(/\s+/g, ' ').trim();
-  return inert(flat.length > NAME_CAP ? `${flat.slice(0, NAME_CAP - 1)}…` : flat);
-}
-
-function projectLabel(report: SignalsReport): string {
-  const id = report.project.id;
-  const name = report.project.name;
-  return name && name !== id ? `${plain(name)} (${plain(id)})` : plain(id);
-}
 
 const byId = (a: { projectId: string | null }, b: { projectId: string | null }): number =>
   (a.projectId ?? '') < (b.projectId ?? '')
@@ -120,7 +109,7 @@ function clause(signal: SignalEntry, one: string, many: string): { text: string;
   const ids = signal.ids.slice(0, BRIEF_LINE_IDS);
   const more = (signal.count ?? 0) > ids.length ? ', …' : '';
   return {
-    text: `${plural(signal.count ?? 0, one, many)}${ids.length ? ` (${ids.map(inert).join(', ')}${more})` : ''}`,
+    text: `${plural(signal.count ?? 0, one, many)}${ids.length ? ` (${ids.map((id) => plain(id, 100)).join(', ')}${more})` : ''}`,
     ids: [...ids],
   };
 }
@@ -263,9 +252,15 @@ function drifting(reports: readonly SignalsReport[]): Ranked[] {
 
 function friction(reports: readonly SignalsReport[]): Ranked[] {
   const out: Ranked[] = [];
-  for (const { kind } of FEEDBACK_KINDS) {
+  for (const kind of [...FEEDBACK_KINDS.map((entry) => entry.kind), 'unclassified'] as const) {
     const by = reports
-      .map((report) => ({ report, n: report.feedbackKinds.counts?.[kind as FeedbackKind] ?? 0 }))
+      .map((report) => ({
+        report,
+        n:
+          kind === 'unclassified'
+            ? (report.feedbackKinds.unclassified ?? 0)
+            : (report.feedbackKinds.counts?.[kind as FeedbackKind] ?? 0),
+      }))
       .filter((row) => row.n > 0)
       .sort((a, b) => b.n - a.n || byIdOf(a.report.project.id, b.report.project.id));
     const total = by.reduce((sum, row) => sum + row.n, 0);
@@ -337,6 +332,7 @@ export function buildBrief(reports: readonly SignalsReport[], options: BriefOpti
     projects: reports.length,
     unreadable,
     partly,
+    reportCaveats: reportCaveats(reports, nowMs, windowDays),
     sections: [
       section(
         'needs_a_decision',
@@ -365,7 +361,7 @@ export function buildBrief(reports: readonly SignalsReport[], options: BriefOpti
       section(
         'friction',
         'Friction',
-        'new agent feedback in the window by kind, the kind with the most new rows first',
+        'new agent feedback in each report’s window by kind, including unclassified, the kind with the most new rows first',
         friction(readable)
       ),
       section(
@@ -383,24 +379,5 @@ export function buildBrief(reports: readonly SignalsReport[], options: BriefOpti
  * reports, `now` and window on any machine.
  */
 export function renderBrief(reports: readonly SignalsReport[], options: BriefOptions): string {
-  const brief = buildBrief(reports, options);
-  const lines = [
-    `# Weekly brief, ${brief.from} to ${brief.to}`,
-    '',
-    `${plural(brief.projects, 'project', 'projects')}` +
-      (brief.unreadable.length
-        ? `; ${brief.unreadable.length} could not be read (${brief.unreadable.map(plain).join(', ')})`
-        : '') +
-      (brief.partly.length
-        ? `; ${brief.partly.length} had a signal that could not be read (${brief.partly.map(plain).join(', ')})`
-        : '') +
-      '.',
-  ];
-  for (const part of brief.sections) {
-    lines.push('', `## ${part.title}`);
-    if (!part.items.length) lines.push('- Nothing.');
-    for (const item of part.items) lines.push(`- ${item.text}`);
-    if (part.more) lines.push(`- and ${part.more} more`);
-  }
-  return `${lines.join('\n')}\n`;
+  return renderBriefText(buildBrief(reports, options));
 }

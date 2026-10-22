@@ -2,7 +2,85 @@
 
 All notable changes to Reasonbook (published as `@aquex/cmos-mcp` before 4.0.0) are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [4.3.0] — 2026-10-20
+## [Unreleased]
+
+## [4.4.0] — 2026-10-22
+
+This release checks tool calls before opening a store, makes CLI help safe to ask for, and
+keeps record ownership and refusal advice accurate. The public signals and referee libraries
+bring their own SQLite type dependency. Hosted recovery and record protocol 2 remain planned
+for the following sharing release.
+
+### Fixed
+
+- **Recording a follow-on choice keeps an earlier, different approval available.** Backward draft
+  settlement now uses the same subject-coverage gate as the forward walk. A capture that races a
+  session's close or takeover returns the existing session refusal after rolling back its writes,
+  for decisions, learnings and next steps.
+- **First-copy inputs and hosted remedies respect their boundaries.** Copied source tables must
+  be ordinary tables; virtual tables are refused before their rows are read. Referee peer answers
+  retain error codes and diagnostics while replacing host repair instructions with advice the
+  calling member can use.
+- **Sprint close keeps concurrent implicit sessions visible.** `RbookSprintCompleteResult` adds
+  `implicitSessionsAtClose`, listing active implicit sessions across the project at the close
+  boundary. The existing `activeSessionsAtClose` list keeps its direct sprint membership rule;
+  neither list closes another process's session.
+- **Refusals retain the remedy and CLI help is safe to ask for.** Failure renderers preserve the
+  offered next step, including generic router failures. A second response to a message has its
+  own conflict code and directs a follow-up to a new message. CLI help exits without opening a
+  server or writing a record, unknown flags are refused outside hooks, and brief days are bounded.
+- **The public library types bring their own declaration dependency.** Consumers of `./signals`
+  and `./referee` install only Reasonbook; `@types/better-sqlite3` is now its dependency. Both
+  exports are checked with `skipLibCheck: false` under Node16 and bundler resolution.
+- **Routine answers carry less noise.** Mission status includes sprint focus once, preserving
+  each nested mission sprint's `focus` field as null. Source-running projects can set
+  `project_identity.type_fields.build_freshness_check` to false to omit the build advisory.
+  A fresh record starts with the current context shape, and a project with no upload history
+  or debt has no empty upload-status line.
+- **Foreign CLI and brief text stays bounded and inert.** A shared renderer strips terminal
+  controls, folds lines and caps displayed values. The brief neutralizes automatic links, caps
+  displayed ids, includes unclassified friction, shows report age and differing windows, and
+  enforces its 60-line limit while preserving raw structured data.
+- **Signals parse timestamps consistently and bound classification cost.** Calendar timestamps
+  now follow SQLite's UTC grammar instead of locale-dependent parsing; capture refuses unreadable
+  expiry values before writing. Feedback classification caps input at 4,000 characters and avoids
+  repeated scans in its matching rules, with unchanged results on the frozen labelled sample.
+- **Feedback resolution preserves prior receipts and names its project.** Bulk resolve adds
+  `projectId`, `projectName` and `skipped`; already resolved rows keep their original time and
+  note. Fleet `AgentFeedbackEntry.id` values are project-qualified strings, while local list ids
+  remain numbers, so fleet ids cannot accidentally resolve a same-numbered local row.
+- **Citation reads index identities once per read.** Both persisted edges and the old-store
+  typed fallback revalidate against one fresh index. Review skips locked sibling stores without
+  waiting and bounds optional portfolio work. The signals contract now states SQLite's WAL
+  sidecars and the shared snapshot lock that can outlast a rollback-mode writer's busy timeout.
+- **Upload consent is respected in answers and manual backfill.** Purge no longer recommends
+  uploading the deleted mirror again, and a sync-count mismatch recommends only reconciliation.
+  `RBOOK_CHECKPOINT_SYNC=off` also refuses manual backfill before any dashboard request. Codex
+  forwards both sharing switches. Temporary record copies from sharing, joining, importing and
+  replaying now receive the same ownership and age checks as interrupted upload copies.
+- **Privacy wording names the remaining limits.** Logout leaves project keys valid; feedback has
+  no per-call offline flag. A share can still strand an owner's copy that has only synced, written
+  no changes and has no saved SSH route. Counting those copies and setting one aside are planned
+  together for 4.5.0.
+- **Malformed tool arguments refuse before opening a store.** All fifteen tools now check every
+  supplied field against their whole schema, including fields for another action. Type and bound
+  errors name the field and expected value; for example, a fractional `pageSize` now refuses at
+  the server. CLI capture, decision recording and feedback use the same validator. A top-level
+  null means omitted unless the field accepts null; supported nested mission-field clears remain
+  available. In particular, `maxSnapshots=null` can no longer prune all retained snapshots.
+
+### Known limitations
+
+- A scratch referee with 8,195 change rows still materialized all 8,195 for each page call,
+  including three caught-up calls that returned zero rows. Page size does not bound that read.
+- The stream setting defaults to 1,073,741,824 units but counts JSON UTF-16 length after a
+  nonterminal page is appended. It is not a strict UTF-8 byte limit, and terminal pages and
+  legacy-array replies bypass its accounting. No 1 GiB allocation was measured.
+- In a scratch removed-member probe, each of three active recipients received ten quarantined
+  change bodies (21,514 JSON UTF-8 bytes each). None became live decisions. Quarantine prevents
+  materialization; it does not keep those payloads from active members.
+
+## [4.3.0] — 2026-10-21
 
 Portfolio intelligence: what needs a person, in each project on this machine and, once reasonbook.ai
 runs it, across the operator's accounts. One read-only library, `@aquex/reasonbook/signals`, counts
@@ -17,8 +95,8 @@ unchanged in kind: reasonbook.ai need not pin 4.3.0 for sharing, only to run the
   kind (`countsByKind`) and names each entry's `kind`, in one project and across projects:
   ceremony, surfacing, identity, sync or payload, with `unclassified` beside them. The kinds come
   from published rules over a row's text (`src/signals/feedback-kinds.ts`), and a row that names
-  Reasonbook nowhere is never counted as friction with it. Each kind reached precision 0.9 or more
-  against labels a separate agent gave 157 rows without seeing the rules; setup and silent-loss fell
+  Reasonbook nowhere is never counted as friction with it. Each retained kind reached precision 0.9 or more when a prediction counted as correct if it matched
+  either the row's primary label or an additional applicable label; under primary-only counting, only sync reached 0.9. A separate agent labelled 157 rows without seeing the rules; setup and silent-loss fell
   short, so their rows read as unclassified. On the machine that measured them the rules classify a
   quarter of 884 rows, and unclassified still holds friction they miss.
 - **Resolve many feedback rows in one call.** `rbook_feedback(action="resolve", feedbackIds=[…])`
@@ -33,8 +111,11 @@ unchanged in kind: reasonbook.ai need not pin 4.3.0 for sharing, only to run the
   zero, and one whose rule failed on the store is also marked `failed`. The report's drafts rule
   says whether a draft runtime was given, and the drafts entry names one that was not found. The
   same file, time and draft runtime give the same report, byte for byte. On the 25 stores of the
-  machine that measured it, a report took 38 ms at the 95th percentile, counting every report of
-  five rounds over the stores, the cold first round included.
+  machine that re-measured the published 4.3.0 package, a report took 33.87 ms at the nearest-rank
+  95th percentile across 125 reports: five rounds over fixed copies of all 25 active stores,
+  including the first call without a warm-up. This includes opening and closing the read-only
+  connection; it does not mean the operating-system cache was cold. The re-measurement used current
+  data and dependency versions, so it does not attribute a performance change to code.
 - **`reasonbook signals`** prints those signals for every project registered on this machine, or for
   one with `--project-root`, with this machine's draft runtime; `--format json` prints the reports.
 - **The weekly brief.** `renderBrief(reports, { now, windowDays })` in `@aquex/reasonbook/signals`
@@ -49,8 +130,9 @@ unchanged in kind: reasonbook.ai need not pin 4.3.0 for sharing, only to run the
 - **The review shows what needs a person in your other projects.** `rbook_review`'s portfolio names
   up to eight other projects with drafts awaiting a decision, next steps about to lapse, blocked
   missions or unsettled conflicts, with their counts, and how many other projects' signals could
-  not be read. Reading them added about 10 ms to a review across 25 stores, summed over the stores
-  and averaged over five rounds.
+  not be read. The optional signal reads took 10.58 ms per fleet review in the same published-package
+  re-measurement: their elapsed time on already-open handles summed across 25 stores and divided
+  by five rounds, after the drift probe. This is the optional-read cost, not whole-review latency.
 
 ### Changed (answer shapes)
 
@@ -78,9 +160,10 @@ projects once reasonbook.ai pins 4.2.1; until then its referee runs 4.2.0.
   copy of a project shared directly)_. Every change set aside while they were removed used to be
   accepted on re-add, owner-only edits their role cannot make included. Each is now judged, in clock
   order, as their role's would be, and the invite answer counts those it refused.
-- **A share through reasonbook.ai no longer strands the owner's other copies** _(referee, and the
-  share)_. It refuses, naming each, while another copy of the owner's is still in use, since that
-  copy could not sync afterwards. There is no step yet that sets one of the owner's own copies aside.
+- **A share through reasonbook.ai refuses over known owner copies** _(referee, and the share)_. It
+  names copies identified from their own recorded changes or a saved SSH route, since they could
+  not sync afterwards. A copy that has only synced, written no changes and has no saved route can
+  still be stranded. There is no step yet that sets one of the owner's own copies aside.
 - **A referee whose clock once ran ahead no longer stops every copy** _(referee)_. Intake refuses a
   change only when its clock runs more than a week past the host's clock and past the referee's own
   latest reading, and the refusal tells the member that their changes stay safe on their copy. One
@@ -2330,3 +2413,6 @@ This is the section to read carefully if you've been tracking pre-1.0 internal b
 - **Custom `cmos_learnings(action="update")` callers** should pass at least one of `status` or `evergreen` per call (see Tool-surface changes above).
 
 [1.0.0]: https://github.com/kneelinghorse/cmos-mcp/releases/tag/v1.0.0
+[Unreleased]: https://github.com/kneelinghorse/reasonbook/compare/v4.3.0...HEAD
+[4.3.0]: https://github.com/kneelinghorse/reasonbook/releases/tag/v4.3.0
+[4.2.1]: https://github.com/kneelinghorse/reasonbook/releases/tag/v4.2.1

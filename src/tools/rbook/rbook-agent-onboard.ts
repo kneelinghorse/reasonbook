@@ -2298,8 +2298,7 @@ function generateSuggestedActions(state: {
   if (state.syncHealth && !state.syncHealth.allMatch && !skippedTools.has('rbook_db')) {
     actions.push({
       action: `Sync health: ${state.syncHealth.totalMismatches} table(s) have count mismatches between SQLite and PG mirror`,
-      command:
-        'rbook_db(action="reconcile") for details, rbook_db(action="backfill", force=true) to re-sync',
+      command: 'rbook_db(action="reconcile") for details',
       priority: 3,
     });
   }

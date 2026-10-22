@@ -1527,7 +1527,8 @@ describe('rbook_agent_onboard', () => {
         const actions = result.data?.suggestedActions ?? [];
         const reconcileAction = actions.find((a) => a.action.includes('mismatch'));
         expect(reconcileAction).toBeDefined();
-        expect(reconcileAction?.command).toContain('reconcile');
+        // A count mismatch permits investigation, not an unsolicited record upload.
+        expect(reconcileAction?.command).toBe('rbook_db(action="reconcile") for details');
       } finally {
         global.fetch = originalFetch;
         process.env.RBOOK_DASHBOARD_URL = originalUrl;

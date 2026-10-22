@@ -8,6 +8,7 @@
  * @module tools/rbook/rbook-learnings
  */
 
+import { formatToolFailure } from './format-failure';
 import { z } from 'zod';
 import { createError, RbookErrors } from './errors';
 import { findWrongTypedStringParam } from './param-type-guard';
@@ -363,7 +364,8 @@ export function formatLearningsForLLM(
     case 'reaffirm':
       return formatLearningsReaffirmForLLM(result as RbookToolResult<RbookLearningsReaffirmResult>);
     default: {
-      if (!result.success) return '❌ Failed to execute rbook_learnings';
+      if (!result.success)
+        return formatToolFailure('❌ Failed to execute rbook_learnings', result.error);
       const lines = ['✓ Learnings action completed'];
       appendWarnings(lines, result);
       return lines.join('\n');

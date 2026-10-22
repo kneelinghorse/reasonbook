@@ -7,8 +7,13 @@ import { NO_SESSION_REMEDY } from './commands';
 import { observeCliResult } from './telemetry';
 import { captureToolCall } from '../tools/rbook/tool-call-context';
 import { setExternalSessionOwner } from '../tools/rbook/session-owner';
-import { rbookDecisions, formatDecisionsForLLM } from '../tools/rbook/rbook-decisions';
+import {
+  rbookDecisions,
+  rbookDecisionsSchema,
+  formatDecisionsForLLM,
+} from '../tools/rbook/rbook-decisions';
 import type { RbookDecisionsParams } from '../tools/rbook/rbook-decisions';
+import { validateRbookArguments } from '../tools/rbook/tool-validation';
 
 export async function decisions(
   projectRoot: string,
@@ -43,8 +48,20 @@ export async function decisions(
   }
   if (flags.mission) args.missionId = flags.mission;
   if (flags.sprint) args.sprintId = flags.sprint;
+  const checked = validateRbookArguments(rbookDecisionsSchema, args);
+  if (!checked.success) {
+    observeCliResult(io, 'rbook_decisions', args, checked);
+    if (flags.format === 'json') io.stdout(`${JSON.stringify(checked)}\n`);
+    else
+      io.stderr(
+        `reasonbook decisions record: ${checked.error!.message}. ${checked.error!.suggestion ?? ''}`
+      );
+    return 1;
+  }
   setExternalSessionOwner(flags['session-id']);
-  const result = await captureToolCall('write', () => rbookDecisions(args as RbookDecisionsParams));
+  const result = await captureToolCall('write', () =>
+    rbookDecisions(checked.data! as RbookDecisionsParams)
+  );
   observeCliResult(io, 'rbook_decisions', args, result.value);
   io.stdout(
     `${flags.format === 'json' ? JSON.stringify(result.value) : formatDecisionsForLLM('record', result.value)}\n`

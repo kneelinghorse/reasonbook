@@ -15,6 +15,7 @@ import {
   type SignalEntry,
   type SignalsReport,
 } from '../../src/signals';
+import { renderBriefText } from '../../src/signals/brief-text';
 
 const REPO = path.resolve(__dirname, '..', '..');
 const FIXTURE = path.join(__dirname, '..', 'fixtures', 'brief');
@@ -138,7 +139,9 @@ describe('the weekly brief (s97-m03)', () => {
     const text = renderBrief([named], options);
     expect(text).not.toContain('[click](');
     // Escaped, and capped at 40 characters like every name.
-    expect(text).toContain('\\[click\\]\\(https://example.test\\) \\*\\*now\\*\\* \\#… (evil)');
+    expect(text).toContain(
+      '\\[click\\]\\(https:\u200b//example.test\\) \\*\\*now\\*\\* \\#… (evil)'
+    );
   });
 
   it('says which stores could not be read, or had a signal that could not be, and leaves them out', () => {
@@ -160,6 +163,160 @@ describe('the weekly brief (s97-m03)', () => {
   it('refuses a time or a window it cannot read: the caller’s error', () => {
     expect(() => renderBrief(three.reports, { now: 'not a time' })).toThrow(RangeError);
     expect(() => renderBrief(three.reports, { now: three.now, windowDays: 0 })).toThrow(RangeError);
+  });
+
+  it('names an old report and its differing window instead of presenting it as current', () => {
+    const now = Date.now();
+    const stale = {
+      ...report('stale', { drafts_pending: { count: 1, ids: ['P1'] } }),
+      computedAt: new Date(now - 14 * 86_400_000).toISOString(),
+      window: { ...report('stale', {}).window, days: 30 },
+    };
+    const text = renderBrief([stale], { now, windowDays: 7 });
+    expect(text).toMatch(/stale.*report.*14 days old/);
+    expect(text).toMatch(/30-day window.*brief.*7/);
+    expect(text).toContain('1 draft (P1)');
+    // Raw report provenance remains available to the dashboard and JSON consumers.
+    expect(buildBrief([stale], { now, windowDays: 7 })).toMatchObject({
+      reportCaveats: [{ projectId: 'stale', computedAt: stale.computedAt, windowDays: 30 }],
+    });
+  });
+
+  it('caveat time ordering: sorts same-project SQLite and ISO spellings by their instants', () => {
+    const now = Date.now();
+    const day = 86_400_000;
+    const yesterday = Math.floor(now / day) * day - day;
+    const earlier = new Date(yesterday + 2 * 3_600_000).toISOString();
+    const later = new Date(yesterday + 3 * 3_600_000).toISOString().slice(0, 19).replace('T', ' ');
+    const reports = [later, earlier].map((computedAt) => ({
+      ...report('same-project', {}),
+      computedAt,
+    }));
+    const brief = buildBrief(reports, { now });
+    expect(brief.reportCaveats.map((item) => item.computedAt)).toEqual([earlier, later]);
+    expect(brief.reportCaveats).toEqual(buildBrief([...reports].reverse(), { now }).reportCaveats);
+    expect(renderBrief(reports, { now })).toBe(renderBrief([...reports].reverse(), { now }));
+  });
+
+  it('caveat time ordering: equivalent offsets use deterministic window, label and spelling ties', () => {
+    const now = Math.floor(Date.now() / 1000) * 1000;
+    const instant = now - 86_400_000;
+    const iso = new Date(instant).toISOString();
+    const sqlite = iso.slice(0, 19).replace('T', ' ');
+    const offset = new Date(instant + 2 * 3_600_000).toISOString().replace('Z', '+02:00');
+    const base = report('same-project', {});
+    const reports = [
+      { ...base, computedAt: offset, project: { id: base.project.id, name: 'Alpha' } },
+      { ...base, computedAt: sqlite, project: { id: base.project.id, name: 'Zulu' } },
+      {
+        ...base,
+        computedAt: iso,
+        project: { id: base.project.id, name: 'Alpha' },
+        window: { ...base.window, days: 30 },
+      },
+      { ...base, computedAt: iso, project: { id: base.project.id, name: 'Alpha' } },
+    ];
+    const caveats = buildBrief(reports, { now }).reportCaveats;
+    expect(caveats.map((item) => item.ageMs)).toEqual([
+      86_400_000, 86_400_000, 86_400_000, 86_400_000,
+    ]);
+    expect(caveats.map((item) => [item.windowDays, item.projectName, item.computedAt])).toEqual([
+      [7, 'Alpha', iso],
+      [7, 'Alpha', offset],
+      [7, 'Zulu', sqlite],
+      [30, 'Alpha', iso],
+    ]);
+    expect(caveats).toEqual(buildBrief([...reports].reverse(), { now }).reportCaveats);
+    expect(renderBrief(reports, { now })).toBe(renderBrief([...reports].reverse(), { now }));
+  });
+
+  it('caveat time ordering: unreadable times and null or empty names are deterministic', () => {
+    const now = Date.now();
+    const base = report('same-project', {});
+    const valid = new Date(now - 86_400_000).toISOString();
+    const reports = [
+      { ...base, computedAt: 'unreadable-b', project: { id: base.project.id, name: null } },
+      { ...base, computedAt: 'unreadable-b', project: { id: base.project.id, name: '' } },
+      { ...base, computedAt: 'unreadable-b', project: { id: base.project.id, name: 'Alpha' } },
+      { ...base, computedAt: 'unreadable-a', project: { id: base.project.id, name: 'Alpha' } },
+      { ...base, computedAt: valid },
+    ];
+    const caveats = buildBrief(reports, { now }).reportCaveats;
+    expect(caveats.map((item) => item.ageMs)).toEqual([null, null, null, null, 86_400_000]);
+    expect(caveats).toEqual(buildBrief([...reports].reverse(), { now }).reportCaveats);
+    expect(renderBrief(reports, { now })).toBe(renderBrief([...reports].reverse(), { now }));
+  });
+
+  it('counts unclassified friction with classified rows instead of silently dropping it', () => {
+    const item = {
+      ...report('friction', {}),
+      feedbackKinds: { ...three.reports[0].feedbackKinds, unclassified: 8 },
+    };
+    expect(renderBrief([item], options)).toContain('unclassified: 8 new rows (friction 8)');
+  });
+
+  it('does not silently treat a future or unreadable report time as current', () => {
+    const now = Date.now();
+    const future = {
+      ...report('future', {}),
+      computedAt: new Date(now + 3_600_000).toISOString(),
+    };
+    const unreadable = { ...report('unreadable-time', {}), computedAt: 'not a time' };
+    const text = renderBrief([future, unreadable], { now });
+    expect(text).toContain('future: report time 1 hour ahead of this brief');
+    expect(text).toContain('unreadable-time: report time unreadable');
+  });
+
+  it('enforces the rendering limit even if a later section grows past its current item cap', () => {
+    const brief = buildBrief([], { now: Date.now() });
+    const section = brief.sections[0];
+    const text = renderBriefText({
+      ...brief,
+      sections: [
+        {
+          ...section,
+          items: Array.from({ length: BRIEF_MAX_LINES + 1 }, (_, i) => ({
+            projectId: `p-${i}`,
+            text: `p-${i}: 1 draft`,
+            ids: [`P${i}`],
+          })),
+        },
+      ],
+    });
+    expect(lines(text)).toHaveLength(BRIEF_MAX_LINES);
+    expect(lines(text)[BRIEF_MAX_LINES - 1]).toBe(
+      '- Brief cut at the line limit; see the structured brief.'
+    );
+  });
+
+  it('makes controls, automatic links and oversized ids inert while retaining raw structured ids', () => {
+    const id = `m\u001bc\u0007\u0085\n${'x'.repeat(10_000)}`;
+    const item = {
+      ...report('ctl', { missions_blocked: { count: 1, ids: [id] } }),
+      project: { id: 'ctl', name: '\b\u001bM\u009bhttps://a.test www.b.test a@b.test' },
+    };
+    const text = renderBrief([item], options);
+    // eslint-disable-next-line no-control-regex -- C0/C1 witness permits only generated LF.
+    expect(text).not.toMatch(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/);
+    expect(text).not.toMatch(/https?:\/\/|www\.[a-z]|a@b\.test/);
+    expect(Math.max(...lines(text).map((line) => line.length))).toBeLessThan(500);
+    expect(text).toContain('…');
+    expect(buildBrief([item], options).sections[1].items[0].ids).toEqual([id]);
+  });
+
+  it('bounds report caveats and all six populated sections without hiding the omitted count', () => {
+    const now = Date.now();
+    const many = Array.from({ length: 100 }, (_, i) => ({
+      ...three.reports[0],
+      project: { id: `old-${i}`, name: null },
+      computedAt: new Date(now - (i + 1) * 86_400_000).toISOString(),
+      window: { ...three.reports[0].window, days: 30 },
+    }));
+    const text = renderBrief(many, { now });
+    expect(text).toContain('Report ages and windows');
+    expect(text).toContain('95 more report caveats');
+    expect(lines(text).length).toBeLessThanOrEqual(BRIEF_MAX_LINES);
+    expect(renderBrief([...many].reverse(), { now })).toBe(text);
   });
 
   it('gives its sections as data, with each one’s rule and the row ids its lines name', () => {

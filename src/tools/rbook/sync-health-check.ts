@@ -7,6 +7,7 @@
  * @module tools/rbook/sync-health-check
  */
 
+import { formatToolFailure } from './format-failure';
 import { rbookDbReconcile } from './rbook-db-backfill';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -63,7 +64,11 @@ export async function checkSyncHealth(
       totalDelta: 0,
       mismatchedTables: 0,
       mismatches: [],
-      message: `Sync health check skipped: ${reconcileResult.error?.message ?? 'dashboard unreachable'}`,
+      message: formatToolFailure(
+        'Sync health check skipped',
+        reconcileResult.error,
+        'dashboard unreachable'
+      ),
       warnings: [],
     };
   }

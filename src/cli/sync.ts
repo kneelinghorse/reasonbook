@@ -4,7 +4,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { parseArgs, resolveCliProject, type CliIo } from './core';
+import { oneLine, parseArgs, resolveCliProject, type CliIo } from './core';
 import { createError, createSuccess } from '../tools/rbook/errors';
 import {
   importBundleAndEmbed,
@@ -74,11 +74,11 @@ function storeOf(flags: Record<string, string>, io: CliIo, verb: string): string
 function report<T>(io: CliIo, result: RbookToolResult<T>, said: (data: T) => string): number {
   if (result.success && result.data !== undefined) {
     io.stdout(`${said(result.data)}\n`);
-    for (const warning of result.warnings ?? []) io.stderr(`Note: ${warning}`);
+    for (const warning of result.warnings ?? []) io.stderr(`Note: ${oneLine(warning)}`);
     return 0;
   }
   io.stderr(
-    `${result.error?.message ?? 'It failed.'}${result.error?.suggestion ? ` ${result.error.suggestion}` : ''}`
+    `${oneLine(result.error?.message ?? 'It failed.')}${result.error?.suggestion ? ` ${oneLine(result.error.suggestion)}` : ''}`
   );
   return 1;
 }
@@ -149,10 +149,10 @@ export async function runSync(argv: readonly string[], io: CliIo): Promise<numbe
             return createError({
               code: REPLICA_ERROR_CODES.WRITE_REFUSED,
               message: !member
-                ? `${flags['for']} is not a member of this project, so no bundle was written.`
+                ? `${oneLine(flags['for'])} is not a member of this project, so no bundle was written.`
                 : member.role === 'removed'
-                  ? `${member.name} was removed, so their copy receives nothing new, and no bundle was written.`
-                  : `${member.name} has no copy joined yet, so no bundle was written.`,
+                  ? `${oneLine(member.name)} was removed, so their copy receives nothing new, and no bundle was written.`
+                  : `${oneLine(member.name)} has no copy joined yet, so no bundle was written.`,
               suggestion:
                 'List the members with rbook_project(action="members"), and name one whose copy has joined.',
             });
@@ -185,7 +185,7 @@ export async function runSync(argv: readonly string[], io: CliIo): Promise<numbe
       io,
       imported,
       (data) =>
-        `Imported ${data.transactions} transaction(s), ${data.stored} new change(s); ${data.judged} judged, ${data.held} held, ${data.conflicts} field(s) in conflict.${data.caughtUp ? ` This copy now holds a move of the owner's copy to ${data.caughtUp.authority}: confirm it with reasonbook sync --confirm-owner.` : ''}`
+        `Imported ${data.transactions} transaction(s), ${data.stored} new change(s); ${data.judged} judged, ${data.held} held, ${data.conflicts} field(s) in conflict.${data.caughtUp ? ` This copy now holds a move of the owner's copy to ${oneLine(data.caughtUp.authority)}: confirm it with reasonbook sync --confirm-owner.` : ''}`
     );
   }
   if (flags['ssh']) {
@@ -207,7 +207,11 @@ export async function runSync(argv: readonly string[], io: CliIo): Promise<numbe
       io.stdout('A sync of this copy is already running, so this one did nothing.\n');
       return 0;
     }
-    return report(io, routed, (data) => `${route.host}:${route.root}: ${exchangeText(data)}`);
+    return report(
+      io,
+      routed,
+      (data) => `${oneLine(route.host)}:${oneLine(route.root)}: ${exchangeText(data)}`
+    );
   }
   if (Object.keys(flags).some((flag) => flag !== 'project-root' && flag !== 'auto')) {
     io.stderr(SYNC_USAGE);
@@ -229,12 +233,12 @@ export async function runSync(argv: readonly string[], io: CliIo): Promise<numbe
     data.peers
       .map(
         (peer) =>
-          `${peer.name ?? peer.replicaId}: ${
+          `${oneLine(peer.name ?? peer.replicaId)}: ${
             peer.report
               ? exchangeText(peer.report)
               : peer.nextTryAt
-                ? `not tried, since its last syncs failed; next try after ${peer.nextTryAt}`
-                : peer.error
+                ? `not tried, since its last syncs failed; next try after ${oneLine(peer.nextTryAt)}`
+                : oneLine(peer.error ?? 'The sync failed.')
           }`
       )
       .join('\n')
@@ -285,7 +289,7 @@ export async function runJoin(argv: readonly string[], io: CliIo): Promise<numbe
       io,
       joined,
       (data) =>
-        `Joined ${data.joined.member}'s copy in block ${data.joined.block}, and synced: ${exchangeText(data.sync)}`
+        `Joined ${oneLine(data.joined.member)}'s copy in block ${data.joined.block}, and synced: ${exchangeText(data.sync)}`
     );
   }
   if (flags['request-out']) {
@@ -323,7 +327,7 @@ export async function runJoin(argv: readonly string[], io: CliIo): Promise<numbe
       io,
       applied,
       (data) =>
-        `Joined as ${data.member} in block ${data.block}; imported ${data.imported.stored} change(s).`
+        `Joined as ${oneLine(data.member)} in block ${data.block}; imported ${data.imported.stored} change(s).`
     );
   }
   io.stderr(JOIN_USAGE);

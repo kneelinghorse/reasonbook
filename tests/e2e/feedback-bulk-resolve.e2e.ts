@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // ABOUTME: s97-m07 — rbook_feedback resolves many rows in one call, all or none, over real MCP stdio against the
-// ABOUTME: BUILT dist/, where nothing between the caller and the handler checks feedbackIds.
+// ABOUTME: BUILT dist/, including schema refusal before the handler and atomic row-state changes.
 
 /**
- * The design's dispatch boundary: the MCP client checks a tool's output and never its arguments,
- * and the server hands the router its arguments unparsed, so only the handler can refuse a bad
- * feedbackIds, and only a call through this transport shows that it does. An unknown id must
- * refuse the whole call, so a typo never leaves the other rows half-resolved.
+ * The MCP transport exercises the server's schema guard (added in s98-m09), followed by the
+ * handler's row-state checks. An unknown id must refuse the whole call, so a typo never leaves
+ * the other rows half-resolved; retrying resolved ids must preserve their first receipts.
  *
  * ISOLATION: a literal environment whitelist, as mission-target-status.e2e.ts uses. RBOOK_PROJECT_ROOT
  * points at an empty directory so the server cannot read the repository's .env, and checkpoint sync
@@ -146,5 +145,34 @@ describe('s97-m07 bulk resolve over built stdio', () => {
       ],
     });
     expect(statuses()).toEqual(['resolved', 'resolved', 'open']);
+  }, 60_000);
+
+  it('names the project and skips resolved rows without overwriting their first receipts', async () => {
+    const db = new Database(path.join(projectRoot, 'rbook', 'db', 'rbook.sqlite'), {
+      readonly: true,
+    });
+    const read = () =>
+      db
+        .prepare(
+          'SELECT id, resolved_at, resolution_note FROM agent_feedback WHERE id IN (?, ?) ORDER BY id'
+        )
+        .all(ids[0], ids[1]);
+    try {
+      const before = read();
+      const res = await harness!.callOk('rbook_feedback', {
+        action: 'resolve',
+        feedbackIds: [ids[0], ids[1]],
+        resolutionNote: 'A later retry.',
+        projectRoot,
+      });
+      expect(res.structuredContent?.data).toMatchObject({
+        projectName: 'Bulk resolve',
+        skipped: [ids[0], ids[1]],
+        resolved: [],
+      });
+      expect(read()).toEqual(before);
+    } finally {
+      db.close();
+    }
   }, 60_000);
 });

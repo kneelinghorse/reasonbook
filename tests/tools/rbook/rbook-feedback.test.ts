@@ -334,6 +334,30 @@ describe('rbook_feedback(action=list|triage|resolve|archive)', () => {
     expect(data.entries.every((e) => e.toolName === 'rbook_agent_onboard')).toBe(true);
   });
 
+  it('binds the row limit without treating an SQL fragment as query syntax', async () => {
+    const result = await rbookFeedback({
+      action: 'list',
+      limit: '1 OFFSET 1' as unknown as number,
+      projectRoot: t.tempDir,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('limits returned rows while keeping filtered counts over the full matching set', async () => {
+    const result = await rbookFeedback({
+      action: 'list',
+      toolName: 'rbook_agent_onboard',
+      limit: 1,
+      projectRoot: t.tempDir,
+    });
+    expect(result.success).toBe(true);
+    const data = result.data as RbookFeedbackListResult;
+    expect(data.entries).toHaveLength(1);
+    expect(data.totalCount).toBe(2);
+    expect(data.countsByTool).toEqual({ rbook_agent_onboard: 2 });
+    expect(data.countsByStatus.open).toBe(2);
+  });
+
   it('triage transitions open → triaged', async () => {
     const list = await rbookFeedback({ action: 'list', projectRoot: t.tempDir });
     const firstId = (list.data as RbookFeedbackListResult).entries[0].id;
@@ -526,6 +550,38 @@ describe('rbook_feedback by kind and bulk resolve (s97-m07)', () => {
     expect(result.error?.message).toContain('99999');
     expect(result.error?.message).not.toContain(`#${ids[0]}`);
     expect(rows()).toEqual(before);
+  });
+
+  it('names the destination project and preserves an already resolved row’s original receipt', async () => {
+    await rbookFeedback({
+      action: 'resolve',
+      feedbackIds: [ids[0]],
+      resolutionNote: 'First fix.',
+      projectRoot: t.tempDir,
+    });
+    const first = rows()[0];
+    const result = await rbookFeedback({
+      action: 'resolve',
+      feedbackIds: [ids[0], ids[1]],
+      resolutionNote: 'Second fix.',
+      projectRoot: t.tempDir,
+    });
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      projectId: 'test-project',
+      projectName: 'Test Project',
+      skipped: [ids[0]],
+      resolved: [{ feedbackId: ids[1], previousStatus: 'open', currentStatus: 'resolved' }],
+    });
+    expect((result.data as { message: string }).message).toMatch(/Test Project.*test-project/);
+    expect(rows()[0]).toEqual(first);
+    const again = await rbookFeedback({
+      action: 'resolve',
+      feedbackIds: [ids[0]],
+      projectRoot: t.tempDir,
+    });
+    expect(again.data).toMatchObject({ resolved: [], skipped: [ids[0]] });
+    expect(rows()[0]).toEqual(first);
   });
 
   it.each([

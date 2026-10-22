@@ -36,7 +36,8 @@ type NamedQueryOpts = Pick<
  * instead means a caller that supplies a probe to `decisionsAcrossProjects` gets a compile error
  * rather than silence.
  */
-type ProbeableQueryOpts<P> = NamedQueryOpts & Pick<CrossStoreQueryOptions<P>, 'perStoreProbe'>;
+type ProbeableQueryOpts<P> = NamedQueryOpts &
+  Pick<CrossStoreQueryOptions<P>, 'perStoreProbe' | 'timeoutMs' | 'deadlineAtMs'>;
 
 export interface PortfolioDecisionRow extends CrossStoreRow {
   id: number;
@@ -100,6 +101,8 @@ export function activeMissionsAcrossProjects<P = CrossStoreProbeValue>(
     // connection this fan-out already holds, instead of from a `-wal` mtime this fan-out itself
     // created. Optional and undefined by default — every other caller is unaffected.
     perStoreProbe: opts.perStoreProbe,
+    timeoutMs: opts.timeoutMs,
+    deadlineAtMs: opts.deadlineAtMs,
   });
 }
 

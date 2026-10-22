@@ -119,7 +119,7 @@ it('a copy it cannot read is reported and left, and the rest are still swept', (
     expect(removed).toEqual([stale]);
     expect(fs.existsSync(unreadable)).toBe(true);
     expect(write).toHaveBeenCalledWith(
-      expect.stringContaining(`Could not remove the old upload copy ${unreadable}: EACCES`)
+      expect.stringContaining(`Could not remove the old record copy ${unreadable}: EACCES`)
     );
   } finally {
     write.mockRestore();

@@ -34,9 +34,11 @@ import { insertDraft, rawRunner } from '../../src/tools/rbook/proposals';
 import { rbookAgentOnboard } from '../../src/tools/rbook/rbook-agent-onboard';
 import { rbookDecisions } from '../../src/tools/rbook/rbook-decisions';
 import { rbookFeedback } from '../../src/tools/rbook/rbook-feedback';
+import { rbookMission } from '../../src/tools/rbook/rbook-mission';
 import { rbookMissionTransition } from '../../src/tools/rbook/rbook-mission-transition';
 import { newestRowStampMs } from '../../src/tools/rbook/rbook-review';
 import { rbookSession } from '../../src/tools/rbook/rbook-session';
+import { rbookSprint } from '../../src/tools/rbook/rbook-sprint';
 import { readStaleness } from '../../src/tools/rbook/staleness-detection';
 import { requiresPrivateEvidence } from '../helpers/public-mirror';
 
@@ -143,13 +145,31 @@ PRIVATE.describe('the signals on a copy of this project’s real store (s97-m01)
       projectRoot,
     });
     expect(constraint.success).toBe(true);
-    const missions = new Database(dbPath, { readonly: true });
-    const working = (
-      missions
-        .prepare("SELECT id FROM missions WHERE status = 'In Progress' ORDER BY id LIMIT 1")
-        .get() as { id: string }
-    ).id;
-    missions.close();
+    // The test's own mission, added and started by the tools: the live store need not hold one in
+    // progress, and at a sprint's close it holds none (sprint-100's first pre-close witness).
+    const working = 'signals-real-m1';
+    for (const step of [
+      () =>
+        rbookSprint({
+          action: 'add',
+          sprintId: 'signals-real-sprint',
+          title: 'Signals on the real store',
+          status: 'Planned',
+          projectRoot,
+        }),
+      () =>
+        rbookMission({
+          action: 'add',
+          missionId: working,
+          name: 'Wait on the dashboard',
+          sprintId: 'signals-real-sprint',
+          projectRoot,
+        }),
+      () => rbookMissionTransition({ action: 'start', missionId: working, projectRoot }),
+    ]) {
+      const done = await step();
+      expect({ ok: done.success, error: done.error }).toEqual({ ok: true, error: undefined });
+    }
     const blocked = await rbookMissionTransition({
       action: 'block',
       missionId: working,

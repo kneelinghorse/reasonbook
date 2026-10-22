@@ -19,6 +19,7 @@ import { applyJoin, requestJoin, type JoinAnswer, type JoinApplied } from './rec
 import { rememberPeer } from './record-peers';
 import { mergeContext } from './record-standing';
 import { storeOpener, syncRoute } from './record-sync';
+import { sweepStaleRecordCopies } from './record-temp-copies';
 import { COPY_KEYS, writeCopyKey } from './replica-copy-keys';
 import { REPLICA_ERROR_CODES } from './replica-identity';
 import type { RbookToolResult } from './types';
@@ -48,6 +49,7 @@ export async function joinThroughDashboard(input: {
   readonly folder: string;
   readonly address: string;
 }): Promise<RbookToolResult<DashboardJoined>> {
+  sweepStaleRecordCopies();
   const off = dashboardSharingOff();
   if (off) return createError(off);
   const folder = path.resolve(input.folder);

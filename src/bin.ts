@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: Apache-2.0
 // ABOUTME: The reasonbook bin routes a command word to dist/cli.js before any server module loads.
-// ABOUTME: Server --version reads package metadata directly; other server routes load the MCP entry.
+// ABOUTME: Version, help and invalid options exit before the MCP entry or its startup effects load.
 
 /**
  * WHY A SEPARATE BIN. dist/index.js loads about 165 modules, the MCP SDK included, before it does
@@ -17,6 +17,7 @@ export const CLI_VERBS: ReadonlySet<string> = new Set([
   'init',
   'review',
   'relevant',
+  'decisions',
   'capture',
   'session',
   'ambient',
@@ -34,6 +35,10 @@ export const CLI_VERBS: ReadonlySet<string> = new Set([
   'recover',
   'share',
   'move',
+  'import',
+  'signals',
+  'brief',
+  'spin-out',
 ]);
 
 export type BinRoute =
@@ -71,15 +76,26 @@ export function routeArgv(argv: readonly string[]): BinRoute {
 
 if (require.main === module) {
   const target = routeArgv(process.argv.slice(2));
-  if (target.kind === 'cli') {
-    void import('./cli').then((cli) => cli.main(target.argv));
-  } else if (target.argv.includes('--version')) {
+  if (target.kind === 'server' && target.argv.includes('--version')) {
     // Match runServer's version precedence without loading its SDK, env loader, or database tools.
     void import('./server-version').then(({ getServerVersion }) => {
       process.stdout.write(`reasonbook ${getServerVersion()}\n`);
       process.exit(0);
     });
+  } else if (target.argv.includes('--help') || target.argv.includes('-h')) {
+    void import('./cli/usage').then(({ USAGE }) => {
+      process.stdout.write(USAGE);
+    });
+  } else if (target.kind === 'cli') {
+    void import('./cli').then((cli) => cli.main(target.argv));
   } else {
-    void import('./index').then((server) => server.runServer(target.argv));
+    void import('./cli/usage').then(async ({ firstUnknownOption }) => {
+      if (firstUnknownOption('serve', target.argv)) {
+        process.stderr.write('reasonbook: unknown option. Use reasonbook --help for usage.\n');
+        process.exitCode = 1;
+        return;
+      }
+      (await import('./index')).runServer(target.argv);
+    });
   }
 }

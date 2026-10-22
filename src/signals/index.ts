@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // ABOUTME: @aquex/reasonbook/signals: what needs a person in a Reasonbook store, read-only, the same rules on this client
-// ABOUTME: and at the dashboard's ingest. No sqlite-vec, embedder, hooks, timers, network or project discovery.
+// ABOUTME: and when a host adopts this library at ingest. No sqlite-vec, embedder, hooks, timers, network or project discovery.
 
 export {
   computeSignals,
@@ -47,6 +47,7 @@ export {
   type Brief,
   type BriefItem,
   type BriefOptions,
+  type BriefReportCaveat,
   type BriefSection,
   type BriefSectionId,
 } from './brief';

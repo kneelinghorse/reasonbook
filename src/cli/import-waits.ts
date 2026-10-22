@@ -2,6 +2,7 @@
 // ABOUTME: What `reasonbook import` says of a copy's rows perhaps in the record already, or waiting on a change it has not
 // ABOUTME: taken (ADR s96 §9): their lists, and the line that says to keep the copy while archiving it could lose them.
 
+import { oneLine } from './core';
 import type { ImportReport } from '../tools/rbook/record-import';
 
 type TableReport = ImportReport['tables'][number];
@@ -24,7 +25,7 @@ export function waitingLines(all: readonly TableReport[]): string[] {
       const rivals = table.perhapsIn.filter(
         (other) => other !== row && row.as.length > 0 && other.as.join() === row.as.join()
       );
-      return `  ${quoted(`${table.table}:${row.id}`)}, perhaps ${row.as.length ? `the record's ${row.as.join(' or ')}` : 'a row a change the record has not taken yet holds'}${rivals.length ? `, as may ${rivals.map((other) => `${table.table}:${other.id}`).join(' or ')}` : ''}${brought ? `, brought in by --include${brought.to !== brought.id ? ` as ${brought.to}` : ''}` : ''}`;
+      return `  ${quoted(oneLine(`${table.table}:${row.id}`))}, perhaps ${row.as.length ? `the record's ${row.as.map((id) => oneLine(id)).join(' or ')}` : 'a row a change the record has not taken yet holds'}${rivals.length ? `, as may ${rivals.map((other) => oneLine(`${table.table}:${other.id}`)).join(' or ')}` : ''}${brought ? `, brought in by --include${brought.to !== brought.id ? ` as ${oneLine(brought.to)}` : ''}` : ''}`;
     })
   );
   if (perhaps.length)
@@ -32,14 +33,16 @@ export function waitingLines(all: readonly TableReport[]): string[] {
       'Perhaps in the record already, alike but for their citation numbers and made in the same moment as a row of the record or a change it has not taken yet, as an import of another version of this copy would bring one in, so left out (bring one in with --include <table>:<id> if it is new):',
       ...perhaps
     );
-  const waiting = all.flatMap((table) => table.waiting.map((id) => `  ${table.table}:${id}`));
+  const waiting = all.flatMap((table) =>
+    table.waiting.map((id) => `  ${oneLine(`${table.table}:${id}`)}`)
+  );
   if (waiting.length)
     lines.push(
       'Brought in by an earlier import that is not live yet, as it waits for a verdict or a change it needs, so not brought in again:',
       ...waiting
     );
   const onCreate = all.flatMap((table) =>
-    table.waitingOnCreate.map((id) => `  ${table.table}:${id}`)
+    table.waitingOnCreate.map((id) => `  ${oneLine(`${table.table}:${id}`)}`)
   );
   if (onCreate.length)
     lines.push(
@@ -47,7 +50,9 @@ export function waitingLines(all: readonly TableReport[]): string[] {
       ...onCreate
     );
   const heldBack = all.flatMap((table) =>
-    table.heldBack.map((row) => `  ${table.table}:${row.id} names ${row.names}`)
+    table.heldBack.map(
+      (row) => `  ${oneLine(`${table.table}:${row.id}`)} names ${oneLine(row.names)}`
+    )
   );
   if (heldBack.length)
     lines.push(

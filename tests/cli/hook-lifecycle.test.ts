@@ -89,6 +89,8 @@ async function hook(
     stderr: (value) => {
       stderr.push(value);
     },
+    // s98-m08: room load cannot spend (#1558); this test checks what the hook does, not its deadline.
+    startedAtMs: Date.now() + 20_000,
     ...override,
   });
   setExternalSessionOwner(null);
@@ -165,7 +167,8 @@ it('does not begin close writes when Git observations exhaust the remaining dead
     now += 1001;
     return 'Repository observations: timeout; exit facts unavailable.';
   });
-  expect((await hook('session-end')).stdout).toBe('');
+  // This test spends the production deadline, so its clock starts at the call, without the room.
+  expect((await hook('session-end', {}, { startedAtMs: now })).stdout).toBe('');
   expect(close).not.toHaveBeenCalled();
   const db = new Database(dbPath, { readonly: true });
   expect(db.prepare('SELECT status FROM sessions WHERE id=?').get(owned!.sessionId)).toEqual({

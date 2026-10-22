@@ -1,6 +1,7 @@
 // ABOUTME: Dashboard backfill uploads a registered owner store as SQLite; retired event replay and fallback refuse.
 // ABOUTME: Reconciliation, orphan reporting and explicit purge remain available through their existing guarded paths.
 
+import { formatToolFailure } from './format-failure';
 import { isMembersCopy } from './record-membership';
 import { REPLICA_ERROR_CODES } from './replica-identity';
 import * as path from 'path';
@@ -13,6 +14,7 @@ import { checkWrite } from './write-guard';
 import { deriveProjectSlug } from './project-identity';
 import { registerResolvedProjectStore } from '../../intelligence/project-resolution';
 import { legacySyncRefusal } from './legacy-sync-refusal';
+import { settingIsOff } from '../../intelligence/legacy-compat';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -127,6 +129,13 @@ export async function rbookDbBackfill(
   params: RbookDbBackfillParams
 ): Promise<RbookToolResult<RbookDbBackfillResult>> {
   if (params.dryRun) return legacySyncRefusal('Dashboard event-replay dry run');
+  if (settingIsOff('RBOOK_CHECKPOINT_SYNC'))
+    return createError({
+      code: 'CHECKPOINT_SYNC_DISABLED',
+      message: 'Dashboard uploads are disabled by RBOOK_CHECKPOINT_SYNC. Nothing was uploaded.',
+      suggestion:
+        "Change the server's setting only when a whole-record dashboard upload is intended.",
+    });
   return withClientAsync<RbookDbBackfillResult>(
     async (db) => {
       if (isMembersCopy(db))
@@ -571,7 +580,7 @@ async function reconcileWithGlobalEndpoint(
 
 export function formatReconciliationForLLM(result: RbookToolResult<ReconciliationResult>): string {
   if (!result.success) {
-    return `Reconciliation failed: ${result.error?.message ?? 'Unknown error'}`;
+    return formatToolFailure('Reconciliation failed', result.error);
   }
 
   const d = result.data!;
@@ -726,7 +735,7 @@ function getSqliteDependencyKeys(db: RbookDatabaseClient): Set<string> {
 
 export function formatPgOrphanReportForLLM(result: RbookToolResult<PgOrphanReport>): string {
   if (!result.success) {
-    return `PG orphan identification failed: ${result.error?.message ?? 'Unknown error'}`;
+    return formatToolFailure('PG orphan identification failed', result.error);
   }
 
   const d = result.data!;
@@ -838,7 +847,7 @@ export async function rbookDbPurge(params: {
 
 export function formatPurgeForLLM(result: RbookToolResult<PurgeResult>): string {
   if (!result.success) {
-    return `Purge failed: ${result.error?.message ?? 'Unknown error'}`;
+    return formatToolFailure('Purge failed', result.error);
   }
 
   const d = result.data!;
@@ -847,8 +856,6 @@ export function formatPurgeForLLM(result: RbookToolResult<PurgeResult>): string 
     '',
     `Tables cleared: ${d.tablesCleared.join(', ')}`,
     `Rows deleted: ${d.rowsDeleted}`,
-    '',
-    'Run rbook_db(action="backfill", force=true) to re-sync all data.',
   ];
 
   appendWarnings(lines, result);

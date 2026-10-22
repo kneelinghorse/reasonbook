@@ -59,6 +59,8 @@ PRIVATE.describe('draft approval on a copy of the live store', () => {
       const code = await runCli(['hook', event], {
         env: { ...process.env, CLAUDE_PID: String(process.pid) },
         cwd: projectRoot,
+        // s98-m08: room load cannot spend (#1558); this test checks what the hook does, not its deadline.
+        startedAtMs: Date.now() + 20_000,
         readStdin: async () => JSON.stringify({ session_id: session, cwd: projectRoot, ...fields }),
         stdout: (text) => {
           stdout += text;

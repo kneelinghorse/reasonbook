@@ -62,6 +62,30 @@ function query(sql: string): unknown[] {
 }
 
 describe('standalone feedback', () => {
+  it.each([{ mode: [] }, { mode: ['--dry-run'] }])(
+    'refuses feedback over the shared 2000-character bound before writing or previewing: %j',
+    async ({ mode }) => {
+      const before = fs.readFileSync(dbPath);
+      const result = await run(['--content', 'x'.repeat(2001), ...mode, '--format=json']);
+      expect(result.code).toBe(1);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        success: false,
+        error: {
+          code: 'INVALID_PARAMETER',
+          field: 'agentFeedback',
+          suggestion: expect.stringContaining('2000'),
+        },
+      });
+      expect(fs.readFileSync(dbPath)).toEqual(before);
+    }
+  );
+
+  it('still records feedback exactly at the shared bound', async () => {
+    const content = 'x'.repeat(2000);
+    expect((await run(['--content', content])).code).toBe(0);
+    expect(query('SELECT body FROM agent_feedback')).toEqual([{ body: content }]);
+  });
+
   it('records friction immediately, with no session or mission requirement', async () => {
     const result = await run(['--content', 'The remedy omitted the required project root.']);
     expect(result.code).toBe(0);

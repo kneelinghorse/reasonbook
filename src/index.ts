@@ -130,6 +130,8 @@ import {
 } from './tools/rbook/dashboard-upload-scheduler';
 import { cleanupActiveUploadCopies } from './tools/rbook/dashboard-upload';
 import { RBOOK_CHECKPOINT_SYNC_ENV } from './tools/rbook/checkpoint-backfill';
+import { RBOOK_TOOL_SCHEMAS } from './tools/rbook/tool-schemas';
+import { validateRbookArguments } from './tools/rbook/tool-validation';
 import {
   RBOOK_TOOL_DEFINITIONS,
   // Consolidated entity tools (Sprint 24)
@@ -977,6 +979,14 @@ export async function executeMissionProtocolTool(
     return buildKnownToolErrorResult(preflightError);
   }
 
+  // Whole-schema checking follows action, projectRoot type and unknown-key precedence. The
+  // normalized arguments (not the original nulls or zod's stripped output) reach every handler.
+  const schema = RBOOK_TOOL_SCHEMAS[name];
+  if (!schema) throw new Error(`No input schema for published tool: ${name}`);
+  const checked = validateRbookArguments(schema, args);
+  if (!checked.success) return buildKnownToolErrorResult(checked.error!);
+  args = checked.data!;
+
   // Sprint 78 m04 (FORK-5): read-only review-agent guard. It still runs before the switch and any
   // resolveToolSenderContext / DB open, so a blocked valid write opens no DB and mutates no row.
   // Strict no-op unless RBOOK_AGENT_ROLE=review; then write-classified calls are hard-rejected.
@@ -1729,7 +1739,7 @@ async function main(argv: readonly string[] = process.argv.slice(2)): Promise<vo
       process.stdout.write(`reasonbook ${getServerVersion()}\n`);
       process.exit(0);
     }
-    if (argv.includes('--help')) {
+    if (argv.includes('--help') || argv.includes('-h')) {
       process.stdout.write(
         `reasonbook ${getServerVersion()} — the MCP server for Reasonbook, a project record over SQLite.\n\n` +
           `Usage:\n` +
@@ -1744,7 +1754,13 @@ async function main(argv: readonly string[] = process.argv.slice(2)): Promise<vo
           `The server speaks the Model Context Protocol on stdio; launch it from an MCP\n` +
           `host (Claude Code, Claude Desktop, Cursor, VS Code), not directly.\n`
       );
-      process.exit(0);
+      return process.exit(0);
+    }
+
+    const { firstUnknownOption } = await import('./cli/usage');
+    if (firstUnknownOption('serve', argv)) {
+      process.stderr.write('reasonbook: unknown option. Use reasonbook --help for usage.\n');
+      return process.exit(1);
     }
 
     // s92-m01: record --project-root before anything resolves (whoami included).

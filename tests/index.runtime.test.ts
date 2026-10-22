@@ -624,23 +624,30 @@ describe('Mission Protocol entry lifecycle', () => {
       const callHandler = mockServer.setRequestHandler.mock.calls[1][1] as (
         request: any
       ) => Promise<any>;
-      // s91-m02: undeclared keys are now refused at the preflight, so the >10-key sanitizer
-      // input is built from keys the published rbook_project schema actually declares.
-      const projectSchema = (await import('../src/tools/rbook')).RBOOK_TOOL_DEFINITIONS.find(
-        (definition) => definition.name === 'rbook_project'
-      )!.inputSchema as { properties: Record<string, unknown> };
-      const declaredKeys = Object.keys(projectSchema.properties).filter(
-        (key) => key !== 'action' && key !== 'projectRoot'
-      );
-      expect(declaredKeys.length).toBeGreaterThanOrEqual(10);
+      // The sanitizer must still bound a handler crash after whole-schema validation. Every
+      // supplied key (including off-action keys) is valid so this reaches the throwing handler.
+      const validArgs = {
+        action: 'init',
+        projectRoot,
+        projectName: 'Fixture',
+        projectId: 'fixture',
+        tracelabProjectId: 'fixture',
+        initialSprint: {},
+        initialMissions: [],
+        name: 'Fixture',
+        setAsDefault: false,
+        prune: false,
+        validate: false,
+        projectType: 'build',
+        instances: [],
+        statusFilter: [],
+        itemType: 'mission',
+      };
+      expect(Object.keys(validArgs).length).toBeGreaterThan(10);
       const result = await callHandler({
         params: {
           name: 'rbook_project',
-          arguments: {
-            action: 'init',
-            projectRoot,
-            ...Object.fromEntries(declaredKeys.map((key, idx) => [key, idx])),
-          },
+          arguments: validArgs,
         },
       });
 
@@ -661,9 +668,10 @@ describe('Mission Protocol entry lifecycle', () => {
         module: 'server',
         data: expect.objectContaining({
           tool: 'rbook_project',
-          args: expect.objectContaining({ [declaredKeys[0]]: 0 }),
+          args: expect.objectContaining({ projectName: 'Fixture' }),
         }),
       });
+      expect(Object.keys(contextArg?.data?.args as object)).toHaveLength(10);
     } finally {
       moduleData.cleanup();
       await fs.rm(projectRoot, { recursive: true, force: true });
@@ -771,7 +779,7 @@ describe('Mission Protocol entry lifecycle', () => {
     }
   });
 
-  test('registerToolHandlers omits sanitized args when input is not an object', async () => {
+  test('registerToolHandlers refuses a non-object envelope before invoking a handler', async () => {
     const project = await createSeededRbookProject({}, 'rbook-index-non-object-error-');
     const moduleData = await loadIndexModule();
     const { indexModule, mockServer, ErrorHandler } = moduleData;
@@ -805,12 +813,11 @@ describe('Mission Protocol entry lifecycle', () => {
       });
       expect(result).toMatchObject({
         isError: true,
-        structuredContent: { error: { code: 'TOOL_EXECUTION_ERROR' } },
+        structuredContent: { error: { code: 'INVALID_PARAMETER', field: 'arguments' } },
       });
 
-      const [, , contextArg] = handleSpy.mock.calls[0];
-      expect(contextArg).toBeDefined();
-      expect(contextArg?.data).toEqual({ tool: 'rbook_status' });
+      expect(handlerSpy).not.toHaveBeenCalled();
+      expect(handleSpy).not.toHaveBeenCalled();
     } finally {
       process.cwd = originalCwd;
       moduleData.cleanup();
@@ -1134,7 +1141,7 @@ describe('Mission Protocol entry lifecycle', () => {
     const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
     try {
-      await indexModule.__test__.main();
+      await indexModule.__test__.main([]);
 
       expect(mockServer.setRequestHandler).toHaveBeenCalled();
       expect(moduleData.serverCtor.mock.calls).toContainEqual([
@@ -1178,6 +1185,40 @@ describe('Mission Protocol entry lifecycle', () => {
       indexModule.__test__.resetContextBuilder();
       consoleSpy.mockRestore();
       restoreDebug();
+    }
+  });
+
+  test.each([
+    ['-h', 0],
+    ['--help', 0],
+    ['--f9-unknown', 1],
+    ['-Z', 1],
+  ])('direct server entry %s exits before any startup or store work', async (arg, code) => {
+    const moduleData = await loadIndexModule();
+    const { indexModule, serveStdioMock } = moduleData;
+    const builder = jest.fn(async () => {
+      throw new Error('startup must stay untouched');
+    });
+    indexModule.__test__.setContextBuilder(builder);
+    const exitSpy = jest.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
+    const out = jest.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const err = jest.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await indexModule.__test__.main([String(arg)]);
+      expect(exitSpy).toHaveBeenCalledTimes(1);
+      expect(exitSpy).toHaveBeenCalledWith(code);
+      expect(builder).not.toHaveBeenCalled();
+      expect(serveStdioMock).not.toHaveBeenCalled();
+      if (code === 0) expect(out).toHaveBeenCalledWith(expect.stringContaining('Usage:'));
+      else expect(err).toHaveBeenCalledWith(expect.stringMatching(/unknown option.*--help/i));
+    } finally {
+      moduleData.cleanup();
+      indexModule.__test__.resetContextBuilder();
+      exitSpy.mockRestore();
+      out.mockRestore();
+      err.mockRestore();
+      log.mockRestore();
     }
   });
 
@@ -1257,7 +1298,7 @@ describe('Mission Protocol entry lifecycle', () => {
     const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
     try {
-      await indexModule.__test__.main();
+      await indexModule.__test__.main([]);
 
       expect(exitSpy).toHaveBeenCalledWith(1);
       expect(consoleSpy).toHaveBeenCalledWith(

@@ -136,12 +136,12 @@ describe('parseProjectRootArg', () => {
 });
 
 describe('isEphemeralStorePath', () => {
-  it("flags feedback #41's actual scratchpad store and the registry's /tmp/probe89", () => {
-    // os.tmpdir() on the owner's machine is /var/folders/…/T, so a tmpdir-only predicate missed
-    // both of these. The paths are copied from the owner's registry.
+  it('flags a harness scratchpad path and a short /tmp probe path', () => {
+    // macOS os.tmpdir() can be /var/folders/…/T, so a tmpdir-only predicate misses
+    // these other temporary roots. The harness path keeps the reported structure.
     expect(
       isEphemeralStorePath(
-        '/private/tmp/claude-501/-Users-systemsystems-portfolio-cmos-mcp-pro/bb693e0d-e541-4ad6-bf32-2f63fb92cfe3/scratchpad/proj'
+        '/private/tmp/claude-501/-Users-example-work-project/00000000-0000-4000-8000-000000000001/scratchpad/proj'
       )
     ).toBe(true);
     expect(isEphemeralStorePath('/tmp/probe89')).toBe(true);

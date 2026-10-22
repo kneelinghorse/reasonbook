@@ -142,7 +142,8 @@ function runHost(
     let out = '';
     host.stdout.on('data', (chunk) => (out += String(chunk)));
     host.on('error', reject);
-    host.on('exit', () => resolve(JSON.parse(out) as HostReport));
+    // s98-m08 (#660 item 7): 'close', not 'exit', which Node documents can fire before stdio closes.
+    host.on('close', () => resolve(JSON.parse(out) as HostReport));
   });
 }
 

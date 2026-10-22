@@ -279,19 +279,34 @@ export function markRevisedAfterApproval(run: SqlRunner, id: number, by: number)
  * round 2): a follow-on line linked at the window's floor is another choice, not this one's end.
  */
 export function newestPending(run: SqlRunner, id: number): number {
-  const subjects = [getDraft(run, id)?.text ?? ''];
-  let newest = id;
+  return (
+    revisionChain(run, id)
+      .reverse()
+      .find((draft) => draft.outcome === 'pending')?.id ?? id
+  );
+}
+
+/** Only subject-covered links belong to one choice, whichever end is recorded first. */
+function revisionChain(
+  run: SqlRunner,
+  id: number,
+  earlierSubjects: readonly string[] = []
+): DraftRow[] {
+  const first = getDraft(run, id);
+  if (!first) return [];
+  const chain = [first];
+  const subjects = [...earlierSubjects, first.text];
   const seen = new Set([id]);
-  for (let next = getDraft(run, id)?.replacedBy ?? null; next !== null && !seen.has(next); ) {
+  for (let next = first.replacedBy; next !== null && !seen.has(next); ) {
     seen.add(next);
     const draft = getDraft(run, next);
     if (!draft || !subjects.some((text) => draftCoverage(text, draft.text) >= REVISION_COVERAGE))
       break;
     subjects.push(draft.text);
-    if (draft.outcome === 'pending') newest = draft.id;
+    chain.push(draft);
     next = draft.replacedBy;
   }
-  return newest;
+  return chain;
 }
 
 /** A direct record (no fromDraft) answered these drafts; they never reappear (B12). */
@@ -327,9 +342,10 @@ export function markApproved(
 }
 
 /**
- * s97-m12 (critic rounds 2 and 3): a recorded revision settles every approved draft its chain
- * revised, however many revisions back, which stayed pending only so it could still be recorded
- * in its own words. s100-m02 (the s97 review's finding 15): a recorded draft settles the revisions
+ * s97-m12 (critic rounds 2 and 3): a recorded revision settles the approved drafts its chain
+ * revised, which stayed pending only so they could still be recorded in their own words. s98-m13
+ * (#734): those backward paths must pass the same subject gate as the forward walk. s100-m02
+ * (the s97 review's finding 15): a recorded draft settles the revisions
  * after it too, answered by its record, while they still state the subject of it or of a draft
  * before it (the verification round): a follow-on line or a changed key term is another choice,
  * and stays to be recorded on its own.
@@ -341,44 +357,38 @@ export function settleRevised(
   recordId: string
 ): void {
   if (!ids.length) return;
-  run.run(
-    `WITH RECURSIVE earlier(id) AS (
-       SELECT id FROM proposals WHERE replaced_by IN (${placeholders(ids)})
-       UNION
-       SELECT proposals.id FROM proposals JOIN earlier ON proposals.replaced_by = earlier.id
-     )
-     UPDATE proposals SET outcome = 'replaced', answered_at = ?
-     WHERE outcome = 'pending' AND id IN (SELECT id FROM earlier)`,
-    [...ids, at]
-  );
   for (const id of ids) {
-    const subjects = run
-      .all<{ text: string }>(
-        `WITH RECURSIVE earlier(id) AS (
+    const candidates = run.all<{ id: number }>(
+      `WITH RECURSIVE earlier(id) AS (
            SELECT ?
            UNION
            SELECT proposals.id FROM proposals JOIN earlier ON proposals.replaced_by = earlier.id
          )
-         SELECT text FROM proposals WHERE id IN (SELECT id FROM earlier)`,
-        [id]
-      )
-      .map((row) => row.text);
-    const seen = new Set([id]);
-    for (let next = getDraft(run, id)?.replacedBy ?? null; next !== null && !seen.has(next); ) {
-      seen.add(next);
-      const later = getDraft(run, next);
-      if (!later || !subjects.some((text) => draftCoverage(text, later.text) >= REVISION_COVERAGE))
-        break;
-      // As newestPending carries each draft it passes (verification round 3): a middle revision that
-      // drifted from the recorded draft's words still names the subject of the drafts after it.
-      subjects.push(later.text);
+         SELECT id FROM earlier WHERE id != ?`,
+      [id, id]
+    );
+    const earlier = new Map<number, DraftRow>();
+    for (const candidate of candidates) {
+      // A pointer alone is not approval coverage (#734). Admit the path only if the same
+      // cumulative subject gate used by the forward walk reaches the draft just recorded.
+      const chain = revisionChain(run, candidate.id);
+      const recordedAt = chain.findIndex((draft) => draft.id === id);
+      if (recordedAt < 0) continue;
+      for (const draft of chain.slice(0, recordedAt)) earlier.set(draft.id, draft);
+    }
+    for (const draft of earlier.values())
+      run.run(
+        `UPDATE proposals SET outcome = 'replaced', answered_at = ? WHERE outcome = 'pending' AND id = ?`,
+        [at, draft.id]
+      );
+    const subjects = [...earlier.values()].map((draft) => draft.text);
+    for (const later of revisionChain(run, id, subjects).slice(1)) {
       if (later.outcome === 'pending')
         run.run(
           `UPDATE proposals SET outcome = 'answered', record_id = ?, answered_at = ?
            WHERE outcome = 'pending' AND id = ?`,
           [recordId, at, later.id]
         );
-      next = later.replacedBy;
     }
   }
 }

@@ -129,11 +129,21 @@ describe('reasonbook brief (s97-m03)', () => {
     for (const argv of [
       ['--days', '0'],
       ['--days', 'week'],
+      ['--days', '366'],
+      ['--days', '-1'],
+      ['--days', '1.5'],
+      ['--days', 'Infinity'],
       ['--format', 'html'],
     ]) {
       const result = await run(argv);
       expect(result.code).toBe(1);
       expect(result.stderr[0]).toContain('Usage: reasonbook brief');
     }
+  });
+
+  it.each([1, 365])('accepts the bounded window endpoint %i', async (days) => {
+    const result = await run(['--days', String(days), '--format', 'json']);
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout).windowDays).toBe(days);
   });
 });

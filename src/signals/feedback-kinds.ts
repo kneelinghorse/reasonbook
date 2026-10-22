@@ -6,9 +6,10 @@
  * WHY RULES. 884 agent_feedback rows sit in 21 of this Mac's registered stores (2026-10-20), 782 of
  * them open, and the October study's hand labels did not survive. A count by kind is only
  * worth showing if anyone can recompute it, so a row's kind comes from these published rules alone:
- * the same text always gets the same kind, on this client and at the dashboard's ingest.
+ * the same text always gets the same kind, on this client and in any host using this library at ingest.
  *
  * HOW A ROW IS SORTED.
+ *   0. Read only the first 4,000 UTF-16 code units, bounding work on historical uncapped rows.
  *   1. A row that names Reasonbook nowhere ({@link REASONBOOK_NAMED}: `reasonbook`, `rbook`, `cmos`,
  *      or one of their tools) is unclassified: about half the rows are about the project's own
  *      code, plans or tools, and only words that name Reasonbook keep those out.
@@ -89,7 +90,13 @@ export interface FeedbackKindRule {
 /** A row names Reasonbook: its names, old and new, or one of their tools. */
 export const REASONBOOK_NAMED = /\b(?:cmos|rbook|reasonbook)\b|\b(?:cmos|rbook)_[a-z_]+/i;
 
-/** The rules, in precedence order. Patterns are case-insensitive and never global, so stateless. */
+/**
+ * The rules, in precedence order. Case-insensitive and never global, so stateless.
+ * A lookahead captures the first required token after a period; its backreference commits that
+ * prefix before the next search. Without that commitment, repeated starts retry the same suffix
+ * quadratically (or cubically with two gaps). The 4,000 bounds preserve matches within the input
+ * cap. Direct pattern tests on longer text can ignore tokens beyond a bounded lookahead span.
+ */
 export const FEEDBACK_KIND_RULES: readonly FeedbackKindRule[] = [
   {
     id: 'setup.stale-binary',
@@ -101,18 +108,19 @@ export const FEEDBACK_KIND_RULES: readonly FeedbackKindRule[] = [
     id: 'surfacing.supersession-noise',
     kind: 'surfacing',
     pattern:
-      /supersession (?:detect(?:or|ion)|candidates?|offers?|heuristic|signal|suggestions?|hints?)|suggest(?:s|ed)? (?:superseding|that [^.]{0,60}supersedes)|propos(?:es|ed|ing) (?:superseding|supersession)|proposed as superseded|(?:offered|proposed) [^.]{0,40}as superseding|supersed\w*[^.]*\b(?:false[- ]positives?|keyword overlap|shared (?:rare )?(?:terms|vocabulary)|too eager)\b/i,
+      /supersession (?:detect(?:or|ion)|candidates?|offers?|heuristic|signal|suggestions?|hints?)|suggest(?:s|ed)? (?:superseding|that [^.]{0,60}supersedes)|propos(?:es|ed|ing) (?:superseding|supersession)|proposed as superseded|(?:offered|proposed) [^.]{0,40}as superseding|(?:^|\.)(?=([^.]{0,4000}?supersed))\1[^.]*\b(?:false[- ]positives?|keyword overlap|shared (?:rare )?(?:terms|vocabulary)|too eager)\b/i,
   },
   {
     id: 'payload.oversized-answer',
     kind: 'payload',
     pattern:
-      /\b\d+(?:\.\d+)?\s?(?:KB|kB|MB)\b[^.]*\b(?:payload|response|returned|answer|cap|overflow)|\b(?:payload|response|returned|answer)[^.]*\b\d+(?:\.\d+)?\s?(?:KB|kB|MB)\b|token cap|tool-result (?:token )?(?:cap|limit)|token limit|jq'?d (?:it )?(?:off|from)|spilled to (?:a )?file|exceed(?:s|ed|ing)? the (?:MCP )?(?:tool-result )?(?:token )?cap|\b\d{2,3},\d{3} char(?:acter)?s\b/i,
+      /(?:^|\.)(?=([^.]{0,4000}?\b\d{1,4000}(?:\.\d{1,4000})?\s?(?:KB|kB|MB)\b))\1[^.]*\b(?:payload|response|returned|answer|cap|overflow)|(?:^|\.)(?=([^.]{0,4000}?\b(?:payload|response|returned|answer)))\2[^.]*\b\d{1,4000}(?:\.\d{1,4000})?\s?(?:KB|kB|MB)\b|token cap|tool-result (?:token )?(?:cap|limit)|token limit|jq'?d (?:it )?(?:off|from)|spilled to (?:a )?file|exceed(?:s|ed|ing)? the (?:MCP )?(?:tool-result )?(?:token )?cap|\b\d{2,3},\d{3} char(?:acter)?s\b/i,
   },
   {
     id: 'payload.repeated-focus',
     kind: 'payload',
-    pattern: /\bfocus\b[^.]*\b(?:every|each) (?:queued )?mission|repeats? the (?:full )?sprint/i,
+    pattern:
+      /(?:^|\.)(?=([^.]{0,4000}?\bfocus\b))\1[^.]*\b(?:every|each) (?:queued )?mission|repeats? the (?:full )?sprint/i,
   },
   {
     id: 'identity.fan-out',
@@ -131,13 +139,13 @@ export const FEEDBACK_KIND_RULES: readonly FeedbackKindRule[] = [
     id: 'sync.messaging',
     kind: 'sync',
     pattern:
-      /(?:cmos|rbook)_message[^.]*\b(?:respond|reply|replies|ack|thread|undefined|refuses|rejects|fails?)\b|\bID: undefined\b|already been responded to/i,
+      /(?:^|\.)(?=([^.]{0,4000}?(?:cmos|rbook)_message))\1[^.]*\b(?:respond|reply|replies|ack|thread|undefined|refuses|rejects|fails?)\b|\bID: undefined\b|already been responded to/i,
   },
   {
     id: 'silent-loss.false-success',
     kind: 'silent-loss',
     pattern:
-      /silently (?:ignores|ignored|drops|dropped|discards|absorbed|returned zero)|returns? success(?::\s?true)?[^.]*\b(?:without|but|no)\b|No changes needed|reported success but/i,
+      /silently (?:ignores|ignored|drops|dropped|discards|absorbed|returned zero)|(?:^|\.)(?=([^.]{0,4000}?returns? success(?::\s?true)?))\1[^.]*\b(?:without|but|no)\b|No changes needed|reported success but/i,
   },
   {
     id: 'ceremony.no-decisions-warning',
@@ -179,7 +187,7 @@ export const FEEDBACK_KIND_RULES: readonly FeedbackKindRule[] = [
     id: 'surfacing.next-action-order',
     kind: 'surfacing',
     pattern:
-      /(?:next ?action|nextAction|next_actions|recommend(?:s|ed)?|picks?|suggested)[^.]*\b(?:alphabetic\w*|by id|first queued|despite|although|even though|prerequisite|dependenc\w*|Requires|above the actual|buried)\b/i,
+      /(?:^|\.)(?=([^.]{0,4000}?(?:next ?action|nextAction|next_actions|recommend(?:s|ed)?|picks?|suggested)))\1[^.]*\b(?:alphabetic\w{0,4000}|by id|first queued|despite|although|even though|prerequisite|dependenc\w{0,4000}|Requires|above the actual|buried)\b/i,
   },
   { id: 'setup.schema-mismatch', kind: 'setup', pattern: /DB_SCHEMA_MISMATCH|schema mismatch/i },
   {
@@ -197,19 +205,20 @@ export const FEEDBACK_KIND_RULES: readonly FeedbackKindRule[] = [
   {
     id: 'surfacing.stale-counts',
     kind: 'surfacing',
-    pattern: /\bundercount(?:s|ed)?\b|showed Queued:?\s?\d+ while|capped at \d+ while \d+ were/i,
+    pattern:
+      /\bundercount(?:s|ed)?\b|showed Queued:?\s?\d+ while|capped at \d{1,4000} while \d{1,4000} were/i,
   },
   {
     id: 'sync.hosted-wrapper',
     kind: 'sync',
     pattern:
-      /(?:Aquex|hosted|codex_apps)[^.]*\b(?:connector|wrapper|endpoint)s?\b[^.]*\b(?:404|502|failed|failing|error)|\b(?:404|502)s?\b[^.]*\b(?:connector|wrapper|endpoint)\b|Dashboard 404|sync health unavailable/i,
+      /(?:^|\.)(?=([^.]{0,4000}?(?:Aquex|hosted|codex_apps)))\1(?=([^.]{0,4000}?\b(?:connector|wrapper|endpoint)s?\b))\2[^.]*\b(?:404|502|failed|failing|error)|(?:^|\.)(?=([^.]{0,4000}?\b(?:404|502)s?\b))\3[^.]*\b(?:connector|wrapper|endpoint)\b|Dashboard 404|sync health unavailable/i,
   },
 ];
 
 /** Published beside every count by kind. */
 export const FEEDBACK_KINDS_RULE =
-  "a row's kind is that of the first rule in FEEDBACK_KIND_RULES whose pattern matches its text, " +
+  "a row's kind is that of the first rule in FEEDBACK_KIND_RULES whose pattern matches the first 4,000 UTF-16 code units of its text, " +
   'among rows that name Reasonbook (reasonbook, rbook, cmos or one of their tools); a row that names ' +
   "it nowhere, that no rule matches, or whose first rule is a folded kind's, is unclassified; the " +
   'tool name decides nothing';
@@ -224,7 +233,7 @@ const UNCLASSIFIED: FeedbackClassification = { kind: 'unclassified', rule: null 
 
 /** The kind of one row's text. Deterministic: no clock, no state, no I/O. */
 export function classifyFeedback(text: string | null | undefined): FeedbackClassification {
-  const body = typeof text === 'string' ? text : '';
+  const body = typeof text === 'string' ? text.slice(0, 4000) : '';
   if (!REASONBOOK_NAMED.test(body)) return UNCLASSIFIED;
   for (const rule of FEEDBACK_KIND_RULES) {
     if (!rule.pattern.test(body)) continue;

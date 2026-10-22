@@ -3,7 +3,7 @@
 // ABOUTME: Every read revalidates time, origin and current collisions with no negative cache.
 import {
   canonicalRecordFields,
-  extractRecordLinkCandidates,
+  createRecordLinkExtractor,
   type RecordLink,
   type CitationDiscards,
 } from './record-link-extractor';
@@ -56,6 +56,7 @@ export function readRecordLinks(
   try {
     const state = inspectRecordLinkSchema(reader);
     const inventory = loadLinkInventory(reader);
+    const extract = createRecordLinkExtractor(inventory.identities, inventory.localProjectId);
     const links: RecordLink[] = [];
     const targets = options.toDecisions;
     const wanted = (link: { to_kind: string; to_id: number }): boolean =>
@@ -64,13 +65,7 @@ export function readRecordLinks(
       for (const source of inventory.sources) {
         const fields = canonicalRecordFields(source.kind, source.fields);
         if (targets && !fields.some((field) => MAY_CITE.test(field))) continue;
-        const parsed = extractRecordLinkCandidates(
-          fields,
-          source,
-          inventory.identities,
-          inventory.localProjectId,
-          { typedOnly: true }
-        );
+        const parsed = extract(fields, source, { typedOnly: true });
         links.push(...withoutSelfLinks(parsed.links, source).filter(wanted));
         add(parsed.discarded);
       }
@@ -95,12 +90,7 @@ export function readRecordLinks(
         edge.resolution === 'bare'
           ? `#${edge.to_id}`
           : `${edge.to_kind === 'decision' ? 'd' : 'l'}:${edge.to_id}`;
-      const parsed = extractRecordLinkCandidates(
-        [text],
-        source,
-        inventory.identities,
-        inventory.localProjectId
-      );
+      const parsed = extract([text], source);
       add(parsed.discarded);
       if (
         parsed.links.some((valid) => valid.to_kind === edge.to_kind && valid.to_id === edge.to_id)

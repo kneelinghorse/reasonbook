@@ -1,6 +1,102 @@
 // SPDX-License-Identifier: Apache-2.0
-// ABOUTME: The usage text reasonbook prints for an unknown or missing verb: every verb and its main options,
-// ABOUTME: one line each, with a second line where a verb's purpose needs saying.
+// ABOUTME: Pure CLI usage and accepted options, available before loading a command or the server.
+// ABOUTME: Reject unknown option names without changing the argv existing handlers receive.
+
+const ROOT = ['project-root'];
+const ROUTE = ['ssh', 'remote-root', 'node', 'bin', 'config-dir'];
+const OPTIONS: Readonly<
+  Record<string, { readonly values: readonly string[]; readonly switches?: readonly string[] }>
+> = {
+  init: { values: [...ROOT, 'level', 'name'], switches: ['no-hooks'] },
+  review: { values: [...ROOT, 'format'] },
+  relevant: { values: [...ROOT, 'query', 'limit', 'format'] },
+  decisions: {
+    values: [
+      ...ROOT,
+      'session-id',
+      'content',
+      'context',
+      'consequences',
+      'mode',
+      'domain',
+      'alternatives',
+      'deciders',
+      'mission',
+      'sprint',
+      'format',
+    ],
+  },
+  capture: { values: [...ROOT, 'session-id', 'category', 'content', 'mission', 'format'] },
+  session: { values: [...ROOT, 'session-id'] },
+  ambient: { values: ROOT },
+  profile: { values: ROOT },
+  config: { values: ROOT },
+  repair: { values: ROOT, switches: ['guard'] },
+  stats: {
+    values: [...ROOT, 'since', 'until', 'baseline-since', 'baseline-until', 'include-project'],
+    switches: ['export'],
+  },
+  feedback: { values: [...ROOT, 'content', 'format'], switches: ['dry-run'] },
+  drafts: { values: [...ROOT, 'format'], switches: ['all'] },
+  migrate: { values: [...ROOT, 'project'], switches: ['apply', 'docs-only', 'config'] },
+  sync: {
+    values: [...ROOT, ...ROUTE, 'bundle-out', 'bundle-in', 'for'],
+    switches: ['serve', 'confirm-owner', 'join', 'auto'],
+  },
+  join: {
+    values: [
+      ...ROOT,
+      ...ROUTE,
+      'dashboard',
+      'into',
+      'member',
+      'request-out',
+      'answer',
+      'out',
+      'apply',
+    ],
+  },
+  copy: { values: [...ROOT, 'to'] },
+  handover: { values: [...ROOT, ...ROUTE] },
+  recover: { values: [...ROOT, ...ROUTE, 'members', 'routes', 'drop'] },
+  share: { values: ROOT, switches: ['dashboard', 'yes'] },
+  move: { values: [...ROOT, 'to'] },
+  import: { values: [...ROOT, 'from', 'include'], switches: ['apply'] },
+  signals: { values: [...ROOT, 'format'] },
+  brief: { values: ['days', 'format'] },
+  'spin-out': {
+    values: ['from', 'to', 'sprint', 'missions', 'decisions', 'learnings', 'next-steps'],
+    switches: ['apply'],
+  },
+  serve: { values: ROOT, switches: ['version', 'whoami'] },
+};
+
+/** Name checks only: handlers keep their established value, duplicate and subcommand checks. */
+export function firstUnknownOption(verb: string, argv: readonly string[]): string | null {
+  // Unknown verbs keep their own usage refusal; hooks deliberately accept future harness options.
+  if (!Object.prototype.hasOwnProperty.call(OPTIONS, verb)) return null;
+  const options = OPTIONS[verb];
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (!arg.startsWith('-') || arg === '-') continue;
+    const option = arg.split('=', 1)[0];
+    const name = option.slice(2);
+    if (
+      !option.startsWith('--') ||
+      (!options.values.includes(name) && !options.switches?.includes(name))
+    )
+      return option;
+    // Match parseArgs' value boundary; never reinterpret a short-dash value or rewrite it.
+    if (
+      options.values.includes(name) &&
+      !arg.includes('=') &&
+      argv[i + 1] !== undefined &&
+      !argv[i + 1].startsWith('--')
+    )
+      i += 1;
+  }
+  return null;
+}
 
 export const USAGE =
   'Usage: reasonbook <verb> …\n' +
@@ -44,8 +140,10 @@ export const USAGE =
   '                                 drafted records awaiting the operator\n' +
   '  signals [--project-root <dir>] [--format json]\n' +
   '                                 what needs a person in each project on this machine, as counts\n' +
-  '  brief [--days 7] [--format md|json]\n' +
+  '  brief [--days 1..365] [--format md|json]\n' +
   "                                 the weekly brief over this machine's projects\n" +
   '  serve                          run the MCP server (the default with no verb)\n' +
-  'Other verbs take --project-root <dir>; spin-out requires --from and --to explicitly.\n' +
+  'Use -h or --help for usage; --version prints the installed version; --whoami explains server attribution.\n' +
+  'Other verbs take --project-root <dir>; brief covers all registered projects and refuses it.\n' +
+  'spin-out requires --from and --to explicitly.\n' +
   'Use the migration guide when upgrading an existing installation.\n';

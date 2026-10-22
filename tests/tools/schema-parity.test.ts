@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // ABOUTME: s86-m04 Part A — the published JSON inputSchema must state exactly what its zod schema
-// ABOUTME: states. Six parities, walked over all 15 tools, with no hand-written param or name list.
+// ABOUTME: states, including nested bounds, required keys and nulls across all 15 tool schemas.
 
 /**
  * Sprint 86 m04 Part A — "say only what you know", enforced on the PUBLISHED SCHEMA.
@@ -35,13 +35,9 @@
  * rows across 7 of 18 registered stores (measured per-store before any edit). `rbook_decisions` never
  * had this bug, and that asymmetry is the evidence the enum was wrong rather than the data.
  *
- * WHAT A CONSUMER ACTUALLY EXPERIENCES, probed rather than assumed (build plan CORRECTION 4). The
- * consolidated zod schemas are NEVER parsed at runtime: src/index.ts dispatches with no parse step
- * and all 15 cases cast (`args as Rbook*Params`), and the only two `.safeParse` calls in src/ are on
- * STANDALONE handler schemas (rbook-session-start.ts, rbook-project-init.ts). So the JSON side is the
- * ONLY enforcement any consumer ever sees, and it is client-side. That makes the divergence worse,
- * not milder: the published schema is not a redundant description of a server check, it is the
- * whole check.
+ * At the s86 baseline the consolidated schemas were never parsed at runtime. s98-m09 adds whole-
+ * schema validation at dispatch, so extra constraints in zod now refuse documented calls. Lengths,
+ * item counts, required keys and nullable types therefore join the original parity checks.
  *
  * DERIVED LOCATORS, NO NAME MAP. A tool's zod schema is resolved from its own name by rule —
  * `rbook_agent_onboard` → `rbook-agent-onboard.ts` → `rbookAgentOnboardSchema` — and a tool whose
@@ -56,12 +52,11 @@
  * ── FALSE-NEGATIVE PROFILE ────────────────────────────────────────────────────────────────────
  *  1. IT COMPARES DECLARATIONS, NOT BEHAVIOUR. `integer` on both sides says nothing about whether
  *     the handler floors a float before binding it into `LIMIT ?`. It does not (measured).
- *  2. UNWRAPPING IS FINITE. ZodOptional/ZodNullable/ZodDefault/ZodPipe are unwrapped; an exotic
- *     wrapper this walk does not know reaches the base-node check as itself and is reported, not
- *     skipped.
- *  3. NESTED PARITY IS SHALLOW BEYOND `strict`. Leg (v) recurses into nested objects for the
- *     unknown-keys check, but the type/min/max legs compare top-level properties and array items
- *     only — a divergence three levels down is invisible.
+ *  2. UNWRAPPING IS FINITE. ZodOptional/ZodNullable/ZodDefault/ZodPipe are unwrapped. Input JSON
+ *     rendering supplies types and length bounds; unrepresentable nodes render as unconstrained,
+ *     so a future exotic wrapper needs a fixture before its inner constraints can be claimed.
+ *  3. DECLARED OBJECTS AND ARRAY ITEMS ARE WALKED RECURSIVELY. Object members inside unions and
+ *     record-value schemas are not walked; only their declared types and nullability are compared.
  *  4. IT CANNOT SEE A MISSING CONSTRAINT ON BOTH SIDES. If neither side declares a `maximum`, the
  *     gate is green; whether one is warranted is a design question no parity rule can answer.
  *  5. IT COMPARES DECLARED SHAPES, SO AN UNDECLARED SUB-SHAPE IS A KEY-SET FAILURE, NOT A GAP.
@@ -81,7 +76,19 @@ import { RBOOK_TOOL_DEFINITIONS } from '../../src/tools/rbook/index';
 interface Violation {
   readonly tool: string;
   readonly key: string;
-  readonly leg: 'type' | 'array-item-type' | 'minimum' | 'maximum' | 'enum' | 'strict' | 'key-set';
+  readonly leg:
+    | 'type'
+    | 'array-item-type'
+    | 'minimum'
+    | 'maximum'
+    | 'enum'
+    | 'strict'
+    | 'key-set'
+    | 'minLength'
+    | 'maxLength'
+    | 'minItems'
+    | 'maxItems'
+    | 'required';
   readonly detail: string;
 }
 
@@ -89,6 +96,12 @@ interface JsonProp {
   type?: string | readonly string[];
   minimum?: number;
   maximum?: number;
+  minLength?: number;
+  maxLength?: number;
+  minItems?: number;
+  maxItems?: number;
+  required?: readonly string[];
+  anyOf?: readonly JsonProp[];
   enum?: readonly unknown[];
   items?: JsonProp;
   properties?: Record<string, JsonProp>;
@@ -98,6 +111,13 @@ interface JsonProp {
 interface JsonSchema {
   properties?: Record<string, JsonProp>;
   additionalProperties?: boolean;
+  required?: readonly string[];
+}
+
+/** Nullable unions and JSON type arrays state the same input types. */
+function inputTypes(json: JsonProp): string[] {
+  const types = Array.isArray(json.type) ? json.type : json.type ? [json.type] : [];
+  return [...new Set([...types, ...(json.anyOf ?? []).flatMap(inputTypes)])].sort();
 }
 
 /**
@@ -184,27 +204,36 @@ function compareNode(
 ): void {
   const base = baseOf(zodNode);
   const leg = isItem ? 'array-item-type' : 'type';
+  const rendered = z.toJSONSchema(zodNode, { io: 'input', unrepresentable: 'any' }) as JsonProp;
+  const bounds = z.toJSONSchema(base, { io: 'input', unrepresentable: 'any' }) as JsonProp;
+  for (const bound of ['minLength', 'maxLength', 'minItems', 'maxItems'] as const) {
+    if (bounds[bound] !== json[bound]) {
+      violations.push({
+        tool,
+        key,
+        leg: bound,
+        detail: `zod ${bounds[bound]} vs published ${json[bound]}`,
+      });
+    }
+  }
+
+  // Compare the wrapped input before any type-specific return, including nullable numbers.
+  const expected = inputTypes(rendered);
+  if (expected.length > 0) {
+    const published = inputTypes(json);
+    if (JSON.stringify(published) !== JSON.stringify(expected)) {
+      violations.push({
+        tool,
+        key,
+        leg,
+        detail: `zod types [${expected}] vs published [${published}]`,
+      });
+    }
+  }
 
   if (base instanceof z.ZodNumber) {
     totals.numericDeclarations += 1;
     const facts = numberFacts(base);
-    // (i) an `.int()` check must publish `integer`, not `number`.
-    if (facts.isInt && json.type !== 'integer') {
-      violations.push({
-        tool,
-        key,
-        leg,
-        detail: `zod .int() publishes type:'${json.type}'; expected 'integer'`,
-      });
-    }
-    if (!facts.isInt && json.type === 'integer') {
-      violations.push({
-        tool,
-        key,
-        leg,
-        detail: `zod has no .int() check but publishes type:'integer'`,
-      });
-    }
     // (ii) minimum parity.
     if (facts.min !== undefined && json.minimum !== facts.min) {
       violations.push({
@@ -224,20 +253,6 @@ function compareNode(
       });
     }
     return;
-  }
-
-  // Nullable strings are now a published mission contract; unwrapping must not erase nullability.
-  if (base instanceof z.ZodString) {
-    const expected = z.safeParse(zodNode, null).success ? ['null', 'string'] : ['string'];
-    const published = (Array.isArray(json.type) ? [...json.type] : [json.type]).sort();
-    if (JSON.stringify(published) !== JSON.stringify(expected)) {
-      violations.push({
-        tool,
-        key,
-        leg,
-        detail: `zod string types [${expected}] vs published [${published}]`,
-      });
-    }
   }
 
   // (iv) enum parity, in BOTH directions.
@@ -293,10 +308,22 @@ function compareObject(
   tool: string,
   prefix: string,
   zodObject: z.ZodObject<Record<string, z.ZodType>>,
-  json: { properties?: Record<string, JsonProp>; additionalProperties?: boolean },
+  json: JsonSchema,
   violations: Violation[],
   totals: WalkTotals
 ): void {
+  // z.unknown() accepts explicit undefined but its containing object still requires the key.
+  const required =
+    z.toJSONSchema(zodObject, { io: 'input', unrepresentable: 'any' }).required ?? [];
+  const publishedRequired = [...(json.required ?? [])].sort();
+  if (JSON.stringify([...required].sort()) !== JSON.stringify(publishedRequired)) {
+    violations.push({
+      tool,
+      key: prefix || '(root)',
+      leg: 'required',
+      detail: `zod [${required}] vs published [${publishedRequired}]`,
+    });
+  }
   const strict = zodObject.def.catchall instanceof z.ZodNever;
   const closed = json.additionalProperties === false;
   if (strict !== closed) {
@@ -378,6 +405,112 @@ function walkAll(): { violations: Violation[]; totals: WalkTotals } {
 }
 
 describe('Zod 4 introspection preserves the guard', () => {
+  const numericTypes = [
+    ['integer', z.number().int()],
+    ['number', z.number()],
+  ] as const;
+
+  it.each(numericTypes)('accepts matching nullable %s declarations', (type, node) => {
+    expect(
+      comparePair('nullable-number', z.object({ value: node.nullable().optional() }), {
+        properties: { value: { type: [type, 'null'] } },
+      })
+    ).toEqual([]);
+  });
+
+  it.each(numericTypes)('catches omitted null on a nullable %s declaration', (type, node) => {
+    expect(
+      comparePair('missing-null', z.object({ value: node.nullable().optional() }), {
+        properties: { value: { type } },
+      }).map((finding) => finding.leg)
+    ).toEqual(['type']);
+  });
+
+  it.each(numericTypes)('catches a %s published as a string or nullable number', (type, node) => {
+    for (const published of ['string', [type, 'null']]) {
+      expect(
+        comparePair('wrong-number-type', z.object({ value: node.optional() }), {
+          properties: { value: { type: published } },
+        }).map((finding) => finding.leg)
+      ).toEqual(['type']);
+    }
+  });
+
+  it.each([
+    ['minLength', z.string().min(2), 'string'],
+    ['maxLength', z.string().max(2), 'string'],
+    ['minItems', z.array(z.string()).min(2), 'array'],
+    ['maxItems', z.array(z.string()).max(2), 'array'],
+  ] as const)('detects %s omitted, invented or changed on either side', (bound, node, type) => {
+    const schema = z.object({ value: node.optional() });
+    const property = { type, ...(type === 'array' ? { items: { type: 'string' } } : {}) };
+    expect(
+      comparePair('green', schema, { properties: { value: { ...property, [bound]: 2 } } })
+    ).toEqual([]);
+    for (const value of [undefined, 3]) {
+      expect(
+        comparePair('red', schema, { properties: { value: { ...property, [bound]: value } } }).map(
+          (finding) => finding.leg
+        )
+      ).toContain(bound);
+    }
+    const unbounded = z.object({
+      value: (type === 'array' ? z.array(z.string()) : z.string()).optional(),
+    });
+    expect(
+      comparePair('json-only', unbounded, {
+        properties: { value: { ...property, [bound]: 2 } },
+      }).map((finding) => finding.leg)
+    ).toContain(bound);
+  });
+
+  it('checks required unknown keys inside array items without treating undefined as omission', () => {
+    const schema = z.object({
+      rows: z.array(z.object({ value: z.unknown(), optional: z.string().optional() })).optional(),
+    });
+    const item = {
+      type: 'object',
+      properties: { value: {}, optional: { type: 'string' } },
+      required: ['value'],
+    };
+    expect(
+      comparePair('green', schema, { properties: { rows: { type: 'array', items: item } } })
+    ).toEqual([]);
+    for (const required of [[], ['optional', 'value']]) {
+      expect(
+        comparePair('red', schema, {
+          properties: { rows: { type: 'array', items: { ...item, required } } },
+        }).map((finding) => `${finding.leg}:${finding.key}`)
+      ).toContain('required:rows[]');
+    }
+  });
+
+  it.each([
+    [z.array(z.string()), { type: 'array', items: { type: 'string' } }],
+    [z.object({}), { type: 'object', properties: {} }],
+    [z.record(z.string(), z.unknown()), { type: 'object' }],
+  ] as const)(
+    'keeps nullable array and object contracts visible in both directions',
+    (node, json) => {
+      const nullable = { ...json, type: [json.type, 'null'] };
+      expect(
+        comparePair('green', z.object({ value: node.nullable().optional() }), {
+          properties: { value: nullable },
+        })
+      ).toEqual([]);
+      expect(
+        comparePair('missing-null', z.object({ value: node.nullable().optional() }), {
+          properties: { value: json },
+        }).map((finding) => finding.leg)
+      ).toContain('type');
+      expect(
+        comparePair('extra-null', z.object({ value: node.optional() }), {
+          properties: { value: nullable },
+        }).map((finding) => finding.leg)
+      ).toContain('type');
+    }
+  );
+
   it('detects every constraint leg after unwrapping and reading array elements', () => {
     const schema = z
       .object({
@@ -395,7 +528,16 @@ describe('Zod 4 introspection preserves the guard', () => {
       },
     });
     expect([...new Set(failures.map((finding) => finding.leg))].sort()).toEqual(
-      ['type', 'array-item-type', 'minimum', 'maximum', 'enum', 'strict', 'key-set'].sort()
+      [
+        'type',
+        'array-item-type',
+        'minimum',
+        'maximum',
+        'enum',
+        'strict',
+        'key-set',
+        'required',
+      ].sort()
     );
   });
 
@@ -406,6 +548,7 @@ describe('Zod 4 introspection preserves the guard', () => {
     });
     expect(
       comparePair('green', schema, {
+        required: ['plain'],
         properties: {
           sprintId: { type: ['string', 'null'] },
           plain: { type: 'string' },
@@ -414,6 +557,7 @@ describe('Zod 4 introspection preserves the guard', () => {
     ).toEqual([]);
     expect(
       comparePair('red', schema, {
+        required: ['plain'],
         properties: {
           sprintId: { type: 'string' },
           plain: { type: ['string', 'null'] },
@@ -436,6 +580,11 @@ describe('published JSON inputSchema ↔ zod parity (s86-m04 Part A)', () => {
       'enum',
       'strict',
       'key-set',
+      'minLength',
+      'maxLength',
+      'minItems',
+      'maxItems',
+      'required',
     ];
     // eslint-disable-next-line no-console
     console.log(
@@ -498,6 +647,13 @@ describe('published JSON inputSchema ↔ zod parity (s86-m04 Part A)', () => {
   it('(vi) key sets agree in BOTH directions — no JSON-only key, no zod-only key', () => {
     expect(byLeg('key-set').map((v) => `${v.tool}.${v.key}: ${v.detail}`)).toEqual([]);
   });
+
+  it.each(['minLength', 'maxLength', 'minItems', 'maxItems', 'required'] as const)(
+    '%s agrees at every declared object and array depth',
+    (leg) => {
+      expect(byLeg(leg).map((v) => `${v.tool}.${v.key}: ${v.detail}`)).toEqual([]);
+    }
+  );
 
   it('the three genuinely non-integer params still publish number, by name', () => {
     // A blanket number→integer replace breaks exactly these three. Asserted by name so the sweep

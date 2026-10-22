@@ -40,8 +40,10 @@ requested project information to your AI client. The local usage log is never up
 - A session's Git note is deleted when the session-end hook completes; otherwise it remains until
   you delete it.
 - Your message after a draft is deleted at session end or expires after two hours.
-- An interrupted upload can leave a copy of the record in your temp folder. The next upload
-  removes your copies older than a day, except on Windows, where you remove them yourself.
+- An interrupted upload, share, join, import or replay can leave record data in your temp folder.
+  The next such operation removes matching directories owned by your user and older than a day;
+  symlinks and other users' directories stay. Without a numeric user ID, including on Windows,
+  you remove them yourself. [Trust](trust.md#removing-your-data) lists the directory prefixes.
 
 **How to remove it.** Delete the project's `rbook/` folder and `~/.config/rbook/`. Uninstalling the
 plugin does not delete these records. Existing installations can still use their older record and
@@ -265,12 +267,13 @@ front of the website. Hosting providers receive connection information under the
   and its mirror sync log. It leaves the uploaded database, messages, and activity and diagnostic
   logs, and it is refused while a project is shared through reasonbook.ai, so the owner moves such a
   project back first. It does not take the record off the project's pages: they read the uploaded
-  database instead until the project is deleted. Stop uploads or sign out first: a later upload
-  rebuilds the mirror.
+  database instead until the project is deleted. Set `RBOOK_CHECKPOINT_SYNC=off` to stop automatic
+  uploads and manual backfill: a later upload rebuilds the mirror.
 - **`rbook_auth(action="logout")`** revokes your account's key and removes it locally. Project keys
   remain valid until you revoke each with `rbook_auth(action="revoke", keyId="<id>")`, which is sent
   with your account's key: revoke them before you sign out. Environment credentials can still enable
-  dashboard access after logout; [Trust](trust.md) explains the controls.
+  dashboard access and automatic uploads after logout. Project keys can still authorize manual
+  backfill unless `RBOOK_CHECKPOINT_SYNC=off`; [Trust](trust.md) explains the controls.
 
 ## Contact
 

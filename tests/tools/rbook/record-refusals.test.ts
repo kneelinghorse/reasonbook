@@ -45,13 +45,16 @@ import {
   syncCopies,
   type Copy,
 } from '../../helpers/shared-copies';
-import { standinSsh } from '../../helpers/standin-ssh';
+import { farEndsExited, standinSsh } from '../../helpers/standin-ssh';
 
 let fixture: ReplicaFixture;
 beforeEach(() => {
   fixture = replicaFixture('rbook-refusals-');
 });
-afterEach(() => fixture.restore());
+afterEach(async () => {
+  await farEndsExited(fixture.tmp);
+  fixture.restore();
+});
 
 const on = <T>(copy: Pick<Copy, 'root' | 'machine'>, use: Parameters<typeof onCopy<T>>[2]) =>
   onCopy(fixture.tmp, copy, use, { replicaCheck: false });

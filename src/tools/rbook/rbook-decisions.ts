@@ -1,3 +1,6 @@
+// ABOUTME: Route consolidated decision actions through their published input contract.
+// ABOUTME: Validate evidence shape without inventing unpublished minimum string lengths.
+
 /**
  * rbook_decisions Tool
  *
@@ -8,6 +11,7 @@
  * @module tools/rbook/rbook-decisions
  */
 
+import { formatToolFailure } from './format-failure';
 import { z } from 'zod';
 import { createError, RbookErrors } from './errors';
 import { findWrongTypedStringParam } from './param-type-guard';
@@ -202,7 +206,7 @@ export const rbookDecisionsSchema = z
       .optional()
       .describe('record action: existing decision IDs this decision supersedes'),
     evidence: z
-      .array(z.object({ type: z.string().min(1), id: z.string().min(1) }).strict())
+      .array(z.object({ type: z.string(), id: z.string() }).strict())
       .optional()
       .describe('record action: TraceLab evidence references [{type, id}]'),
     citesLearningIds: z
@@ -496,7 +500,8 @@ export function formatDecisionsForLLM(
     case 'record':
       return formatDecisionsRecordForLLM(result as RbookToolResult<RbookDecisionsRecordResult>);
     default: {
-      if (!result.success) return '❌ Failed to execute rbook_decisions';
+      if (!result.success)
+        return formatToolFailure('❌ Failed to execute rbook_decisions', result.error);
       const lines = ['✓ Decisions action completed'];
       appendWarnings(lines, result);
       return lines.join('\n');

@@ -8,8 +8,7 @@
  * *local* project — the cwd this process is running in. The original Sprint 32
  * auto-detect blindly returned `/api/projects/me` projects[0], which caused every
  * message from every project to be tagged with whichever project the dashboard
- * happened to list first for the user (Parts Town, for derek — P0 bug reported
- * 2026-04-16 after Sprint 52 failed to root-cause it).
+ * happened to list first for the user, rather than the project that sent it.
  *
  * This module centralises the resolution so any new sender path gets the right
  * answer automatically. Fail-closed: when we cannot authoritatively resolve the
@@ -113,8 +112,7 @@ function shouldAttemptIdentityRepair(
  * fail closed rather than publishing a sibling project's identity.
  *
  * `rbookAddress` is null when the identity row holds an empty or `rbook://unknown/*`
- * address; sending a bogus value is worse than omitting it (Sprint 52 m02, and
- * the reason the Parts Town attribution bug is P0).
+ * address; sending a bogus value would attribute the message to the wrong project.
  *
  * Attempts a best-effort owner resolution + backfill first so that a fresh project
  * with dashboard auth configured can emit a canonical address on its very first
@@ -183,9 +181,8 @@ export async function readLocalSenderIdentity(projectRoot?: string): Promise<Loc
  *      dashboard can then reject or apply its own (unrelated) fallback.
  *
  * NEVER pick `projects[0]` — the /api/projects/me response is "every project
- * this user owns," and blindly taking the first one causes the Parts Town
- * attribution corruption that Sprint 32's auto-detect shipped and Sprint 52
- * failed to root-cause.
+ * this user owns," and blindly taking the first one attributes unrelated messages
+ * to whichever project happens to come first.
  */
 export async function resolveLocalSenderProjectId(
   client: DashboardClient,

@@ -19,9 +19,12 @@ feedback report as permission to fix unrelated code.
 Call onboard in the affected project with the feedback as its own structured parameter:
 
 ```text
-rbook_agent_onboard(projectRoot="<affected project folder>", offline=true,
+rbook_agent_onboard(projectRoot="<affected project folder>",
   agentFeedback="Observed behavior; expected behavior; trigger and impact.")
 ```
+
+Feedback is stored locally. Onboard has no per-call offline flag: with dashboard credentials it
+can also read dashboard information, and the feedback write can schedule an upload when enabled.
 
 Include the tool or command, the smallest useful reproduction, what happened, what was expected,
 and a concrete consequence. Keep credentials and unrelated private content out of the report.

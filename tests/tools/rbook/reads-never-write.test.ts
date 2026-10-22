@@ -933,6 +933,9 @@ async function runRead(
           RBOOK_AMBIENT: 'on',
         },
         cwd: prepared.projectRoot,
+        // s98-m08 (#749): room load cannot spend (#1558). The prompt hook's 800 ms counts from this
+        // call, and a loaded machine spent it before the read, which then answered isError.
+        startedAtMs: Date.now() + 20_000,
         readStdin: async () => JSON.stringify(cli.input),
         stdout: (text) => {
           output.push(text);
@@ -1069,7 +1072,11 @@ describe.each(ROLES)('s93-m05 — CLI reads never write (role %s)', (role) => {
         });
         // Broken-index fixtures must actually recall: an empty/refused read proves no useful path.
         if ((kind === 'search-drift' || kind === 'search-marker-other') && argv[1] === 'prompt') {
-          expect(observed.isError).toBe(false);
+          // s98-m08 (#749): a refused read prints its whole answer.
+          expect({
+            isError: observed.isError,
+            text: observed.isError ? observed.text : '',
+          }).toEqual({ isError: false, text: '' });
           expect(observed.text).toContain('  • d:');
         }
         if (kind !== 'unmigrated' && argv[0] !== 'hook') expect(observed.isError).toBe(false);

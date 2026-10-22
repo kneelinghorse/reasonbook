@@ -81,12 +81,12 @@ describe("the owner's other copies (s100-m01, settled item 9)", () => {
     await onCopy(fixture.tmp, owner, (client) =>
       rememberPeer(client, second.replicaId, {
         name: 'Owner',
-        route: { host: 'studio.local', root: '/Users/derek/work/project' },
+        route: { host: 'workstation.local', root: '/Users/example/work/project' },
       })
     );
     const said = await dryRun(owner);
     expect(said.success).toBe(false);
-    expect(said.error?.message).toMatch(/studio\.local:\/Users\/derek\/work\/project/);
+    expect(said.error?.message).toMatch(/workstation\.local:\/Users\/example\/work\/project/);
   }, 600000);
 
   it('names a former owner copy that went on writing as a member after a handover, on the client and at the referee', async () => {

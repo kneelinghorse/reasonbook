@@ -8,6 +8,7 @@
  * @module tools/rbook/rbook-sprint-analytics
  */
 
+import { formatToolFailure } from './format-failure';
 import { prepareSpinOutRead, spinOutHistoryLines } from './spin-out-read';
 import { missionCompletedSql } from './terminal-status';
 import { withClient, type RbookDatabaseClient } from './client';
@@ -593,7 +594,7 @@ export function formatSprintAnalyticsForLLM(
   result: RbookToolResult<SprintAnalyticsResult>
 ): string {
   if (!result.success || !result.data) {
-    return `Analytics failed: ${result.error?.message ?? 'Unknown error'}`;
+    return formatToolFailure('Analytics failed', result.error);
   }
 
   const d = result.data;

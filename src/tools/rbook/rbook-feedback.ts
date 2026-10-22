@@ -16,6 +16,7 @@ import { renderFeedbackBody } from './feedback-presentation';
 import type { ProvenanceDescriptor } from '../../intelligence/provenance-frame';
 import { kindCounts, readFeedbackFleet, type FeedbackFleetCoverage } from './feedback-fleet';
 import { classifyFeedback, type FeedbackKind } from '../../signals/feedback-kinds';
+import { getProjectId } from './project-id';
 
 /** Valid actions on the rbook_feedback consolidated tool. */
 export const RBOOK_FEEDBACK_ACTIONS = ['list', 'triage', 'resolve', 'archive'] as const;
@@ -43,8 +44,9 @@ export const RBOOK_FEEDBACK_ACTION_PARAMS: ActionParamMap<
 export type FeedbackRowKind = FeedbackKind | 'unclassified';
 
 /** One agent_feedback row as returned by rbook_feedback(action="list"). */
-export interface AgentFeedbackEntry {
-  id: number;
+export interface AgentFeedbackEntry<Id extends number | string = number> {
+  /** Local row number, or an opaque project-qualified id in the fleet view. */
+  id: Id;
   toolName: string;
   body: string;
   status: AgentFeedbackStatus;
@@ -61,9 +63,9 @@ export interface AgentFeedbackEntry {
   provenance?: ProvenanceDescriptor;
 }
 
-export interface RbookFeedbackListResult {
+export interface RbookFeedbackListResult<Id extends number | string = number> {
   /** Entries returned, newest-first. */
-  entries: AgentFeedbackEntry[];
+  entries: AgentFeedbackEntry<Id>[];
   /** Count broken down by tool_name for quick triage. */
   countsByTool: Record<string, number>;
   /** Count broken down by status across the filtered set. */
@@ -95,6 +97,10 @@ export interface RbookFeedbackMutationResult {
 
 /** s97-m07: one resolve of many rows, all of them or none. */
 export interface RbookFeedbackBulkResult {
+  projectId: string;
+  projectName: string | null;
+  /** Already resolved rows, whose original resolution time and note were preserved. */
+  skipped: number[];
   /** Each row once, in the order first named, with the status it left. */
   resolved: Array<{
     feedbackId: number;
@@ -108,6 +114,7 @@ export interface RbookFeedbackBulkResult {
 
 export type RbookFeedbackResult =
   | RbookFeedbackListResult
+  | RbookFeedbackListResult<string>
   | RbookFeedbackMutationResult
   | RbookFeedbackBulkResult;
 
@@ -124,11 +131,10 @@ export const rbookFeedbackSchema = z
       .describe('Target feedback row ID (required for triage/resolve/archive)'),
     feedbackIds: z
       .array(z.number().int().positive())
-      .min(1)
       .max(FEEDBACK_BULK_RESOLVE_MAX)
       .optional()
       .describe(
-        `Resolve several rows in one call, instead of feedbackId (resolve only; at most ${FEEDBACK_BULK_RESOLVE_MAX}). All or nothing: an unknown id refuses the call and resolves none.`
+        `Resolve local row ids instead of feedbackId (resolve only; at most ${FEEDBACK_BULK_RESOLVE_MAX}). Unknown ids refuse all; already resolved rows keep their first receipt.`
       ),
     status: z
       .enum(AGENT_FEEDBACK_STATUSES)
@@ -153,7 +159,9 @@ export const rbookFeedbackSchema = z
     acrossProjects: z
       .boolean()
       .optional()
-      .describe('Read feedback across registered stores (list only; never writes siblings)'),
+      .describe(
+        'Read fleet feedback with project-qualified ids (list only; never writes siblings)'
+      ),
     projectRoot: z
       .string()
       .optional()
@@ -184,7 +192,7 @@ export const rbookFeedbackToolDefinition = {
         type: 'array',
         items: { type: 'integer', minimum: 1 },
         maxItems: FEEDBACK_BULK_RESOLVE_MAX,
-        description: `Resolve several rows in one call, instead of feedbackId (resolve only; at most ${FEEDBACK_BULK_RESOLVE_MAX}). All or nothing: an unknown id refuses the call and resolves none.`,
+        description: `Resolve local row ids instead of feedbackId (resolve only; at most ${FEEDBACK_BULK_RESOLVE_MAX}). Unknown ids refuse all; already resolved rows keep their first receipt.`,
       },
       status: {
         type: 'string',
@@ -209,7 +217,7 @@ export const rbookFeedbackToolDefinition = {
       acrossProjects: {
         type: 'boolean',
         description:
-          'List across active registered stores; full filtered counts accompany a globally capped newest-first list. Unavailable stores are named. Never writes sibling stores.',
+          'List active registered stores with project-qualified ids; full filtered counts accompany a capped newest-first list. Unavailable stores are named. Never writes siblings.',
       },
       projectRoot: {
         type: 'string',
@@ -291,7 +299,7 @@ function resolveMany(
   const given = note?.trim() || null;
   type Outcome =
     | { readonly missing: number[] }
-    | { readonly resolved: RbookFeedbackBulkResult['resolved'] };
+    | { readonly resolved: RbookFeedbackBulkResult['resolved']; readonly skipped: number[] };
   const outcome = client.writeTransaction((): Outcome => {
     const found = client.getMany<{
       id: number;
@@ -306,7 +314,9 @@ function resolveMany(
     const missing = ids.filter((id) => !byId.has(id));
     if (missing.length) return { missing };
     const at = new Date().toISOString();
-    for (const id of ids) {
+    const pending = ids.filter((id) => byId.get(id)!.status !== 'resolved');
+    const skipped = ids.filter((id) => byId.get(id)!.status === 'resolved');
+    for (const id of pending) {
       const updated = client.execute(
         'UPDATE agent_feedback SET status = ?, resolved_at = ?, resolution_note = ? WHERE id = ?',
         ['resolved', at, given ?? byId.get(id)!.resolution_note, id]
@@ -315,7 +325,8 @@ function resolveMany(
         throw new Error(updated.error?.message ?? 'Failed to update feedback row');
     }
     return {
-      resolved: ids.map((id) => ({
+      skipped,
+      resolved: pending.map((id) => ({
         feedbackId: id,
         previousStatus: byId.get(id)!.status,
         currentStatus: 'resolved' as AgentFeedbackStatus,
@@ -337,12 +348,22 @@ function resolveMany(
       suggestion:
         'Remove the unknown ids and resolve again; rbook_feedback(action="list") shows the rows that exist.',
     });
+  const projectId = getProjectId(client);
+  const name = client.getOne<{ value: string }>(
+    "SELECT value FROM metadata WHERE key = 'project_name'"
+  );
+  const projectName = name.data?.value ?? null;
   return createSuccess<RbookFeedbackResult>({
+    projectId,
+    projectName,
+    skipped: data.skipped,
     resolved: data.resolved,
     resolutionNote: given,
-    message: `Resolved ${data.resolved.length} feedback row${data.resolved.length === 1 ? '' : 's'}: ${data.resolved
+    message: `Project ${JSON.stringify(projectName ?? projectId)} (${JSON.stringify(projectId)}). Resolved ${data.resolved.length} feedback row${data.resolved.length === 1 ? '' : 's'}: ${data.resolved
       .map((row) => `#${row.feedbackId} (${row.previousStatus} → resolved)`)
-      .join(', ')}`,
+      .join(
+        ', '
+      )}${data.skipped.length ? `. Skipped already resolved: ${data.skipped.map((id) => `#${id}`).join(', ')}` : ''}`,
   });
 }
 
@@ -408,8 +429,8 @@ export async function rbookFeedback(
                   created_at, resolved_at, resolution_note
            FROM agent_feedback ${where}
            ORDER BY julianday(created_at) DESC
-           LIMIT ${limit}`,
-          args
+           LIMIT ?`,
+          [...args, limit]
         );
         if (!rowsResult.success) {
           return createError<RbookFeedbackResult>(

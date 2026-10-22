@@ -887,6 +887,8 @@ describe('s93-m12 — the seed shows no call the server refuses', () => {
       );
       if (ran.isError) throw new Error(`refused: ${ran.text}`);
     },
-    60_000
+    // s98-m08: a hang guard, not a speed budget. Under two concurrent full suites the first
+    // rbook_review case, which loads the review's modules cold, ran past 60 s.
+    180_000
   );
 });

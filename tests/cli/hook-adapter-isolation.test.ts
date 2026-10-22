@@ -56,6 +56,8 @@ async function run(harness: string, includeCwd: boolean, hookEnv = env) {
   const code = await runCli(['hook', 'session-start', '--harness', harness], {
     env: hookEnv,
     cwd: nativeRoot,
+    // s98-m08: room load cannot spend (#1558); this test checks what the hook does, not its deadline.
+    startedAtMs: Date.now() + 20_000,
     readStdin: async () => JSON.stringify(input),
     stdout: (text) => {
       stdout += text;
@@ -115,6 +117,8 @@ it('a refused native event cannot attribute its failure to the parent Claude pro
   await runCli(['hook', 'prompt', '--harness', 'cursor'], {
     env,
     cwd: nativeRoot,
+    // s98-m08: room load cannot spend (#1558); this test checks what the hook does, not its deadline.
+    startedAtMs: Date.now() + 20_000,
     readStdin: async () => JSON.stringify({ cwd: nativeRoot, prompt: 'approved' }),
     stdout: () => {},
     stderr: () => {},

@@ -13,7 +13,7 @@ import type {
 import { FEEDBACK_KINDS_RULE } from '../../signals/feedback-kinds';
 
 /** s97-m07: every kind, zeros included, then unclassified, with the rule that sorted them. */
-function kindLine(data: RbookFeedbackListResult): string | null {
+function kindLine(data: RbookFeedbackListResult<number | string>): string | null {
   if (!data.countsByKind) return null;
   const counts = Object.entries(data.countsByKind)
     .map(([kind, n]) => `${kind}=${n}`)
@@ -34,7 +34,7 @@ export function renderFeedbackBody(
     return `❌ rbook_feedback(${action}) failed: ${err?.message ?? 'Unknown error'}${err?.suggestion ? `\n  Suggestion: ${err.suggestion}` : ''}`;
   }
   if (action === 'list') {
-    const d = result.data as RbookFeedbackListResult;
+    const d = result.data as RbookFeedbackListResult<number | string>;
     if (d.fleet) return renderFleetFeedback(d);
     if (d.entries.length === 0) {
       return `No agent feedback matching filter (limit ${d.limit}).`;
@@ -64,7 +64,7 @@ export function renderFeedbackBody(
   return `${m.message}${noteLine}`;
 }
 
-function renderFleetFeedback(data: RbookFeedbackListResult): string {
+function renderFleetFeedback(data: RbookFeedbackListResult<number | string>): string {
   const coverage = data.fleet!;
   const lines = [
     `Fleet feedback (${coverage.complete ? 'complete' : 'partial'} coverage): ${data.entries.length} of ${data.totalCount} matching rows, global limit ${data.limit}.`,
@@ -77,7 +77,7 @@ function renderFleetFeedback(data: RbookFeedbackListResult): string {
     'For a sibling disposition, send that project an explicitly authorized message; never write its store.',
   ];
   for (const entry of data.entries) {
-    lines.push(`  ${entry.sourceProjectId} feedback #${entry.id} (${entry.kind})`, entry.body);
+    lines.push(`  ${entry.id} (${entry.kind})`, entry.body);
     if (entry.resolutionNote) lines.push(entry.resolutionNote);
   }
   return lines.join('\n');

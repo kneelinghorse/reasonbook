@@ -5,6 +5,13 @@
 import { promises as fs } from 'fs';
 import * as path from 'path';
 
+/** Only an explicit project preference disables the advisory; missing/old identities keep it. */
+export function projectChecksBuildFreshness(
+  identity: { type_fields?: { build_freshness_check?: unknown } } | null | undefined
+): boolean {
+  return identity?.type_fields?.build_freshness_check !== false;
+}
+
 /** Shape consumed by rbook_sprint_complete and rbook_review surfaces. */
 export interface BuildFreshnessReport {
   stale: boolean;

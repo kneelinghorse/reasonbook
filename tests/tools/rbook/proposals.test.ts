@@ -27,6 +27,7 @@ import {
   rawRunner,
 } from '../../../src/tools/rbook/proposals';
 import { RBOOK_SCHEMA } from '../../../src/tools/rbook/schema';
+import { draftCoverage, REVISION_COVERAGE } from '../../../src/tools/rbook/draft-grammar';
 
 const DAY = 86_400_000;
 let tmp: string;
@@ -126,6 +127,40 @@ describe('the lifecycle in the store', () => {
       recordId: 'd:1',
       approvalMode: 'approved',
     });
+  });
+
+  it('an unrelated ancestor cannot supply words that settle a later separate choice', () => {
+    const run = rawRunner(db);
+    ensureProposalsTable(run);
+    const storage = draft().text;
+    const merge = 'Configure a three-way merge driver for concurrent edits in every repository.';
+    expect(draftCoverage(storage, merge)).toBeLessThan(REVISION_COVERAGE);
+    const [a, b, c] = [storage, merge, storage].map((text) => insertDraft(run, draft({ text })));
+    db.prepare('UPDATE proposals SET replaced_by = ? WHERE id = ?').run(b, a);
+    db.prepare('UPDATE proposals SET replaced_by = ? WHERE id = ?').run(c, b);
+    expect(markAnswered(run, [b], 'd:9', new Date().toISOString())).toBe(1);
+    expect(getDraft(run, a)?.outcome).toBe('pending');
+    expect(getDraft(run, c)?.outcome).toBe('pending');
+  });
+
+  it('a genuine backward revision still settles through a declined middle and a cycle', () => {
+    const run = rawRunner(db);
+    ensureProposalsTable(run);
+    const first = draft().text;
+    const texts = [first, `${first} Use readable filenames.`, `${first} Keep a small file budget.`];
+    const [a, b, c] = texts.map((text) => insertDraft(run, draft({ text })));
+    for (const [from, to] of [
+      [a, b],
+      [b, c],
+      [c, a],
+    ])
+      db.prepare('UPDATE proposals SET replaced_by = ? WHERE id = ?').run(to, from);
+    const now = new Date().toISOString();
+    markDeclined(run, [b], now);
+    expect(markApproved(run, c, { recordId: 'd:9', mode: 'approved', at: now })).toBe(1);
+    expect(getDraft(run, a)?.outcome).toBe('replaced');
+    expect(getDraft(run, b)?.outcome).toBe('declined');
+    expect(getDraft(run, c)).toMatchObject({ outcome: 'approved', recordId: 'd:9' });
   });
 });
 

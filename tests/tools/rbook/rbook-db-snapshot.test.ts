@@ -123,6 +123,36 @@ describe('rbook_db_snapshot', () => {
     }
   });
 
+  it('keeps the published positive-integer contract without inventing a maximum', async () => {
+    const result = await rbookDbSnapshot({ projectRoot: tempDir, maxSnapshots: 501 });
+    expect(result.success).toBe(true);
+    expect(result.data?.maxSnapshots).toBe(501);
+    expect(result.data?.prunedSnapshotIds).toEqual([]);
+  });
+
+  it.each([0, -1, 1.5, Number.NaN, '2', null])(
+    'refuses explicit retention %p before creating or pruning any snapshot',
+    async (maxSnapshots) => {
+      const first = await rbookDbSnapshot({ projectRoot: tempDir });
+      expect(first.success).toBe(true);
+      const directory = first.data!.snapshotDirectory;
+      const names = fs.readdirSync(directory);
+      const before = fs.readFileSync(dbPath);
+      const result = await rbookDbSnapshot({
+        projectRoot: tempDir,
+        maxSnapshots: maxSnapshots as number,
+      });
+      expect(result.success).toBe(false);
+      expect(result.error).toMatchObject({
+        code: 'INVALID_PARAMETER',
+        field: 'maxSnapshots',
+        suggestion: expect.stringMatching(/integer.*1/),
+      });
+      expect(fs.readdirSync(directory)).toEqual(names);
+      expect(fs.readFileSync(dbPath)).toEqual(before);
+    }
+  );
+
   it('returns actionable error when Reasonbook project is not present', async () => {
     const noRbookDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rbook-db-snapshot-missing-'));
 

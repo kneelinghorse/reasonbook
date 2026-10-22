@@ -112,6 +112,10 @@ async function store(): Promise<CredentialStore> {
 }
 afterEach(() => {
   credentials = undefined;
+  // s98-m08 (#713): the store above pins the process's credential store to this test's folder, and
+  // a later test's call that names no folder kept it, recreating the removed folder in the temp
+  // directory (a stray rbook-authors-*/config).
+  CredentialStore.resetInstance();
 });
 
 /** Sign in through the device-code completion, which asks the dashboard who signed in. */
@@ -901,7 +905,8 @@ describe('the standing fixtures', () => {
         "SELECT count(*) AS n FROM strategic_decisions WHERE author_name = 'Derek Nelson'"
       )
     ).toEqual({ n: 8 });
-  }, 60000);
+    // s98-m08: a hang guard; two children compiling the source ran past 60 s under two full suites.
+  }, 300_000);
 });
 
 PRIVATE.describe("this repository's own store at v4.0.2", () => {

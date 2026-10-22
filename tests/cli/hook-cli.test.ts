@@ -84,13 +84,21 @@ interface Ran {
 /** Run a command line with a stub io: this stdin, this environment, this working directory. */
 async function run(
   argv: string[],
-  options: { stdin?: unknown; env?: Record<string, string>; cwd?: string } = {}
+  options: {
+    stdin?: unknown;
+    env?: Record<string, string>;
+    cwd?: string;
+    startedAtMs?: number;
+  } = {}
 ): Promise<Ran> {
   let stdout = '';
   const stderr: string[] = [];
   const io: CliIo = {
     env: { ...process.env, ...(options.env ?? {}) },
     cwd: options.cwd ?? projectRoot,
+    // s98-m08: room load cannot spend (#1558): under two concurrent full suites a session-end hook
+    // ran out of its 1 s before closing its session. A test about the deadline passes its own clock.
+    startedAtMs: options.startedAtMs ?? Date.now() + 20_000,
     readStdin: async () =>
       options.stdin === undefined
         ? ''
@@ -110,8 +118,12 @@ async function run(
   return { code, stdout, stderr };
 }
 
-const hook = (event: string, stdin: unknown, env: Record<string, string> = {}) =>
-  run(['hook', event], { stdin, env: { CLAUDE_PID: String(HARNESS_PID), ...env } });
+const hook = (
+  event: string,
+  stdin: unknown,
+  env: Record<string, string> = {},
+  startedAtMs?: number
+) => run(['hook', event], { stdin, env: { CLAUDE_PID: String(HARNESS_PID), ...env }, startedAtMs });
 
 function rows<T>(sql: string, ...params: unknown[]): T[] {
   const db = new Database(dbPath, { readonly: true });
@@ -736,6 +748,10 @@ describe('s93-m01 — failing open', () => {
     const code = await runCli(['hook', 'stop'], {
       env: { ...process.env, CLAUDE_PID: String(HARNESS_PID) },
       cwd: projectRoot,
+      // s98-m08 (#735): room load cannot spend, as #1558 gave the draft tests. Under load the stop
+      // hook's 500 ms ran out before the library's line was held, and its deadline line came instead.
+      // This test checks the one line; hook-deadline.test.ts and the next test check the deadline.
+      startedAtMs: Date.now() + 20_000,
       readStdin: async () => {
         process.stderr.write('a library log line\n');
         process.stderr.write('and another\n');
@@ -796,7 +812,13 @@ describe('s93-m01 — failing open', () => {
     holder.exec('BEGIN EXCLUSIVE');
     try {
       const started = Date.now();
-      const ran = await hook('session-start', { session_id: 'raw-locked', source: 'startup' });
+      // This test is about the deadline, so its clock starts at the call, without the room.
+      const ran = await hook(
+        'session-start',
+        { session_id: 'raw-locked', source: 'startup' },
+        {},
+        started
+      );
       expect(ran.code).toBe(0);
       expect(Date.now() - started).toBeLessThan(4000);
       expect(ran.stderr.length).toBeLessThanOrEqual(1);
@@ -830,7 +852,13 @@ describe('s93-m01 — failing open', () => {
       });
       const digest = jest.spyOn(digestModule, 'buildDigest');
       const started = Date.now();
-      const ran = await hook('session-start', { session_id: 'raw-held', source: 'startup' });
+      // This test is about the deadline, so its clock starts at the call, without the room.
+      const ran = await hook(
+        'session-start',
+        { session_id: 'raw-held', source: 'startup' },
+        {},
+        started
+      );
       expect(ran.code).toBe(0);
       expect(ran.stdout).toBe('');
       expect(ran.stderr).toHaveLength(1);

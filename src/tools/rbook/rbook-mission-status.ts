@@ -392,7 +392,8 @@ function parseMissionWithContext(
       ? {
           id: sprint.id,
           title: sprint.title,
-          focus: sprint.focus,
+          // The active sprint carries its focus once; preserve the published nested field.
+          focus: null,
           status: sprint.status,
           totalMissions: sprint.total_missions,
           completedMissions: sprint.completed_missions,

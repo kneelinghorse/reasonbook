@@ -1,6 +1,7 @@
 // ABOUTME: Implements the rbook_project sweep action — read-only cross-instance aggregation.
 // ABOUTME: Queries all registered Reasonbook instances via SQLite and returns open missions/sessions.
 
+import { formatToolFailure } from './format-failure';
 import { resolveRecordPaths } from '../../intelligence/legacy-compat';
 import Database from 'better-sqlite3';
 import * as fs from 'fs';
@@ -226,7 +227,7 @@ export async function rbookProjectSweep(
 
 export function formatProjectSweepForLLM(result: RbookToolResult<SweepResult>): string {
   if (!result.success || !result.data) {
-    return `❌ Sweep failed: ${result.error?.message ?? 'unknown error'}`;
+    return formatToolFailure('❌ Sweep failed', result.error, 'unknown error');
   }
 
   const { items, groups, warnings, instances_scanned, instances_skipped } = result.data;

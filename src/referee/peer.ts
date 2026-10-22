@@ -32,6 +32,7 @@ import {
 } from './accounts';
 import { REFEREE_ERROR_CODES, refuse } from './codes';
 import { heldOf, intakeRefusal } from './intake';
+import { memberAnswer } from './member-answer';
 import { withReferee, type RefereeLocation, type RefereeOutcome } from './open';
 
 /** Who is calling, as the dashboard authenticated them: their account, and the copy they say they are. */
@@ -353,8 +354,8 @@ function dispatch(
 }
 
 /**
- * Run one peer call for an authenticated caller (design §R1). The answer is the engine's own result,
- * for the dashboard to send back unchanged; the head is the dashboard's to record and pass back.
+ * Run one peer call for an authenticated caller (design §R1). Host repair remedies become actions
+ * the member can take; codes and diagnostics stay intact, and the dashboard records the head.
  */
 export function peer(
   location: RefereeLocation,
@@ -415,7 +416,11 @@ export function peer(
     }
     return result;
   });
-  return outcome.then((done) => (movedBack ? { ...done, movedBack: true as const } : done));
+  return outcome.then((done) => ({
+    ...done,
+    result: memberAnswer(done.result),
+    ...(movedBack ? { movedBack: true as const } : {}),
+  }));
 }
 
 /** Whether this referee handed the record to `replicaId`, the copy that holds it now. */

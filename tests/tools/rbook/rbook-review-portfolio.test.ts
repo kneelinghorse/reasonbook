@@ -23,6 +23,7 @@ import { RbookDetector } from '../../../src/intelligence/rbook-detector';
 import { ProjectGraphRegistry } from '../../../src/intelligence/project-graph-registry';
 import { seedRbookDb } from '../../helpers/seedRbookDb';
 import { rbookReview } from '../../../src/tools/rbook/rbook-review';
+import * as portfolioQueries from '../../../src/intelligence/cross-store-queries';
 
 describe('rbook_review portfolio section (Sprint 79 m06)', () => {
   let tmpDir: string;
@@ -97,6 +98,37 @@ describe('rbook_review portfolio section (Sprint 79 m06)', () => {
       reg.register({ project_id: e.projectId, store_path: e.root, name: e.projectId });
     return reg;
   }
+
+  it('gives a locked sibling a bounded wait and reports it unreadable', async () => {
+    const busy = makePortfolioStore('busy', []);
+    const healthy = makePortfolioStore('healthy', [
+      { id: 'h', name: 'Healthy', status: 'In Progress', occurred_at: stamp(100) },
+    ]);
+    const registry = await registryWith([
+      { projectId: 'healthy', root: healthy },
+      { projectId: 'busy', root: busy },
+    ]);
+    const holder = new Database(path.join(busy, 'rbook/db/rbook.sqlite'));
+    holder.exec('BEGIN EXCLUSIVE');
+    const read = jest.spyOn(portfolioQueries, 'activeMissionsAcrossProjects');
+    const started = Date.now();
+    try {
+      const result = await rbookReview({ projectRoot: localRoot }, { registry });
+      expect(result.success).toBe(true);
+      expect(result.data?.portfolio?.unreadable).toBe(1);
+      // Verify the lock/deadline contract directly; scheduler pressure is not a lock regression.
+      expect(read).toHaveBeenCalledWith(
+        expect.objectContaining({ timeoutMs: 0, deadlineAtMs: expect.any(Number) })
+      );
+      const deadline = read.mock.calls[0][0]!.deadlineAtMs!;
+      expect(deadline).toBeGreaterThan(started);
+      expect(deadline).toBeLessThanOrEqual(Date.now() + 1000);
+    } finally {
+      holder.exec('ROLLBACK');
+      holder.close();
+      read.mockRestore();
+    }
+  });
 
   it('builds an always-on portfolio: reconciled counts, projectId attribution, ≤4KB', async () => {
     const a = makePortfolioStore('proj-a', [

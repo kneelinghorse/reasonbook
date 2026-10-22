@@ -37,6 +37,18 @@ const wire = (): Definition[] => getToolDefinitions() as unknown as Definition[]
 const TOKEN_CEILING = 6_000;
 const CHARS_PER_TOKEN = 4;
 
+/**
+ * s98-m08 (the sprint-98 design, settled item 10): the room kept under the ceiling for later text.
+ * s98-m08 trimmed 431 characters (23,993 to 23,562), so the reserve starts as every character left
+ * under 24,000. A change that adds tool text lowers RESERVE by its delta in the same commit, never
+ * below 0, and its mission states the delta.
+ */
+// s98-m09 declares the nine existing nullable fields: +79 characters, leaving 359.
+// s98-m10 makes logout key selection visible: +32 characters, leaving 327.
+// s98-m11 explains local bulk ids and qualified fleet ids: +74 characters, leaving 253.
+// s98-m12 names portfolio signals and the one-response message contract: +84, leaving 169.
+const RESERVE = 169;
+
 function withoutDescriptions(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(withoutDescriptions);
   if (!value || typeof value !== 'object') return value;
@@ -57,6 +69,13 @@ describe('s92-m08 — tools/list', () => {
     expect(chars / CHARS_PER_TOKEN).toBeLessThanOrEqual(TOKEN_CEILING);
     // Non-vacuity: the long form is what this replaced, and it was over the line.
     expect(JSON.stringify(longForm).length / CHARS_PER_TOKEN).toBeGreaterThan(TOKEN_CEILING);
+  });
+
+  it('keeps the reserve: at or under the ceiling less RESERVE characters', () => {
+    expect(RESERVE).toBeGreaterThanOrEqual(0);
+    expect(JSON.stringify(wire()).length).toBeLessThanOrEqual(
+      TOKEN_CEILING * CHARS_PER_TOKEN - RESERVE
+    );
   });
 
   it('keeps every input schema exactly apart from description text', () => {

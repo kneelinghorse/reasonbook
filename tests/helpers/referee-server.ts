@@ -208,6 +208,10 @@ export function startRefereeServer(
   }
 
   const server = http.createServer(async (request, response) => {
+    // s98-m08: one request per connection. Under two concurrent full suites a client whose event
+    // loop was starved sent a request on a connection this server had just closed as idle, and read
+    // ECONNRESET ("Unknown network error" to the client under jest).
+    response.setHeader('connection', 'close');
     try {
       const url = new URL(request.url ?? '/', 'http://referee.local');
       const token = /^Bearer (.+)$/.exec(request.headers.authorization ?? '')?.[1];

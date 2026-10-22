@@ -100,12 +100,19 @@ test('shared hook and MCP starters install once even after the MCP process group
     fs.chmodSync(localNode, 0o755);
     const npmScript = path.join(root, 'npm-fixture.js');
     const calls = path.join(root, 'calls');
+    // s98-m08 (#660 item 2): the install finishes when the test says so, not after 750 ms, which a
+    // loaded machine spent before the hook below reached findReady. A double the test never
+    // releases gives up after a minute, so no npm stand-in outlives a failed test for long.
+    const release = path.join(root, 'npm-release');
     fs.writeFileSync(
       npmScript,
       `const fs=require('node:fs');const path=require('node:path');
       const prefix=process.argv[process.argv.indexOf('--prefix')+1];
       fs.appendFileSync(${JSON.stringify(calls)},'install'+String.fromCharCode(10));
-      setTimeout(()=>{${packageCode('prefix')}},750);`
+      const until=Date.now()+60000;
+      const finish=()=>{if(fs.existsSync(${JSON.stringify(release)})){${packageCode('prefix')}}
+        else if(Date.now()<until)setTimeout(finish,10);else process.exit(1);};
+      finish();`
     );
     if (process.platform === 'win32')
       fs.writeFileSync(path.join(root, 'npm.cmd'), `@"${localNode}" "${npmScript}" %*\r\n`);
@@ -164,6 +171,8 @@ test('shared hook and MCP starters install once even after the MCP process group
     expect(hook.stdout).toContain('Reasonbook is installing');
     if (process.platform === 'win32') server.kill('SIGKILL');
     else process.kill(-server.pid!, 'SIGKILL');
+    // The install the ended process group started finishes on its own.
+    fs.writeFileSync(release, '');
     await waitFor(
       () =>
         fs.existsSync(path.join(installRoot, '.rbook-ready.json')) &&

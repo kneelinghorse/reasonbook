@@ -7,6 +7,7 @@ import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { createHash } from 'crypto';
 
 import {
   computeSignals,
@@ -243,6 +244,60 @@ describe('the signals on stores that are not today’s (s97-m01)', () => {
       db.close();
     }
     expect(readSignals(dbPath, { now: NOW }).project).toEqual({ id: 'busy', name: 'Busy' });
+  });
+
+  it('documents the rollback snapshot lock: a 250 ms writer can fail during the report', () => {
+    const dbPath = store300();
+    const reader = new Database(dbPath, { readonly: true });
+    const writer = new Database(dbPath, { timeout: 250 });
+    let attempted = false;
+    const watched = new Proxy(reader, {
+      get(target, prop) {
+        if (prop === 'prepare')
+          return (sql: string) => {
+            if (!attempted && /PRAGMA table_info\(proposals\)/.test(sql)) {
+              attempted = true;
+              // Metadata has already anchored the report's read snapshot.
+              expect(() =>
+                writer.prepare("INSERT INTO metadata VALUES ('during-report', 'x')").run()
+              ).toThrow(/locked/);
+            }
+            return target.prepare(sql);
+          };
+        const value = Reflect.get(target, prop, target) as unknown;
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    }) as Database.Database;
+    try {
+      expect(computeSignals(watched, { now: NOW, storePath: dbPath }).project.id).toBe('old-store');
+      expect(attempted).toBe(true);
+      expect(() =>
+        writer.prepare("INSERT INTO metadata VALUES ('after-report', 'x')").run()
+      ).not.toThrow();
+    } finally {
+      writer.close();
+      reader.close();
+    }
+  });
+
+  it('allows SQLite WAL sidecars while preserving the store bytes, mtime and journal mode', () => {
+    const dbPath = store300();
+    const setup = new Database(dbPath);
+    setup.pragma('journal_mode = WAL');
+    setup.close();
+    const hash = () => createHash('sha256').update(fs.readFileSync(dbPath)).digest('hex');
+    const before = { hash: hash(), mtime: fs.statSync(dbPath).mtimeMs };
+    expect(fs.existsSync(`${dbPath}-wal`)).toBe(false);
+    expect(readSignals(dbPath, { now: NOW }).project.id).toBe('old-store');
+    expect(fs.existsSync(`${dbPath}-shm`)).toBe(true);
+    expect(fs.statSync(`${dbPath}-wal`).size).toBe(0);
+    expect({ hash: hash(), mtime: fs.statSync(dbPath).mtimeMs }).toEqual(before);
+    const check = new Database(dbPath, { readonly: true });
+    try {
+      expect(check.pragma('journal_mode', { simple: true })).toBe('wal');
+    } finally {
+      check.close();
+    }
   });
 
   it('refuses a now or a window it cannot read: the caller’s error, not the store’s', () => {

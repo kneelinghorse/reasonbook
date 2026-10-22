@@ -22,7 +22,7 @@ import path from 'path';
 import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
 import { gzipSync } from 'zlib';
-import type { RbookToolResult } from './types';
+import type { RbookToolError, RbookToolResult } from './types';
 import { createError, createSuccess, RbookErrors } from './errors';
 import {
   CredentialStore,
@@ -339,10 +339,10 @@ export interface ResolveAddressParams {
  * `agentId` keys. The pre-s86 declaration described a response the endpoint has never sent;
  * `request()` returns the whole body as `data` (there is no `data` envelope key on this route),
  * so the live body is `{success, resolved: {...}}` verbatim. Recorded 2026-08-10 against
- * https://reasonbook.ai for rbook://derek/cmos-mcp:
+ * https://reasonbook.ai; the identity-redacted response shape was:
  *
- *     {"success":true,"resolved":{"projectId":"ec2b4987-…","projectName":"cmos-mcp",
- *      "projectSlug":"cmos-mcp"}}
+ *     {"success":true,"resolved":{"projectId":"example-id","projectName":"Example Project",
+ *      "projectSlug":"example-project"}}
  *
  * The members are optional because the route's own body varies by address kind; only
  * `resolved`'s PRESENCE is load-bearing (handleSend already treats a non-error response as
@@ -1216,7 +1216,8 @@ export class DashboardClient {
   private async request<T>(
     method: string,
     path: string,
-    body?: unknown
+    body?: unknown,
+    conflictError?: RbookToolError
   ): Promise<RbookToolResult<T>> {
     const tokenResult = await this.getAuthToken();
     if (!tokenResult.success) {
@@ -1272,6 +1273,16 @@ export class DashboardClient {
       if (response.status === 404) {
         const { detail, hint } = await DashboardClient.parseErrorEnvelope(response);
         return createError(RbookErrors.dashboardNotFound(path, detail, hint));
+      }
+
+      // Only an endpoint that supplies its own conflict contract changes the generic 409 mapping.
+      if (response.status === 409 && conflictError) {
+        const { detail } = await DashboardClient.parseErrorEnvelope(response.clone());
+        const reason = detail ?? (await response.text().catch(() => ''));
+        return createError({
+          ...conflictError,
+          message: reason ? `${conflictError.message} ${reason}` : conflictError.message,
+        });
       }
 
       if (response.status >= 500) {
@@ -1449,7 +1460,14 @@ export class DashboardClient {
     const result = await this.request<DashboardMessage>(
       'POST',
       `/api/messages/${params.messageId}/respond`,
-      { status: params.status, notes: params.notes }
+      { status: params.status, notes: params.notes },
+      {
+        code: 'MESSAGE_RESPONSE_CONFLICT',
+        message: 'The message cannot accept this response in its current state.',
+        suggestion:
+          `Read its current state with rbook_message(action="get", messageId=${JSON.stringify(params.messageId)}) before choosing another response. ` +
+          'If it already has a response, send a new message for any follow-up instead of retrying this response.',
+      }
     );
     return result.success && result.data
       ? { ...result, data: normalizeMessageAddresses(result.data) }

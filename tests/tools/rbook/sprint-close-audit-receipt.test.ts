@@ -1,3 +1,5 @@
+// ABOUTME: Verifies sprint-close receipts against real private stores at the close boundary.
+// ABOUTME: Covers session visibility, capture counts, rollback and producing-build telemetry.
 /**
  * RED contracts for the sprint-close audit receipt introduced by s88-m04.
  *
@@ -6,10 +8,13 @@
  */
 
 import Database from 'better-sqlite3';
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { RbookDetector } from '../../../src/intelligence/rbook-detector';
+import { RbookDatabaseClient } from '../../../src/tools/rbook/client';
+import { rbookSprint } from '../../../src/tools/rbook/rbook-sprint';
 import {
   initServerHealth,
   resetServerHealth,
@@ -33,6 +38,7 @@ interface ActiveSessionAtClose {
 
 type AuditableSprintCloseResult = RbookSprintCompleteResult & {
   activeSessionsAtClose: ActiveSessionAtClose[];
+  implicitSessionsAtClose: ActiveSessionAtClose[];
   startupBuildTime: string | null;
   driftMinutes: number | null;
 };
@@ -117,19 +123,24 @@ describe('rbook_sprint_complete auditable close receipt', () => {
     sprintId: string | null;
     status: 'active' | 'completed';
     captures?: string;
+    implicit?: number;
+    ownerKey?: string;
   }): void {
     const db = new Database(dbPath);
     db.prepare(
       `INSERT INTO sessions
-         (id, type, title, sprint_id, started_at, completed_at, status, captures)
-       VALUES (?, 'build', ?, ?, '2026-08-28T12:00:00.000Z', ?, ?, ?)`
+         (id, type, title, sprint_id, started_at, completed_at, status, captures, implicit, owner_key)
+       VALUES (?, 'build', ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       params.id,
       params.title,
       params.sprintId,
-      params.status === 'completed' ? '2026-08-28T12:30:00.000Z' : null,
+      new Date(Date.now() - 60_000).toISOString(),
+      params.status === 'completed' ? new Date().toISOString() : null,
       params.status,
-      params.captures ?? '[]'
+      params.captures ?? '[]',
+      params.implicit ?? 0,
+      params.ownerKey ?? null
     );
     db.close();
   }
@@ -303,6 +314,192 @@ describe('rbook_sprint_complete auditable close receipt', () => {
       verificationDb.close();
       expect(sprint).toEqual({ status: 'Active', end_date: null });
     });
+  });
+
+  describe('implicitSessionsAtClose', () => {
+    it('holds the close write lock while reading implicit sessions', async () => {
+      seedSession({
+        id: 'I-LOCK',
+        title: 'Concurrent work',
+        sprintId: null,
+        status: 'active',
+        implicit: 1,
+      });
+      const original = RbookDatabaseClient.prototype.getMany;
+      let competingWrite = '';
+      const spy = jest.spyOn(RbookDatabaseClient.prototype, 'getMany').mockImplementation(function (
+        this: RbookDatabaseClient,
+        sql,
+        params
+      ) {
+        if (sql.includes('implicit = 1')) {
+          competingWrite = execFileSync(
+            process.execPath,
+            [
+              '-e',
+              `
+            const Database = require(process.argv[1]);
+            const db = new Database(process.argv[2], { timeout: 0 });
+            try {
+              db.prepare("UPDATE sessions SET status = 'completed' WHERE id = 'I-LOCK'").run();
+              process.stdout.write('wrote');
+            } catch (error) { process.stdout.write(error.code); }
+            finally { db.close(); }
+          `,
+              require.resolve('better-sqlite3'),
+              dbPath,
+            ],
+            { encoding: 'utf8' }
+          );
+        }
+        return original.call(this, sql, params);
+      });
+      let result;
+      try {
+        result = await closeSprint();
+      } finally {
+        spy.mockRestore();
+      }
+      expect(competingWrite).toBe('SQLITE_BUSY');
+      expect(desiredData(result).implicitSessionsAtClose.map((session) => session.id)).toEqual([
+        'I-LOCK',
+      ]);
+    });
+
+    it('reports all active implicit owners through dispatch without claiming sprint membership or closing them', async () => {
+      for (const [id, implicit, status] of [
+        ['I-ONE', 1, 'active'],
+        ['I-TWO', 1, 'active'],
+        ['I-CLOSED', 1, 'completed'],
+        ['EXPLICIT', 0, 'active'],
+      ] as const) {
+        seedSession({ id, title: id, sprintId: null, status, implicit, ownerKey: id });
+      }
+      const result = await rbookSprint({
+        action: 'complete',
+        sprintId: CLOSING_SPRINT_ID,
+        summary: 'Keep concurrent work visible',
+        projectRoot,
+      });
+      const data = desiredData(result as RbookToolResult<RbookSprintCompleteResult>);
+      expect(data.activeSessionsAtClose).toEqual([]);
+      expect(data.implicitSessionsAtClose).toEqual(
+        ['I-ONE', 'I-TWO'].map((id) => ({
+          id,
+          title: id,
+          captureCount: 0,
+          deferredCaptureCount: 0,
+        }))
+      );
+      const rendered = formatSprintCompleteForLLM(
+        result as RbookToolResult<RbookSprintCompleteResult>
+      );
+      expect(rendered).toMatch(/Implicit sessions at close: 2/);
+      expect(rendered).toContain('I-ONE');
+      expect(rendered).toContain('I-TWO');
+      expect(rendered).not.toMatch(/I-CLOSED|EXPLICIT/);
+      const db = new Database(dbPath, { readonly: true });
+      expect(
+        db.prepare("SELECT id FROM sessions WHERE status = 'active' ORDER BY id").all()
+      ).toEqual([{ id: 'EXPLICIT' }, { id: 'I-ONE' }, { id: 'I-TWO' }]);
+      db.close();
+    });
+
+    it('retains implicit capture counts and makes malformed captures visible', async () => {
+      seedSession({
+        id: 'I-COUNTS',
+        title: 'Implicit captures',
+        sprintId: null,
+        status: 'active',
+        implicit: 1,
+        captures: JSON.stringify(
+          ['decision', 'context', 'next-step'].map((category) => ({
+            category,
+            timestamp: new Date().toISOString(),
+            content: `${category} pending`,
+          }))
+        ),
+      });
+      seedSession({
+        id: 'I-BAD',
+        title: 'Bad captures',
+        sprintId: null,
+        status: 'active',
+        implicit: 1,
+        captures: '{bad',
+      });
+      const result = await closeSprint();
+      expect(desiredData(result).implicitSessionsAtClose).toEqual(
+        expect.arrayContaining([
+          { id: 'I-COUNTS', title: 'Implicit captures', captureCount: 3, deferredCaptureCount: 2 },
+          { id: 'I-BAD', title: 'Bad captures', captureCount: null, deferredCaptureCount: null },
+        ])
+      );
+      expect(result.warnings?.join('\n')).toMatch(/I-BAD.*malformed/);
+    });
+
+    it('supports a legacy store with no implicit column without migrating it', async () => {
+      const db = new Database(dbPath);
+      db.exec('ALTER TABLE sessions DROP COLUMN implicit');
+      db.close();
+      const result = await closeSprint();
+      expect(desiredData(result).implicitSessionsAtClose).toEqual([]);
+      expect(formatSprintCompleteForLLM(result)).toMatch(/Implicit sessions at close: none/);
+      const check = new Database(dbPath, { readonly: true });
+      expect(
+        (check.pragma('table_info(sessions)') as { name: string }[]).map((row) => row.name)
+      ).not.toContain('implicit');
+      check.close();
+    });
+
+    it('does not treat a NULL discriminator as implicit', async () => {
+      seedSession({
+        id: 'I-YES',
+        title: 'Implicit',
+        sprintId: null,
+        status: 'active',
+        implicit: 1,
+      });
+      seedSession({ id: 'I-NULL', title: 'Unknown', sprintId: null, status: 'active' });
+      const db = new Database(dbPath);
+      db.exec(
+        "ALTER TABLE sessions RENAME COLUMN implicit TO old_implicit; ALTER TABLE sessions ADD COLUMN implicit INTEGER; UPDATE sessions SET implicit = 1 WHERE id = 'I-YES'"
+      );
+      db.close();
+      expect(desiredData(await closeSprint()).implicitSessionsAtClose.map((row) => row.id)).toEqual(
+        ['I-YES']
+      );
+    });
+
+    it.each(['PRAGMA table_info(sessions)', 'implicit = 1'])(
+      'rolls back rather than hiding a failed %s read',
+      async (marker) => {
+        const original = RbookDatabaseClient.prototype.getMany;
+        const spy = jest
+          .spyOn(RbookDatabaseClient.prototype, 'getMany')
+          .mockImplementation(function (this: RbookDatabaseClient, sql, params) {
+            return sql.includes(marker)
+              ? {
+                  success: false,
+                  error: { code: 'DB_QUERY_FAILED', message: 'injected receipt failure' },
+                }
+              : original.call(this, sql, params);
+          });
+        let result;
+        try {
+          result = await closeSprint();
+        } finally {
+          spy.mockRestore();
+        }
+        expect(result.success).toBe(false);
+        expect(result.error?.code).toBe('DB_QUERY_FAILED');
+        const db = new Database(dbPath, { readonly: true });
+        expect(
+          db.prepare('SELECT status, end_date FROM sprints WHERE id = ?').get(CLOSING_SPRINT_ID)
+        ).toEqual({ status: 'Active', end_date: null });
+        db.close();
+      }
+    );
   });
 
   describe('runtime build telemetry', () => {

@@ -63,6 +63,8 @@ async function hook(input: Record<string, string> = {}, override: Partial<CliIo>
     stderr: (text) => {
       stderr.push(text);
     },
+    // s98-m08: room load cannot spend (#1558); this test checks what the hook does, not its deadline.
+    startedAtMs: Date.now() + 20_000,
     ...override,
   };
   const code = await runCli(['hook', 'prompt', '--format', 'text'], io);

@@ -97,6 +97,33 @@ function mission(id: string, completed: number, offsets: number[]): void {
 }
 
 describe('local telemetry stats', () => {
+  it('renders pooled friction as one inert capped value without rewriting the stored body', async () => {
+    const body = '\u001b[2K\u0085\nFORGED LINE ' + 'x'.repeat(1000);
+    write(
+      'CREATE TABLE agent_feedback (id INTEGER PRIMARY KEY, body TEXT, created_at TEXT, status TEXT)'
+    );
+    write('INSERT INTO agent_feedback VALUES (1,?,?,?)', body, iso(now - day), 'open');
+    let stdout = '';
+    expect(
+      await runStats([], {
+        cwd: root,
+        env,
+        readStdin: async () => '',
+        stdout: (text) => {
+          stdout += text;
+        },
+        stderr: () => undefined,
+      })
+    ).toBe(0);
+    // eslint-disable-next-line no-control-regex -- C0/C1 witness permits only generated LF.
+    expect(stdout).not.toMatch(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/);
+    expect(stdout).not.toMatch(/^FORGED LINE/m);
+    expect(stdout).not.toContain('x'.repeat(301));
+    expect(
+      (await collectTelemetryStats([root], bounds(), env)).projects[0].store.friction.items[0].body
+    ).toBe(body);
+  });
+
   it.each(['canonical-first', 'alias-first'])(
     'joins alias injections to canonical writes without losing or doubling the store (%s)',
     async (order) => {

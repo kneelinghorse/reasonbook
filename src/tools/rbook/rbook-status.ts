@@ -11,7 +11,7 @@
  * way), and last-sync / last-delivery timestamps.
  *
  * Field contract is FROZEN per dashboard team msg 416315a7. Any shape change
- * to the 5 required fields requires coordination with rbook://derek/cmos-dashboard
+ * to the 5 required fields requires coordination with the dashboard maintainers
  * before shipping (see rbook_decisions #642).
  *
  * @module tools/rbook/rbook-status

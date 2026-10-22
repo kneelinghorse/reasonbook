@@ -341,7 +341,7 @@ export const rbookAuthToolDefinition = {
       keyId: {
         type: 'string',
         description:
-          'Specific dashboard keyId to revoke. Omit to revoke the current project key for projectRoot.',
+          'Dashboard keyId. revoke: defaults to the current project key. logout: defaults to the sole local user-scoped key; required when there are several.',
       },
       graceSeconds: {
         type: 'integer',

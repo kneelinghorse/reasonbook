@@ -49,10 +49,13 @@ It needs Node.js 20 or newer on your machine.
   releases, or Node's headers from nodejs.org to build one. Until the install finishes, Claude Code
   runs the same version through `npx`, and Codex says it is installing. Start a new session once
   installation finishes to load the record and, in Codex, the tools.
-- **Your record stays local by default.** Reasonbook sends your record nowhere unless you sign in to the
-  optional dashboard. Then, once a close has registered the project, it uploads a snapshot of the
-  project's database after writes and at closes. `RBOOK_CHECKPOINT_SYNC=off` stops those uploads
-  when supplied to the server. The developer plugin requests forwarding of this setting;
+- **Your record stays local by default.** With a stored user-scoped key or environment credentials,
+  closes and registered-project writes can upload the whole database to the optional dashboard.
+  Requested dashboard calls can also use a project key, which remains valid after logout.
+  Direct sharing exchanges records with configured peers without dashboard sign-in.
+  `RBOOK_CHECKPOINT_SYNC=off` stops automatic uploads and manual backfill when supplied to the
+  server; other requested dashboard calls and shared-record exchanges remain available.
+  The developer plugin requests forwarding of this setting and the sharing controls;
   the portable chat plugin uses the environment inherited from its host. Forwarding through
   every client loader is unverified. There is no remote telemetry.
 
@@ -70,7 +73,7 @@ explains collection, dashboard account visibility, retention and removal.
 | Pre-compact   | Adds nothing; the next session start adds the digest again                                                                                                                    |
 | Session end   | Closes the sessions the conversation opened                                                                                                                                   |
 
-To turn the hooks off in one project, run `npx --prefer-offline -y @aquex/reasonbook@4.3.0 ambient off` in that
+To turn the hooks off in one project, run `npx --prefer-offline -y @aquex/reasonbook@4.4.0 ambient off` in that
 project, with the version this plugin installed; `ambient on` turns them back on. To turn everything
 off, disable or uninstall the plugin.
 

@@ -68,7 +68,8 @@ test('the installing responder switches to the real server without another clien
   lines.on('line', (line) => messages.push(JSON.parse(line)));
   const send = (value: unknown) => proc.stdin.write(JSON.stringify(value) + '\n');
   async function take(predicate: (message: any) => boolean) {
-    const deadline = Date.now() + 5000;
+    // s98-m08: a hang guard; a cold node start took seconds under two concurrent full suites.
+    const deadline = Date.now() + 30_000;
     while (Date.now() < deadline) {
       const index = messages.findIndex(predicate);
       if (index >= 0) return messages.splice(index, 1)[0];
@@ -78,7 +79,6 @@ test('the installing responder switches to the real server without another clien
     throw new Error(`No response; stderr=${stderr}`);
   }
   try {
-    const started = Date.now();
     const init = {
       protocolVersion: '2025-06-18',
       capabilities: { roots: { listChanged: true } },
@@ -86,7 +86,10 @@ test('the installing responder switches to the real server without another clien
     };
     send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: init });
     const initialized = await take((m) => m.id === 1);
-    expect(Date.now() - started).toBeLessThan(2000);
+    // Answered while the install is not ready (the marker is written below), which is what shows the
+    // responder does not wait for it. s98-m08: the 2 s bound this replaces timed this process's own
+    // cold start, 2.6 s under two concurrent full suites.
+    expect(fs.existsSync(marker)).toBe(false);
     expect(initialized.result.capabilities.experimental).toEqual({
       'codex/sandbox-state-meta': {},
     });

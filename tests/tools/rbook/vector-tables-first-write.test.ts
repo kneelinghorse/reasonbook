@@ -206,5 +206,7 @@ PRIVATE.describe('a real store from before vector tables (509ddcf)', () => {
       vectors: 1,
       hash: expect.stringMatching(/^[0-9a-f]{64}$/),
     });
-  }, 60000);
+    // s98-m08: a hang guard, not a speed budget. Migrating this whole historical store ran past
+    // 60 s in both of two concurrent full suites.
+  }, 300_000);
 });

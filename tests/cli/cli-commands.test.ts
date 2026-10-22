@@ -109,9 +109,76 @@ describe('s93-m01 — the bin routes before any server module loads', () => {
     expect(event.code).toBe(1);
     expect(event.stderr).toEqual([expect.stringContaining('name an event')]);
   });
+
+  it('keeps future hook options fail-open instead of applying the hand-run option contract', async () => {
+    const result = await run(['hook', 'prompt', '--future-harness-option=value'], projectRoot, {
+      RBOOK_AMBIENT: 'off',
+    });
+    expect(result.code).toBe(0);
+    expect(result.stdout).toBe('');
+    expect(result.stderr.join(' ')).not.toMatch(/unknown option/i);
+  });
+});
+
+describe('F9 init names a new project without renaming an existing one', () => {
+  it.each(['cwd', 'explicit'])('defaults a %s target to its folder name', async (mode) => {
+    const fresh = path.join(tmp, `fresh-${mode}`);
+    fs.mkdirSync(fresh);
+    const argv = ['init', '--no-hooks', ...(mode === 'explicit' ? ['--project-root', fresh] : [])];
+    const result = await run(argv, mode === 'cwd' ? fresh : projectRoot);
+    expect(result.code).toBe(0);
+    const db = new Database(path.join(fresh, 'rbook', 'db', 'rbook.sqlite'), { readonly: true });
+    try {
+      expect(db.prepare("SELECT value FROM metadata WHERE key = 'project_name'").get()).toEqual({
+        value: path.basename(fresh),
+      });
+      const context = db
+        .prepare("SELECT content FROM contexts WHERE id = 'master_context'")
+        .get() as { content: string };
+      expect(JSON.parse(context.content).project_identity.name).toBe(path.basename(fresh));
+    } finally {
+      db.close();
+    }
+  });
+
+  it('keeps an existing custom name unless --name explicitly replaces it', async () => {
+    expect((await run(['init', '--no-hooks'])).code).toBe(0);
+    expect(query("SELECT value FROM metadata WHERE key = 'project_name'")).toEqual([
+      { value: 'cli commands' },
+    ]);
+    expect((await run(['init', '--no-hooks', '--name', 'An explicit name'])).code).toBe(0);
+    expect(query("SELECT value FROM metadata WHERE key = 'project_name'")).toEqual([
+      { value: 'An explicit name' },
+    ]);
+  });
+
+  it('init help leaves an empty target empty', async () => {
+    const fresh = path.join(tmp, 'help-must-not-init');
+    fs.mkdirSync(fresh);
+    const result = await run(['init', '--project-root', fresh, '--help']);
+    expect(result).toMatchObject({ code: 0, stderr: [] });
+    expect(result.stdout).toContain('Usage: reasonbook');
+    expect(fs.readdirSync(fresh)).toEqual([]);
+  });
 });
 
 describe('s93-m01 — capture and session need a harness session (fork 8)', () => {
+  it('refuses an unknown capture category before a handler can claim a capture or create a session', async () => {
+    const refused = await run([
+      'capture',
+      '--session-id',
+      'invalid-category',
+      '--category',
+      'Learning',
+      '--content',
+      'This must not silently disappear.',
+    ]);
+    expect(refused.code).toBe(1);
+    expect(refused.stderr.join(' ')).toMatch(/category.*learning/);
+    expect(query('SELECT id FROM sessions')).toEqual([]);
+    expect(query('SELECT id FROM learnings')).toEqual([]);
+  });
+
   it('a capture without --session-id is refused with the remedy, and opens no session', async () => {
     const refused = await run(['capture', '--category', 'context', '--content', 'By hand.']);
     expect(refused.code).toBe(1);
@@ -167,6 +234,25 @@ describe('s93-m01 — ambient', () => {
 });
 
 describe('s93-m01 — relevant (the keyword arm)', () => {
+  it('keeps shared decision previews inert in text while JSON keeps the original preview', async () => {
+    const text = 'SQLite \u001b[2K\u0085\nFORGED LINE';
+    const db = new Database(dbPath);
+    try {
+      db.prepare(
+        'INSERT INTO strategic_decisions (id, decision_text, created_at, status) VALUES (1, ?, ?, ?)'
+      ).run(text, new Date().toISOString(), 'active');
+    } finally {
+      db.close();
+    }
+    const human = await run(['relevant', '--query', 'sqlite']);
+    expect(human.code).toBe(0);
+    // eslint-disable-next-line no-control-regex -- C0/C1 witness permits only generated LF.
+    expect(human.stdout).not.toMatch(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/);
+    expect(human.stdout).not.toMatch(/^FORGED LINE/m);
+    const json = await run(['relevant', '--query', 'sqlite', '--format', 'json']);
+    expect(JSON.parse(json.stdout).items[0].text).toContain('\u001b');
+  });
+
   it('returns matching decisions and learnings as previews, superseded rows dropped', async () => {
     const db = new Database(dbPath);
     try {
@@ -336,6 +422,30 @@ describe('s93-m01 — the #610 follow-ups', () => {
 });
 
 describe('s94-m04 — shaped decisions use the same owned write path', () => {
+  it('checks malformed decision arrays before entering the router and prints the expected type', async () => {
+    const router = await import('../../src/tools/rbook/rbook-decisions');
+    const routed = jest.spyOn(router, 'rbookDecisions');
+    try {
+      const result = await run([
+        'decisions',
+        'record',
+        '--session-id',
+        'invalid-decision',
+        '--content',
+        'Do not store.',
+        '--alternatives',
+        '[1]',
+      ]);
+      expect(result.code).toBe(1);
+      expect(routed).not.toHaveBeenCalled();
+      expect(result.stderr.join(' ')).toMatch(/alternatives.*string/);
+      expect(query('SELECT id FROM sessions')).toEqual([]);
+      expect(query('SELECT id FROM strategic_decisions')).toEqual([]);
+    } finally {
+      routed.mockRestore();
+    }
+  });
+
   it('refuses a missing session before any row is written', async () => {
     const result = await run(['decisions', 'record', '--content', 'Choose the shared writer.']);
     expect(result.code).toBe(1);
