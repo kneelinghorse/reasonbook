@@ -36,6 +36,8 @@ export const REFEREE_ERROR_CODES = {
   MALFORMED: 'REFEREE_MALFORMED',
   /** A copy speaking a record protocol newer than this library's: refused, its changes kept on it (fact 28). */
   PROTOCOL_NEWER: 'REFEREE_PROTOCOL_NEWER',
+  /** The caller cannot read changes this referee must withhold from its stream. */
+  READS_OLD_PROTOCOL: 'REFEREE_READS_OLD_PROTOCOL',
   /** A change whose clock runs more than a week past the referee's: it waits on its copy until it does not. */
   CLOCK_AHEAD: 'REFEREE_CLOCK_AHEAD',
   /** An invite naming someone another member, the owner included, already goes by. */
@@ -61,6 +63,7 @@ const STATUS: Readonly<Record<string, number>> = {
   [REFEREE_ERROR_CODES.FORGED_RENUMBER]: 403,
   [REFEREE_ERROR_CODES.MALFORMED]: 400,
   [REFEREE_ERROR_CODES.PROTOCOL_NEWER]: 409,
+  [REFEREE_ERROR_CODES.READS_OLD_PROTOCOL]: 409,
   [REFEREE_ERROR_CODES.CLOCK_AHEAD]: 409,
   [REFEREE_ERROR_CODES.NAME_TAKEN]: 409,
   [REFEREE_ERROR_CODES.MIGRATE_NEEDED]: 409,

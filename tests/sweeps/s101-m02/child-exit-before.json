@@ -1,0 +1,34 @@
+{
+  "measuredAt": "2026-10-23T13:35:54.399Z",
+  "head": "60d964049819ebe87a6f1e5ef213ab111e224292",
+  "predicate": "All git ls-files entries, every extension, valid UTF-8 without NUL; one line per exitCode != null or exitCode !== null comparison",
+  "inspected": 7727,
+  "count": 5,
+  "hits": [
+    {
+      "file": "tests/cli/migrate-ownership.test.ts",
+      "line": 39,
+      "text": "if (child.exitCode !== null || child.signalCode !== null) return;"
+    },
+    {
+      "file": "tests/helpers/referee-http.ts",
+      "line": 91,
+      "text": "if (child.exitCode !== null) return resolve();"
+    },
+    {
+      "file": "tests/plugin/installing-server.test.ts",
+      "line": 76,
+      "text": "if (proc.exitCode !== null) throw new Error(`Proxy exited ${proc.exitCode}: ${stderr}`);"
+    },
+    {
+      "file": "tests/plugin/installing-server.test.ts",
+      "line": 121,
+      "text": "if (proc.exitCode !== null) resolve();"
+    },
+    {
+      "file": "tests/tools/rbook/spin-out-process.test.ts",
+      "line": 185,
+      "text": "if (run.child.exitCode !== null || run.child.signalCode !== null)"
+    }
+  ]
+}

@@ -286,7 +286,7 @@ export async function runHook(argv: readonly string[], io: CliIo): Promise<numbe
  */
 export async function runCli(argv: readonly string[], io: CliIo = processIo()): Promise<number> {
   const [verb, ...rest] = argv;
-  const { USAGE, firstUnknownOption } = await import('./cli/usage');
+  const { USAGE, firstUnknownOption, unexpectedArgument } = await import('./cli/usage');
   if (argv.includes('--help') || argv.includes('-h')) {
     io.stdout(USAGE);
     return 0;
@@ -296,6 +296,11 @@ export async function runCli(argv: readonly string[], io: CliIo = processIo()): 
     io.stderr(
       `reasonbook ${oneLine(verb ?? '')}: unknown option ${oneLine(unknown)}. Use reasonbook ${oneLine(verb ?? '')} --help for usage.`
     );
+    return 1;
+  }
+  const stray = unexpectedArgument(verb ?? '', rest);
+  if (stray) {
+    io.stderr(`reasonbook ${oneLine(verb ?? '')}: ${stray}`);
     return 1;
   }
   if (verb === 'hook') return runHook(rest, io);

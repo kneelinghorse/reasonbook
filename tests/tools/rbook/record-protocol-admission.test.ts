@@ -73,6 +73,7 @@ it.each([undefined, null, 1])(
       expect(refused.success).toBe(false);
       expect(refused.error?.message).toMatch(/Pat.*(?:reads|read).*2/);
       expect(refused.error?.suggestion).toMatch(/upgrade/i);
+      expect(refused.error?.suggestion).toMatch(/fresh.*join --request-out/i);
       expect(snapshot(client)).toEqual(before);
     });
   }

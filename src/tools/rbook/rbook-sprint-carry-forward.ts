@@ -1,3 +1,6 @@
+// ABOUTME: Detect sprint carry-forwards and route them as dashboard backlog requests.
+// ABOUTME: Publication requires the local store's registered sender identity.
+
 /**
  * rbook_sprint carry_forward action
  *
@@ -14,7 +17,11 @@ import { withClientAsync, type RbookDatabaseClient } from './client';
 import type { RbookToolResult } from './types';
 import { createError, createSuccess, RbookErrors } from './errors';
 import { DashboardClient } from './dashboard-client';
-import { getLocalSenderProjectId } from './sender-identity';
+import {
+  assertSenderIdentityValid,
+  getLocalSenderProjectId,
+  SenderAttributionIncompleteError,
+} from './sender-identity';
 import { appendWarnings } from './format-warnings';
 import { normalizeAddressScheme } from '../../intelligence/legacy-compat';
 
@@ -247,6 +254,16 @@ async function sendCarryForwardMessages(
     const resolved = await getLocalSenderProjectId(client, projectRoot);
     resolvedSenderProjectId = resolved.senderProjectId;
     senderAddress = resolved.identity.rbookAddress ?? undefined;
+    try {
+      assertSenderIdentityValid(resolved.identity, resolvedSenderProjectId);
+    } catch (error) {
+      if (!(error instanceof SenderAttributionIncompleteError)) throw error;
+      return items.map((item) => ({
+        item,
+        sent: false,
+        error: `${error.message} Register this store before sending carry-forwards.`,
+      }));
+    }
   }
 
   const results: CarryForwardSendResult[] = [];

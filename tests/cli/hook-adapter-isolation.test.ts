@@ -82,7 +82,8 @@ it.each(PORTABLE)(
       nativeRoot,
       expect.anything(),
       expect.any(Number),
-      'explicit'
+      'explicit',
+      true
     );
     expect(fs.readFileSync(harnessLinkPath(process.pid, env), 'utf8')).toBe(priorLink);
     expect(env.CLAUDE_PROJECT_DIR).toBe(parentRoot);
@@ -99,7 +100,8 @@ it.each(PORTABLE)(
       nativeRoot,
       expect.anything(),
       expect.any(Number),
-      'explicit'
+      'explicit',
+      true
     );
     expect(fs.readFileSync(harnessLinkPath(process.pid, env), 'utf8')).toBe(priorLink);
   }
@@ -136,7 +138,8 @@ it('Claude retains its environment project priority and verified process link', 
     parentRoot,
     expect.anything(),
     expect.any(Number),
-    'explicit'
+    'explicit',
+    true
   );
   expect(readHarnessLink(process.pid, env)).toMatchObject({
     hash: harnessSessionHash('native-session'),

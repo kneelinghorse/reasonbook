@@ -33,6 +33,7 @@ const CONSUMER = `import {
   FEEDBACK_KINDS,
   readSignals,
   renderBrief,
+  unreadableReport,
   SIGNAL_KINDS,
   SIGNAL_RULES,
   SIGNALS_SCHEMA,
@@ -51,6 +52,11 @@ export function report(file: string, options: ReadSignalsOptions): SignalsReport
 export function compute(...args: Parameters<typeof computeSignals>): SignalsReport {
   return computeSignals(...args);
 }
+
+export const unreadable = unreadableReport({ now: 0, storePath: 'unused.sqlite',
+  projectId: 'known-project', projectName: 'Known project' }, 'store unreadable');
+// @ts-expect-error a supplied project id must stay typed, not widen to any
+unreadableReport({ now: 0, storePath: 'unused.sqlite', projectId: 42 }, 'store unreadable');
 
 // @ts-expect-error computeSignals requires an actual SQLite database handle
 computeSignals({}, { now: 0, storePath: 'unused.sqlite' });
@@ -144,7 +150,8 @@ it.each(['node16', 'bundler'] as const)(
         '-e',
         `const s = require('@aquex/reasonbook/signals');
        const r = s.readSignals(${JSON.stringify(path.join(artifact.hostDir, 'none', 'rbook.sqlite'))}, { now: ${JSON.stringify(now)} });
-       process.stdout.write(JSON.stringify({ schema: r.schema, library: r.library, computedAt: r.computedAt, kinds: r.signals.map((e) => e.kind), available: r.signals.some((e) => e.available) }));`,
+       const failed = s.unreadableReport({ now: ${JSON.stringify(now)}, storePath: 'unused.sqlite', projectId: 'known-project', projectName: 'Known project' }, 'store unreadable');
+       process.stdout.write(JSON.stringify({ schema: r.schema, library: r.library, computedAt: r.computedAt, kinds: r.signals.map((e) => e.kind), available: r.signals.some((e) => e.available), unreadableProject: failed.project }));`,
       ],
       { cwd: artifact.hostDir, encoding: 'utf8', timeout: 60000 }
     );
@@ -158,6 +165,7 @@ it.each(['node16', 'bundler'] as const)(
       schema: 'rbook.signals/1',
       library: { name: '@aquex/reasonbook/signals', version },
       computedAt: now,
+      unreadableProject: { id: 'known-project', name: 'Known project' },
       kinds: [
         'drafts_pending',
         'next_steps_lapsing',

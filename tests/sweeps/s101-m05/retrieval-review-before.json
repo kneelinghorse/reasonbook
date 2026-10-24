@@ -1,0 +1,769 @@
+{
+  "measuredAt": "2026-10-23T15:17:57.248Z",
+  "head": "9378d6fe34bb9c4ab3f5946aa567eec26c178278",
+  "scope": "Before any V7 repair edit; current m05 source comment edits already committed",
+  "predicate": "git ls-files -z across all extensions; fatal UTF-8 decode, exclude NUL; count matching physical lines once per pattern",
+  "patterns": {
+    "combined": "/labels-v6-review|currentParserReview/",
+    "v6Path": "/labels-v6-review/",
+    "reviewField": "/currentParserReview/"
+  },
+  "inspected": 7735,
+  "matchingFiles": 40,
+  "counts": {
+    "combined": 70,
+    "v6Path": 55,
+    "reviewField": 18
+  },
+  "byFile": {
+    "rbook/research/2026-10-s98-build/s98-close/final-witness/jest-results.json.raw": 1,
+    "rbook/research/2026-10-s98-build/s98-m11/critic-round3-gate.cjs": 2,
+    "rbook/research/2026-10-s98-build/s98-m11/critic-round3-gate.json": 3,
+    "rbook/research/2026-10-s98-build/s98-m11/critic-round3-scoped.md": 1,
+    "rbook/research/2026-10-s98-build/s98-m11/critic-round3-tests.json": 1,
+    "rbook/research/2026-10-s98-build/s98-m11/retrieval-gate-run.json": 4,
+    "rbook/research/2026-10-s98-build/s98-m11/retrieval-parser-refresh-green.json": 1,
+    "rbook/research/2026-10-s98-build/s98-m11/retrieval-parser-refresh-hashes.json": 2,
+    "rbook/research/2026-10-s98-build/s98-m11/retrieval-parser-refresh-labels.json": 2,
+    "rbook/research/2026-10-s98-build/s98-m11/retrieval-parser-refresh-red.json": 1,
+    "rbook/research/2026-10-s98-build/s98-m11/retrieval-parser-refresh-red.txt": 2,
+    "rbook/research/2026-10-s98-build/s98-m11/retrieval-parser-refresh.md": 2,
+    "rbook/research/2026-10-s98-build/s98-m12/postbuild-health.json": 1,
+    "rbook/research/2026-10-s98-build/s98-m12/prebuild-health.json": 1,
+    "rbook/research/2026-10-s98-build/s98-m12/repair-postbuild-health.json": 1,
+    "rbook/research/2026-10-s98-build/s98-m14/release-checkpoint/post-build-1.stdout.txt": 1,
+    "rbook/research/2026-10-s98-build/s98-m14/release-checkpoint/post-build-2.stdout.txt": 1,
+    "rbook/research/2026-10-s98-build/s98-m14/release-checkpoint/pre-build-1.stdout.txt": 1,
+    "rbook/research/2026-10-s98-build/s98-m14/release-checkpoint/pre-build-2.stdout.txt": 1,
+    "rbook/research/2026-10-s98-build/s98-m16/runtime-after-build.json": 1,
+    "rbook/research/2026-10-s98-build/s98-m16/runtime-before-build.json": 1,
+    "rbook/research/2026-10-s98-build/s98-m17/full-suite-green.json": 1,
+    "rbook/research/2026-10-s98-build/s98-m17/postbuild-final-onboard.json": 1,
+    "rbook/research/2026-10-s98-build/s98-m17/postbuild-onboard.json": 1,
+    "rbook/research/2026-10-s98-build/s98-m17/postbuild-repaired-onboard.json": 1,
+    "rbook/research/2026-10-s98-build/s98-m17/prebuild-final-onboard.json": 1,
+    "rbook/research/2026-10-s98-build/s98-m17/prebuild-onboard.json": 1,
+    "rbook/research/2026-10-s98-build/s98-m17/prebuild-repaired-onboard.json": 1,
+    "rbook/research/2026-10-s98-build/s98-m18/full-suite-first-red.json": 1,
+    "rbook/research/2026-10-s98-build/s98-m18/full-suite-green.json": 1,
+    "rbook/research/2026-10-s98-build/s98-m19/full-suite-first-red.json": 1,
+    "rbook/research/2026-10-s98-build/s98-m19/full-suite-green.json": 1,
+    "rbook/research/2026-10-s98-build/s98-m20/release-checkpoint/full-suite/jest-results.json": 1,
+    "rbook/research/2026-10-s98-build/s98-m21/full-suite/jest-results.json": 1,
+    "scripts/retrieval-quality-contract.js": 7,
+    "tests/fixtures/retrieval-quality-contract.json": 2,
+    "tests/helpers/retrieval-quality-gate.ts": 5,
+    "tests/scripts/retrieval-parser-review.test.ts": 8,
+    "tests/scripts/retrieval-quality-gate.test.ts": 2,
+    "tests/scripts/retrieval-quality-private.test.ts": 2
+  },
+  "byClassification": {
+    "active-current-review-path: change to V7; retain V6 separately as history": 16,
+    "active-generic-review-binding: retain field/mechanism; inspect only if schema gains historical review binding": 10,
+    "historical-retention: preserve prior review receipt, source, or narrative": 44
+  },
+  "matches": [
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-close/final-witness/jest-results.json.raw",
+      "line": 1,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 11325669,
+      "lineSha256": "a81e89a291574b054a24a99b1f57c7bf7fbaabd194520dda93eea2b04cd00606"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m11/critic-round3-gate.cjs",
+      "line": 22,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "reviewField"],
+      "lineUtf8Bytes": 106,
+      "lineSha256": "a13b64f87baeb69a66f25789e080460bdc544cb3249e90b600c500038bc7b97b"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m11/critic-round3-gate.cjs",
+      "line": 51,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "reviewField"],
+      "lineUtf8Bytes": 573,
+      "lineSha256": "8134dbdd8f41bfd02bb1bc14fed1d64252372761031a27300742ceb47ab39aba"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m11/critic-round3-gate.json",
+      "line": 8,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "reviewField"],
+      "lineUtf8Bytes": 25,
+      "lineSha256": "60ca5740e18f056c013d7ae16322ec5df64e83c123894d8c163f4c24ec31c080"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m11/critic-round3-gate.json",
+      "line": 42,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 136,
+      "lineSha256": "c492b99ee8e509418907e3aa8ae029e054b7d202bbf1081466581c20c65d9fc3"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m11/critic-round3-gate.json",
+      "line": 43,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 133,
+      "lineSha256": "e8aca67b6375aab0cdfd8b26acb37713a6278f60560f87c9c94712d53237b061"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m11/critic-round3-scoped.md",
+      "line": 35,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "reviewField"],
+      "lineUtf8Bytes": 96,
+      "lineSha256": "92f08c2e3d0b5b0fb77bbac6c962cd5bbc57f75119914f5f905d2235369a3066"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m11/critic-round3-tests.json",
+      "line": 1,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 38592,
+      "lineSha256": "0f9333aa784fbda5bedc1a08a4e416fd3dc73b0fb5b34fb0ea25fb934d2ee8be"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m11/retrieval-gate-run.json",
+      "line": 27,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 134,
+      "lineSha256": "1940656ca7e9e0a1b9bca9aa31033afa7ac48281f71170e099fba9424351d808"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m11/retrieval-gate-run.json",
+      "line": 28,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 136,
+      "lineSha256": "c492b99ee8e509418907e3aa8ae029e054b7d202bbf1081466581c20c65d9fc3"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m11/retrieval-gate-run.json",
+      "line": 457,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 134,
+      "lineSha256": "1940656ca7e9e0a1b9bca9aa31033afa7ac48281f71170e099fba9424351d808"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m11/retrieval-gate-run.json",
+      "line": 458,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 136,
+      "lineSha256": "c492b99ee8e509418907e3aa8ae029e054b7d202bbf1081466581c20c65d9fc3"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m11/retrieval-parser-refresh-green.json",
+      "line": 1,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 30310,
+      "lineSha256": "816318f778fbb8e375df39c07f205c98fe3cfbaf2243c93699c09794499f152f"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m11/retrieval-parser-refresh-hashes.json",
+      "line": 12,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 136,
+      "lineSha256": "c492b99ee8e509418907e3aa8ae029e054b7d202bbf1081466581c20c65d9fc3"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m11/retrieval-parser-refresh-hashes.json",
+      "line": 13,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 133,
+      "lineSha256": "e8aca67b6375aab0cdfd8b26acb37713a6278f60560f87c9c94712d53237b061"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m11/retrieval-parser-refresh-labels.json",
+      "line": 8,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 97,
+      "lineSha256": "daec84d36b7daa3f7feaabdc78ce8210fc8fd06f61ad3b2381f6639d7eb15a1d"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m11/retrieval-parser-refresh-labels.json",
+      "line": 53,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 61,
+      "lineSha256": "5066cbdaf99ed5a91f7194b5bc82620788f1aff51c11c7a2ba6586ffa1b190c6"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m11/retrieval-parser-refresh-red.json",
+      "line": 1,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 71944,
+      "lineSha256": "f75bb12a264d446d70b5350d6aaecd44f096a32f1c4d110f1d5bbd8a87d16494"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m11/retrieval-parser-refresh-red.txt",
+      "line": 284,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 100,
+      "lineSha256": "c56148bf472534254fcebff2cf2e5b3da884b075656c14a093718166dc4fbde1"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m11/retrieval-parser-refresh-red.txt",
+      "line": 308,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 98,
+      "lineSha256": "f9f1a0e1a99043242b13d023f1a8a8bc0b617ac7ee1a3bc138e116ebcbba74d6"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m11/retrieval-parser-refresh.md",
+      "line": 14,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "reviewField"],
+      "lineUtf8Bytes": 94,
+      "lineSha256": "5ffa9a88edb8f79fd1f6cfb6da0edc2b71868945221b6b9dd688d7cb7cf14039"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m11/retrieval-parser-refresh.md",
+      "line": 28,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 49,
+      "lineSha256": "9e9766892b07a5362b9e23879fa0030717d3415f356eed07ce1061c907d94aa8"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m12/postbuild-health.json",
+      "line": 1,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 20138,
+      "lineSha256": "e399f8d60a5b2b27ed037a683d9231cde0c5069935e07fcd498a35e9bbe63301"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m12/prebuild-health.json",
+      "line": 1,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 20138,
+      "lineSha256": "530a06b140ec31a2f4e4cda56166d6dd9627be1dbd012ed8157032b2d7bc6649"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m12/repair-postbuild-health.json",
+      "line": 1,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 20141,
+      "lineSha256": "ed4c17f80f9f351d83fa7b05430c22894b769d49e80cb06cc70ede2d38a3a923"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m14/release-checkpoint/post-build-1.stdout.txt",
+      "line": 1,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 20186,
+      "lineSha256": "28869197e92a430ff4af96553ce09ad0e7569e4740cd9cd961a79ac0c2939c30"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m14/release-checkpoint/post-build-2.stdout.txt",
+      "line": 1,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 20186,
+      "lineSha256": "d1d1a6170591d5727ec8334868dbccc8acf7fdb017ac2a438189f55b9c371fb2"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m14/release-checkpoint/pre-build-1.stdout.txt",
+      "line": 1,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 20186,
+      "lineSha256": "b94d295055adeede689dac2abd3d84a96b45bb06811294bb42661d97c71e96b7"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m14/release-checkpoint/pre-build-2.stdout.txt",
+      "line": 1,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 20186,
+      "lineSha256": "7e0acc21736c6ed55a078c1d98efd07b60b31a1896755dc02f98fec9590ff79d"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m16/runtime-after-build.json",
+      "line": 1,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 20337,
+      "lineSha256": "6a9428b0d1ca25e595a4dd1b2dbdd0206f1761c9387002eb44ec4d7cc5a0896e"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m16/runtime-before-build.json",
+      "line": 1,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 20340,
+      "lineSha256": "69b7ac5009e66941e1e9f61230e9a7e2b5f594397b1b51d6ace2beaf271f2007"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m17/full-suite-green.json",
+      "line": 1,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 11172898,
+      "lineSha256": "83b5169ed6874579075eed4a8f3fc6d63d58c7921012637ffd6f88f7ef7e1588"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m17/postbuild-final-onboard.json",
+      "line": 1,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 20335,
+      "lineSha256": "d96460f142be594551bb0c6d02f014a1f0db8a4b26fa1d4ce2ad473ab6fc3a4f"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m17/postbuild-onboard.json",
+      "line": 1,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 20332,
+      "lineSha256": "64ac43abe2a851c829ea430bab5c9c976acab89cc28dc7fda3ae730fe48f3d89"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m17/postbuild-repaired-onboard.json",
+      "line": 1,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 20670,
+      "lineSha256": "2c6fd9005ca31ce71752ec106ea1dc7ccf9f10b1daf6a4b953156043485957d0"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m17/prebuild-final-onboard.json",
+      "line": 1,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 20630,
+      "lineSha256": "0c1ecb81a5e37c873fad354b6cb8e0c09b27139b2a8ff461f3b0e40a1a57431c"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m17/prebuild-onboard.json",
+      "line": 1,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 20333,
+      "lineSha256": "99c10adec7b7e0f6641cd51d28488fafe5bdb30e4847deda1f4659fc72fe227f"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m17/prebuild-repaired-onboard.json",
+      "line": 1,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 20670,
+      "lineSha256": "fe5f405342ad9306a5e178da0ae6273d1928303995bfbe28f3063f785e5bf066"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m18/full-suite-first-red.json",
+      "line": 1,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 11337246,
+      "lineSha256": "f720a0c76d383c29eafd26111fe0d77c54726c4f80fdd6e042f1f62791987817"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m18/full-suite-green.json",
+      "line": 1,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 11325667,
+      "lineSha256": "3a0ee829ad1be19fe2bde4102219fede64bf5a3e1fe757fabb59f7fe9ec5f8e3"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m19/full-suite-first-red.json",
+      "line": 1,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 11331338,
+      "lineSha256": "6b311dc5f9dffe119fa3899b34b11819d4f2720fbbd990c1787d100396ed1b6b"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m19/full-suite-green.json",
+      "line": 1,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 11325898,
+      "lineSha256": "42a84ca801963b00d058a946611ba59a332c6822db44f3533f58e035c911265e"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m20/release-checkpoint/full-suite/jest-results.json",
+      "line": 1,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 11326187,
+      "lineSha256": "7b5894ba3924c929233a6bc581f02bb0d9e0e39c4ed81bd0aea4fcccd552864f"
+    },
+    {
+      "file": "rbook/research/2026-10-s98-build/s98-m21/full-suite/jest-results.json",
+      "line": 1,
+      "classification": "historical-retention: preserve prior review receipt, source, or narrative",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 11325818,
+      "lineSha256": "de1c72a18fb8c87ce0dc9bfe9808f3d989a5a29f5d3dbf1c089571860239f6a9"
+    },
+    {
+      "file": "scripts/retrieval-quality-contract.js",
+      "line": 129,
+      "classification": "active-generic-review-binding: retain field/mechanism; inspect only if schema gains historical review binding",
+      "matches": ["combined", "reviewField"],
+      "lineUtf8Bytes": 28,
+      "lineSha256": "b2516889f0a23524e81914e923b20e4ee7f437adbbfc614b001de951f1613883"
+    },
+    {
+      "file": "scripts/retrieval-quality-contract.js",
+      "line": 164,
+      "classification": "active-generic-review-binding: retain field/mechanism; inspect only if schema gains historical review binding",
+      "matches": ["combined", "reviewField"],
+      "lineUtf8Bytes": 59,
+      "lineSha256": "2b0d2e64d2f245a22ed7dfb98a6209b9be0dc68a99402d656c99600c50cb48bd"
+    },
+    {
+      "file": "scripts/retrieval-quality-contract.js",
+      "line": 169,
+      "classification": "active-current-review-path: change to V7; retain V6 separately as history",
+      "matches": ["combined", "v6Path", "reviewField"],
+      "lineUtf8Bytes": 77,
+      "lineSha256": "76c325358ebf78f1df5906f304c1b8672c2ad851e9a2f5e648ada2cd551c135b"
+    },
+    {
+      "file": "scripts/retrieval-quality-contract.js",
+      "line": 170,
+      "classification": "active-generic-review-binding: retain field/mechanism; inspect only if schema gains historical review binding",
+      "matches": ["combined", "reviewField"],
+      "lineUtf8Bytes": 57,
+      "lineSha256": "59a422e84f837b84f8e3307ca4dac4949524c0a1bc43f4234bb01d7417efaaec"
+    },
+    {
+      "file": "scripts/retrieval-quality-contract.js",
+      "line": 307,
+      "classification": "active-generic-review-binding: retain field/mechanism; inspect only if schema gains historical review binding",
+      "matches": ["combined", "reviewField"],
+      "lineUtf8Bytes": 58,
+      "lineSha256": "327cc49c5251a6da201d0a174b727725398cf5345ea516d5b21b8745acde2936"
+    },
+    {
+      "file": "scripts/retrieval-quality-contract.js",
+      "line": 308,
+      "classification": "active-generic-review-binding: retain field/mechanism; inspect only if schema gains historical review binding",
+      "matches": ["combined", "reviewField"],
+      "lineUtf8Bytes": 39,
+      "lineSha256": "a64a24e8d27f44fab8571f4f373d72edce9df05e59a37a968744afe2db166fcf"
+    },
+    {
+      "file": "scripts/retrieval-quality-contract.js",
+      "line": 349,
+      "classification": "active-current-review-path: change to V7; retain V6 separately as history",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 55,
+      "lineSha256": "0b500db51989255357812110f879f882b45a80d7f52a5f990eacf5e1a5277338"
+    },
+    {
+      "file": "tests/fixtures/retrieval-quality-contract.json",
+      "line": 323,
+      "classification": "active-generic-review-binding: retain field/mechanism; inspect only if schema gains historical review binding",
+      "matches": ["combined", "reviewField"],
+      "lineUtf8Bytes": 26,
+      "lineSha256": "3d7adba57826ebc852942cce1eca307981fe0b8e4f92e2f47e576286be8d3838"
+    },
+    {
+      "file": "tests/fixtures/retrieval-quality-contract.json",
+      "line": 324,
+      "classification": "active-current-review-path: change to V7; retain V6 separately as history",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 45,
+      "lineSha256": "fae4e00b6d8bbf44ebd24cfbe476e25e8cb1c87483f5ae0caf6169239a3e1a66"
+    },
+    {
+      "file": "tests/helpers/retrieval-quality-gate.ts",
+      "line": 82,
+      "classification": "active-current-review-path: change to V7; retain V6 separately as history",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 70,
+      "lineSha256": "0a2d9abd7d2aceb29f3554fb29b7a3ff9c6c463d67e8e16df5fda89173e7764e"
+    },
+    {
+      "file": "tests/helpers/retrieval-quality-gate.ts",
+      "line": 83,
+      "classification": "active-current-review-path: change to V7; retain V6 separately as history",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 88,
+      "lineSha256": "7e7d6b39134d8fa6e5ba5e201b39403c8636640ad2f719d51bfdda7552aa7f21"
+    },
+    {
+      "file": "tests/helpers/retrieval-quality-gate.ts",
+      "line": 172,
+      "classification": "active-generic-review-binding: retain field/mechanism; inspect only if schema gains historical review binding",
+      "matches": ["combined", "reviewField"],
+      "lineUtf8Bytes": 26,
+      "lineSha256": "9d3041416ecfdf1230cc321fc92e60be60b83dcee2ca9725a90b6e9e9867fc01"
+    },
+    {
+      "file": "tests/helpers/retrieval-quality-gate.ts",
+      "line": 173,
+      "classification": "active-current-review-path: change to V7; retain V6 separately as history",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 45,
+      "lineSha256": "db0e59499910c88e4f414123b5524b1c2dc145b3bb3223740683ef900eb1a21b"
+    },
+    {
+      "file": "tests/helpers/retrieval-quality-gate.ts",
+      "line": 174,
+      "classification": "active-current-review-path: change to V7; retain V6 separately as history",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 68,
+      "lineSha256": "88a6ad040b9566df1b9986b3275cc95c97130c4448af1d7e42cef862cb79a141"
+    },
+    {
+      "file": "tests/scripts/retrieval-parser-review.test.ts",
+      "line": 16,
+      "classification": "active-current-review-path: change to V7; retain V6 separately as history",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 67,
+      "lineSha256": "6b27ad09acf18ea5385b6aec54364ed5e68e59e596d9dbf1448e90eb4bdf97b5"
+    },
+    {
+      "file": "tests/scripts/retrieval-parser-review.test.ts",
+      "line": 30,
+      "classification": "active-current-review-path: change to V7; retain V6 separately as history",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 50,
+      "lineSha256": "202fc5bb6c2f6f8bf582336d6f06215bfeb95682b71ab8a368df8d30d528e0a6"
+    },
+    {
+      "file": "tests/scripts/retrieval-parser-review.test.ts",
+      "line": 36,
+      "classification": "active-current-review-path: change to V7; retain V6 separately as history",
+      "matches": ["combined", "v6Path", "reviewField"],
+      "lineUtf8Bytes": 94,
+      "lineSha256": "ea643bb276eac6f57ecbf8564e8b27fb1a9d7834d5b1c958865629985c5d2f52"
+    },
+    {
+      "file": "tests/scripts/retrieval-parser-review.test.ts",
+      "line": 40,
+      "classification": "active-generic-review-binding: retain field/mechanism; inspect only if schema gains historical review binding",
+      "matches": ["combined", "reviewField"],
+      "lineUtf8Bytes": 59,
+      "lineSha256": "e2b34cd542661fe8ba5ebd789842f06a1abbcd1c2e80711d3b611935dcacd6fb"
+    },
+    {
+      "file": "tests/scripts/retrieval-parser-review.test.ts",
+      "line": 57,
+      "classification": "active-generic-review-binding: retain field/mechanism; inspect only if schema gains historical review binding",
+      "matches": ["combined", "reviewField"],
+      "lineUtf8Bytes": 65,
+      "lineSha256": "1204bbe447aae90c84149fcb435e8634ff61eb5a8e903a8d03721e7b8cd8d49d"
+    },
+    {
+      "file": "tests/scripts/retrieval-parser-review.test.ts",
+      "line": 74,
+      "classification": "active-current-review-path: change to V7; retain V6 separately as history",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 78,
+      "lineSha256": "4a41f892190f2a2d4ccd9512b98dd9accb1643d39690d37dcf256c0f8e9eacd5"
+    },
+    {
+      "file": "tests/scripts/retrieval-parser-review.test.ts",
+      "line": 77,
+      "classification": "active-current-review-path: change to V7; retain V6 separately as history",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 55,
+      "lineSha256": "cd11682135302d5fe6eb4f1cdb2b713f7e77389ba28536a6215866f4ec583ea0"
+    },
+    {
+      "file": "tests/scripts/retrieval-parser-review.test.ts",
+      "line": 120,
+      "classification": "active-current-review-path: change to V7; retain V6 separately as history",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 86,
+      "lineSha256": "59147f796b7a948568c30a336d93dd386174314fab54f900c3f20d84b3c13dbe"
+    },
+    {
+      "file": "tests/scripts/retrieval-quality-gate.test.ts",
+      "line": 72,
+      "classification": "active-current-review-path: change to V7; retain V6 separately as history",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 69,
+      "lineSha256": "54be1f1449624d84d60dc9dbc8dd38d629d675f68895947098ed34ccadf8b377"
+    },
+    {
+      "file": "tests/scripts/retrieval-quality-gate.test.ts",
+      "line": 77,
+      "classification": "active-generic-review-binding: retain field/mechanism; inspect only if schema gains historical review binding",
+      "matches": ["combined", "reviewField"],
+      "lineUtf8Bytes": 65,
+      "lineSha256": "0fa30c8ded65a61fa9e2ca17bfc2b5b29a752627d38a4fd5a92e0b57baf10d81"
+    },
+    {
+      "file": "tests/scripts/retrieval-quality-private.test.ts",
+      "line": 20,
+      "classification": "active-current-review-path: change to V7; retain V6 separately as history",
+      "matches": ["combined", "v6Path", "reviewField"],
+      "lineUtf8Bytes": 89,
+      "lineSha256": "8d25f313fad12b619379b256d228aff8fdc4999874eea6ad9a967904431e8b2f"
+    },
+    {
+      "file": "tests/scripts/retrieval-quality-private.test.ts",
+      "line": 21,
+      "classification": "active-current-review-path: change to V7; retain V6 separately as history",
+      "matches": ["combined", "v6Path"],
+      "lineUtf8Bytes": 87,
+      "lineSha256": "8e5b85684d5510656d61291f75bf3b0072030fbeda2c2d66f116dec22496918e"
+    }
+  ],
+  "classificationNotes": [
+    "The 16 active labels-v6-review literal lines identify current-selected destinations; update to V7 only where selecting current review. Additional V6 references deliberately added to bind historical evidence must retain V6.",
+    "The generic currentParserReview field name and its binding mechanisms remain unchanged unless the parent chooses a versioned history schema; they are candidates, not automatic replacements.",
+    "The currentParserReview.sha256 value does not itself match this predicate but must be replaced with the freshly generated V7 manifest hash.",
+    "The generator outputs new labels/manifest only and refuses an existing destination. Preserve all old V5/V6 files byte for byte.",
+    "Lexical false negatives: V6-only prose, SHA literals, aliases, computed or split paths and future new review files are not counted."
+  ],
+  "sealedOverlap": {
+    "predicate": "map every path key in contract parser/evaluator/generator seals and frozen/V5/V6 parser manifests through sourceRenames; intersect exact nine edited comment file paths",
+    "uniqueSealedSourceFiles": 10,
+    "sourceInventories": {
+      "contract.parserHashes": 5,
+      "contract.evaluatorHashes": 4,
+      "contract.parserReview.generatorSha256": 1,
+      "frozen-labels/manifest.extractorSources": 5,
+      "labels-v5-review/manifest.extractorSources": 5,
+      "labels-v6-review/manifest.extractorSources": 5
+    },
+    "editedCommentFiles": 9,
+    "overlapCount": 1,
+    "commentOverlap": [
+      {
+        "file": "src/index.ts",
+        "sha256": "5b5f81256c29aa26af139a1e1ef7fbfe71986c0dc3341a5ab72aaa03d68209a3",
+        "maps": [],
+        "requiredCandidateSource": false
+      },
+      {
+        "file": "src/tools/rbook/decision-citations.ts",
+        "sha256": "c70a0b5cae6d73f59a8f60138b8365e7c2df076f66f317d96eab8e761577038d",
+        "maps": [
+          {
+            "name": "contract.parserHashes",
+            "historical": "src/tools/cmos/decision-citations.ts",
+            "seal": "eab9a63909a198607cb5ff30dab4d9167c8b0ad3303dd7c9ddb7b48d8b395b73",
+            "rawBytesMatch": false
+          },
+          {
+            "name": "frozen-labels/manifest.extractorSources",
+            "historical": "src/tools/cmos/decision-citations.ts",
+            "seal": "ce336ab951671116faefd9a1ada20771cc7b252529a875159ce3e654908388c6",
+            "rawBytesMatch": false
+          },
+          {
+            "name": "labels-v5-review/manifest.extractorSources",
+            "historical": "src/tools/cmos/decision-citations.ts",
+            "seal": "eab9a63909a198607cb5ff30dab4d9167c8b0ad3303dd7c9ddb7b48d8b395b73",
+            "rawBytesMatch": false
+          },
+          {
+            "name": "labels-v6-review/manifest.extractorSources",
+            "historical": "src/tools/rbook/decision-citations.ts",
+            "seal": "eab9a63909a198607cb5ff30dab4d9167c8b0ad3303dd7c9ddb7b48d8b395b73",
+            "rawBytesMatch": false
+          }
+        ],
+        "requiredCandidateSource": true
+      },
+      {
+        "file": "src/tools/rbook/rbook-agent-onboard.ts",
+        "sha256": "ce393ea03f5835213eab545ab94c1b8ba699d7577a8c421fcde30b306ab4a46e",
+        "maps": [],
+        "requiredCandidateSource": false
+      },
+      {
+        "file": "src/tools/rbook/rbook-db-prune-snapshots.ts",
+        "sha256": "0d90f2917fc5a2123315041c5bbae4b47edc64be229326e6cdc3b7e6905d2b0e",
+        "maps": [],
+        "requiredCandidateSource": false
+      },
+      {
+        "file": "src/tools/rbook/rbook-message.ts",
+        "sha256": "d76c39a74888ad1332243ac3f75103e1b049ddd0242f4c11e6c392ef2bc7c387",
+        "maps": [],
+        "requiredCandidateSource": false
+      },
+      {
+        "file": "src/tools/rbook/rbook-mission-complete.ts",
+        "sha256": "b4619608e45fbb064fc98aac188ee9357c687ba23eac190d427110e8d5d86b1e",
+        "maps": [],
+        "requiredCandidateSource": false
+      },
+      {
+        "file": "src/tools/rbook/rbook-session-complete.ts",
+        "sha256": "b295c0eef206a0551e9afb8ca09337459955af89daa61c4d4b116c9430787d64",
+        "maps": [],
+        "requiredCandidateSource": false
+      },
+      {
+        "file": "src/tools/rbook/rbook-sprint-complete.ts",
+        "sha256": "2750a80e9a047fb33ff048e546483240b6be7095819f137e7ec68ccf750f318b",
+        "maps": [],
+        "requiredCandidateSource": false
+      },
+      {
+        "file": "src/tools/rbook/unknown-param-guard.ts",
+        "sha256": "7aa3edb098b6f9201e5da753840aaaabcefcdbb5f65cc938d80d510a59e987e3",
+        "maps": [],
+        "requiredCandidateSource": false
+      }
+    ],
+    "currentParsers": [
+      {
+        "file": "src/tools/rbook/record-link-extractor.ts",
+        "seal": "108426a58de0a0fa11bee6b6b52d9e10fc1b0b33cb5952eea592f9c0120a4aba",
+        "currentSha256": "108426a58de0a0fa11bee6b6b52d9e10fc1b0b33cb5952eea592f9c0120a4aba",
+        "matches": true,
+        "editedComment": false
+      },
+      {
+        "file": "src/tools/rbook/decision-citations.ts",
+        "seal": "eab9a63909a198607cb5ff30dab4d9167c8b0ad3303dd7c9ddb7b48d8b395b73",
+        "currentSha256": "c70a0b5cae6d73f59a8f60138b8365e7c2df076f66f317d96eab8e761577038d",
+        "matches": false,
+        "editedComment": true
+      },
+      {
+        "file": "src/tools/rbook/stored-time.ts",
+        "seal": "03093958d9e4ad9411cb8aaf17ed8516b4b57ab8c23a996d9966765f99ddadb2",
+        "currentSha256": "03093958d9e4ad9411cb8aaf17ed8516b4b57ab8c23a996d9966765f99ddadb2",
+        "matches": true,
+        "editedComment": false
+      },
+      {
+        "file": "src/tools/rbook/errors.ts",
+        "seal": "1f9c729b8560bf4a230050b4aba478179997c0a037b20832f00dcff3ba2623a1",
+        "currentSha256": "1f9c729b8560bf4a230050b4aba478179997c0a037b20832f00dcff3ba2623a1",
+        "matches": true,
+        "editedComment": false
+      },
+      {
+        "file": "src/tools/rbook/terminal-status.ts",
+        "seal": "b13174f1ca7360c9036b2153898efee3fbe32bccbfa0f96b498d0cbbb0239f9c",
+        "currentSha256": "b13174f1ca7360c9036b2153898efee3fbe32bccbfa0f96b498d0cbbb0239f9c",
+        "matches": true,
+        "editedComment": false
+      }
+    ],
+    "requiredCandidateSourceCount": 67,
+    "editedCommentsInRequiredCandidateSource": ["src/tools/rbook/decision-citations.ts"]
+  },
+  "receiptNote": "Matching line contents omitted: historical JSON lines can hold private records. Hash and byte count preserve the pre-edit witness without copying those records into public tests."
+}

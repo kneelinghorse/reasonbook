@@ -7,7 +7,7 @@ import { authorityChain, termOf, type AuthorityTerm } from './record-authority';
 import { BASELINE_QUERY } from './record-baseline';
 import { mergeSetAsideCuts, type ReplicaCuts } from './record-member-cuts';
 import type { LoggedChange, Member, MergeContext } from './record-standing';
-import { readReplicaIdentity } from './replica-identity';
+import { readReplicaIdentity, REPLICA_ERROR_CODES, ReplicaRefusal } from './replica-identity';
 
 function rows<T>(client: RbookDatabaseClient, sql: string, params: unknown[] = []): T[] {
   const read = client.getMany<T>(sql, params);
@@ -44,7 +44,13 @@ function gapFreePrefix(client: RbookDatabaseClient, replica: string): number {
  */
 export function mergeContext(client: RbookDatabaseClient): MergeContext {
   const identity = readReplicaIdentity(client, { fresh: true });
-  if (!identity) throw new Error('Only a copy of a shared record merges changes.');
+  if (!identity)
+    throw new ReplicaRefusal({
+      code: REPLICA_ERROR_CODES.WRITE_REFUSED,
+      message: 'This project is not shared, so it has no shared record to change or sync.',
+      suggestion:
+        'Share it first: rbook_project(action="share", authorName="<your name>"). To preview sharing through the dashboard, run reasonbook share --dashboard.',
+    });
   const [baseline] = rows<LoggedChange>(client, BASELINE_QUERY);
   if (!baseline) throw new Error('This copy has no baseline, so it cannot merge.');
   const first = String((json(baseline.value) as { authority: string }).authority);

@@ -116,9 +116,9 @@ test('the installing responder switches to the real server without another clien
     expect(stderr).toBe('');
   } finally {
     proc.stdin.end();
-    if (proc.exitCode === null) proc.kill('SIGTERM');
+    if (proc.exitCode === null && proc.signalCode === null) proc.kill('SIGTERM');
     await new Promise<void>((resolve) => {
-      if (proc.exitCode !== null) resolve();
+      if (proc.exitCode !== null || proc.signalCode !== null) resolve();
       else proc.once('exit', () => resolve());
     });
     lines.close();

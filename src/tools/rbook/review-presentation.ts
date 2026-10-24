@@ -14,8 +14,7 @@ import { renderDigestV2 } from './digest-v2';
 import { personSignalsPhrase } from './portfolio-signals';
 import { readDigestV2 } from './digest-v2-store';
 import { createError } from './errors';
-import { appendWarnings, attachWarnings } from './format-warnings';
-import { readDashboardUploadStatus } from './dashboard-upload-scheduler';
+import { appendWarnings } from './format-warnings';
 import type { RenderedContext } from './rendered-context';
 import type { RbookToolResult } from './types';
 
@@ -72,8 +71,6 @@ export async function rbookReviewPresentation(
   try {
     const root = params.projectRoot ?? result.data.projectRoot;
     if (!root) throw new Error('Resolved project root is unavailable for the digest.');
-    const upload = await readDashboardUploadStatus(root);
-    const presented = upload ? attachWarnings(result, [upload]) : result;
     const model = await readDigestV2(root);
     const context = renderDigestV2(model, { projectRoot: root, resolvedBy: options.resolvedBy });
     const lines = [formatReviewPresentation(context, result.data.portfolio, model.localProjectId)];
@@ -83,8 +80,8 @@ export async function rbookReviewPresentation(
       lines.push('', 'Next actions:');
       for (const action of result.data.next_actions.slice(0, 3)) lines.push(`  ${action.command}`);
     }
-    appendWarnings(lines, presented);
-    return { result: presented, context, text: lines.join('\n') };
+    appendWarnings(lines, result);
+    return { result, context, text: lines.join('\n') };
   } catch (error) {
     const failed = createError<RbookReviewResult>({
       code: 'DB_QUERY_FAILED',

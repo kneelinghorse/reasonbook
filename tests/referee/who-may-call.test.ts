@@ -134,6 +134,10 @@ describe('who may call what (s97-m09)', () => {
     expect((await viaPeer(referee, 'chains', { [hosted.refereeReplica]: 1 }, d)).data).toEqual({
       [hosted.refereeReplica]: expect.any(String),
     });
+    expect((await viaPeer(referee, 'changesSince', {}, d)).error?.code).toBe(
+      REFEREE_ERROR_CODES.READS_OLD_PROTOCOL
+    );
+    expect((await viaPeer(referee, 'hello', { reads: 2 }, d)).success).toBe(true);
     expect(Array.isArray((await viaPeer(referee, 'changesSince', {}, d)).data)).toBe(true);
     const strangers: Caller[] = [
       { accountId: 'acct-darryl', replicaId: owner.replicaId },

@@ -9,7 +9,7 @@ import type { RbookToolError } from './types';
 /**
  * s91-m02 — every published tool schema declares `additionalProperties: false`, and until this
  * guard nothing enforced it: `src/index.ts` spreads every wire key into the router params, so a
- * misplaced key was dropped silently and the call reported success without it (Stage1 defect 3).
+ * misplaced key was dropped silently and the call reported success without it (reported defect 3).
  * A refusal, not a warning: a warning on a successful call is read as success (the s86 lesson).
  *
  * Scope: the TOP LEVEL of all fifteen tools. Keys inside `fields` are refused by the two update

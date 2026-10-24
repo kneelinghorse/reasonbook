@@ -23,7 +23,8 @@ import { confirmOwner, handOver } from '../tools/rbook/record-moves';
 import { recordExchanged, recordExchangeFailed } from '../tools/rbook/record-peers';
 import { changeProblem } from '../tools/rbook/record-intake';
 import { firstPage } from '../tools/rbook/record-pages';
-import { changesSince } from '../tools/rbook/record-since';
+import { changesSinceReport } from '../tools/rbook/record-since';
+import { protocolDeliveryNotice } from '../tools/rbook/record-protocol-notice';
 import { mergeContext, type LoggedChange } from '../tools/rbook/record-standing';
 import { takeSuccessor } from '../tools/rbook/record-successor';
 import { admitSuccessor } from '../tools/rbook/record-admit-successor';
@@ -201,11 +202,18 @@ function dispatch(
       const paged = pageAsked(params);
       const since = marks(paged ? paged.marks : params);
       if (!since) return malformed('changesSince needs marks by replica');
-      const stream = changesSince(client, since, {
+      const selected = changesSinceReport(client, since, {
         ...reportedCopy(client, caller.replicaId),
         requireComplete: body.requireComplete === true,
       });
-      return paged ? createSuccess(firstPage(stream, paged.maxBytes)) : createSuccess(stream);
+      if (selected.withheld)
+        return refuse({
+          code: REFEREE_ERROR_CODES.READS_OLD_PROTOCOL,
+          ...protocolDeliveryNotice(selected),
+        });
+      return paged
+        ? createSuccess(firstPage(selected.changes, paged.maxBytes))
+        : createSuccess(selected.changes);
     }
     case 'apply':
       return apply(client, standing, caller, params);
@@ -305,8 +313,7 @@ function dispatch(
 }
 
 /**
- * Run one peer call for an authenticated caller (design §R1). Host repair remedies become actions
- * the member can take; codes and diagnostics stay intact, and the dashboard records the head.
+ * Run an authenticated peer call; preserve codes and diagnostics while giving member-facing remedies.
  */
 export function peer(
   location: RefereeLocation,
@@ -326,8 +333,7 @@ export function peer(
     if (typeof caller?.accountId !== 'string' || typeof caller?.replicaId !== 'string')
       return malformed('the caller names an account and a replica');
     const result = dispatch(client, method, params, caller);
-    // The sync-state view reads what the referee saw: a call, a delivery taken in, a stream sent,
-    // so far as it went: a page with more to follow served only what it held (s97-m10).
+    // Record actual calls and delivery only; a page serves only its rows (s97-m10).
     const observed = result.success ? standingOf(client, caller) : null;
     if (
       observed &&

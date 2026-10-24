@@ -1,3 +1,6 @@
+// ABOUTME: Carry-forward detection and routing require a registered local sender identity.
+// ABOUTME: Real SQLite fixtures verify attribution before dashboard transport is invoked.
+
 /**
  * rbook_sprint carry_forward action tests
  *
@@ -160,10 +163,9 @@ describe('rbook_sprint carry_forward action', () => {
       );
     `);
 
-    // Seed the local sender identity: metadata.dashboard_project_id is what the
-    // sender resolver picks up first, before any directory lookup. Without this,
-    // resolveLocalSenderProjectId returns undefined and carry_forward sends are
-    // unattributed — the Sprint 53 fail-closed behavior (see sender-identity.ts).
+    // Seed the registered local sender identity. Without this stored UUID,
+    // resolveLocalSenderProjectId returns undefined and carry_forward refuses
+    // publication before transport, even if an account listing reuses the address.
     db.prepare('INSERT INTO metadata (key, value) VALUES (?, ?)').run(
       'dashboard_project_id',
       'ec2b4987-dbc1-4f16-946e-9843c4080ac1'
@@ -591,5 +593,42 @@ describe('rbook_sprint carry_forward action', () => {
     const sendCall = __mockSendMessage.mock.calls[0]?.[0];
     expect(sendCall).toBeDefined();
     expect(sendCall.senderProjectId).toBe('ec2b4987-dbc1-4f16-946e-9843c4080ac1');
+  });
+
+  it('refuses every carry-forward when a fresh store reuses an owned canonical address', async () => {
+    const db = new Database(dbPath);
+    try {
+      db.prepare("DELETE FROM metadata WHERE key = 'dashboard_project_id'").run();
+      db.prepare(
+        'INSERT INTO contexts (id, source_path, content, updated_at) VALUES (?, ?, ?, ?)'
+      ).run(
+        'project_identity',
+        'rbook/context/project_identity.json',
+        JSON.stringify({ [LEGACY.identityAddressKey]: 'rbook://derek/cmos-mcp' }),
+        new Date().toISOString()
+      );
+    } finally {
+      db.close();
+    }
+    RbookDetector.getInstance().clearCache();
+
+    const result = await rbookSprint({
+      action: 'carry_forward',
+      sprintId: 'sprint-36',
+      targetAddress: 'rbook://derek/cmos-dashboard',
+      projectRoot: tempDir,
+    });
+
+    expect(result.success).toBe(true);
+    const data = result.data as SprintCarryForwardResult;
+    expect(data.totalDetected).toBeGreaterThan(0);
+    expect(data.totalSent).toBe(0);
+    expect(data.totalFailed).toBe(data.totalDetected);
+    for (const item of data.sendResults) {
+      expect(item.sent).toBe(false);
+      expect(item.error).toContain('Sender attribution incomplete');
+    }
+    expect(__mockGetMyProjects).not.toHaveBeenCalled();
+    expect(__mockSendMessage).not.toHaveBeenCalled();
   });
 });

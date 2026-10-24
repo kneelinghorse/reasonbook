@@ -66,15 +66,14 @@ async function signIn(copy: Copy, token = 'owner-token') {
   });
 }
 
-async function firstShare(cut = true) {
+async function firstShare() {
   const owner = await ownerCopy(fixture.tmp);
   const returning = await joinedCopy(fixture.tmp, owner, 'returning', 'Owner');
-  if (cut)
-    await onCopy(fixture.tmp, owner, (client) => {
-      const applied = setAsideReplica(client, { replicaId: returning.replicaId, dryRun: false });
-      expect(applied.success).toBe(true);
-      expect(applied.data?.cut).toBe(0);
-    });
+  await onCopy(fixture.tmp, owner, (client) => {
+    const applied = setAsideReplica(client, { replicaId: returning.replicaId, dryRun: false });
+    expect(applied.success).toBe(true);
+    expect(applied.data?.cut).toBe(0);
+  });
   const hosted = await startRefereeServer({
     root: path.join(fixture.tmp, 'host'),
     accounts: { 'owner-token': 'owner-account', 'other-token': 'other-account' },
@@ -294,7 +293,7 @@ it.each([
 ] as const)(
   'refuses first attachment for %s after authenticated identity checks and preserves the existing store',
   async (mode) => {
-    const { returning } = await firstShare(mode !== 'noncut');
+    const { returning } = await firstShare();
     const copy =
       mode === 'unadmitted-replica' ? await ownerCopy(fixture.tmp, 'unknown') : returning;
     await signIn(copy, mode === 'wrong-account' ? 'other-token' : 'owner-token');
@@ -309,6 +308,8 @@ it.each([
             data?: { projectId: string; removed: string[]; cuts: Record<string, number | null> };
           };
           if (body.data && mode === 'wrong-record') body.data.projectId = 'another-record';
+          // Start from a valid hosted record, then exercise a noncut hello response.
+          if (body.data && mode === 'noncut') delete body.data.cuts[copy.replicaId];
           if (body.data && mode === 'removed') body.data.removed = [copy.replicaId];
           if (body.data && mode === 'null-cut') body.data.cuts[copy.replicaId] = null;
           if (body.data && mode === 'negative-cut') body.data.cuts[copy.replicaId] = -1;

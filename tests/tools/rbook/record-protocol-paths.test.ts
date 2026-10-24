@@ -6,7 +6,6 @@ import fs from 'fs';
 import path from 'path';
 import { monotonicFactory } from 'ulid';
 import { writeUserAuthor } from '../../../src/intelligence/user-author';
-import { exchangeText } from '../../../src/cli/sync-moves';
 import { replicaMarks, changesSince } from '../../../src/tools/rbook/record-apply';
 import { importBundle, writeBundle } from '../../../src/tools/rbook/record-bundle';
 import { exchange } from '../../../src/tools/rbook/record-exchange';
@@ -68,6 +67,7 @@ const unchecked = <T>(copy: Copy, use: Parameters<typeof onCopy<T>>[2]) =>
 function incomingPeer(copy: Copy) {
   return {
     ...copyPeer(fixture.tmp, copy),
+    changesSinceReport: undefined,
     changesSince: (marks: Readonly<Record<string, number>>) =>
       unchecked(copy, (client) => changesSince(client, marks)),
   };
@@ -251,12 +251,11 @@ describe('every path that takes changes in (s100-m01, critics round 1)', () => {
     undo();
     undo = null;
     const result = await exchange(copyPeer(fixture.tmp, old), copyPeer(fixture.tmp, next));
-    expect(result.success).toBe(true);
-    expect(result.data?.caughtUp).toBeUndefined();
-    expect(exchangeText(result.data!)).not.toMatch(/confirm/);
-    expect((result.warnings ?? []).join(' ')).toMatch(
-      /does not report holding.*advertised.*held back/
-    );
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe('RECORD_EXCHANGE_REFUSED');
+    expect(result.error?.message).toMatch(/^Upgrade Reasonbook on next.*withheld/);
+    expect(result.data).toBeUndefined();
+    expect(JSON.stringify(result)).not.toMatch(/confirm|caughtUp/);
     expect(await unchecked(next, (client) => mergeContext(client).pending)).toBeNull();
   }, 600000);
 

@@ -106,7 +106,9 @@ function seedFiles(): string[] {
     }
   };
   walk(seed);
-  return out.filter((rel) => !/^rbook\/templates\/README-[a-z]+\.md$/.test(rel));
+  return out
+    .filter((rel) => !/^rbook\/templates\/README-[a-z]+\.md$/.test(rel))
+    .map((rel) => (rel === 'rbook/templates/gitignore-rbook' ? 'rbook/.gitignore' : rel));
 }
 
 function dbPathOf(root: string): string {

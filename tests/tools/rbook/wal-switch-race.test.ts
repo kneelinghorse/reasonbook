@@ -9,6 +9,7 @@ import { Worker } from 'worker_threads';
 import { ProjectGraphRegistry } from '../../../src/intelligence/project-graph-registry';
 import { RbookDatabaseClient } from '../../../src/tools/rbook/client';
 import { enableWal } from '../../../src/tools/rbook/sqlite-busy';
+import { rbookProjectInit } from '../../../src/tools/rbook/rbook-project-init';
 import { seedRbookDb } from '../../helpers/seedRbookDb';
 
 let tmp: string;
@@ -117,5 +118,26 @@ describe('switching to WAL while another connection writes', () => {
     expect(opened.error).toBeUndefined();
     opened.data?.close();
     await released;
+  });
+
+  it('init waits for a concurrent writer before switching the project store to WAL', async () => {
+    const projectRoot = path.join(tmp, 'init-project');
+    const dbPath = seedRbookDb(projectRoot, { projectId: 'init-wal-race' });
+    const seeded = new Database(dbPath);
+    seeded.pragma('journal_mode = DELETE');
+    seeded.close();
+    // A newly opened store has the same DELETE-mode switch as this initialized fixture. Reads
+    // can proceed under the reservation, but a plain journal-mode switch refuses immediately.
+    const released = holdReservation(dbPath, 1000);
+    try {
+      const initialized = await rbookProjectInit({ projectRoot });
+      expect(initialized.error).toBeUndefined();
+      expect(initialized.data?.projectId).toBe('init-wal-race');
+    } finally {
+      await released;
+    }
+    const db = new Database(dbPath, { readonly: true });
+    expect(db.pragma('journal_mode', { simple: true })).toBe('wal');
+    db.close();
   });
 });

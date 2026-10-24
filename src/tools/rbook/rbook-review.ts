@@ -63,6 +63,7 @@ import { countReflaggedSinceRepair } from './staleness-detection';
 import type Database from 'better-sqlite3';
 import { realpathSync, statSync } from 'fs';
 import * as path from 'path';
+import { projectDisplayName } from '../../utils/project-display-name';
 import { z } from 'zod';
 import type { RbookToolResult } from './types';
 import { createError, createSuccess } from './errors';
@@ -239,7 +240,7 @@ export interface RbookReviewResult {
    */
   sharedRecord?: string;
 
-  /** Complete named protocol blockers; retained even when their irreducible list exceeds the typical budget. */
+  /** Complete blocking and stranded copies, retained even when their list exceeds the typical budget. */
   recordProtocol?: RecordProtocolReview;
 
   /** Current sprint summary, focus capped to 280 chars. Null if none. */
@@ -1329,7 +1330,10 @@ async function buildPortfolioSection(
       if (signals && Object.keys(signals.counts).length)
         people.push({
           ...storeOf(probe.projectId),
-          name: truncate(byId.get(probe.projectId)?.name ?? probe.projectId, DRIFT_NAME_CAP_CHARS),
+          name: truncate(
+            projectDisplayName(storeOf(probe.projectId).storePath, byId.get(probe.projectId)?.name),
+            DRIFT_NAME_CAP_CHARS
+          ),
           ...signals.counts,
         });
     }
@@ -1848,8 +1852,13 @@ export function formatReviewForLLM(result: RbookToolResult<RbookReviewResult>): 
 
   lines.push('');
   if (d.recordProtocol) lines.push(d.recordProtocol.summary);
+  const copies = d.recordProtocol?.blockers.length
+    ? 'blocking'
+    : d.recordProtocol?.stranded.length
+      ? 'stranded'
+      : null;
   lines.push(
-    `Digest size: ${d.digestSizeBytes} bytes (${d.digestSizeBytes > DIGEST_BUDGET_BYTES && d.recordProtocol?.blockers.length ? 'exceeds budget 4096 to list all blocking copies' : 'budget 4096'})`
+    `Digest size: ${d.digestSizeBytes} bytes (${d.digestSizeBytes > DIGEST_BUDGET_BYTES && copies ? `exceeds budget 4096 to list all ${copies} copies` : 'budget 4096'})`
   );
   appendWarnings(lines, result);
 

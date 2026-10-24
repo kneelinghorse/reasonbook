@@ -1,0 +1,33 @@
+# Weekly brief, 2026-10-21 to 2026-10-28
+
+3 projects.
+
+Report ages and windows:
+- Atlas (atlas): report 9 days old.
+- Birch Notes (birch-7f3a): report 9 days old.
+- cedar: report 9 days old.
+
+## Needs a decision
+- Birch Notes (birch-7f3a): 1 draft (P3); 2 unsettled conflicts (strategic\_decisions:01M5DFZ6D0KA3PG18VTXK3TRPR/status, missions:s2-m1/name), oldest 2026-10-10
+- Atlas (atlas): 2 drafts (P14, P15), oldest 2026-10-14
+
+## Stuck
+- cedar: 2 next steps about to lapse (n:5, n:6), 2 at the next close, oldest 2026-05-20
+- Atlas (atlas): 1 blocked mission (a3-m02); 4 next steps about to lapse (n:31, n:7, n:40, …), 1 at the next close, oldest 2026-07-02
+
+## Gone quiet
+- cedar: 73 days without a new row, 9 of them since its last upload
+
+## Drifting
+- Atlas (atlas): 12 records due for review (d:3, d:9, l:2, …), 4 new this window; 1 row citing a replaced decision (d:88)
+- Birch Notes (birch-7f3a): 30 records due for review (d:1, d:2, l:9, …)
+
+## Friction
+- sync: 3 new rows (Birch Notes (birch-7f3a) 3)
+- surfacing: 2 new rows (Atlas (atlas) 2)
+- payload: 1 new row (Atlas (atlas) 1)
+- unclassified: 1 new row (Atlas (atlas) 1)
+
+## What moved
+- Atlas (atlas): 9 decisions, 2 learnings, 3 missions completed, 1 sprint closed
+- Birch Notes (birch-7f3a): 3 decisions, 1 learning

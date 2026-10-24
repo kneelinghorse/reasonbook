@@ -1,0 +1,11 @@
+src/tools/rbook/dashboard-client.ts:1130 fetch in authenticate: 410 NOT handled; generic non-OK -> dashboardError
+src/tools/rbook/dashboard-client.ts:1242 fetch in request: 410 NOT handled; generic non-OK -> dashboardError
+src/tools/rbook/dashboard-client.ts:1601 fetch in updateLocalProjectPath: 410 NOT handled; generic non-OK -> dashboardError
+src/tools/rbook/dashboard-client.ts:1676 fetch in requestWithStatus: 410 NOT handled; generic non-OK -> none
+src/tools/rbook/dashboard-client.ts:1720 fetch in relayPeerCall: 410 NOT handled; generic non-OK -> dashboardError
+src/tools/rbook/dashboard-client.ts:1807 fetch in relayRefereeCall: 410 NOT handled; generic non-OK -> dashboardError
+src/tools/rbook/dashboard-client.ts:1852 fetch in relayRecoveryCopy: 410 NOT handled; generic non-OK -> dashboardError
+src/tools/rbook/dashboard-client.ts:1907 fetch in downloadFirstCopy: 410 NOT handled; generic non-OK -> none
+src/tools/rbook/dashboard-client.ts:2309 fetch in syncSqliteFile: 410 NOT handled; generic non-OK -> dashboardError
+src/tools/rbook/dashboard-client.ts:2410 fetch in registerProject: 410 NOT handled; generic non-OK -> dashboardError
+# status410: 10 sites over 428 tracked src .ts files

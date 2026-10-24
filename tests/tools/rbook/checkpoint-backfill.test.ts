@@ -12,6 +12,7 @@ jest.mock('../../../src/tools/rbook/client', () => ({
 // These tests retain their registration, attribution and failure-path focus.
 jest.mock('../../../src/tools/rbook/dashboard-upload', () => ({
   uploadLog: jest.fn(),
+  trackDashboardUpload: jest.fn((work: () => Promise<unknown>) => work()),
   withUploadLease: jest.fn(
     async (_root: string, _explicit: boolean, send: () => Promise<unknown>) => send()
   ),
@@ -19,6 +20,15 @@ jest.mock('../../../src/tools/rbook/dashboard-upload', () => ({
     send(file)
   ),
 }));
+jest.mock('../../../src/tools/rbook/dashboard-upload-auth', () => ({
+  inspectUploadOwner: jest.fn(async () => ({
+    ownerConfirmed: false,
+    projectListed: false,
+    replaced: false,
+    skipped: true,
+  })),
+}));
+
 jest.mock('../../../src/intelligence/sender-context', () => ({
   ...jest.requireActual<typeof import('../../../src/intelligence/sender-context')>(
     '../../../src/intelligence/sender-context'
@@ -50,6 +60,7 @@ import {
 import { rbookDbBackfill } from '../../../src/tools/rbook/rbook-db-backfill';
 import { withClientAsync } from '../../../src/tools/rbook/client';
 import { DashboardClient } from '../../../src/tools/rbook/dashboard-client';
+import { withUploadLease } from '../../../src/tools/rbook/dashboard-upload';
 
 const mockBackfill = rbookDbBackfill as jest.MockedFunction<typeof rbookDbBackfill>;
 const mockWithClientAsync = withClientAsync as jest.MockedFunction<typeof withClientAsync>;
@@ -57,31 +68,11 @@ const mockFromEnvForProject = DashboardClient.fromEnvForProject as jest.MockedFu
   typeof DashboardClient.fromEnvForProject
 >;
 
-/** Helper: create a standard successful backfill result */
-function makeBackfillResult(pushed = 0) {
-  return {
-    success: true as const,
-    data: {
-      mode: 'backfill' as const,
-      dryRun: false,
-      totalEvents: pushed,
-      pushed,
-      failed: 0,
-      skipped: 0,
-      breakdown: {
-        sprints: 0,
-        missions: 0,
-        sessions: 0,
-        decisions: 0,
-        learnings: 0,
-        dependencies: 0,
-      },
-      cursor: pushed > 0 ? '2026-03-13T00:00:00.000Z' : null,
-      previousCursor: null,
-      message: 'Backfill complete',
-      deduped: 0,
-    },
-  };
+/** A failed attempt is returned to the single lease holder, which records the debt. */
+async function expectRecordedFailure(message?: string) {
+  const lease = withUploadLease as jest.MockedFunction<typeof withUploadLease>;
+  const result = await lease.mock.results[0].value;
+  expect(result).toMatchObject({ success: false, ...(message ? { error: message } : {}) });
 }
 
 /** Helper: create a standard successful file sync result */
@@ -193,7 +184,10 @@ describe('checkpoint-backfill', () => {
     mockFromEnvForProject.mockResolvedValue({
       success: true,
       data: {
-        client: { syncSqliteFile: mockSyncSqliteFile } as any,
+        client: {
+          syncSqliteFile: mockSyncSqliteFile,
+          getMyProjects: async () => ({ success: true, data: { projects: [], totalCount: 0 } }),
+        } as any,
         keySource: 'user-scoped',
         matchedProjectRoot: null,
       },
@@ -232,9 +226,8 @@ describe('checkpoint-backfill', () => {
 
     await new Promise((resolve) => setImmediate(resolve));
 
-    // s81-m02: the reconcile is not CONFIRMED in this mock (stub dashClient has no
-    // getMyProjects → resolveAndPersistOwner throws), so the expectedSlug guard is NOT
-    // relaxed; with no project_name it stays undefined (the strict, pre-relaxation value).
+    // No registered id matches this empty listing, so the expectedSlug guard is not
+    // relaxed; with no project_name it stays undefined.
     expect(mockSyncSqliteFile).toHaveBeenCalledWith(
       '/tmp/test/rbook/db/rbook.sqlite',
       'test-project',
@@ -332,7 +325,7 @@ describe('checkpoint-backfill', () => {
     expect(mockBackfill).not.toHaveBeenCalled();
   });
 
-  it('should fall back to event-replay backfill when no project slug', async () => {
+  it('records pending upload failure when no project slug exists', async () => {
     // Override: registered but no slug available
     mockWithClientAsync.mockImplementation(async (fn) => {
       const mockClient = {
@@ -348,18 +341,13 @@ describe('checkpoint-backfill', () => {
       return fn(mockClient as any);
     });
 
-    mockBackfill.mockResolvedValueOnce(makeBackfillResult(5));
-
     await triggerCheckpointBackfill({ force: false });
 
     await new Promise((resolve) => setImmediate(resolve));
 
     expect(mockSyncSqliteFile).not.toHaveBeenCalled();
-    expect(mockBackfill).toHaveBeenCalledWith({
-      projectRoot: '/tmp/test',
-      force: false,
-      dryRun: false,
-    });
+    expect(mockBackfill).not.toHaveBeenCalled();
+    await expectRecordedFailure();
   });
 
   it('should skip when fromEnvForProject fails', async () => {
@@ -406,6 +394,7 @@ describe('checkpoint-backfill auto-registration', () => {
       success: true,
       data: {
         client: {
+          getMyProjects: async () => ({ success: true, data: { projects: [], totalCount: 0 } }),
           registerProject: mockRegister,
           syncSqliteFile: mockSyncSqliteFile,
           authenticatingKeyId: 'user-key-id-1',
@@ -414,8 +403,6 @@ describe('checkpoint-backfill auto-registration', () => {
         matchedProjectRoot: null,
       },
     });
-
-    mockBackfill.mockResolvedValue(makeBackfillResult(0));
   });
 
   afterEach(() => {
@@ -450,7 +437,7 @@ describe('checkpoint-backfill auto-registration', () => {
 
     // Registration skipped — registerProject not called
     expect(mockRegister).not.toHaveBeenCalled();
-    // File sync runs using existing slug; not confirmed in this mock (no getMyProjects) →
+    // File sync runs using the existing slug; the empty listing does not confirm an id →
     // guard not relaxed → expectedSlug undefined (no project_name) (s81-m02).
     expect(mockSyncSqliteFile).toHaveBeenCalledWith(
       '/tmp/test/rbook/db/rbook.sqlite',
@@ -465,7 +452,7 @@ describe('checkpoint-backfill auto-registration', () => {
     // divergent-name copy could sync. Proven by expectedSlug == projectSlug on the call.
     const confirmingSync = jest.fn<(...args: any[]) => any>().mockResolvedValue(makeSyncResult());
     const confirmingClient = {
-      // getMyProjects returns the incumbent row so byId('id1') passes its slug cross-check.
+      // getMyProjects returns the incumbent row identified by its stored id.
       getMyProjects: jest.fn<(...args: any[]) => any>().mockResolvedValue({
         success: true,
         data: {
@@ -635,7 +622,8 @@ describe('checkpoint-backfill auto-registration', () => {
       expect.objectContaining({ expectedSlug: 'my-project' })
     );
     expect(mockSyncSqliteFile).not.toHaveBeenCalled();
-    expect(mockBackfill).toHaveBeenCalled();
+    expect(mockBackfill).not.toHaveBeenCalled();
+    await expectRecordedFailure();
   });
 
   it('should skip registration when project name is empty', async () => {
@@ -661,12 +649,13 @@ describe('checkpoint-backfill auto-registration', () => {
 
     // Should not try to register
     expect(mockRegister).not.toHaveBeenCalled();
-    // No slug — falls back to event-replay
-    expect(mockBackfill).toHaveBeenCalled();
+    // No slug: the lease records failure and keeps upload debt.
+    expect(mockBackfill).not.toHaveBeenCalled();
+    await expectRecordedFailure();
     expect(mockSyncSqliteFile).not.toHaveBeenCalled();
   });
 
-  it('should fall back to event-replay when registration fails', async () => {
+  it('records registration failure without starting a second backfill', async () => {
     mockRegister.mockResolvedValue({
       success: false,
       error: { code: 'DASHBOARD_UNREACHABLE', message: 'Connection refused' },
@@ -694,19 +683,21 @@ describe('checkpoint-backfill auto-registration', () => {
 
     // Registration was attempted
     expect(mockRegister).toHaveBeenCalled();
-    // No slug from failed registration — falls back to event-replay
-    expect(mockBackfill).toHaveBeenCalled();
+    // A failed registration leaves debt on the current lease.
+    expect(mockBackfill).not.toHaveBeenCalled();
+    await expectRecordedFailure();
     expect(mockSyncSqliteFile).not.toHaveBeenCalled();
   });
 
-  it('should fall back to event-replay when withClientAsync throws', async () => {
+  it('records a failed registration check without starting a second backfill', async () => {
     mockWithClientAsync.mockRejectedValue(new Error('DB connection failed'));
 
     await triggerCheckpointBackfill({ force: false });
     await new Promise((resolve) => setImmediate(resolve));
 
-    // checkAndRegister returned null — falls back to event-replay
-    expect(mockBackfill).toHaveBeenCalled();
+    // The failed check leaves debt on the current lease.
+    expect(mockBackfill).not.toHaveBeenCalled();
+    await expectRecordedFailure();
     expect(mockSyncSqliteFile).not.toHaveBeenCalled();
   });
 
@@ -811,7 +802,10 @@ describe('checkpoint-backfill auto-registration', () => {
       mockFromEnvForProject.mockResolvedValue({
         success: true,
         data: {
-          client: { syncSqliteFile: mockSync } as any,
+          client: {
+            syncSqliteFile: mockSync,
+            getMyProjects: async () => ({ success: true, data: { projects: [], totalCount: 0 } }),
+          } as any,
           keySource: 'user-scoped',
           matchedProjectRoot: null,
         },

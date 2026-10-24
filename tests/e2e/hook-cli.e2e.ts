@@ -89,6 +89,40 @@ describe('s93-m01 — the installed bin', () => {
     expect(await listTools(installedBin, [], mkTmp('rbook-hook-e2e-cwd-'))).toBe(15);
   }, 60_000);
 
+  it('s101-m04: a bare terminal invocation prints one hint and still completes an MCP handshake', async () => {
+    const cwd = mkTmp('rbook-hook-e2e-terminal-');
+    const preload = path.join(cwd, 'terminal.cjs');
+    fs.writeFileSync(preload, "Object.defineProperty(process.stdin, 'isTTY', { value: true });\n");
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: ['-r', preload, installedBin],
+      cwd,
+      env: { ...process.env, RBOOK_CONFIG_DIR: configDir } as Record<string, string>,
+      stderr: 'pipe',
+    });
+    let stderr = '';
+    transport.stderr?.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+    const client = new Client(
+      { name: 'terminal-hint-e2e', version: '1.0.0' },
+      { supportedProtocolVersions: ['2025-11-25'], versionNegotiation: { mode: 'legacy' } }
+    );
+    try {
+      await client.connect(transport);
+      expect((await client.listTools()).tools).toHaveLength(15);
+    } finally {
+      const ended = new Promise<void>((resolve) => transport.stderr?.once('end', resolve));
+      await client.close();
+      await ended;
+    }
+    expect(
+      stderr
+        .split('\n')
+        .filter((line) => line === 'Serving MCP; use reasonbook --help for terminal commands.')
+    ).toHaveLength(1);
+  }, 30_000);
+
   it('`serve` is the same server, and node dist/index.js still starts it directly', async () => {
     expect(await listTools(installedBin, ['serve'], mkTmp('rbook-hook-e2e-cwd-'))).toBe(15);
     expect(await listTools(process.execPath, [installedIndex], mkTmp('rbook-hook-e2e-cwd-'))).toBe(
@@ -196,6 +230,7 @@ describe('s93-m01 — the installed bin', () => {
       preload,
       `process.on('exit', () => require('fs').writeFileSync(${JSON.stringify(out)}, JSON.stringify(Object.keys(require.cache))));\n`
     );
+    const started = Date.now();
     const ran = spawnSync(
       process.execPath,
       ['-r', preload, installedBin, 'hook', 'session-start'],
@@ -206,7 +241,9 @@ describe('s93-m01 — the installed bin', () => {
         encoding: 'utf8',
       }
     );
+    const elapsedMs = Date.now() - started;
     expect(ran.status).toBe(0);
+    expect(elapsedMs).toBeLessThan(3000);
     const loaded = JSON.parse(fs.readFileSync(out, 'utf8')) as string[];
     expect(loaded.filter((f) => /[\\/]node_modules[\\/]zod[\\/]/.test(f))).toEqual([]);
     expect(loaded.filter((f) => /dist[\\/]tools[\\/]rbook[\\/]record-apply\.js$/.test(f))).toEqual(

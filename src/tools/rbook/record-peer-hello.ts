@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // ABOUTME: Bind a reader report to this record and an admitted copy's current or historical term.
-// ABOUTME: Historical reports permit catch-up delivery but never replace current admission evidence.
+// ABOUTME: A removed historical member may report an upgrade without receiving changes or claiming its move arrived.
 import type { RbookDatabaseClient } from './client';
 import { copyReport } from './record-copy-report';
+import { authorityValue } from './record-authority';
+import { setAsideCut } from './record-member-cuts';
 import type { Hello } from './record-exchange-types';
 import { mergeContext } from './record-standing';
 import { recordedProjectId } from './replica-identity';
@@ -26,8 +28,22 @@ export function boundHello(
   const formerOwner =
     historical &&
     ctx.terms.some((term) => term.epoch === near.epoch && term.replicaId === near.replicaId);
+  const permanent =
+    setAsideCut(ctx, near.replicaId) !== undefined ||
+    ctx.terms.some(
+      (term) =>
+        (term.replicaId === near.replicaId && term.ended === 'recovery') ||
+        (term.change &&
+          Object.prototype.hasOwnProperty.call(
+            authorityValue(term.change).dropped ?? {},
+            near.replicaId
+          ))
+    );
   return {
     current,
+    // Removal may prevent learning the current epoch. Its validated reader report still proves
+    // an upgrade for re-invitation; it grants no delivery, role, identity or arrival claim.
+    reportable: current || (historical && !unseen && member.role === 'removed' && !permanent),
     report: copyReport(near),
     // A proved unseen join may report its reader for re-invitation, never receive ordinary streams.
     blocked:

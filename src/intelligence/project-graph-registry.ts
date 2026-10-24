@@ -588,8 +588,8 @@ export class ProjectGraphRegistry {
     return uploads.readUploadState(this.connection(), projectId);
   }
 
-  markUploadOwed(projectId: string, now: number = this.now()): boolean {
-    return uploads.markUploadOwed(this.connection(), projectId, now);
+  markUploadOwed(projectId: string, now: number = this.now(), explicit = false): boolean {
+    return uploads.markUploadOwed(this.connection(), projectId, now, explicit);
   }
 
   claimUpload(
@@ -611,6 +611,19 @@ export class ProjectGraphRegistry {
     now: number = this.now()
   ): boolean {
     return uploads.finishUpload(this.connection(), projectId, lease, now, outcome);
+  }
+
+  claimUploadProbe(projectId: string, now: number = this.now()): number | null {
+    return uploads.claimUploadProbe(this.connection(), projectId, now);
+  }
+
+  finishUploadProbe(
+    projectId: string,
+    claimedAt: number,
+    outcome: uploads.UploadProbeOutcome,
+    now: number = this.now()
+  ): boolean {
+    return uploads.finishUploadProbe(this.connection(), projectId, claimedAt, now, outcome);
   }
 
   /**

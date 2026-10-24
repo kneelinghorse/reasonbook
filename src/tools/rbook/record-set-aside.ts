@@ -21,24 +21,32 @@ export interface SetAsideReport {
   readonly cut: number;
   readonly setAsideCuts: ReplicaCuts;
   readonly lastExchangeAt: string | null;
+  readonly lastCallAt: string | null;
   readonly dryRun: boolean;
   readonly alreadySetAside: boolean;
 }
 
-/** Read observation only; this report never creates a peer row or treats a version report as a sync. */
-function lastExchange(client: RbookDatabaseClient, replicaId: string): string | null {
+/** Read observations without migration; a call report never claims a completed exchange. */
+function lastObservations(
+  client: RbookDatabaseClient,
+  replicaId: string
+): Pick<SetAsideReport, 'lastExchangeAt' | 'lastCallAt'> {
   const table = client.getOne(
     "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'record_peers'"
   );
   if (!table.success)
     throw new Error(table.error?.message ?? 'The peer table could not be inspected.');
-  if (!table.data) return null;
-  const read = client.getOne<{ last_ok_at: string | null }>(
-    'SELECT last_ok_at FROM record_peers WHERE replica_id = ?',
+  if (!table.data) return { lastExchangeAt: null, lastCallAt: null };
+  const read = client.getOne<{ last_ok_at?: string | null; last_call_at?: string | null }>(
+    'SELECT * FROM record_peers WHERE replica_id = ?',
     [replicaId]
   );
-  if (!read.success) throw new Error(read.error?.message ?? 'The last exchange could not be read.');
-  return read.data?.last_ok_at ?? null;
+  if (!read.success)
+    throw new Error(read.error?.message ?? 'The peer observations could not be read.');
+  return {
+    lastExchangeAt: read.data?.last_ok_at ?? null,
+    lastCallAt: read.data?.last_call_at ?? null,
+  };
 }
 
 export function setAsideReplica(
@@ -63,10 +71,10 @@ export function setAsideReplica(
       throw new ReplicaRefusal({
         code: REPLICA_ERROR_CODES.WRITE_REFUSED,
         message: isActiveDashboardRoute(route)
-          ? `This project is refereed by ${dashboardName(route)}; its referee records a set-aside.`
+          ? `This project is refereed by ${dashboardName(route)}, which cannot set a copy aside yet. The copy only delays protocol 2 and keeps its data.`
           : 'Only the current authority copy can set aside another copy.',
         suggestion: isActiveDashboardRoute(route)
-          ? `Ask the owner to set aside the copy on the sharing page on ${dashboardName(route)}.`
+          ? "Leave an active owner's other copy in place. For a non-owner member who has left, the owner can remove that member on the sharing page, cutting their copies."
           : "Run the set-aside step on the current owner's copy.",
       });
     }
@@ -105,7 +113,7 @@ export function setAsideReplica(
       block: replica.block,
       cut,
       setAsideCuts: cuts,
-      lastExchangeAt: lastExchange(client, input.replicaId),
+      ...lastObservations(client, input.replicaId),
       dryRun: input.dryRun !== false,
       alreadySetAside: held !== undefined,
     };

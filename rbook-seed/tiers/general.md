@@ -59,9 +59,20 @@ rbook_session(action="capture", category="next-step", content="Revisit the venue
 
 Capture organically. Don't interrupt the flow to announce that you're capturing something. Don't list what you've captured unless asked. Just hold onto it.
 
+## The Session Digest
+
+`rbook_review` and the session-start hook show the same bounded local digest: the project's
+stored name (or folder name), its Ledger level, the approved operator profile, rules, recent
+decisions and lessons. Empty sections are omitted; a new Ledger
+has no sprint or mission section and no fleet-feedback line. The digest is a preview, so read a
+record in full when its details matter. Use `rbook_agent_onboard` for the first cold start.
+
 ## How the Record Works
 
-The record accumulates through context. Every conversation adds to the picture. When a new conversation starts, `rbook_review()` gives you the current state: recent notes, open threads, where you left off. Where Reasonbook's hooks are installed, the same summary arrives on its own at the start of the conversation.
+The record accumulates through context. Every conversation adds to the picture. When a new conversation starts, `rbook_review()` gives you a preview of recent decisions and lessons. Where Reasonbook's hooks are installed, the same summary arrives on its own at the start of the conversation.
+
+Remembered next steps are kept separately from the Ledger digest. Retrieve them with
+`rbook_context(action="next_steps", nextStepAction="list")` when you need to revisit an open thread.
 
 Use this to reconnect:
 

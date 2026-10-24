@@ -664,6 +664,14 @@ describe('dependents of a quarantined create, whatever their order (s96-m13 crit
     await decide(studio, "Darryl, under Erin's mission, again.", { missionId: 'e-m02' });
     await confirmAndSync(studio, authority);
     expect(stateOf(authority, "Darryl, under Erin's mission, again.")).toEqual(['quarantined']);
+    // Recovery has no current reader report from Erin. The stated remedy must work even though
+    // removal prevents her from receiving the new authority's move or any newer record rows.
+    const refused = await on(authority, (client) => inviteMember(client, { name: 'Erin' }));
+    expect(refused.error?.code).toBe('RECORD_COPY_TOO_OLD');
+    expect(refused.error?.suggestion).toMatch(/sync once while still removed/);
+    const beforeSync = read(erin, 'SELECT * FROM record_changes ORDER BY change_id');
+    expect((await syncCopies(fixture.tmp, erin, authority)).removed).toBe(true);
+    expect(read(erin, 'SELECT * FROM record_changes ORDER BY change_id')).toEqual(beforeSync);
     // Re-adding Erin accepts her mission, and the studio's decision under it is judged with it.
     const readded = await on(authority, (client) => inviteMember(client, { name: 'Erin' }));
     expect(readded.success).toBe(true);

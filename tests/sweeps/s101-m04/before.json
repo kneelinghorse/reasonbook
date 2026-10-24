@@ -1,0 +1,164 @@
+{
+  "measuredAt": "2026-10-23T03:24:07.560Z",
+  "head": "a6b59b4e0384829d7e18648f9bfbf999192c0e26",
+  "predicate": "git ls-files -z; every UTF-8 file across all extensions; matching lines counted once per class",
+  "counts": {
+    "renameResidue": {
+      "wholeTree": 295,
+      "production": 5
+    },
+    "nameFallback": {
+      "wholeTree": 265,
+      "production": 13
+    },
+    "unsharedGenericError": {
+      "wholeTree": 7,
+      "production": 7
+    }
+  },
+  "classes": {
+    "renameResidue": [
+      {
+        "file": "rbook-seed/README.md",
+        "line": 3,
+        "text": "**Minimal seed for Reasonbook (Context + Mission Orchestration System) projects.**"
+      },
+      {
+        "file": "rbook-seed/docs/README.md",
+        "line": 3,
+        "text": "**Documentation for the Context + Mission Orchestration System (MCP-first architecture).**"
+      },
+      {
+        "file": "rbook-seed/docs/getting-started.md",
+        "line": 9,
+        "text": "**Reasonbook** (Context + Mission Orchestration System) is a project management layer for AI-assisted development. It provides:"
+      },
+      {
+        "file": "rbook-seed/templates/PROJECT-README-template.md",
+        "line": 4,
+        "text": "**Managed with**: Reasonbook (Context + Mission Orchestration System)"
+      },
+      {
+        "file": "src/tools/rbook/digest-v2.ts",
+        "line": 56,
+        "text": "'Full: Reasonbook show by ID; search: Reasonbook context search. The operator’s call: end with Would record: <decision>.';"
+      }
+    ],
+    "nameFallback": [
+      {
+        "file": "src/cli/brief.ts",
+        "line": 42,
+        "text": "return { ...report, project: { id: error.projectId, name: null } };"
+      },
+      {
+        "file": "src/cli/signals.ts",
+        "line": 55,
+        "text": "const name = report.project.name ?? report.project.id;"
+      },
+      {
+        "file": "src/signals/brief-text.ts",
+        "line": 28,
+        "text": "return name && name !== id ? `${plain(name)} (${plain(id)})` : plain(id);"
+      },
+      {
+        "file": "src/signals/brief-text.ts",
+        "line": 110,
+        "text": "? `; ${brief.unreadable.length} could not be read (${brief.unreadable.map((id) => plain(id)).join(', ')})`"
+      },
+      {
+        "file": "src/signals/brief-text.ts",
+        "line": 113,
+        "text": "? `; ${brief.partly.length} had a signal that could not be read (${brief.partly.map((id) => plain(id)).join(', ')})`"
+      },
+      {
+        "file": "src/signals/read-signals.ts",
+        "line": 259,
+        "text": "project: { id: storeProjectId(() => undefined), name: null },"
+      },
+      {
+        "file": "src/tools/rbook/project-identity.ts",
+        "line": 427,
+        "text": "getMetadataValue(client, 'dashboard_slug') ?? current.project_name ?? current.project_id ?? '';"
+      },
+      {
+        "file": "src/tools/rbook/rbook-context-project-identity.ts",
+        "line": 108,
+        "text": "(update.path === 'project_name' || update.path === 'project_id') && update.value === null"
+      },
+      {
+        "file": "src/tools/rbook/rbook-feedback.ts",
+        "line": 362,
+        "text": "message: `Project ${JSON.stringify(projectName ?? projectId)} (${JSON.stringify(projectId)}). Resolved ${data.resolved.length} feedback row${data.resolved.length === 1 ? '' : 's'}: ${data.resolved"
+      },
+      {
+        "file": "src/tools/rbook/rbook-review.ts",
+        "line": 1332,
+        "text": "name: truncate(byId.get(probe.projectId)?.name ?? probe.projectId, DRIFT_NAME_CAP_CHARS),"
+      },
+      {
+        "file": "src/tools/rbook/record-changes.ts",
+        "line": 388,
+        "text": "recordChanges(client, transactionId(client), drafts, { name: null, userId: null });"
+      },
+      {
+        "file": "src/tools/rbook/wire-descriptions.ts",
+        "line": 61,
+        "text": "name: null,"
+      },
+      {
+        "file": "src/tools/rbook/wire-descriptions.ts",
+        "line": 289,
+        "text": "name: null,"
+      }
+    ],
+    "unsharedGenericError": [
+      {
+        "file": "src/tools/rbook/record-changes.ts",
+        "line": 325,
+        "text": "if (!identity) throw new Error('Only a copy of a shared record keeps a change log.');"
+      },
+      {
+        "file": "src/tools/rbook/record-context.ts",
+        "line": 47,
+        "text": "if (!identity) throw new Error('Only a copy of a shared record merges changes.');"
+      },
+      {
+        "file": "src/tools/rbook/record-import-apply.ts",
+        "line": 131,
+        "text": "if (!identity) throw new Error('Only a copy of a shared record takes in an import.');"
+      },
+      {
+        "file": "src/tools/rbook/record-import-plan.ts",
+        "line": 153,
+        "text": "if (!identity) throw new Error('Only a copy of a shared record takes in an import.');"
+      },
+      {
+        "file": "src/tools/rbook/replica-check.ts",
+        "line": 266,
+        "text": "if (!old) throw new Error('This store is not a copy of a shared record; nothing re-identifies.');"
+      },
+      {
+        "file": "src/tools/rbook/replica-identity.ts",
+        "line": 187,
+        "text": "if (!projectId) throw new Error('A shared record needs a recorded project_id.');"
+      },
+      {
+        "file": "src/tools/rbook/replica-identity.ts",
+        "line": 343,
+        "text": "throw new Error('Only a copy of a shared record takes sequences.');"
+      }
+    ]
+  },
+  "retainedScopes": {
+    "renameResidue": {
+      "rbook": 282,
+      "tests": 8
+    },
+    "nameFallback": {
+      "CHANGELOG.md": 1,
+      "rbook": 220,
+      "tests": 31
+    },
+    "unsharedGenericError": {}
+  }
+}

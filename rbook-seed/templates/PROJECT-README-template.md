@@ -1,7 +1,7 @@
 # [Your Project Name]
 
 **Status**: [In Development / Beta / Production]  
-**Managed with**: Reasonbook (Context + Mission Orchestration System)
+**Project record**: Reasonbook
 
 [Brief 2-3 sentence description of what your project does and why it exists]
 

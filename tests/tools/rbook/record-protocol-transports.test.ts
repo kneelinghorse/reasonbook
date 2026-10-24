@@ -14,6 +14,7 @@ import type { LoggedChange } from '../../../src/tools/rbook/record-standing';
 import { serveSync, wirePeer, type NearHello } from '../../../src/tools/rbook/record-wire';
 import { replicaFixture, type ReplicaFixture } from '../../helpers/replica-fixture';
 import {
+  backUp,
   copyPeer,
   joinedCopy,
   onCopy,
@@ -72,7 +73,9 @@ it.each([undefined, 1])(
       },
     };
     const result = await exchange(copyPeer(fixture.tmp, owner), old);
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
+    expect(result.error?.message).toMatch(/upgrade.*sync/i);
+    expect(result.error?.message).toMatch(/protocol 1/);
     expect(deliveries.flat().some((row) => row.protocol_version > 1)).toBe(false);
     await onCopy(fixture.tmp, owner, (client) => {
       expect(reportedCopy(client, member.replicaId)).toEqual({
@@ -146,8 +149,7 @@ it('SSH far end defaults to1, rejects foreign capability claims, and serves2 to 
     { ...near, reads: 1 },
     { ...near, reads: 2, projectId: 'foreign' },
   ]) {
-    const rows = await wireRows(owner, report);
-    expect(rows.some((row) => row.protocol_version > 1)).toBe(false);
+    await expect(wireRows(owner, report)).rejects.toThrow(/Upgrade Reasonbook here/);
   }
   const full = await wireRows(owner, { ...near, reads: 2 });
   expect(full).toEqual(await onCopy(fixture.tmp, owner, (client) => changesSince(client, {})));
@@ -178,9 +180,9 @@ it('a known historical-epoch reader can catch up over SSH without replacing its 
     { ...near, authority: 'forged' },
     { ...near, replicaId: 'unadmitted' },
   ])
-    expect(
-      (await wireRows(studio, { ...forged, reads: 2 })).some((row) => row.protocol_version > 1)
-    ).toBe(false);
+    await expect(wireRows(studio, { ...forged, reads: 2 })).rejects.toThrow(
+      /Upgrade Reasonbook here/
+    );
   expect(
     (
       await onCopy(fixture.tmp, studio, (client) =>
@@ -200,4 +202,36 @@ it('a known removed caller receives no new stream over the SSH far end', async (
   );
   expect(await wireRows(owner, { ...near, reads: 2 })).toEqual([]);
   await expect(wireRows(owner, { ...near, reads: 2 }, true)).rejects.toThrow(/complete record/);
+});
+
+it('a local authority names unreadable catch-up delivery without pretending the move arrived', async () => {
+  const owner = await ownerCopy(fixture.tmp);
+  const studio = await joinedCopy(fixture.tmp, owner, 'studio', 'Owner');
+  await syncCopies(fixture.tmp, studio, owner);
+  const restore = await backUp(fixture.tmp, owner, { machine: true });
+  expect(
+    (await onCopy(fixture.tmp, owner, (client) => handOver(client, { to: studio.replicaId })))
+      .success
+  ).toBe(true);
+  await syncCopies(fixture.tmp, studio, owner);
+  expect((await onCopy(fixture.tmp, studio, confirmOwner)).success).toBe(true);
+  await newer(studio);
+  restore();
+  const base = copyPeer(fixture.tmp, owner);
+  const failed = jest.fn(base.failed);
+  const old: Peer = {
+    ...base,
+    hello: async () => ({ ...(await base.hello()), reads: 1 }),
+    failed,
+  };
+  expect((await old.hello()).epoch).toBeLessThan(
+    (await copyPeer(fixture.tmp, studio).hello()).epoch
+  );
+  const result = await exchange(copyPeer(fixture.tmp, studio), old);
+  expect(result.success).toBe(false);
+  expect(result.error?.message).toMatch(/Upgrade.*sync/);
+  expect(result.data).toBeUndefined();
+  expect(failed).toHaveBeenCalledWith(
+    expect.objectContaining({ error: expect.stringMatching(/^Upgrade Reasonbook here/) })
+  );
 });

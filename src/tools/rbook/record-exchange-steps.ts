@@ -10,6 +10,7 @@ import { clashRefusal } from './record-exchange';
 import type { SuccessorReason, SuccessorTaken } from './record-successor';
 import { receivedMove } from './record-move-receipt';
 import { copyReport } from './record-copy-report';
+import { protocolDeliveryNotice } from './record-protocol-notice';
 import { REPLICA_ERROR_CODES } from './replica-identity';
 import type { RbookToolError, RbookToolResult } from './types';
 
@@ -23,7 +24,10 @@ export async function catchUp(
   remote: Peer,
   ours: Hello,
   theirs: Hello,
-  stopped: (error: RbookToolError) => Promise<RbookToolResult<ExchangeReport>>,
+  stopped: (
+    error: RbookToolError,
+    remoteMessage?: string
+  ) => Promise<RbookToolResult<ExchangeReport>>,
   keptOutBy: (side: Peer, report: ApplyReport) => readonly string[] = () => []
 ): Promise<RbookToolResult<ExchangeReport>> {
   const localAhead = ours.epoch > theirs.epoch;
@@ -59,11 +63,30 @@ export async function catchUp(
       local: { replicaId: ours.replicaId, marks: ours.marks },
       remote: { replicaId: theirs.replicaId, marks: theirs.marks },
     });
-  const applied = await behind.apply(
-    await ahead.changesSince(behindHello.marks, { ...behindHello, catchUp: true }),
-    { judge: false, catchUp: true }
-  );
+  const recipient = { ...behindHello, catchUp: true };
+  const selected = ahead.changesSinceReport
+    ? await ahead.changesSinceReport(behindHello.marks, recipient)
+    : {
+        changes: await ahead.changesSince(behindHello.marks, recipient),
+        withheld: 0,
+        withheldProtocol: 0,
+      };
+  const applied = await behind.apply(selected.changes, { judge: false, catchUp: true });
   if (!applied.success || !applied.data) return createError(applied.error!);
+  if (selected.withheld) {
+    const notice = protocolDeliveryNotice(selected);
+    const ownerMessage = `Upgrade Reasonbook on ${behind.name}, then sync: ${selected.withheld} change(s) were withheld because that copy reads protocol ${behindHello.reads ?? 1}.`;
+    return stopped(
+      {
+        code: REPLICA_ERROR_CODES.EXCHANGE_REFUSED,
+        message: localAhead ? ownerMessage : notice.message,
+        suggestion: localAhead
+          ? notice.suggestion.replace('this machine', behind.name)
+          : notice.suggestion,
+      },
+      localAhead ? notice.message : ownerMessage
+    );
+  }
   const after = await behind.hello();
   // s100-m01: a move the copy behind kept out, written in a newer record protocol, did not arrive:
   // there is nothing to confirm until it upgrades, and the sync says why instead. A move that came

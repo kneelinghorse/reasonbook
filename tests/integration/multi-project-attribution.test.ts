@@ -1,5 +1,5 @@
 // ABOUTME: Real-DB regression coverage for sender attribution across sibling Reasonbook projects.
-// ABOUTME: Verifies rbook_message matches the local rbook_address to the correct dashboard project.
+// ABOUTME: Verifies rbook_message keeps each store's registered ID without adopting a directory match.
 
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 
@@ -48,8 +48,8 @@ function createMockDashboardClient() {
       projects: [
         {
           id: '96ce2349-b7e7-45b1-99e3-23277db407f5',
-          name: 'parts-town',
-          address: 'rbook://derek/parts-town',
+          name: 'example-project',
+          address: 'rbook://derek/example-project',
           owner: 'derek',
         },
         {
@@ -95,7 +95,7 @@ describe('multi-project attribution', () => {
         projectName: 'Reasonbook MCP',
         projectId: 'cmos-mcp',
         slug: 'cmos-mcp',
-        dashboardProjectId: null,
+        dashboardProjectId: 'ec2b4987-dbc1-4f16-946e-9843c4080ac1',
         rbookAddress: 'rbook://derek/cmos-mcp',
       },
       'multi-project-rbook-'
@@ -105,7 +105,7 @@ describe('multi-project attribution', () => {
         projectName: 'Stage1',
         projectId: 'stage1',
         slug: 'stage1',
-        dashboardProjectId: null,
+        dashboardProjectId: 'ddb34d24-30e3-4eb3-b13c-20b106a75970',
         rbookAddress: 'rbook://derek/stage1',
       },
       'multi-project-stage1-'
@@ -116,7 +116,7 @@ describe('multi-project attribution', () => {
     await Promise.all([rbookMcpProject.cleanup(), stage1Project.cleanup()]);
   });
 
-  it('different real DBs resolve different senderProjectIds against the same dashboard directory', async () => {
+  it('different stores keep their registered sender IDs without consulting the dashboard directory', async () => {
     const client = createMockDashboardClient();
     const createdAt = new Date(Date.now() - 60_000).toISOString();
 
@@ -140,14 +140,14 @@ describe('multi-project attribution', () => {
         })
       );
 
-    await rbookMessage({
+    const first = await rbookMessage({
       action: 'send',
       projectRoot: rbookMcpProject.projectRoot,
       targetAddress: 'rbook://derek/oods-foundry',
       type: 'question',
       summary: 'First send',
     });
-    await rbookMessage({
+    const second = await rbookMessage({
       action: 'send',
       projectRoot: stage1Project.projectRoot,
       targetAddress: 'rbook://derek/oods-foundry',
@@ -155,7 +155,9 @@ describe('multi-project attribution', () => {
       summary: 'Second send',
     });
 
-    expect(client.getMyProjects).toHaveBeenCalledTimes(2);
+    expect(first.success).toBe(true);
+    expect(second.success).toBe(true);
+    expect(client.getMyProjects).not.toHaveBeenCalled();
     expect(client.sendMessage).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({

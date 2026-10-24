@@ -9,7 +9,7 @@
  * store whose sprints are all Completed every new session — and every decision, learning,
  * constraint and next-step captured in it — was permanently stamped with a dead sprint. This
  * store had 76 sprints and zero open; six planning sessions carry a sprint completed weeks
- * earlier. Independently reported by parts-town, whose Managed-tier project has no sprints by
+ * earlier. Independently reported by another project, whose Managed-tier setup has no sprints by
  * design and therefore mislabels every session by construction.
  *
  * WHY A REAL STORE IS MANDATORY HERE (decision #926 #3): the behavior is gated on a QUERY over

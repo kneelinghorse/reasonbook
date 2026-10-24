@@ -299,9 +299,13 @@ describe('s93-m12 — what init writes', () => {
     expect(meta(root, 'project_id')).toBeUndefined();
   });
 
-  it("a re-init keeps the registry's name, and a new name or level reaches the identity", async () => {
+  it("an unnamed store takes the registry's name, and a new name or level reaches the identity", async () => {
     const root = folder('named-later');
     await rbookProjectInit({ projectRoot: root });
+    // The old unnamed-store repair still applies; new init now stores its folder's name.
+    const db = new Database(path.join(root, 'rbook', 'db', 'rbook.sqlite'));
+    db.prepare("UPDATE metadata SET value = '' WHERE key = 'project_name'").run();
+    db.close();
     RbookDetector.resetInstance();
     const registered = await executeMissionProtocolTool(
       'rbook_project',

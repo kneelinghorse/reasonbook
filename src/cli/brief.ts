@@ -34,13 +34,18 @@ export async function runBrief(argv: readonly string[], io: CliIo): Promise<numb
     // A store the fan-out could not open is in the brief as unreadable, by its registry id.
     const reports: SignalsReport[] = [
       ...projects.map((project) => project.report),
-      ...errors.map((error) => {
-        const report = unreadableReport(
-          { storePath: error.storePath, now, windowDays: days },
+      ...errors.map((error) =>
+        unreadableReport(
+          {
+            storePath: error.storePath,
+            now,
+            windowDays: days,
+            projectId: error.projectId,
+            projectName: stores.find((store) => store.project_id === error.projectId)?.name,
+          },
           `store unreadable: ${error.error}`
-        );
-        return { ...report, project: { id: error.projectId, name: null } };
-      }),
+        )
+      ),
     ];
     const options = { now, windowDays: days };
     io.stdout(

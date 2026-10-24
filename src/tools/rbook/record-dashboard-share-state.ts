@@ -5,8 +5,8 @@
 import { getSetting } from '../../intelligence/legacy-compat';
 import { RBOOK_CHECKPOINT_SYNC_ENV } from './checkpoint-backfill';
 import type { RbookDatabaseClient } from './client';
-import { resolveDashboardBaseUrl } from './dashboard-client';
-import { formerDashboardReferees } from './record-dashboard-history';
+import { DashboardClient, resolveDashboardBaseUrl } from './dashboard-client';
+import { formerDashboardReferees, libraryAtLeast } from './record-dashboard-history';
 import type { JoinAnswer } from './record-join';
 import { namedCopies, ownersOtherCopies } from './record-owner-copies';
 import { membersOutsideRefereeTerms } from './record-referee-members';
@@ -91,7 +91,12 @@ export function shareProblem(
       return {
         code: REPLICA_ERROR_CODES.WRITE_REFUSED,
         message: `This project is also kept in ${namedCopies(copies)}, and a share through the dashboard would leave ${copies.length === 1 ? 'it' : 'each'} unable to sync, so nothing was shared.`,
-        suggestion: `Sharing through the dashboard does not take your other copies along yet. Keep sharing it directly while those copies are in use. If a copy is gone, preview setting it aside on the authority owner's copy: reasonbook set-aside --replica ${copies[0].replicaId}. Only after the person decides it is gone, repeat with --yes; then share again.`,
+        suggestion: ownerCopyRemedy(copies[0].replicaId),
+        currentState: {
+          reason: 'owner-copies',
+          replicaId: copies[0].replicaId,
+          dashboardProjectId: known ?? null,
+        },
       };
     if (ctx.ownReplica !== ctx.authority)
       return {
@@ -102,6 +107,50 @@ export function shareProblem(
   }
   if (!known) return notUploaded(uploadsNothing);
   return { projectId: known };
+}
+
+/** A preview stays offline; an irreversible cut needs a known compatible destination. */
+function ownerCopyRemedy(replicaId: string, version?: string | null): string {
+  if (version === undefined)
+    return 'Keep sharing directly. Only consider setting aside a gone copy if the dashboard referee runs 4.5.0 or later; the cut cannot be undone. A confirmed share checks its version.';
+  if (!libraryAtLeast(version, '4.5.0'))
+    return `Keep sharing directly. The dashboard referee reports ${version?.replace(/\s+/g, ' ').slice(0, 48) || 'no usable version'}; taking a record with a set-aside copy needs 4.5.0 or later. A set-aside cannot be undone.`;
+  return `Keep sharing directly while the copy is in use. If gone, preview on the authority: reasonbook set-aside --replica ${replicaId}. The cut cannot be undone; only with the person's approval repeat with --yes, then share again.`;
+}
+
+/** Only a confirmed owner-copy refusal consults the configured dashboard, without uploading. */
+export async function confirmedShareProblem(
+  problem: RbookToolError,
+  projectRoot: string
+): Promise<RbookToolError> {
+  const state = problem.currentState;
+  if (
+    !state ||
+    typeof state !== 'object' ||
+    state.reason !== 'owner-copies' ||
+    typeof state.replicaId !== 'string'
+  )
+    return problem;
+  let version: string | null = null;
+  let failure: RbookToolError | undefined;
+  if (typeof state.dashboardProjectId === 'string' && state.dashboardProjectId) {
+    const resolved = await DashboardClient.fromEnvForProject(projectRoot);
+    if (!resolved.success || !resolved.data) failure = resolved.error;
+    else {
+      const capability = await resolved.data.client.refereeCapabilities(state.dashboardProjectId);
+      version = capability.success ? (capability.data?.version ?? null) : null;
+      failure = capability.error;
+    }
+  }
+  return {
+    ...problem,
+    suggestion: ownerCopyRemedy(state.replicaId, version),
+    currentState: {
+      ...state,
+      refereeVersion: version,
+      ...(failure ? { refereeCapabilityError: failure } : {}),
+    },
+  };
 }
 
 /** Why a project the dashboard does not hold yet is not there, and the step that puts it there. */

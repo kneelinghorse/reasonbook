@@ -50,30 +50,43 @@ function report(id: string, signals: Partial<Record<SignalEntry['kind'], Partial
 const lines = (text: string): string[] => text.trimEnd().split('\n');
 
 describe('the weekly brief (s97-m03)', () => {
-  it('renders three other machines’ reports to the golden bytes, as the dashboard will', () => {
-    const golden = fs.readFileSync(path.join(FIXTURE, 'three-reports.expected.txt'), 'utf8');
-    expect(renderBrief(three.reports, options)).toBe(golden);
-    expect(lines(golden).length).toBeLessThanOrEqual(BRIEF_MAX_LINES);
-  });
+  it.each(['three-reports', 'stale-reports'])(
+    'renders %s to the golden bytes, as the dashboard will',
+    (name) => {
+      const input = JSON.parse(
+        fs.readFileSync(path.join(FIXTURE, `${name}.json`), 'utf8')
+      ) as typeof three;
+      const golden = fs.readFileSync(path.join(FIXTURE, `${name}.expected.txt`), 'utf8');
+      expect(renderBrief(input.reports, { now: input.now, windowDays: input.windowDays })).toBe(
+        golden
+      );
+      expect(lines(golden).length).toBeLessThanOrEqual(BRIEF_MAX_LINES);
+    }
+  );
 
-  it('gives the same bytes on a machine with another time zone and locale', () => {
-    // A second process stands in for another machine: far time zone, a locale whose case
-    // rules and number formats differ. The renderer reads neither.
-    const script = `
+  it.each(['three-reports', 'stale-reports'])(
+    'gives %s the same bytes in another time zone and locale',
+    (name) => {
+      // A second process stands in for another machine: far time zone, a locale whose case
+      // rules and number formats differ. The renderer reads neither.
+      const script = `
       require(${JSON.stringify(path.join(REPO, 'tests', 'helpers', 'ts-register.js'))});
       const { renderBrief } = require(${JSON.stringify(path.join(REPO, 'src', 'signals', 'index.ts'))});
-      const fixture = require(${JSON.stringify(path.join(FIXTURE, 'three-reports.json'))});
+      const fixture = require(${JSON.stringify(path.join(FIXTURE, `${name}.json`))});
       process.stdout.write(renderBrief(fixture.reports, { now: fixture.now, windowDays: fixture.windowDays }));
     `;
-    const elsewhere = spawnSync(process.execPath, ['-e', script], {
-      cwd: REPO,
-      encoding: 'utf8',
-      timeout: 60_000,
-      env: { ...process.env, TZ: 'Pacific/Chatham', LANG: 'tr_TR.UTF-8', LC_ALL: 'tr_TR.UTF-8' },
-    });
-    expect(elsewhere.status).toBe(0);
-    expect(elsewhere.stdout).toBe(renderBrief(three.reports, options));
-  });
+      const elsewhere = spawnSync(process.execPath, ['-e', script], {
+        cwd: REPO,
+        encoding: 'utf8',
+        timeout: 60_000,
+        env: { ...process.env, TZ: 'Pacific/Chatham', LANG: 'tr_TR.UTF-8', LC_ALL: 'tr_TR.UTF-8' },
+      });
+      expect(elsewhere.status).toBe(0);
+      expect(elsewhere.stdout).toBe(
+        fs.readFileSync(path.join(FIXTURE, `${name}.expected.txt`), 'utf8')
+      );
+    }
+  );
 
   it('reads a zone-less time as UTC, as every Reasonbook reader does, in any time zone', () => {
     const zoneless = '2026-10-19 12:00:00';

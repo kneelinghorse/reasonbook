@@ -17,8 +17,10 @@ const PRIVATE = requiresPrivateEvidence({
     manifest: 'rbook/research/2026-10-s94-m06/frozen-labels/manifest.json',
     parserReview: 'rbook/research/2026-10-s94-m06/labels-v5-review/manifest.json',
     reviewLabels: 'rbook/research/2026-10-s94-m06/labels-v5-review/labels.json',
-    currentParserReview: 'rbook/research/2026-10-s94-m06/labels-v6-review/manifest.json',
-    currentReviewLabels: 'rbook/research/2026-10-s94-m06/labels-v6-review/labels.json',
+    retainedParserReview: 'rbook/research/2026-10-s94-m06/labels-v6-review/manifest.json',
+    retainedReviewLabels: 'rbook/research/2026-10-s94-m06/labels-v6-review/labels.json',
+    currentParserReview: 'rbook/research/2026-10-s94-m06/labels-v7-review/manifest.json',
+    currentReviewLabels: 'rbook/research/2026-10-s94-m06/labels-v7-review/labels.json',
   },
 });
 const root = path.resolve(__dirname, '../..');

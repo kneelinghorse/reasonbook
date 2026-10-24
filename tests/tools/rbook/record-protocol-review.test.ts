@@ -3,6 +3,7 @@
 // ABOUTME: Actual MCP review keeps precise JSON size accounting while the separate rendered digest remains bounded.
 import { RbookDatabaseClient } from '../../../src/tools/rbook/client';
 import { recordOwnChanges } from '../../../src/tools/rbook/record-changes';
+import { inviteMember } from '../../../src/tools/rbook/record-membership';
 import { rememberCopyReport } from '../../../src/tools/rbook/record-peer-report';
 import { upgradeRecordProtocolForTesting } from '../../../src/tools/rbook/record-protocol';
 import { sharedRecordReview } from '../../../src/tools/rbook/record-review';
@@ -30,9 +31,13 @@ it('a healthy shared record never invents conflict states or directs the operato
     expect(sharedRecordText(review)).not.toMatch(/state\(s\) need a person|action="conflicts"/);
   });
 });
-it.each([2, 35])(
-  'actual MCP review retains every named blocker, count=%i, with honest size and bounded rendered text',
-  async (count) => {
+it.each([
+  { count: 2, switched: false },
+  { count: 35, switched: false },
+  { count: 35, switched: true },
+])(
+  'actual MCP review retains every affected copy, count=$count switched=$switched, with honest size',
+  async ({ count, switched }) => {
     const undo = upgradeRecordProtocolForTesting(1);
     let owner: Awaited<ReturnType<typeof ownerCopy>>;
     try {
@@ -69,21 +74,32 @@ it.each([2, 35])(
     } finally {
       undo();
     }
+    if (switched)
+      await onCopy(fixture.tmp, owner!, (client) => {
+        for (let index = 0; index < count; index++)
+          rememberCopyReport(client, 'replica-' + index, { reads: 2 }, { called: true });
+        expect(inviteMember(client, { name: 'Switch' }).success).toBe(true);
+        for (let index = 0; index < count; index++)
+          rememberCopyReport(client, 'replica-' + index, { reads: 1 }, { called: true });
+      });
     useMachine(fixture.tmp, owner!.machine);
     const answer = await call('rbook_review', { projectRoot: owner!.root });
     expect(answer.success).toBe(true);
     const data = answer.data as unknown as RbookReviewResult & {
       recordProtocol?: { writeProtocol: number; blockers: Array<{ memberName: string }> };
     };
-    expect(data.recordProtocol?.writeProtocol).toBe(1);
-    expect(data.recordProtocol?.blockers.map((copy) => copy.memberName).sort()).toEqual(
+    expect(data.recordProtocol?.writeProtocol).toBe(switched ? 2 : 1);
+    const affected = switched ? data.recordProtocol?.stranded : data.recordProtocol?.blockers;
+    expect(affected?.map((copy) => copy.memberName).sort()).toEqual(
       Array.from({ length: count }, (_, i) => 'Blocking Member ' + i).sort()
     );
     expect(data.digestSizeBytes).toBe(Buffer.byteLength(JSON.stringify(data), 'utf8'));
     if (count === 2) expect(data.digestSizeBytes).toBeLessThanOrEqual(4096);
     else {
       expect(data.digestSizeBytes).toBeGreaterThan(4096);
-      expect(formatReviewForLLM({ success: true, data })).toMatch(/exceeds.*all blocking copies/i);
+      expect(formatReviewForLLM({ success: true, data })).toMatch(
+        switched ? /exceeds.*all stranded copies/i : /exceeds.*all blocking copies/i
+      );
     }
     expect(data.sharedRecord).not.toMatch(/state\(s\) need a person|action="conflicts"/);
     await onCopy(fixture.tmp, owner!, (client) => {
@@ -107,7 +123,7 @@ it.each([2, 35])(
       };
       const rendered = renderDigestV2(model).text;
       expect(rendered.length).toBeLessThanOrEqual(4000);
-      expect(rendered).toMatch(/protocol 1.*block/i);
+      expect(rendered).toMatch(switched ? /protocol 2.*stranded/i : /protocol 1.*block/i);
       const crowded = {
         ...review,
         conflicts: Array.from({ length: 20 }, (_, i) => 'long conflict ' + i + 'x'.repeat(100)),
@@ -116,7 +132,7 @@ it.each([2, 35])(
       const compact = sharedRecordText(crowded)!;
       expect(compact.length).toBeLessThanOrEqual(600);
       expect(compact).toMatch(/newer record protocol wait/);
-      expect(compact).toMatch(/protocol 1.*block/i);
+      expect(compact).toMatch(switched ? /protocol 2.*stranded/i : /protocol 1.*block/i);
     });
   }
 );

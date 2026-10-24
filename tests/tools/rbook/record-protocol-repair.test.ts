@@ -130,7 +130,8 @@ it('unknown identities and forged project/term claims cannot supply an unseen ca
   ]) {
     const report = { ...forged, reads: 99, libraryVersion: '99.0.0' };
     await copyPeer(fixture.tmp, authority).observeHello!(report);
-    await wireHello(authority, report);
+    // An unbound forged report gets only legacy-reader treatment, never its claimed reads99.
+    await expect(wireHello(authority, report)).rejects.toThrow(/Upgrade Reasonbook here/);
     expect(await on(authority, (client) => reportedCopy(client, erin.replicaId))).toEqual(before);
     expect(await on(authority, (client) => reportedCopy(client, 'unrelated-copy'))).toEqual({
       libraryVersion: null,
@@ -246,9 +247,10 @@ it.each(['direct', 'bundle'])(
       transport === 'direct'
         ? await exchange(old, copyPeer(fixture.tmp, authority))
         : await on(studio, (client) => importBundle(client, held));
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(transport !== 'direct');
     expect(result.data?.caughtUp).toBeUndefined();
     expect((await on(studio, hello)).pending).toEqual(before.pending);
-    if (transport === 'direct') expect(result.warnings?.join(' ')).toMatch(/Upgrade that copy/);
+    if (transport === 'direct')
+      expect(result.error?.message).toMatch(/Upgrade Reasonbook.*withheld/);
   }
 );

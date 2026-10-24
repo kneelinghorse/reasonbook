@@ -1186,21 +1186,19 @@ describe('send action', () => {
     setLocalDashboardProjectId(null);
   });
 
-  it('resolves senderProjectId by matching local rbook_address against /api/projects/me', async () => {
-    // Regression: prior behavior blindly returned projects[0] regardless of the
-    // local project — tagging every send with whichever project the dashboard
-    // happened to list first (Parts Town for derek). Must now match the local
-    // rbook_address against directory entries.
+  it('refuses a fresh sender even when its canonical address matches an owned project', async () => {
+    // A name/address can be reused by a different store; only a stored UUID identifies this one.
+    setLocalDashboardProjectId(null);
     setLocalRbookAddress('rbook://derek/cmos-mcp');
     const client = mockClient();
     client.getMyProjects.mockResolvedValueOnce(
       createSuccess({
         projects: [
-          // Parts Town first — matches the real bug scenario
+          // Unrelated project first — matches the real bug scenario
           {
             id: '96ce2349-b7e7-45b1-99e3-23277db407f5',
-            name: 'Parts Town',
-            address: 'rbook://derek/parts-town',
+            name: 'Example Project',
+            address: 'rbook://derek/example-project',
             owner: 'derek',
           },
           {
@@ -1229,43 +1227,29 @@ describe('send action', () => {
       })
     );
 
-    await rbookMessage({
+    const result = await rbookMessage({
       action: 'send',
       targetAddress: 'rbook://derek/cmos-dashboard',
       type: 'question',
       summary: 'Test',
     });
 
-    expect(client.sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        senderProjectId: 'ec2b4987-dbc1-4f16-946e-9843c4080ac1',
-      })
-    );
-    // Must NOT have tagged as Parts Town even though it is projects[0].
-    expect(client.sendMessage).not.toHaveBeenCalledWith(
-      expect.objectContaining({
-        senderProjectId: '96ce2349-b7e7-45b1-99e3-23277db407f5',
-      })
-    );
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe('SENDER_ATTRIBUTION_INCOMPLETE');
+    expect(client.getMyProjects).not.toHaveBeenCalled();
+    expect(client.sendMessage).not.toHaveBeenCalled();
 
     setLocalRbookAddress(null);
   });
 
-  it('different local projects resolve to different senderProjectIds against the same directory', async () => {
-    // Sprint 53 m02: each simulated cwd must resolve ITS OWN project by matching
-    // the local rbook_address against /api/projects/me — NEVER by falling back to
-    // metadata.dashboard_project_id or projects[0]. We clear the default seeded
-    // UUID so the resolution path is forced through directory matching.
-    setLocalDashboardProjectId(null);
-
-    // Each simulated cwd picks its own project from the same full user directory.
-    // If this test ever regresses to projects[0], both calls would pick the same id.
+  it('different registered stores retain their own UUIDs despite the same account directory', async () => {
+    // Account listing order and reusable names cannot override either store's registered UUID.
     const directory = createSuccess({
       projects: [
         {
           id: '96ce2349-b7e7-45b1-99e3-23277db407f5',
-          name: 'Parts Town',
-          address: 'rbook://derek/parts-town',
+          name: 'Example Project',
+          address: 'rbook://derek/example-project',
           owner: 'derek',
         },
         {
@@ -1285,6 +1269,7 @@ describe('send action', () => {
     });
 
     // Send as cmos-mcp
+    setLocalDashboardProjectId('ec2b4987-dbc1-4f16-946e-9843c4080ac1');
     setLocalRbookAddress('rbook://derek/cmos-mcp');
     const clientA = mockClient();
     clientA.getMyProjects.mockResolvedValueOnce(directory);
@@ -1307,6 +1292,7 @@ describe('send action', () => {
       .senderProjectId;
 
     // Send as stage1
+    setLocalDashboardProjectId('ddb34d24-30e3-4eb3-b13c-20b106a75970');
     setLocalRbookAddress('rbook://derek/stage1');
     const clientB = mockClient();
     clientB.getMyProjects.mockResolvedValueOnce(directory);
@@ -1331,12 +1317,14 @@ describe('send action', () => {
     expect(idA).toBe('ec2b4987-dbc1-4f16-946e-9843c4080ac1');
     expect(idB).toBe('ddb34d24-30e3-4eb3-b13c-20b106a75970');
     expect(idA).not.toBe(idB);
+    expect(clientA.getMyProjects).not.toHaveBeenCalled();
+    expect(clientB.getMyProjects).not.toHaveBeenCalled();
 
     setLocalRbookAddress(null);
   });
 
-  it('fails closed (undefined) when no directory entry matches the local rbook_address', async () => {
-    // Sprint 53 m02: force directory-match path by clearing the default UUID.
+  it('refuses address-only publication even when no directory entry matches', async () => {
+    // A canonical address without a stored UUID must never reach the transport.
     setLocalDashboardProjectId(null);
     setLocalRbookAddress('rbook://derek/never-registered');
     const client = mockClient();
@@ -1345,8 +1333,8 @@ describe('send action', () => {
         projects: [
           {
             id: '96ce2349-b7e7-45b1-99e3-23277db407f5',
-            name: 'Parts Town',
-            address: 'rbook://derek/parts-town',
+            name: 'Example Project',
+            address: 'rbook://derek/example-project',
             owner: 'derek',
           },
         ],
@@ -1363,18 +1351,17 @@ describe('send action', () => {
       })
     );
 
-    await rbookMessage({
+    const result = await rbookMessage({
       action: 'send',
       targetAddress: 'rbook://derek/cmos-dashboard',
       type: 'question',
       summary: 'Test',
     });
 
-    // Crucial: we MUST NOT fall back to "first project" (Parts Town) when the
-    // local project has no matching directory entry. Omit the field instead.
-    expect(client.sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ senderProjectId: undefined })
-    );
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe('SENDER_ATTRIBUTION_INCOMPLETE');
+    expect(client.getMyProjects).not.toHaveBeenCalled();
+    expect(client.sendMessage).not.toHaveBeenCalled();
 
     setLocalRbookAddress(null);
   });
@@ -2017,7 +2004,7 @@ describe('formatMessageForLLM', () => {
 // ─── Directory Action Tests ──────────────────────────────────────────────────
 
 describe('directory action', () => {
-  it('lists all addressable projects', async () => {
+  it('lists the projects the dashboard makes visible to this account', async () => {
     const client = mockClient();
     client.listDirectory.mockResolvedValueOnce(
       createSuccess({
@@ -2224,6 +2211,8 @@ describe('send action — address resolution', () => {
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe('DASHBOARD_NOT_FOUND');
     expect(result.error?.suggestion).toContain('directory');
+    expect(result.error?.suggestion).toContain('projects you own or that are shared with you');
+    expect(result.error?.suggestion).not.toContain('all addressable');
   });
 
   it('passes through non-404 errors from resolveAddress', async () => {

@@ -6,6 +6,11 @@ instead of starting over. The record is a SQLite file inside your project, `rboo
 agent records its own routine choices directly; a choice that is yours, it drafts with
 `Would record:` and records only once you approve.
 
+[<img src="https://raw.githubusercontent.com/kneelinghorse/reasonbook/main/docs/demo/reasonbook-handoff.gif" width="480" alt="A recorded handoff between Claude Code and Codex">](https://github.com/kneelinghorse/reasonbook/blob/main/docs/demo/reasonbook-handoff.mp4)
+
+A 75-second replay of recorded runs; [the receipts](https://github.com/kneelinghorse/reasonbook/blob/main/docs/demo/README.md) explain what was checked.
+[Your first ten minutes](https://github.com/kneelinghorse/reasonbook/blob/main/docs/first-ten-minutes.md) walks through installation, a first choice and its retrieval.
+
 ## Install
 
 In Claude Code:
@@ -73,7 +78,7 @@ explains collection, dashboard account visibility, retention and removal.
 | Pre-compact   | Adds nothing; the next session start adds the digest again                                                                                                                    |
 | Session end   | Closes the sessions the conversation opened                                                                                                                                   |
 
-To turn the hooks off in one project, run `npx --prefer-offline -y @aquex/reasonbook@4.5.0 ambient off` in that
+To turn the hooks off in one project, run `npx --prefer-offline -y @aquex/reasonbook@4.5.1 ambient off` in that
 project, with the version this plugin installed; `ambient on` turns them back on. To turn everything
 off, disable or uninstall the plugin.
 

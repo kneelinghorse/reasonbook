@@ -348,8 +348,16 @@ describe('s93-m11 class 5 — every stored-timestamp comparison and ordering is 
       'a registry row: epoch milliseconds',
     'tools/rbook/dashboard-upload-scheduler.ts|state.lastSyncedAt':
       'registry last_synced_at INTEGER epoch milliseconds, not a stored ISO/SQLite text spelling',
+    'tools/rbook/dashboard-upload-auth.ts|since':
+      'numeric authFirstFailedAt epoch milliseconds or the numeric now argument, never timestamp text',
+    'tools/rbook/dashboard-upload-notice.ts|pausedAt':
+      'registry upload_paused_at INTEGER epoch milliseconds; converted to ISO for a julianday query',
+    'tools/rbook/dashboard-upload-notice.ts|state.firstOwedAt':
+      'registry upload_first_owed_at INTEGER epoch milliseconds, covered by the numeric storage witness above',
     'tools/rbook/dashboard-client.ts|loginResponse.data.expiresAt':
       "the dashboard's own ISO-8601, always with Z; not a stored time",
+    'tools/rbook/record-protocol-active.ts|copy.admittedAt':
+      'record-context derives it from the fixed-width hybrid clock (13-digit milliseconds, 6-digit counter), validated by record-intake.readingProblem; lexical order preserves both parts, including same-millisecond admissions',
   };
 
   function jsTimeOffenders(): string[] {

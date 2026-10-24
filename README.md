@@ -3,14 +3,22 @@
 [![npm version](https://img.shields.io/npm/v/@aquex/reasonbook)](https://www.npmjs.com/package/@aquex/reasonbook)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](LICENSE)
 
-Reasonbook, formerly CMOS, is the project record your agents keep: what was decided, why, what was learned,
-and what remains. The next session can pick up from that record, even in another tool.
+Reasonbook keeps a local record of your project's decisions, reasons and lessons so the next agent session can pick up where you left off.
 You make the decisions; agents handle the bookkeeping. No dashboard account is required.
 
-[See it work](https://github.com/kneelinghorse/reasonbook/blob/main/docs/demo/README.md) in a 75-second replay of recorded runs in Claude Code and
-Codex, and read [what it sends and stores](docs/trust.md).
+[<img src="https://raw.githubusercontent.com/kneelinghorse/reasonbook/main/docs/demo/reasonbook-handoff.gif" width="480" alt="A recorded handoff between Claude Code and Codex">](https://github.com/kneelinghorse/reasonbook/blob/main/docs/demo/reasonbook-handoff.mp4)
 
-## Install it in Claude Code
+A 75-second replay of recorded runs. [Read the demo's receipts](https://github.com/kneelinghorse/reasonbook/blob/main/docs/demo/README.md)
+and [what Reasonbook sends and stores](docs/trust.md).
+
+## Try it
+
+Choose a plugin below, or install the CLI with npm. [Your first ten minutes](docs/first-ten-minutes.md)
+takes you from installation to recording a choice and finding its reason in another session.
+
+Commit the generated agent instructions, `rbook/.gitignore` and your project documents; keep the SQLite store, WAL/SHM files and snapshots out of Git.
+
+### Install it in Claude Code
 
 Install the plugin once for all your projects:
 
@@ -19,29 +27,17 @@ claude plugin marketplace add kneelinghorse/reasonbook
 claude plugin install reasonbook@reasonbook
 ```
 
-Upgrading from `cmos@cmos`? Uninstall it before refreshing the marketplace, using
-`claude plugin uninstall cmos@cmos --scope user` (or its original `project` or `local` scope),
-then install `reasonbook@reasonbook`. For a local installation, run the command from that
-project. If the marketplace already refreshed and uninstall says “not found”, use the
-[tested recovery steps](docs/migrating-from-cmos.md#recover-an-already-refreshed-claude-marketplace).
-Upgrade every client before moving an existing record.
+Start a new Claude Code session after installation, then ask it to start a Reasonbook Ledger for
+this project. If the first session says Reasonbook is installing, start another once it finishes.
 
-For candidate testing, replace `kneelinghorse/reasonbook` with this checkout's absolute
-path. Start a new Claude Code session after installation. The plugin supplies the
-MCP server, hooks and commands; its first cold session may report that Reasonbook is
-installing and load the record from the next session. Use `/reasonbook:init` for a new
-record, `/reasonbook:start` to read it, `/reasonbook:close-out` to finish work, `/reasonbook:plan` to plan,
-and `/reasonbook:build` to execute. [Plugin installation](https://code.claude.com/docs/en/discover-plugins).
-Other tools use the [harness adapters and coverage guide](docs/harnesses.md).
-
-## Get a project digest in three steps
+### Get a project digest in three steps
 
 Requires Node.js 20 or newer.
 
 1. Install the pinned CLI:
 
    ```sh
-   npm install -g @aquex/reasonbook@4.5.0
+   npm install -g @aquex/reasonbook@4.5.1
    ```
 
    Ensure the global npm bin directory is on your PATH. If the former package is installed globally, run `npm uninstall -g @aquex/cmos-mcp` first. Version 4 provides only the `reasonbook` command; update scripts and MCP configurations that use the old command.
@@ -61,6 +57,15 @@ Requires Node.js 20 or newer.
 
 The digest names this project and shows its decisions, lessons and open work. A new
 Ledger starts empty. Planner adds next steps; Builder adds sprints and missions.
+
+Commit the generated `AGENTS.md`, `CLAUDE.md`, `rbook/.gitignore` and the project documents you
+maintain. A new record's ignore file keeps the SQLite store, its WAL/SHM files and snapshots out
+of Git. Init preserves an existing ignore file. Shared records require the store to remain
+untracked; exchange those records through Reasonbook's sharing commands.
+
+A plugin installation does not put `reasonbook` on your terminal PATH. Plugin-only users can
+replace `reasonbook` in these commands with `npx --prefer-offline -y @aquex/reasonbook@4.5.1`,
+for example `npx --prefer-offline -y @aquex/reasonbook@4.5.1 review --format=context`.
 
 ## Codex plugins
 
@@ -120,6 +125,23 @@ address from `rbook_project(action="list")` and pass it as `projectRoot`, for ex
 local-only projects need their folder. Tool hints conservatively include telemetry deletion,
 so Codex Auto mode can still ask for approval for any Reasonbook tool.
 
+## Existing installations and candidate testing
+
+Reasonbook was formerly named CMOS. Upgrading from `cmos@cmos`? Uninstall it before refreshing the marketplace, using
+`claude plugin uninstall cmos@cmos --scope user` (or its original `project` or `local` scope),
+then install `reasonbook@reasonbook`. For a local installation, run the command from that
+project. If the marketplace already refreshed and uninstall says “not found”, use the
+[tested recovery steps](docs/migrating-from-cmos.md#recover-an-already-refreshed-claude-marketplace).
+Upgrade every client before moving an existing record.
+
+For candidate testing, replace `kneelinghorse/reasonbook` with this checkout's absolute
+path. Start a new Claude Code session after installation. The plugin supplies the
+MCP server, hooks and commands; its first cold session may report that Reasonbook is
+installing and load the record from the next session. Use `/reasonbook:init` for a new
+record, `/reasonbook:start` to read it, `/reasonbook:close-out` to finish work, `/reasonbook:plan` to plan,
+and `/reasonbook:build` to execute. [Plugin installation](https://code.claude.com/docs/en/discover-plugins).
+Other tools use the [harness adapters and coverage guide](docs/harnesses.md).
+
 ## Propose a decision, then approve it
 
 When a choice needs your approval, the agent ends its reply with one concrete line:
@@ -161,12 +183,13 @@ the next poll starts it within 60 seconds when no upload lease or failure backof
 Transfer time follows. See the timing and failure details under [Optional: hosted dashboard](#optional-hosted-dashboard).
 `RBOOK_CHECKPOINT_SYNC=off` stops automatic uploads and manual `rbook_db(action="backfill")`
 uploads. Other requested network actions and shared-record exchanges remain available.
-Logging out leaves project keys valid, so manual backfill can still upload with one unless this
-switch is off. Implicit process-exit closes do not upload. A project shared through
+Logging out leaves project keys valid for other requested dashboard calls, but closes and manual
+backfill also require a stored user-scoped key or environment credentials. Implicit process-exit closes do not upload. A project shared through
 reasonbook.ai keeps uploading its whole file until the share hands its record to the dashboard's
-referee copy, then sends only the shared record's changes until it is moved back. [Full network and data disclosure](SECURITY.md#outbound-network).
-
-## Technical reference
+referee copy, then sends the shared record's changes until it is moved back. The client also supports a
+member uploading a scrubbed SQLite copy when the dashboard requests hosted recovery; that route
+is not deployed on reasonbook.ai. Either `RBOOK_SHARED_SYNC=off` or `RBOOK_DASHBOARD_SHARING=off`
+stops recovery contributions, including during an explicit sync. [Full network and data disclosure](SECURITY.md#outbound-network).
 
 ## What it is
 
@@ -190,7 +213,7 @@ Recommended: a global install of this release. The server then starts from disk,
 lookup on launch:
 
 ```bash
-npm install -g @aquex/reasonbook@4.5.0
+npm install -g @aquex/reasonbook@4.5.1
 ```
 
 If the former package is installed globally, run `npm uninstall -g @aquex/cmos-mcp` first. Version 4 provides only the `reasonbook` command; update scripts and MCP configurations that use the old command.
@@ -199,7 +222,7 @@ Or run it on demand with `npx`. Pin the version and prefer the local cache: an u
 can look the package up again on every launch.
 
 ```bash
-npx --prefer-offline -y @aquex/reasonbook@4.5.0
+npx --prefer-offline -y @aquex/reasonbook@4.5.1
 ```
 
 Semantic (vector) search is optional. Without it, retrieval is keyword-only, and the install is
@@ -218,7 +241,7 @@ arguments (keep `--project-root` where an example has it).
 ### Claude Code
 
 ```bash
-claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.5.0"]}'
+claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.5.1"]}'
 ```
 
 ### Claude Desktop
@@ -233,7 +256,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
       "args": [
         "--prefer-offline",
         "-y",
-        "@aquex/reasonbook@4.5.0",
+        "@aquex/reasonbook@4.5.1",
         "--project-root",
         "/absolute/path/to/your/project"
       ]
@@ -257,7 +280,7 @@ Add to `~/.cursor/mcp.json`:
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.5.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.5.1"]
     }
   }
 }
@@ -270,7 +293,7 @@ Add to `~/.cursor/mcp.json`:
   "context_servers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.5.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.5.1"]
     }
   }
 }
@@ -291,7 +314,7 @@ your terminal PATH, so the terminal route needs the standalone Claude CLI.
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.5.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.5.1"]
     }
   }
 }
@@ -392,7 +415,7 @@ Then run `rbook_auth(action="login_init")` from your agent. It returns a one-tim
 
 With a stored user-scoped dashboard key or legacy environment credentials, explicit `rbook_session(action="complete")` and `rbook_sprint(action="complete")` calls attempt a background upload and may register the project first. For a registered project, an MCP tool call that actually writes its store also schedules an upload. It becomes due after 5 quiet minutes or 30 minutes of continuous writes, and starts within the next 60 seconds when no upload lease or failure backoff blocks it. A running server must have opened the project; work owed by a short-lived process survives for the next server. Each upload sends a consistent snapshot of the whole SQLite file, including pending, declined and expired proposals. Transfer time is additional, and concurrent servers share one upload lease per project.
 
-Upload results and failures appear in `rbook_status` and `rbook_review`. HTTP 401, 402 or 403 pauses automatic retries until an explicit close succeeds. A failed upload does not fail the local write or close. Implicit process-exit closes do not upload. Set `RBOOK_CHECKPOINT_SYNC=off` in the server environment to disable automatic uploads and manual backfill; it does not disable explicit sync, messaging, sign-in or shared-record exchanges. Logging out revokes a user-scoped key, leaving project keys valid for requested dashboard calls. See [SECURITY.md](SECURITY.md#outbound-network).
+Upload results and failures appear in `rbook_status` and `rbook_review`. Transient failures back off for 1, 5, 15 and then 60 minutes, never earlier than Retry-After. Authentication failures are rechecked before pausing; hourly probes can resume uploads when the key works again. Confirmed deletion or replacement holds this project’s automatic uploads, closes and manual backfill. Other projects keep uploading. Tier and confirmed forbidden responses remain paused until a successful explicit attempt. Close receipts name the upload status and any hold. A server ending after an explicit close drains its accepted upload within a bound; an interrupted upload remains owed for the next server. A failed upload does not fail the local write or close. Implicit process-exit closes do not upload. Set `RBOOK_CHECKPOINT_SYNC=off` in the server environment to disable automatic uploads and manual backfill; it does not disable explicit sync, messaging, sign-in or shared-record exchanges. Logging out revokes a user-scoped key, leaving project keys valid for requested dashboard calls. See [SECURITY.md](SECURITY.md#outbound-network).
 
 ## Project resolution
 
@@ -492,17 +515,17 @@ RBOOK_CONFIG_DIR=/custom/path
 # Snapshot retention (default shown)
 RBOOK_MAX_SNAPSHOTS=50
 
-# Optional — disable background uploads after writes and explicit completion calls.
-# Shared-store propagation and explicitly requested network actions remain available.
+# Optional — disable timed uploads, explicit-close uploads and manual backfill for this server.
+# Shared-record exchanges and other requested network actions remain available.
 RBOOK_CHECKPOINT_SYNC=off
 
 # Optional — disable shared-record exchanges started by hooks and the server timer.
-# Explicit reasonbook sync and bundle commands remain available.
+# Explicit reasonbook sync and bundle commands remain available; recovery contributions stop.
 RBOOK_SHARED_SYNC=off
 
 # Optional — turn off starting a share or a join through reasonbook.ai on this machine
 # (off, false, 0 or no, in any case). On by default; a project already shared through the
-# dashboard syncs either way.
+# dashboard syncs either way. Hosted recovery contributions are also stopped by this switch.
 RBOOK_DASHBOARD_SHARING=off
 ```
 

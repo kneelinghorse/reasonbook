@@ -9,7 +9,7 @@ import { createError, createSuccess } from './errors';
 import { replicaMarks } from './record-apply';
 import { readmit } from './record-readmit';
 import { carriedSetAsideCuts } from './record-member-cuts';
-import { forgetPeers, routeTo } from './record-peers';
+import { forgetRoute, routeTo } from './record-peers';
 import { dashboardName, isDashboardRoute } from './record-dashboard-route';
 import { canonicalJson } from './record-capture';
 import { recordOwnChanges } from './record-changes';
@@ -358,7 +358,7 @@ export function removeMember(
     ])
   );
   if (!done.success) return createError(done.error!);
-  // A removed member's copies are synced with no more, so their routes go too (ADR s96 §8).
-  forgetPeers(client, Object.keys(cuts));
+  // Removal ends routes, but actual call/read evidence must survive a later re-admission.
+  for (const replicaId of Object.keys(cuts)) forgetRoute(client, replicaId);
   return createSuccess({ ...member, role: 'removed', cuts });
 }

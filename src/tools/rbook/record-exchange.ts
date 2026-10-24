@@ -22,6 +22,8 @@ import { reblockSelf, takeSuccessor } from './record-successor';
 import { replicaWriteRefusal } from './replica-check';
 import { recordedProjectId, REPLICA_ERROR_CODES } from './replica-identity';
 import { newerProtocolWarning } from './record-protocol-hold';
+import { changesSinceReport } from './record-since';
+import { protocolDeliveryNotice } from './record-protocol-notice';
 import type { RbookToolError, RbookToolResult } from './types';
 
 /** The sync protocol two copies must share; a copy that speaks another is refused, never guessed at. */
@@ -92,12 +94,14 @@ export function clientPeer(
     hello: () => unchecked((client) => hello(client)),
     observeHello: (near) =>
       unchecked((client) => {
-        if (boundHello(client, near)?.current)
+        if (boundHello(client, near)?.reportable)
           rememberCopyReport(client, near.replicaId, near, { called: true });
       }),
     chains: (at) => unchecked((client) => chainsAt(client, at)),
     changesSince: (marks, recipient = {}) =>
       unchecked((client) => changesSince(client, marks, recipient)),
+    changesSinceReport: (marks, recipient) =>
+      unchecked((client) => changesSinceReport(client, marks, recipient)),
     apply: (changes, options = {}) =>
       // A copy its check refuses takes in nothing: it re-identifies first (ADR s96 §9). A catch-up
       // opens without the check, which the merge makes itself (record-token.ts). What the merge made
@@ -239,12 +243,15 @@ export async function exchange(
   if (unpaired) return createError<ExchangeReport>(unpaired);
   await local.observeHello?.(theirs);
   await remote.observeHello?.(ours);
-  const stopped = async (error: RbookToolError): Promise<RbookToolResult<ExchangeReport>> => {
+  const stopped = async (
+    error: RbookToolError,
+    remoteMessage = error.message
+  ): Promise<RbookToolResult<ExchangeReport>> => {
     // A clash is damage both operators must see: each side's review keeps it (ADR §7's digest).
     await local.failed({ replicaId: theirs.replicaId, error: error.message });
     // s100-m01: a far copy that takes no note, such as one the dashboard referees taking a
     // catch-up, must not hide the clash behind its own refusal.
-    await remote.failed({ replicaId: ours.replicaId, error: error.message }).catch(() => undefined);
+    await remote.failed({ replicaId: ours.replicaId, error: remoteMessage }).catch(() => undefined);
     return createError<ExchangeReport>(error);
   };
   // s100-m01 (settled item 6): which copy kept changes of a newer record protocol out, said for it.
@@ -314,11 +321,34 @@ export async function exchange(
   let adopted: ApplyReport | null = null;
   let adoptedWarnings: readonly string[] | undefined;
   if (!removed) {
-    const received = await authority.changesSince(memberHello.marks, memberHello);
-    const applied = await member.apply(received);
+    const selected = authority.changesSinceReport
+      ? await authority.changesSinceReport(memberHello.marks, memberHello)
+      : {
+          changes: await authority.changesSince(memberHello.marks, memberHello),
+          withheld: 0,
+          withheldProtocol: 0,
+        };
+    const applied = await member.apply(selected.changes);
     if (!applied.success || !applied.data) return createError<ExchangeReport>(applied.error!);
     adopted = applied.data;
     adoptedWarnings = applied.warnings;
+    if (selected.withheld) {
+      const notice = protocolDeliveryNotice(selected);
+      const ownerMessage = `Upgrade Reasonbook on ${member.name}, then sync: that copy reads protocol ${memberHello.reads ?? 1}, so ${selected.withheld} change(s) were withheld.`;
+      return stopped(
+        {
+          code: REPLICA_ERROR_CODES.EXCHANGE_REFUSED,
+          message:
+            (localJudges ? ownerMessage : notice.message) +
+            (heldBack ? ` ${heldBack.message}` : ''),
+          suggestion:
+            (localJudges
+              ? notice.suggestion.replace('this machine', member.name)
+              : notice.suggestion) + (heldBack?.suggestion ? ` ${heldBack.suggestion}` : ''),
+        },
+        (localJudges ? notice.message : ownerMessage) + (heldBack ? ` ${heldBack.message}` : '')
+      );
+    }
   }
   // s97-m14 (critics, rounds 1 and 2): a held-back transaction must not hide a removal from its
   // member. The removal leads, so the review's 160-character slice of the error keeps it.

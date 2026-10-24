@@ -4,7 +4,7 @@
 
 import { prepareSpinOutRead } from './spin-out-read';
 import { resolveRecordPaths } from '../../intelligence/legacy-compat';
-import * as path from 'path';
+import { projectDisplayName } from '../../utils/project-display-name';
 import {
   composeDecisionText,
   decisionTextProjection,
@@ -29,6 +29,7 @@ import { openDraftRuntime, startsSince } from './draft-runtime';
 import { clientRunner, isExpired, pendingDrafts } from './proposals';
 import { authorForWrite } from './author-name';
 import { sharedRecordReview } from './record-review';
+import { readUploadNotice } from './dashboard-upload-notice';
 
 /** Distinct local/NULL source rows citing an explicit typed rule; repeated citations in one row count once. */
 export const DIGEST_RULE_CITATION_RULE =
@@ -287,11 +288,30 @@ function snapshot(
   const localTasks = missions.filter((row) => !isForeignProject(row.projectId, local)).length;
   const shared = sharedRecordReview(client);
   const writer = shared ? authorForWrite(client).name : undefined;
+  // A quiet established store is not a first-hour store: inspect durable rows, not recent sections.
+  const tables = [
+    'strategic_decisions',
+    'learnings',
+    'constraints',
+    'next_steps',
+    'missions',
+    'sprints',
+    'sessions',
+  ];
+  for (const table of ['agent_feedback', 'proposals']) {
+    if (rows<{ name: string }>(client, `PRAGMA table_info(${table})`).length) tables.push(table);
+  }
+  const emptyRecord =
+    rows<{ empty: number }>(
+      client,
+      `SELECT NOT (${tables.map((table) => `EXISTS(SELECT 1 FROM ${table})`).join(' OR ')}) AS empty`
+    )[0].empty === 1;
   return {
     project: {
-      name: metadata.get('project_name') || identity?.project_name || path.basename(root),
+      name: projectDisplayName(root, metadata.get('project_name'), identity?.project_name),
       level,
     },
+    emptyRecord,
     localProjectId: local,
     sprint,
     profile: readProfile(env),
@@ -342,7 +362,8 @@ export async function readDigestV2(
   root: string,
   env: NodeJS.ProcessEnv = process.env,
   deadlineAtMs = Infinity,
-  fleetBudgetMs = FLEET_DIGEST_BUDGET_MS
+  fleetBudgetMs = FLEET_DIGEST_BUDGET_MS,
+  options: { readonly sessionStart?: boolean } = {}
 ): Promise<DigestV2Model> {
   return (
     await captureToolCall('read', async () => {
@@ -365,7 +386,12 @@ export async function readDigestV2(
         return {
           ...result.data,
           legacyRecord: resolveRecordPaths(root).legacy,
-          feedback: await feedbackDigestLine(env, deadlineAtMs, fleetBudgetMs),
+          dashboardUpload:
+            readUploadNotice(root, { env, sessionStart: options.sessionStart, attentionOnly: true })
+              ?.text ?? null,
+          feedback: result.data.emptyRecord
+            ? null
+            : await feedbackDigestLine(env, deadlineAtMs, fleetBudgetMs),
         };
       } finally {
         client.close();

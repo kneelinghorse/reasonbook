@@ -143,7 +143,7 @@ const unshared = <T>(): RbookToolResult<T> =>
   refuse<T>({
     code: REPLICA_ERROR_CODES.WRITE_REFUSED,
     message: 'This project is not shared, so it has no members and nothing to sync.',
-    suggestion: 'Share it first: rbook_project(action="share").',
+    suggestion: 'Share it first: rbook_project(action="share", authorName="<your name>").',
   });
 
 /** Run `step` against the shared store, or say the project is not shared. */

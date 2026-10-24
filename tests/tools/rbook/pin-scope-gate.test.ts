@@ -77,6 +77,10 @@ const ALLOWLIST = new Set<string>([
 const SINGLE_PROJECT_UPLOAD_STATE = new Set([
   'dashboard-upload.ts',
   'dashboard-upload-scheduler.ts',
+  // s101-m01: upload attempt, close receipt and manual backfill use only the caller's registry row.
+  'dashboard-upload-attempt.ts',
+  'dashboard-upload-receipt.ts',
+  'rbook-db-backfill.ts',
 ]);
 
 // s96-m01: a copy of a shared record checks its own binding, and the same project's other copies on

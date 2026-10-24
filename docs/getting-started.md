@@ -1,9 +1,14 @@
 # Getting started with Reasonbook
 
+For installation through your first recorded choice, start with [Your first ten minutes](first-ten-minutes.md).
 For a first project digest, use the [three-step quickstart](../README.md#get-a-project-digest-in-three-steps). This guide covers MCP client configuration and an optional Builder walkthrough with a sprint, mission and session. A Ledger needs none of that ceremony. The dashboard at [reasonbook.ai](https://reasonbook.ai) is optional; ordinary project work runs locally without signing in.
 
 For hooks, MCP prompts and client limitations, use the [harness coverage guide](harnesses.md).
 For an existing CMOS installation, follow [the migration guide](migrating-from-cmos.md) before moving files.
+
+[<img src="https://raw.githubusercontent.com/kneelinghorse/reasonbook/main/docs/demo/reasonbook-handoff.gif" width="480" alt="A recorded handoff between Claude Code and Codex">](https://github.com/kneelinghorse/reasonbook/blob/main/docs/demo/reasonbook-handoff.mp4)
+
+The [demo receipts](https://github.com/kneelinghorse/reasonbook/blob/main/docs/demo/README.md) describe the recorded runs behind this 75-second replay.
 
 ## Prerequisites
 
@@ -16,12 +21,16 @@ Pick one:
 
 ```bash
 # Recommended: a global install of this release. It starts from disk, with no registry lookup.
-npm install -g @aquex/reasonbook@4.5.0
+npm install -g @aquex/reasonbook@4.5.1
 
 # Or run on demand via npx: pinned, and preferring the local cache. The first launch downloads
 # the package; later launches reuse the npm cache.
-npx --prefer-offline -y @aquex/reasonbook@4.5.0
+npx --prefer-offline -y @aquex/reasonbook@4.5.1
 ```
+
+If you installed only a plugin, its private runtime does not add `reasonbook` to your terminal
+PATH. For any CLI example here, replace `reasonbook` with
+`npx --prefer-offline -y @aquex/reasonbook@4.5.1`, or install the pinned global CLI above.
 
 If the former package is installed globally, run `npm uninstall -g @aquex/cmos-mcp` first. Version 4 provides only the `reasonbook` command; update scripts and MCP configurations that use the old command.
 
@@ -30,7 +39,7 @@ Verify it starts:
 ```bash
 reasonbook --version  # if globally installed
 # or
-npx --prefer-offline -y @aquex/reasonbook@4.5.0 --version
+npx --prefer-offline -y @aquex/reasonbook@4.5.1 --version
 ```
 
 Semantic (vector) search is optional: without it, retrieval is keyword-only and the install is about
@@ -44,7 +53,7 @@ Claude Code and Codex are verified; the other blocks follow each client's own MC
 ### Claude Code
 
 ```bash
-claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.5.0"]}'
+claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.5.1"]}'
 claude mcp list   # confirm it's registered
 ```
 
@@ -62,7 +71,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS), 
       "args": [
         "--prefer-offline",
         "-y",
-        "@aquex/reasonbook@4.5.0",
+        "@aquex/reasonbook@4.5.1",
         "--project-root",
         "/absolute/path/to/your/project"
       ]
@@ -85,7 +94,7 @@ Edit `~/.cursor/mcp.json`:
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.5.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.5.1"]
     }
   }
 }
@@ -100,7 +109,7 @@ Edit your Zed `settings.json`:
   "context_servers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.5.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.5.1"]
     }
   }
 }
@@ -121,7 +130,7 @@ your terminal PATH, so the terminal route needs the standalone Claude CLI.
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.5.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.5.1"]
     }
   }
 }
@@ -136,6 +145,10 @@ rbook_project(action="init", projectRoot="/absolute/path/to/your/project", proje
 ```
 
 `projectType="build"` starts the project at the Builder level, which keeps the sprints and missions the next steps use; without it a new project is a Ledger, which keeps decisions and lessons only (unless its folder's `AGENTS.md` already names a level; init's answer says which level it chose). This creates `rbook/db/rbook.sqlite` (the source of truth), a starter context, an `AGENTS.md` at the project root with the repository rules and one line naming the project's Reasonbook level, and a `CLAUDE.md` that imports it (an existing `AGENTS.md`, `agents.md` or `CLAUDE.md` is left as it is). Use the absolute path for clarity — relative paths resolve against the agent's CWD, which varies.
+
+Commit `AGENTS.md`, `CLAUDE.md`, `rbook/.gitignore` and the project documents you maintain.
+Init creates the ignore file only when missing, covering the SQLite store, WAL/SHM files and
+snapshots. Keep those runtime files out of Git; a shared record refuses a tracked store.
 
 On Claude Desktop, the `--project-root` from step 2 points the server at this project. A machine-wide
 alternative, used by any server that starts with no project context and no `--project-root`:
@@ -411,10 +424,15 @@ rbook_session(action="start", type="custom", title="Share through the dashboard"
 rbook_session(action="complete", summary="Uploaded to share it", projectRoot="/owner/project")
 ```
 
-On reasonbook.ai, open the project and share it with the editor. "Can push" makes them an editor
-with a copy of their own; "Read only" lets them see the project's pages without a copy. The editor
-then opens the project's page, which shows a sentence to give their agent. In an empty folder for
-the project, the editor's agent joins with it:
+On reasonbook.ai, open the project's Access page and share it with the editor, using their exact
+username or email. "Can push" makes them an editor with a copy of their own; "Read only" lets them
+see the project's pages. If the recipient has not let the owner in, they must accept the invitation
+on their home page at reasonbook.ai before joining. A waiting invitation grants no access.
+An owner can also make an invite link on the Access page; open the link, sign in and choose Join
+to get the link's role. A read-only share does not create a local copy.
+
+After accepting, the editor opens the project's page, which shows a sentence to give their agent.
+In an empty folder for the project, the editor's agent joins with it:
 
 ```text
 rbook_project(action="join", via="dashboard", project="rbook://alex/project", projectRoot="/member/project")
@@ -539,14 +557,12 @@ lineage conflicts. To remove a member of a project shared directly, use
 the owner removes them on the dashboard. Removal stops new exchanges with that member; it cannot
 erase data their copy already holds. Re-inviting the same member resumes exchange, and the changes
 held in quarantine after removal are judged again: those their role does not allow are refused.
-Until reasonbook.ai runs Reasonbook 4.2.1, a member re-invited there has those changes accepted
-whole.
 
 ## Optional: connect the hosted dashboard
 
 The dashboard at [reasonbook.ai](https://reasonbook.ai) adds four things on top of local mode:
 
-- **Dashboard mirror** — `rbook_db(action="backfill")` uploads the live SQLite main file for the dashboard to display; it does not include outstanding WAL pages, so it is not a consistent snapshot. Automatic checkpoint uploads use a SQLite snapshot instead.
+- **Dashboard mirror** — `rbook_db(action="backfill")` and automatic uploads both send a consistent SQLite snapshot, including committed pages still in the WAL.
 - **Project registry** — addressable `rbook://you/project-name` URIs across all your machines.
 - **Messaging** — `rbook_message(action="send")` between your own projects.
 - **Sharing** — share a project's record with editors through it, as [Share a project's record](#share-a-projects-record) describes.
@@ -581,9 +597,9 @@ This polls until the device is approved (or 30s, whichever comes first; agents r
 
 With a stored user-scoped dashboard key or legacy environment credentials, the next explicit `rbook_session(action="complete")` or `rbook_sprint(action="complete")` attempts to register the project, store its project-scoped key and upload the whole SQLite file in the background. Later explicit closes attempt another upload. For a registered project, an MCP tool call that actually writes its store also schedules an upload. It becomes due after 5 quiet minutes or 30 minutes of continuous writes, and starts within the next 60 seconds when no upload lease or failure backoff blocks it. Transfer time follows dispatch. A running server must have opened the project; an owed upload survives a short-lived process for the next server, and concurrent servers share one upload lease per project.
 
-Each upload sends a consistent snapshot of the whole SQLite file, including pending, declined and expired proposals. There is no table-level exclusion from this whole-file upload. `rbook_status` and `rbook_review` show the last upload result and any failure. HTTP 401, 402 or 403 pauses automatic retries until an explicit close succeeds. A failed upload does not fail the local write or close, and implicit process-exit closes do not upload.
+Each upload sends a consistent snapshot of the whole SQLite file, including pending, declined and expired proposals. There is no table-level exclusion from this whole-file upload. `rbook_status` and `rbook_review` show the last upload result and any failure. Transient failures back off for 1, 5, 15 and then 60 minutes, never earlier than Retry-After. Authentication failures are rechecked before pausing; hourly probes can resume uploads when the key works again. Confirmed deletion or replacement holds this project’s automatic uploads, closes and manual backfill. Other projects keep uploading. Tier and confirmed forbidden responses remain paused until a successful explicit attempt. A failed upload does not fail the local write or close, and implicit process-exit closes do not upload.
 
-Set `RBOOK_CHECKPOINT_SYNC=off` in the MCP server environment to disable automatic checkpoint uploads. It does not disable explicit sync, messaging, sign-in, status queries, shared-record exchanges or other requested network actions. (`rbook_project(action="register", projectRoot=…)` is different: it records the project in the local registry only.) See the [network disclosure](../SECURITY.md#outbound-network).
+Set `RBOOK_CHECKPOINT_SYNC=off` in the MCP server environment to stop timed uploads, explicit session/sprint close uploads and manual backfill for every project that server serves. It does not disable explicit sync, messaging, sign-in, status queries, shared-record exchanges or other requested network actions. Hosted recovery contributions use separate controls: either `RBOOK_SHARED_SYNC=off` or `RBOOK_DASHBOARD_SHARING=off` stops them, even during explicit sync. The client supports those contributions, but reasonbook.ai has not deployed the recovery route. (`rbook_project(action="register", projectRoot=…)` is different: it records the project in the local registry only.) See the [network disclosure](../SECURITY.md#outbound-network).
 
 ### Verify
 
@@ -599,7 +615,7 @@ If you sign out:
 rbook_auth(action="logout")
 ```
 
-This revokes the user-scoped key on the dashboard and clears the local row. Project-scoped child keys keep working until you revoke them individually with `rbook_auth(action="revoke", keyId=...)`. A revoke is sent with your user-scoped key, so revoke them before you sign out.
+This revokes the user-scoped key on the dashboard and clears the local row. Project-scoped child keys keep working until you revoke them individually with `rbook_auth(action="revoke", keyId=...)`. A revoke is sent with your user-scoped key, so revoke them before you sign out. Closes and manual backfill also need a stored user-scoped key or environment credentials, so a remaining project key alone does not keep those uploads enabled.
 
 ## Where to next
 

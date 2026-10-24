@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // ABOUTME: Real wire exchange evidence must stop a dashboard share before an unwritten owner copy is stranded.
-// ABOUTME: Client and referee refusals offer a preview of setting aside a gone copy rather than retrying unchanged uploads.
+// ABOUTME: Offline client refusals require referee compatibility before recommending a permanent cut.
 import fs from 'fs';
 import path from 'path';
 import { PassThrough } from 'stream';
@@ -102,8 +102,10 @@ it('refuses the exact route-less first-write gap after a successful wire exchang
   );
   expect(refused.success).toBe(false);
   expect(refused.error?.message).toContain(other.replicaId);
-  expect(refused.error?.suggestion).toMatch(/reasonbook set-aside --replica/);
-  expect(refused.error?.suggestion).toMatch(/preview/i);
+  expect(refused.error?.suggestion).toMatch(/Keep sharing.*directly/i);
+  expect(refused.error?.suggestion).toMatch(/if the dashboard referee runs 4\.5\.0 or later/);
+  expect(refused.error?.suggestion).toContain('cannot be undone');
+  expect(refused.error?.suggestion).not.toMatch(/reasonbook set-aside|--yes/);
 });
 
 it('referee upload refusal explains how a gone copy can be set aside and leaves no published store', async () => {
@@ -137,7 +139,7 @@ it('referee upload refusal explains how a gone copy can be set aside and leaves 
   expect(fs.existsSync(referee.storePath)).toBe(false);
 });
 
-it('client refusal previews a gone copy without implying that an ordinary sync permits sharing', async () => {
+it('offline client refusal conditions a permanent cut on referee compatibility', async () => {
   const owner = await ownerCopy(fixture.tmp);
   const other = await joinedCopy(fixture.tmp, owner, 'owner-second', 'Owner');
   await onCopy(fixture.tmp, owner, (client) =>
@@ -155,8 +157,8 @@ it('client refusal previews a gone copy without implying that an ordinary sync p
   expect(refused.success).toBe(false);
   expect(refused.error?.message).toContain('second.local:/work/project');
   expect(refused.error?.suggestion).toMatch(/Keep sharing.*directly/i);
-  expect(refused.error?.suggestion).toMatch(/reasonbook set-aside --replica/);
-  expect(refused.error?.suggestion).toMatch(/preview/i);
+  expect(refused.error?.suggestion).toMatch(/if the dashboard referee runs 4\.5\.0 or later/);
+  expect(refused.error?.suggestion).toContain('cannot be undone');
   expect(refused.error?.suggestion).toMatch(/gone/i);
-  expect(refused.error?.suggestion).toContain('--yes');
+  expect(refused.error?.suggestion).not.toMatch(/reasonbook set-aside|--yes/);
 });

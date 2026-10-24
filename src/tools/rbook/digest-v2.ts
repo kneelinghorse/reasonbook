@@ -21,6 +21,7 @@ export interface DigestRow {
 
 export interface DigestV2Model {
   readonly project: { readonly name: string; readonly level: ProjectLevel };
+  readonly emptyRecord?: boolean;
   readonly localProjectId: string | null;
   readonly sprint: {
     readonly id: string;
@@ -39,6 +40,7 @@ export interface DigestV2Model {
   /** s93-m06: pending, unexpired drafts awaiting the operator, oldest first. */
   readonly drafts?: readonly DigestDraft[];
   readonly feedback?: string | null;
+  readonly dashboardUpload?: string | null;
   /** s96-m12: what a shared record holds for a person; absent or null off one. */
   readonly shared?: SharedRecordReview | null;
 }
@@ -52,7 +54,7 @@ export interface DigestDraft {
 export const DIGEST_V2_CAP = 4000;
 /** The pointer also carries the proposal convention, so a project with no drafts still teaches it. */
 export const DIGEST_POINTER =
-  'Full: Reasonbook show by ID; search: Reasonbook context search. The operator’s call: end with Would record: <decision>.';
+  'Full decisions: rbook_decisions; learnings: rbook_learnings; search: rbook_context. The operator’s call: end with Would record: <decision>.';
 export const DRAFTS_SECTION_CAP = 450;
 /** s96-m12: the shared record's section, which takes its room before the drafts do. */
 export const SHARED_SECTION_CAP = 600;
@@ -250,7 +252,8 @@ function sharedShortForm(review: SharedRecordReview | null | undefined): string 
   const protocol = review.protocol;
   const protocolNotice =
     protocol?.writeProtocol === 2
-      ? 'record protocol 2: switched; downgrades may rename ids and hold streams'
+      ? 'record protocol 2: switched; downgrades may rename ids and hold streams' +
+        (protocol.stranded.length ? `; ${protocol.stranded.length} stranded copies` : '')
       : protocol?.writeProtocol === 1
         ? `record protocol 1: not switched; ${protocol.blockers.length} blocking copies`
         : (protocol?.summary ?? '');
@@ -341,7 +344,7 @@ export function renderDigestV2(
       model.decisions.total,
       true
     );
-  const recent = decisionsAt(1000);
+  const recent = decisionsAt(1000 - (model.dashboardUpload ? model.dashboardUpload.length + 2 : 0));
   for (const value of [
     rowsSection('Rules in force', model.rules, 500, 4, local),
     recent,
@@ -358,8 +361,17 @@ export function renderDigestV2(
   ])
     if (value) sections.push(value);
   const tail: Section[] = [];
+  if (model.dashboardUpload) tail.push(section([{ text: model.dashboardUpload }]));
   if (model.feedback) tail.push(section([{ text: model.feedback }]));
-  tail.push(section([{ text: DIGEST_POINTER }]));
+  tail.push(
+    section([
+      {
+        text: model.emptyRecord
+          ? 'No decisions or learnings recorded yet. Begin with the project goal and the first choice to keep. The operator’s call: end with Would record: <decision>.'
+          : DIGEST_POINTER,
+      },
+    ])
+  );
   const room = (): number =>
     DIGEST_V2_CAP -
     [...sections, ...tail].reduce((sum, part, i) => sum + part.text.length + (i ? 2 : 0), 0) -
@@ -390,8 +402,7 @@ export function renderDigestV2(
       ...part.items.map((item) => ({ ...item, start: item.start + offset, end: item.end + offset }))
     );
   }
-  // Feedback uses the reserved 100-character inbox allocation. Future sections must allocate their own
-  // room rather than rely on the hook's looser 6,000-character emergency cap.
+  // Upload notices borrow decision room; feedback retains its reserved 100-character allocation.
   if (text.length > DIGEST_V2_CAP) throw new Error('Digest exceeds its 4000-character allocation.');
   return { text, items, returnedIds: [...new Set(items.map((item) => item.typedId))] };
 }

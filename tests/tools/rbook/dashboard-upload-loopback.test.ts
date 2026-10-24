@@ -15,9 +15,15 @@ import {
   triggerCheckpointBackfill,
   __drainCheckpointBackfill,
 } from '../../../src/tools/rbook/checkpoint-backfill';
-import { readDashboardUploadStatus } from '../../../src/tools/rbook/dashboard-upload-scheduler';
+import {
+  __resetDashboardUploadScheduler,
+  readDashboardUploadStatus,
+} from '../../../src/tools/rbook/dashboard-upload-scheduler';
+import { CredentialStore } from '../../../src/intelligence/credential-store';
+import { closeUploadReceipt } from '../../../src/tools/rbook/dashboard-upload-receipt';
 import { seedRbookDb } from '../../helpers/seedRbookDb';
 import { rbookDbBackfill } from '../../../src/tools/rbook/rbook-db-backfill';
+import { call } from '../../helpers/replica-fixture';
 
 let root: string;
 let dbPath: string;
@@ -26,7 +32,13 @@ let graph: ProjectGraphRegistry;
 let server: http.Server;
 let requests: Array<{ url: string; body: Buffer; contentType: string }>;
 let failStatus: number;
+let listingStatus: number;
+let listingUser: string;
+let listedId: string | null;
+let projectKeyDead: boolean;
+let retryAfter: string | undefined;
 const keys = [
+  'RBOOK_CONFIG_DIR',
   'RBOOK_CHECKPOINT_SYNC',
   'RBOOK_DASHBOARD_API_KEY',
   'RBOOK_DASHBOARD_URL',
@@ -93,11 +105,19 @@ beforeEach(async () => {
   graph = await ProjectGraphRegistry.create({
     configDir: path.join(root, 'config'),
     ephemeralRoots: [],
+    now: () => Date.now(),
   });
   graph.register({ project_id: 'upload-test', store_path: root, name: 'Upload Test' });
   RbookDetector.resetInstance();
   requests = [];
   failStatus = 0;
+  listingStatus = 0;
+  listingUser = 'tester';
+  listedId = 'remote-test';
+  projectKeyDead = false;
+  retryAfter = undefined;
+  process.env.RBOOK_CONFIG_DIR = path.join(root, 'config');
+  CredentialStore.resetInstance();
   server = http.createServer((req, res) => {
     const chunks: Buffer[] = [];
     req.on('data', (data: Buffer) => chunks.push(data));
@@ -109,20 +129,42 @@ beforeEach(async () => {
         contentType: String(req.headers['content-type'] ?? ''),
       });
       res.setHeader('content-type', 'application/json');
-      if (url === '/api/projects/me')
+      if (
+        (projectKeyDead && req.headers.authorization === 'Bearer project-key') ||
+        (url === '/api/projects/me' && listingStatus)
+      ) {
+        res.statusCode = listingStatus || 401;
+        res.end(JSON.stringify({ success: false, error: 'auth unavailable' }));
+      } else if (url === '/api/projects/me')
         res.end(
           JSON.stringify({
             data: {
-              projects: [
-                { id: 'remote-test', slug: 'upload-test', name: 'Upload Test', owner: 'tester' },
-              ],
+              user: { id: 'user-tester', username: listingUser },
+              projects: listedId
+                ? [
+                    {
+                      id: listedId,
+                      slug: 'upload-test',
+                      name: 'Upload Test',
+                      owner: listingUser,
+                      isOwner: true,
+                    },
+                  ]
+                : [],
             },
           })
         );
       else if (failStatus) {
         res.statusCode = failStatus;
-        res.end(JSON.stringify({ error: 'loopback refusal' }));
-      } else if (url === '/api/projects/register')
+        if (retryAfter) res.setHeader('Retry-After', retryAfter);
+        res.end(
+          JSON.stringify({
+            success: false,
+            error: 'loopback refusal',
+            code: failStatus === 410 ? 'PROJECT_DELETED' : 'FORBIDDEN',
+          })
+        );
+      } else if (url === '/api/projects/register-new')
         res.end(
           JSON.stringify({
             data: { projectId: 'remote-test', slug: 'upload-test', reregistered: false },
@@ -146,8 +188,11 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await __drainCheckpointBackfill();
+  await __resetDashboardUploadScheduler();
   await new Promise<void>((resolve) => server.close(() => resolve()));
   writer.close();
+  jest.restoreAllMocks();
+  CredentialStore.resetInstance();
   ProjectGraphRegistry.resetInstance();
   RbookDetector.resetInstance();
   fs.rmSync(root, { recursive: true, force: true });
@@ -186,13 +231,104 @@ it.each(['off', 'false', '0', 'no', 'OFF'])(
 );
 
 it('manual backfill with uploads enabled sends a usable SQLite copy to the loopback dashboard', async () => {
-  // Manual backfill currently reads the main file directly; its separate WAL omission is recorded.
-  writer.pragma('wal_checkpoint(TRUNCATE)');
+  // A close may follow a WAL commit without a checkpoint; manual uploads must include it too.
   const result = await rbookDbBackfill({ projectRoot: root });
   expect(result.success).toBe(true);
   const uploaded = requests.filter((r) => r.url === '/api/sync/sqlite-backfill');
   expect(uploaded).toHaveLength(1);
   assertSnapshot(uploaded[0]!);
+});
+
+it.each(['named', 'unnamed'])(
+  'the never-uploaded backfill remedy registers and uploads a %s project through an explicit MCP session close',
+  async (naming) => {
+    writer.exec(
+      "DELETE FROM metadata WHERE key IN ('dashboard_slug', 'dashboard_registered', 'dashboard_project_id')"
+    );
+    if (naming === 'unnamed') {
+      writer.exec("UPDATE metadata SET value = '' WHERE key = 'project_name'");
+      writer.exec(
+        "UPDATE contexts SET content = json_set(content, '$.project_name', '') WHERE id = 'project_identity'"
+      );
+    }
+    delete process.env.RBOOK_CHECKPOINT_SYNC;
+    const refused = await rbookDbBackfill({ projectRoot: root });
+    expect(refused.error?.code).toBe('DASHBOARD_NOT_UPLOADED');
+    expect(refused.error?.suggestion).toContain('rbook_session(action="complete"');
+    expect(requests).toHaveLength(0);
+    if (naming === 'unnamed') {
+      expect(refused.error?.suggestion).toContain(
+        'rbook_project(action="init", projectRoot="<project folder>", projectName="<project name>")'
+      );
+      const named = await call('rbook_project', {
+        action: 'init',
+        projectRoot: root,
+        projectName: 'Upload Test',
+      });
+      expect(named.success).toBe(true);
+      expect(
+        writer.prepare("SELECT value FROM metadata WHERE key = 'project_name'").pluck().get()
+      ).toBe('Upload Test');
+      expect(
+        writer.prepare("SELECT value FROM metadata WHERE key = 'project_id'").pluck().get()
+      ).toBe('upload-test');
+      expect(
+        writer
+          .prepare(
+            "SELECT json_extract(content, '$.project_name') FROM contexts WHERE id = 'project_identity'"
+          )
+          .pluck()
+          .get()
+      ).toBe('Upload Test');
+      expect(
+        writer
+          .prepare(
+            "SELECT json_extract(content, '$.project_id') FROM contexts WHERE id = 'project_identity'"
+          )
+          .pluck()
+          .get()
+      ).toBe('upload-test');
+    }
+    const started = await call('rbook_session', {
+      action: 'start',
+      type: 'custom',
+      title: 'Upload to the dashboard',
+      projectRoot: root,
+    });
+    expect(started.success).toBe(true);
+    expect(requests.some((request) => request.url === '/api/sync/sqlite-backfill')).toBe(false);
+    const completed = await call('rbook_session', {
+      action: 'complete',
+      sessionId: started.data!.sessionId,
+      summary: 'Uploaded the project to the dashboard',
+      projectRoot: root,
+    });
+    expect(completed.success).toBe(true);
+    await __drainCheckpointBackfill();
+    expect(requests.filter((request) => request.url === '/api/projects/register-new')).toHaveLength(
+      1
+    );
+    const uploaded = requests.filter((request) => request.url === '/api/sync/sqlite-backfill');
+    expect(uploaded).toHaveLength(1);
+    assertSnapshot(uploaded[0]!);
+  }
+);
+
+it('a stored device-code project key uploads when the sync switch and environment key are unset', async () => {
+  await useProjectKey();
+  delete process.env.RBOOK_CHECKPOINT_SYNC;
+  delete process.env.RBOOK_DASHBOARD_API_KEY;
+  await triggerCheckpointBackfill({ projectRoot: root, force: false });
+  const uploaded = requests.filter((r) => r.url === '/api/sync/sqlite-backfill');
+  expect(uploaded).toHaveLength(1);
+  assertSnapshot(uploaded[0]!);
+  expect(graph.readUploadState('upload-test')?.lastOutcome).toBe('success');
+});
+
+it('a foreign store without metadata has a no-store close receipt and sends nothing', async () => {
+  writer.exec('DROP TABLE metadata');
+  expect(await closeUploadReceipt(root)).toMatchObject({ started: false, why: 'no-store' });
+  expect(requests).toHaveLength(0);
 });
 
 it('two uploads use a real snapshot, include WAL rows and leave source sha256 unchanged', async () => {
@@ -214,20 +350,20 @@ it('automatic upload cannot register a store, while explicit registration preser
   await triggerCheckpointBackfill({ projectRoot: root, force: false, automatic: true });
   expect(requests).toHaveLength(0);
   await triggerCheckpointBackfill({ projectRoot: root, force: false });
-  const registered = requests.find((r) => r.url === '/api/projects/register');
+  const registered = requests.find((r) => r.url === '/api/projects/register-new');
   expect(registered).toBeDefined();
   assertSnapshot(registered!);
   expect(registered!.body.toString()).toContain(`name="localDbPath"\r\n\r\n${dbPath}`);
 });
 
-it.each([401, 402, 403])(
+it.each([402, 403])(
   'HTTP %i stops automatic retries and remains visible until explicit success',
   async (status) => {
     failStatus = status;
     graph.markUploadOwed('upload-test', Date.now() - 300001);
     await triggerCheckpointBackfill({ projectRoot: root, force: false, automatic: true });
     expect(graph.readUploadState('upload-test')?.blocked).toBe(true);
-    expect(await readDashboardUploadStatus(root)).toMatch(/failed.*automatic uploads paused/);
+    expect(await readDashboardUploadStatus(root)).toMatch(/paused/);
     const count = requests.length;
     await triggerCheckpointBackfill({ projectRoot: root, force: false, automatic: true });
     expect(requests).toHaveLength(count);
@@ -238,5 +374,180 @@ it.each([401, 402, 403])(
       lastOutcome: 'success',
       lastError: null,
     });
+  }
+);
+
+it('manual success records the upload and clears a prior pause so the dashboard status is honest', async () => {
+  const lease = graph.claimUpload('upload-test', true)!;
+  graph.finishUpload('upload-test', lease, { success: false, blocked: true, error: 'HTTP 401' });
+  const result = await rbookDbBackfill({ projectRoot: root });
+  expect(result.success).toBe(true);
+  expect(graph.readUploadState('upload-test')).toMatchObject({
+    blocked: false,
+    lastOutcome: 'success',
+    leaseToken: null,
+  });
+  expect(await readDashboardUploadStatus(root)).not.toContain('paused');
+});
+
+it('a failed upload whose fresh key probe succeeds stays retryable instead of requiring another close', async () => {
+  failStatus = 401;
+  await triggerCheckpointBackfill({ projectRoot: root, force: false });
+  expect(graph.readUploadState('upload-test')?.blocked).toBe(false);
+});
+
+async function useProjectKey(): Promise<void> {
+  delete process.env.RBOOK_DASHBOARD_API_KEY;
+  const store = await CredentialStore.create();
+  const issuedAt = new Date(Date.now() - 1000).toISOString();
+  await store.upsertUserScopedKey('parent', {
+    key: 'owner-key',
+    label: 'test',
+    issuedAt,
+    lastUsedAt: issuedAt,
+  });
+  await store.upsertProjectKey(root, {
+    key: 'project-key',
+    keyId: 'project',
+    parentKeyId: 'parent',
+    label: 'test',
+    issuedAt,
+    lastUsedAt: issuedAt,
+  });
+}
+
+it.each(['user', 'project'])(
+  'a %s key cannot send an old store into a replacement, and all later entry points remain held',
+  async (key) => {
+    if (key === 'project') {
+      await useProjectKey();
+      projectKeyDead = true;
+    }
+    listedId = 'replacement-id';
+    await triggerCheckpointBackfill({ projectRoot: root, force: false });
+    expect(graph.readUploadState('upload-test')).toMatchObject({
+      blocked: true,
+      pauseReason: 'replaced',
+    });
+    expect(
+      requests.filter((r) => r.url.includes('sqlite-backfill') || r.url.includes('register'))
+    ).toHaveLength(0);
+    const seen = requests.length;
+    await triggerCheckpointBackfill({ projectRoot: root, force: false });
+    await triggerCheckpointBackfill({ projectRoot: root, force: false, automatic: true });
+    expect((await rbookDbBackfill({ projectRoot: root })).error?.code).toBe('UPLOAD_HELD');
+    expect(requests).toHaveLength(seen);
+    expect(await closeUploadReceipt(root)).toMatchObject({ started: false, why: 'replaced' });
+    expect(
+      writer.prepare("SELECT value FROM metadata WHERE key='dashboard_project_id'").pluck().get()
+    ).toBe('remote-test');
+  }
+);
+
+it.each(['user', 'project'])(
+  'deletion requires an owner-authenticated 410 for the %s key and survives every explicit request',
+  async (key) => {
+    if (key === 'project') {
+      await useProjectKey();
+      projectKeyDead = true;
+    }
+    listedId = null;
+    failStatus = 410;
+    await triggerCheckpointBackfill({ projectRoot: root, force: false });
+    expect(graph.readUploadState('upload-test')).toMatchObject({
+      blocked: true,
+      pauseReason: 'deleted',
+    });
+    expect(requests.filter((r) => r.url === '/api/sync/sqlite-backfill')).toHaveLength(1);
+    const seen = requests.length;
+    await triggerCheckpointBackfill({ projectRoot: root, force: false });
+    expect((await rbookDbBackfill({ projectRoot: root })).error?.code).toBe('UPLOAD_HELD');
+    expect(requests).toHaveLength(seen);
+    expect(await closeUploadReceipt(root)).toMatchObject({ started: false, why: 'deleted' });
+  }
+);
+
+it('a missing id on the listing followed by a successful confirming upload clears the suspicion', async () => {
+  await useProjectKey();
+  projectKeyDead = true;
+  listedId = null;
+  await triggerCheckpointBackfill({ projectRoot: root, force: false });
+  expect(graph.readUploadState('upload-test')).toMatchObject({
+    blocked: false,
+    lastOutcome: 'success',
+    authFirstFailedAt: null,
+  });
+});
+
+it('another account with a same-name project or a tombstone cannot hold this store', async () => {
+  listingUser = 'someone-else';
+  listedId = 'another-id';
+  failStatus = 410;
+  await triggerCheckpointBackfill({ projectRoot: root, force: false });
+  expect(graph.readUploadState('upload-test')).toMatchObject({ blocked: false, pauseReason: null });
+  expect(requests.filter((r) => r.url === '/api/sync/sqlite-backfill')).toHaveLength(0);
+});
+
+it('an outage becomes suspect, then paused, then clears through a real registry probe without a new close', async () => {
+  let now = Date.now();
+  jest.spyOn(Date, 'now').mockImplementation(() => now);
+  listingStatus = 401;
+  await triggerCheckpointBackfill({ projectRoot: root, force: false });
+  expect(graph.readUploadState('upload-test')).toMatchObject({
+    blocked: false,
+    authFirstFailedAt: now,
+  });
+  now += 15 * 60000;
+  await triggerCheckpointBackfill({ projectRoot: root, force: false, automatic: true });
+  expect(graph.readUploadState('upload-test')).toMatchObject({
+    blocked: true,
+    pauseReason: 'auth',
+  });
+  listingStatus = 0;
+  now += 60 * 60000;
+  await triggerCheckpointBackfill({ projectRoot: root, force: false, automatic: true });
+  expect(graph.readUploadState('upload-test')).toMatchObject({
+    blocked: false,
+    lastOutcome: 'success',
+    firstOwedAt: null,
+  });
+});
+
+it('an explicit outage attempt happens once, owed debt honors max(step, Retry-After), and success resets backoff', async () => {
+  let now = Date.now();
+  jest.spyOn(Date, 'now').mockImplementation(() => now);
+  failStatus = 503;
+  retryAfter = '30';
+  await triggerCheckpointBackfill({ projectRoot: root, force: false });
+  expect(graph.readUploadState('upload-test')?.nextAttemptAt).toBe(now + 60000);
+  const count = requests.length;
+  now += 30000;
+  await triggerCheckpointBackfill({ projectRoot: root, force: false, automatic: true });
+  expect(requests).toHaveLength(count);
+  now += 30000;
+  failStatus = 0;
+  await triggerCheckpointBackfill({ projectRoot: root, force: false, automatic: true });
+  expect(graph.readUploadState('upload-test')).toMatchObject({
+    lastOutcome: 'success',
+    failureCount: 0,
+    nextAttemptAt: null,
+  });
+});
+
+it.each(['off', 'review', 'signed-out'])(
+  'the %s gate also prevents probes on an old auth pause',
+  async (gate) => {
+    const lease = graph.claimUpload('upload-test', true)!;
+    graph.finishUpload(
+      'upload-test',
+      lease,
+      { success: false, blocked: true, error: 'HTTP 401' },
+      Date.now() - 61 * 60000
+    );
+    if (gate === 'off') process.env.RBOOK_CHECKPOINT_SYNC = 'off';
+    if (gate === 'review') process.env.RBOOK_AGENT_ROLE = 'review';
+    if (gate === 'signed-out') delete process.env.RBOOK_DASHBOARD_API_KEY;
+    await triggerCheckpointBackfill({ projectRoot: root, force: false, automatic: true });
+    expect(requests).toHaveLength(0);
   }
 );

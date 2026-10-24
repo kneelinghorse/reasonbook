@@ -128,8 +128,8 @@ function mockClient() {
   );
   // Default: /api/projects/me returns the FULL owned directory (every project derek
   // has). Tests that want to simulate "this cwd is cmos-mcp" must set the local
-  // identity via setLocalRbookAddress / setLocalDashboardProjectId — the resolver
-  // picks the matching entry, it never assumes projects[0].
+  // identity via setLocalRbookAddress / setLocalDashboardProjectId — only the stored
+  // dashboard UUID identifies the sender; directory entries cannot supply it.
   client.getMyProjects.mockResolvedValue(
     createSuccess({
       projects: DIRECTORY_PROJECTS.filter((p) => p.owner === 'derek'),
@@ -179,10 +179,8 @@ afterEach(async () => {
 
 describe('E2E: discover → resolve → send → verify', () => {
   it('full pipeline: directory, resolve, send with auto-detected sender, then list inbox', async () => {
-    // Simulate running in the cmos-mcp cwd. Clear the default-seeded UUID so
-    // the resolver exercises the directory-match path (which is what this E2E
-    // is explicitly verifying — Sprint 32 regression coverage).
-    setLocalDashboardProjectId(null);
+    // The registered store supplies its own UUID even if a directory entry reuses its address.
+    setLocalDashboardProjectId(DEFAULT_LOCAL_PROJECT.dashboardProjectId!);
     setLocalRbookAddress('rbook://derek/cmos-mcp');
     const client = mockClient();
 
@@ -232,7 +230,7 @@ describe('E2E: discover → resolve → send → verify', () => {
     // Verify senderProjectId was auto-detected
     expect(client.sendMessage).toHaveBeenCalledWith(
       expect.objectContaining({
-        senderProjectId: '01794cfc-c41d-4457-bccb-12edac7c828e',
+        senderProjectId: DEFAULT_LOCAL_PROJECT.dashboardProjectId,
       })
     );
 
@@ -327,9 +325,8 @@ describe('error paths: unknown addresses', () => {
 // ─── Same-Owner Cross-Project Send Without Manual senderProjectId ────────────
 
 describe('same-owner cross-project send', () => {
-  it('resolves senderProjectId for same-owner sends by matching local rbook_address', async () => {
-    // Simulate running in the cmos-mcp cwd. Directory returns multiple projects.
-    // Clear default UUID to force the directory-match path (Sprint 32 regression).
+  it('refuses same-owner address reuse when this store has never registered', async () => {
+    // A fresh store may have the same name and canonical address as an older owned record.
     setLocalDashboardProjectId(null);
     setLocalRbookAddress('rbook://derek/cmos-mcp');
     const client = mockClient();
@@ -349,17 +346,13 @@ describe('same-owner cross-project send', () => {
       targetAddress: 'rbook://derek/cmos-dashboard',
       type: 'status_update',
       summary: 'Phase 2 events ready',
-      // senderProjectId NOT provided — should be resolved from local rbook_address
+      // No stored or explicit sender ID authorizes publishing under this address.
     });
 
-    expect(result.success).toBe(true);
-    expect(client.getMyProjects).toHaveBeenCalled();
-    expect(client.sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        senderProjectId: '01794cfc-c41d-4457-bccb-12edac7c828e',
-        targetAddress: 'rbook://derek/cmos-dashboard',
-      })
-    );
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe('SENDER_ATTRIBUTION_INCOMPLETE');
+    expect(client.getMyProjects).not.toHaveBeenCalled();
+    expect(client.sendMessage).not.toHaveBeenCalled();
   });
 
   it('fails closed with SENDER_ATTRIBUTION_INCOMPLETE when local identity is unresolvable', async () => {

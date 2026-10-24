@@ -187,7 +187,7 @@ export async function computeAuthState(options: ComputeAuthStateOptions = {}): P
       'No dashboard credentials configured. Run rbook_auth(action="login_init"), then rbook_auth(action="login_complete"), to mint a user-scoped key.';
   } else if (options.projectRoot && !projectKey && newestUser) {
     warning =
-      'No project-scoped key for this project root yet. Sends will use the user-scoped key until /api/projects/register auto-issues one.';
+      'No project-scoped key for this project root yet. Sends will use the user-scoped key until /api/projects/register-new auto-issues one.';
   }
 
   const authTier = deriveAuthTier(newestUser !== null);

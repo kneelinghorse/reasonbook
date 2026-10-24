@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // ABOUTME: s100-m01 (settled item 6): a copy keeps a change written in a newer record protocol out of its store, with the
-// ABOUTME: rest of that replica's stream, keeps exchanging, and takes it in once it upgrades; in both upgrade orders.
+// ABOUTME: rest of that replica's stream, names the upgrade while outgoing work lands, and takes it in after upgrading.
 import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
@@ -130,13 +130,16 @@ describe('a change in a newer record protocol is held, never refused or stored (
     await on(owner, 'rbook_decisions', { action: 'record', content: 'The owner, after the bump.' });
     await on(darryl, 'rbook_decisions', { action: 'record', content: 'Darryl, meanwhile.' });
 
-    // A normal sender withholds the unreadable stream, so the receiver has no upgrade event.
+    // s101-m02: sender filtering must name the upgrade even though no unreadable row arrives.
     const said = await exchange(copyPeer(fixture.tmp, darryl), copyPeer(fixture.tmp, owner));
-    expect(said.success).toBe(true);
-    expect((said.warnings ?? []).join(' ')).not.toMatch(/record protocol|Upgrade Reasonbook/);
+    expect(said.success).toBe(false);
+    expect(said.error?.code).toBe('RECORD_EXCHANGE_REFUSED');
+    expect(said.error?.message).toMatch(/^Upgrade Reasonbook here/);
+    expect(said.error?.message).toContain(`record protocol ${NEWER}`);
     // An older/unfiltered transport can still deliver it: the receiver must keep it out and warn.
     const incoming = await exchange(copyPeer(fixture.tmp, darryl), {
       ...copyPeer(fixture.tmp, owner),
+      changesSinceReport: undefined,
       changesSince: (marks) =>
         onCopy(fixture.tmp, owner, (client) => changesSince(client, marks), {
           replicaCheck: false,
@@ -148,7 +151,8 @@ describe('a change in a newer record protocol is held, never refused or stored (
         `a record protocol newer than this copy's ${PROTOCOL_VERSION}.*Upgrade Reasonbook here`
       )
     );
-    await syncCopies(fixture.tmp, darryl, owner);
+    const repeated = await exchange(copyPeer(fixture.tmp, darryl), copyPeer(fixture.tmp, owner));
+    expect(repeated.error?.code).toBe('RECORD_EXCHANGE_REFUSED');
     // darryl's decision reached the owner and was judged there; its verdict, in the owner's stream
     // after the bump, waits with the rest.
     expect(decisions(owner, 'Darryl, meanwhile.')).toBe(1);
@@ -169,14 +173,21 @@ describe('a change in a newer record protocol is held, never refused or stored (
     expect(logOf(darryl)).toEqual(logOf(owner));
   }, 600000);
 
-  it("a dashboard's referee upgrades first: a member keeps its newer stream out and keeps syncing", async () => {
+  it("a dashboard's referee upgrades first: the old member is told to upgrade while its own push lands once", async () => {
     const hosted = await hostProject(fixture.tmp);
     const darryl = await joinThroughReferee(fixture.tmp, hosted, 'darryl', 'acct-darryl');
     await syncWithReferee(fixture.tmp, hosted, darryl, 'acct-darryl');
     const bump = writeAsNewerRelease(hosted.referee.storePath);
     await on(darryl, 'rbook_decisions', { action: 'record', content: 'Darryl, at the referee.' });
     for (let round = 0; round < 2; round += 1)
-      await syncWithReferee(fixture.tmp, hosted, darryl, 'acct-darryl');
+      await expect(
+        syncWithReferee(fixture.tmp, hosted, darryl, 'acct-darryl')
+      ).rejects.toMatchObject({
+        refusal: {
+          code: 'REFEREE_READS_OLD_PROTOCOL',
+          message: expect.stringMatching(/^Upgrade Reasonbook here/),
+        },
+      });
     expect(holds(darryl, bump.changeId)).toBe(0);
     const db = new Database(hosted.referee.storePath, { readonly: true });
     const taken = db

@@ -5,7 +5,8 @@
 import { createInterface } from 'readline';
 import type { Readable, Writable } from 'stream';
 import type { RbookDatabaseClient } from './client';
-import { changesSince } from './record-apply';
+import { changesSinceReport } from './record-since';
+import { protocolDeliveryNotice } from './record-protocol-notice';
 import { applyAndEmbed } from './record-apply-embed';
 import { chainsAt } from './record-chain';
 import {
@@ -131,10 +132,7 @@ function catchUpFrom(client: RbookDatabaseClient, near: unknown): boolean {
 }
 
 /**
- * The far end of a sync: answer each request against this copy, one line each, until the input
- * ends. `open` runs each step against a client opened for it, and `unchecked` against one its copy
- * check does not refuse, for the steps that put a refused copy right (s96-m13). `extra` adds methods,
- * such as a join's.
+ * Answer each sync request until input ends; unchecked opens allow a refused copy's repair steps.
  */
 export async function serveSync(
   input: Readable,
@@ -142,10 +140,7 @@ export async function serveSync(
   open: Opener,
   extra: Readonly<Record<string, (params: unknown) => Promise<unknown>>> = {},
   unchecked: Opener = open,
-  /**
-   * s100-m01 (F7): whether a far end the dashboard referees takes a catch-up from the owner copy
-   * that moved the project back; never while it serves a handover or a join.
-   */
+  /** Allow hosted move-back catch-up, never while serving a handover or join (s100-m01 F7). */
   options: { readonly catchUp?: boolean } = {}
 ): Promise<void> {
   // The near end going away ends this far end; a write it can no longer take must not crash it.
@@ -166,7 +161,7 @@ export async function serveSync(
         const ours = hello(client);
         const near = (params as { near?: NearHello } | undefined)?.near;
         reader = near;
-        if (near && boundHello(client, near)?.current) {
+        if (near && boundHello(client, near)?.reportable) {
           rememberCopyReport(client, near.replicaId, near, { called: true });
         }
         return ours;
@@ -192,12 +187,17 @@ export async function serveSync(
             suggestion:
               'Ask the owner to recover from an admitted copy; this copy keeps everything it holds.',
           });
-        return bound?.blocked && !historical
-          ? []
-          : changesSince(client, marks, {
-              ...(historical ?? bound?.report),
-              requireComplete: complete.requireComplete === true,
-            });
+        if (bound?.blocked && !historical) return [];
+        const selected = changesSinceReport(client, marks, {
+          ...(historical ?? bound?.report),
+          requireComplete: complete.requireComplete === true,
+        });
+        if (selected.withheld && !complete.requireComplete)
+          throw new ReplicaRefusal({
+            code: REPLICA_ERROR_CODES.EXCHANGE_REFUSED,
+            ...protocolDeliveryNotice(selected),
+          });
+        return selected.changes;
       });
     },
     apply: (params) => {

@@ -15,6 +15,10 @@ import { deriveProjectSlug } from './project-identity';
 import { registerResolvedProjectStore } from '../../intelligence/project-resolution';
 import { legacySyncRefusal } from './legacy-sync-refusal';
 import { settingIsOff } from '../../intelligence/legacy-compat';
+import { withUploadLease, trackDashboardUpload } from './dashboard-upload';
+import { attemptDashboardUpload, type UploadAttempt } from './dashboard-upload-attempt';
+import { ProjectGraphRegistry } from '../../intelligence/project-graph-registry';
+import { whyCloseUploadsNothing } from './checkpoint-backfill';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -22,9 +26,6 @@ import { settingIsOff } from '../../intelligence/legacy-compat';
 
 /** Retained public legacy threshold; event replay is retired and no longer uses it. */
 export const LARGE_DELTA_THRESHOLD = 50;
-
-/** Per-request HTTP timeout for sync event pushes (ms). */
-const PER_REQUEST_TIMEOUT_MS = 30_000;
 
 /** Retained public legacy constant; no event replay path remains to apply this filter. */
 export const DASHBOARD_UNSUPPORTED_EVENT_TYPES: ReadonlySet<string> = new Set<string>();
@@ -128,6 +129,19 @@ async function resolveSyncClient(
 export async function rbookDbBackfill(
   params: RbookDbBackfillParams
 ): Promise<RbookToolResult<RbookDbBackfillResult>> {
+  return (
+    (await trackDashboardUpload(() => runBackfill(params))) ??
+    createError({
+      code: 'UPLOAD_INTERRUPTED',
+      message: 'The server is ending; nothing was uploaded.',
+      suggestion: 'Retry backfill from the next server session.',
+    })
+  );
+}
+
+async function runBackfill(
+  params: RbookDbBackfillParams
+): Promise<RbookToolResult<RbookDbBackfillResult>> {
   if (params.dryRun) return legacySyncRefusal('Dashboard event-replay dry run');
   if (settingIsOff('RBOOK_CHECKPOINT_SYNC'))
     return createError({
@@ -136,6 +150,8 @@ export async function rbookDbBackfill(
       suggestion:
         "Change the server's setting only when a whole-record dashboard upload is intended.",
     });
+  if ((await whyCloseUploadsNothing()) === 'signed-out')
+    return createError(RbookErrors.dashboardNotConfigured());
   return withClientAsync<RbookDbBackfillResult>(
     async (db) => {
       if (isMembersCopy(db))
@@ -151,13 +167,13 @@ export async function rbookDbBackfill(
       );
       if (!slugResult.success) return createError<RbookDbBackfillResult>(slugResult.error!);
       const slug = slugResult.data?.value;
-      if (!slug) return legacySyncRefusal('Dashboard event replay');
-      const clientResult = await resolveSyncClient(params.projectRoot, {
-        timeoutMs: params.perRequestTimeoutMs ?? PER_REQUEST_TIMEOUT_MS,
-      });
-      if (!clientResult.success || !clientResult.data)
-        return createError(RbookErrors.dashboardNotConfigured());
-      const dashboardClient = clientResult.data;
+      if (!slug)
+        return createError({
+          code: 'DASHBOARD_NOT_UPLOADED',
+          message: 'This project has no recorded dashboard upload address yet.',
+          suggestion:
+            'If this project has no stored name, name the existing record first: rbook_project(action="init", projectRoot="<project folder>", projectName="<project name>"). Then an explicit session close uploads it: rbook_session(action="start", type="custom", title="Upload to the dashboard"), then rbook_session(action="complete", summary="Uploaded the project to the dashboard"). Wait for that upload to finish, then retry backfill if needed.',
+        });
       // Backfill owns a legacy identity-repair sequence (dashboard_slug before directory). Suppress
       // the generic pre-open UUID mint, perform that authoritative repair first, then register
       // before any dashboard publish. No transaction is open, so the registration connection
@@ -182,20 +198,43 @@ export async function rbookDbBackfill(
         });
       }
       const previousCursor = getCursor(db);
-      const fileResult = await dashboardClient.syncSqliteFile(
-        db.path,
-        slug,
-        deriveProjectSlug(identity.projectName)
+      let attempt: UploadAttempt | undefined;
+      const outcome = await withUploadLease(
+        resolvedProjectRoot,
+        true,
+        async () => {
+          attempt = await attemptDashboardUpload(resolvedProjectRoot, false, {
+            sqlitePath: db.path,
+            projectSlug: slug,
+            expectedSlug: deriveProjectSlug(identity.projectName),
+          });
+          return attempt.outcome;
+        },
+        { waitForLease: false }
       );
-      if (!fileResult.success || !fileResult.data)
-        return attachWarnings(
-          legacySyncRefusal<RbookDbBackfillResult>(
-            'Dashboard event-replay fallback',
-            `The SQLite upload failed: ${fileResult.error?.message ?? 'unknown error'}. No events were replayed.`
-          ),
-          identity.warnings
+      if (!outcome) {
+        const graph = await ProjectGraphRegistry.create();
+        const state = graph.readUploadState(identity.projectId);
+        const held = state?.blocked && ['deleted', 'replaced'].includes(state.pauseReason ?? '');
+        return createError({
+          code: held ? 'UPLOAD_HELD' : 'UPLOAD_IN_PROGRESS',
+          message: held
+            ? `Dashboard upload held: ${state?.pauseReason}. Nothing was uploaded.`
+            : `An upload is already running (${state?.leaseHolder ?? 'older process'}, started ${state?.lastAttemptAt ?? 'unknown'}).`,
+          suggestion: held
+            ? 'Putting this project back is not available in this version; this copy will not upload into another record.'
+            : 'Wait for that upload to finish, then retry backfill.',
+        });
+      }
+      if (!outcome.success || !attempt?.data)
+        return createError(
+          attempt?.error ?? {
+            code: 'DASHBOARD_UPLOAD_FAILED',
+            message: outcome.error ?? 'The upload did not finish.',
+            suggestion: 'Read rbook_status for the upload reason and the next automatic attempt.',
+          }
         );
-      const d = fileResult.data;
+      const d = attempt.data;
       const counts = d.counts ?? {};
       const total = Object.values(counts).reduce((a, b) => a + b, 0);
       return attachWarnings(
@@ -220,7 +259,7 @@ export async function rbookDbBackfill(
           message:
             `File-based sync complete (${d.durationMs}ms): ${total} record(s) synced` +
             (d.errors.length > 0 ? `, ${d.errors.length} error(s)` : '') +
-            `. Sprints: ${counts['sprints'] ?? 0}, missions: ${counts['missions'] ?? 0}, sessions: ${counts['sessions'] ?? 0}, decisions: ${counts['decisions'] ?? 0}, learnings: ${counts['learnings'] ?? 0}.`,
+            `. Dashboard upload: success; automatic uploads resumed. Sprints: ${counts['sprints'] ?? 0}, missions: ${counts['missions'] ?? 0}, sessions: ${counts['sessions'] ?? 0}, decisions: ${counts['decisions'] ?? 0}, learnings: ${counts['learnings'] ?? 0}.`,
         }),
         identity.warnings
       );

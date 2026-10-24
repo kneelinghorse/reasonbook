@@ -22,6 +22,6 @@ export function readerRefusal(
     code: REPLICA_ERROR_CODES.COPY_TOO_OLD,
     message: `${memberName ? `${memberName}'s ` : ''}copy ${replicaId} must report that it reads record protocol 2 before joining, taking a new identity or holding authority in this switched record; it reported ${reads ?? 'no usable read protocol'}.`,
     suggestion:
-      'Upgrade that copy to Reasonbook 4.5.0 or later, then sync it and retry the action.',
+      'Upgrade that copy to Reasonbook 4.5.0 or later. For a join, make a fresh request with reasonbook join --request-out <file>; otherwise sync it and retry the action.',
   };
 }

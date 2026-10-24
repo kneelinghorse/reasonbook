@@ -88,7 +88,7 @@ export async function spawnRefereeServer(
     engine,
     stop: () =>
       new Promise((resolve) => {
-        if (child.exitCode !== null) return resolve();
+        if (child.exitCode !== null || child.signalCode !== null) return resolve();
         child.once('exit', () => resolve());
         child.kill('SIGTERM');
       }),

@@ -47,7 +47,7 @@ async function main(): Promise<void> {
       }
 
       const sqlitePath = client.path;
-      process.stderr.write(`Calling POST /api/projects/register with sqlite=${sqlitePath}\n`);
+      process.stderr.write(`Calling POST /api/projects/register-new with sqlite=${sqlitePath}\n`);
       const result = await dashClient.registerProject({
         projectName,
         sqlitePath,

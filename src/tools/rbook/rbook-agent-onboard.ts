@@ -53,6 +53,7 @@ import {
 } from './context-freshness';
 import {
   getProjectIdentity as getProjectIdentityData,
+  readProjectIdentity,
   type ProjectIdentityData,
   deriveProjectSlug,
 } from './project-identity';
@@ -86,6 +87,7 @@ import { readProjectLevel, readProjectTier } from './project-level';
 import { isMembersCopy } from './record-membership';
 import { COPY_KEYS, readCopyKey } from './replica-copy-keys';
 import { orderByRequires } from './work-queue-order';
+import { projectDisplayName, projectRootFromStore } from '../../utils/project-display-name';
 
 /**
  * Project identity from master context.
@@ -937,7 +939,11 @@ function getProjectIdentity(client: RbookDatabaseClient): ProjectIdentity {
   const stored = client.getOne<{ value: string }>('SELECT value FROM metadata WHERE key = ?', [
     'project_name',
   ]);
-  const fallbackName = (stored.success && stored.data?.value) || 'Reasonbook Project';
+  const fallbackName = projectDisplayName(
+    projectRootFromStore(client.path),
+    stored.success ? stored.data?.value : null,
+    readProjectIdentity(client)?.project_name
+  );
 
   const result = client.getOne<{ content: string }>('SELECT content FROM contexts WHERE id = ?', [
     'master_context',
@@ -951,7 +957,7 @@ function getProjectIdentity(client: RbookDatabaseClient): ProjectIdentity {
     const content = JSON.parse(result.data.content);
     const projectIdentity = content.project_identity || content.project || {};
     return {
-      name: projectIdentity.name || content.project?.name || fallbackName,
+      name: fallbackName,
       description: projectIdentity.description || content.project?.description || null,
       status: projectIdentity.status || content.project?.status || null,
       projectType,
@@ -1846,7 +1852,7 @@ async function buildSyncHealthFromGlobalStatus(
  * every mission has since been completed and no "PROJECT BRIEF" marker was
  * ever written to master_context. Previously this function only checked for
  * active missions + the brief marker, which misreported mature projects
- * (OODS-Foundry-MCP: 74 sprints / 458 missions / 127 sessions) as fresh and
+ * (one project: 74 sprints / 458 missions / 127 sessions) as fresh and
  * surfaced the new-project tierSelectionPrompt on every onboard.
  *
  * Falls back to the PROJECT BRIEF heuristic only when the database has zero

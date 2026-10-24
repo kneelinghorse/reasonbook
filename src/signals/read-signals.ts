@@ -6,6 +6,7 @@ import BetterSqlite3 from 'better-sqlite3';
 import type Database from 'better-sqlite3';
 
 import { getServerVersion } from '../server-version';
+import { projectDisplayName, projectRootFromStore } from '../utils/project-display-name';
 import { storeProjectId } from '../tools/rbook/store-key';
 import { storedTimeMs } from '../tools/rbook/stored-time';
 import { DRAFT_EXPIRY_DAYS, DRAFT_EXPIRY_STARTS } from '../tools/rbook/proposals';
@@ -127,6 +128,22 @@ function metadataValue(db: Database.Database): (key: string) => unknown {
   return (key) => (query.get(key) as { value: unknown } | undefined)?.value;
 }
 
+/** Match the digest's stored identity, or its legacy master-context seed, without loading a client. */
+function contextName(db: Database.Database): unknown {
+  if (!columnsOf(db, 'contexts').has('content')) return undefined;
+  const query = db.prepare('SELECT content FROM contexts WHERE id = ?');
+  const identity = query.get('project_identity') as { content: string } | undefined;
+  const row = identity ?? (query.get('master_context') as { content: string } | undefined);
+  if (!row) return undefined;
+  try {
+    const content = JSON.parse(row.content);
+    return identity ? content?.project_name : (content?.project_identity ?? content?.project)?.name;
+  } catch {
+    // As in readProjectIdentity, malformed identity JSON has no readable name.
+    return undefined;
+  }
+}
+
 function contextOf(
   db: Database.Database,
   options: ComputeSignalsOptions,
@@ -208,7 +225,8 @@ export function computeSignals(
   const { days } = settings(options);
   return inOneRead(db, () => {
     const value = metadataValue(db);
-    const name = value('project_name');
+    const storedName = value('project_name');
+    const name = typeof storedName === 'string' && storedName.trim() ? storedName : contextName(db);
     const ctx = contextOf(db, options, value, true);
     const signals = entriesOf(ctx, options.only);
     let window: SignalsReport['window'];
@@ -236,7 +254,10 @@ export function computeSignals(
       schema: SIGNALS_SCHEMA,
       library: { name: SIGNALS_LIBRARY_NAME, version: getServerVersion() },
       computedAt: new Date(ctx.nowMs).toISOString(),
-      project: { id: ctx.projectId, name: typeof name === 'string' && name ? name : null },
+      project: {
+        id: ctx.projectId,
+        name: projectDisplayName(projectRootFromStore(options.storePath), name),
+      },
       rules: rulesOf(options),
       signals,
       window,
@@ -247,16 +268,26 @@ export function computeSignals(
 
 /**
  * The report for a store that could not be opened or read: every signal unavailable, with the
- * reason, so a fan-out or an ingest carries on and nothing reads as zero.
+ * reason, so a fan-out or an ingest carries on and nothing reads as zero. A caller can retain
+ * the project's known identity without opening its unreadable store.
  */
-export function unreadableReport(options: ComputeSignalsOptions, reason: string): SignalsReport {
+export function unreadableReport(
+  options: ComputeSignalsOptions & {
+    readonly projectId?: string;
+    readonly projectName?: string | null;
+  },
+  reason: string
+): SignalsReport {
   const { nowMs, days } = settings(options);
   const kinds = SIGNAL_KINDS.filter((kind) => !options.only || options.only.includes(kind));
   return {
     schema: SIGNALS_SCHEMA,
     library: { name: SIGNALS_LIBRARY_NAME, version: getServerVersion() },
     computedAt: new Date(nowMs).toISOString(),
-    project: { id: storeProjectId(() => undefined), name: null },
+    project: {
+      id: storeProjectId(() => options.projectId),
+      name: options.projectName ?? null,
+    },
     rules: rulesOf(options),
     signals: kinds.map((kind) => failed(kind, reason)),
     window: { days, counts: NO_WINDOW, reason },

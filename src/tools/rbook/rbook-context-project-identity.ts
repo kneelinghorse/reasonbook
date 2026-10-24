@@ -103,17 +103,23 @@ export async function rbookContextUpdateProjectIdentity(
   params: ProjectIdentityUpdateParams
 ): Promise<RbookToolResult<ProjectIdentityUpdateResult>> {
   const fieldUpdates = params.fieldUpdates ?? [];
-  const nullIdentity = fieldUpdates.find(
-    (update) =>
-      (update.path === 'project_name' || update.path === 'project_id') && update.value === null
-  );
-  if (nullIdentity) {
+  const invalidIdentity = fieldUpdates.find((update) => {
+    const field = typeof update.path === 'string' ? update.path.split('.')[0] : undefined;
+    return (
+      (field === 'project_name' || field === 'project_id') &&
+      (update.path !== field ||
+        typeof update.value !== 'string' ||
+        update.value.trim().length === 0)
+    );
+  });
+  if (invalidIdentity) {
+    const field = invalidIdentity.path.split('.')[0];
     return createError({
       code: RBOOK_ERROR_CODES.INVALID_PARAMETER,
-      field: nullIdentity.path,
-      providedValue: null,
-      message: `The project's ${nullIdentity.path} cannot be cleared with null.`,
-      suggestion: `Provide a string value for ${nullIdentity.path}, or omit that fieldUpdates entry to keep its current value.`,
+      field: invalidIdentity.path,
+      providedValue: invalidIdentity.value,
+      message: `The project's ${field} must be updated as a non-empty string.`,
+      suggestion: `Provide a non-empty string at path "${field}", or omit that fieldUpdates entry to keep its current value.`,
     });
   }
   return withClientValidated(

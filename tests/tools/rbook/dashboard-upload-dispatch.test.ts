@@ -2,6 +2,7 @@
 // ABOUTME: Dashboard upload debt follows real MCP writes, including writes after first-store upkeep.
 // ABOUTME: Status and review disclose the same project-local upload receipt without changing data contracts.
 
+import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -152,15 +153,31 @@ it('status carries the upload receipt in warnings and text while keeping the fiv
   ]);
 });
 
-it('review carries the same receipt without adding mutable upload state to its stable local digest', async () => {
-  const line = `Dashboard upload: succeeded at ${new Date().toISOString()}.`;
-  uploads.readDashboardUploadStatus.mockResolvedValue(line);
+it('review carries upload attention once in the digest without a duplicate warning', async () => {
+  await dispatch('rbook_review');
+  const graph = await ProjectGraphRegistry.create();
+  const store = new Database(path.join(root, 'rbook/db/rbook.sqlite'), { readonly: true });
+  const id = (
+    store.prepare("SELECT value FROM metadata WHERE key='project_id'").get() as { value: string }
+  ).value;
+  store.close();
+  graph.register({ project_id: id, store_path: root, name: 'Upload dispatch' });
+  graph.markUploadOwed(id, Date.now(), true);
+  const lease = graph.claimUpload(id, true)!;
+  graph.finishUpload(id, lease, { success: false, pauseReason: 'auth' });
   const result = await dispatch('rbook_review');
   expect(result.isError).not.toBe(true);
-  expect(uploads.readDashboardUploadStatus).toHaveBeenCalledWith(root);
-  expect(result.structuredContent).toEqual(
-    expect.objectContaining({ warnings: expect.arrayContaining([line]) })
-  );
-  expect(textOf(result).split(line)).toHaveLength(2);
+  expect(uploads.readDashboardUploadStatus).not.toHaveBeenCalled();
+  expect(textOf(result).split('Dashboard upload:')).toHaveLength(2);
+  expect(textOf(result)).toContain('reason auth');
+  expect(JSON.stringify(result.structuredContent)).not.toContain('Dashboard upload:');
   expect(result.structuredContent).not.toHaveProperty('data.dashboardUpload');
+});
+
+it('an explicit close names why no upload starts in its own receipt', async () => {
+  process.env.RBOOK_CHECKPOINT_SYNC = 'off';
+  await capture('A close receipt must disclose an intentionally disabled upload.');
+  const result = await dispatch('rbook_session', { action: 'complete', summary: 'Receipt test' });
+  expect(result.isError).not.toBe(true);
+  expect(textOf(result)).toContain('Dashboard upload: not started (off)');
 });

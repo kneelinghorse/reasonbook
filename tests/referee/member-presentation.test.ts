@@ -9,6 +9,7 @@ import {
   setMemberRole,
 } from '../../src/tools/rbook/record-membership';
 import { forgetRoute, noteRemoval, rememberPeer } from '../../src/tools/rbook/record-peers';
+import { rbookReviewPresentation } from '../../src/tools/rbook/review-presentation';
 import type { RbookToolResult } from '../../src/tools/rbook/types';
 import { hostProject, joinThroughReferee } from '../helpers/referee-fixture';
 import { call, replicaFixture, useMachine, type ReplicaFixture } from '../helpers/replica-fixture';
@@ -120,11 +121,20 @@ it('a real joined member has no pristine upload warning, while meaningful past d
     expect(result.success).toBe(true);
     expect(JSON.stringify(result.warnings ?? [])).not.toContain('Dashboard upload:');
   }
+  const pristineReview = await rbookReviewPresentation({ projectRoot: member.root });
+  expect(pristineReview.result.success).toBe(true);
+  expect(pristineReview.text).not.toContain('Dashboard upload:');
   useMachine(fixture.tmp, member.machine);
-  expect((await ProjectGraphRegistry.create()).markUploadOwed(id!)).toBe(true);
-  for (const name of ['rbook_status', 'rbook_review']) {
-    const result = await tool(member, name);
-    expect(result.success).toBe(true);
-    expect((result.warnings ?? []).join(' ')).toMatch(/Dashboard upload:.*pending/);
-  }
+  // The digest surfaces pending debt after thirty minutes; status always reports it.
+  expect((await ProjectGraphRegistry.create()).markUploadOwed(id!, Date.now() - 31 * 60_000)).toBe(
+    true
+  );
+  const status = await tool(member, 'rbook_status');
+  expect(status.success).toBe(true);
+  expect((status.warnings ?? []).join(' ')).toMatch(/Dashboard upload:.*pending/);
+  const review = await rbookReviewPresentation({ projectRoot: member.root });
+  expect(review.result.success).toBe(true);
+  expect(review.text).toMatch(/Dashboard upload:.*pending/);
+  expect(review.text.match(/Dashboard upload:/g)).toHaveLength(1);
+  expect(JSON.stringify(review.result.warnings ?? [])).not.toContain('Dashboard upload:');
 });

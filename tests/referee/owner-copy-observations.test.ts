@@ -42,6 +42,15 @@ async function formerOwner() {
     true
   );
   await syncCopies(fixture.tmp, former, owner);
+  // These scenarios isolate route/exchange evidence from the calls made during handover.
+  await onCopy(fixture.tmp, owner, (client) => {
+    expect(
+      client.execute(
+        'UPDATE record_peers SET last_call_at = NULL, last_ok_at = NULL WHERE replica_id = ?',
+        [former.replicaId]
+      ).success
+    ).toBe(true);
+  });
   expect(await count(owner)).toEqual([]);
   return { former, owner };
 }
@@ -134,6 +143,15 @@ it.each(['table', 'peer', 'changes'] as const)(
     const { owner, other } = await pair();
     await onCopy(fixture.tmp, owner, (client) => {
       rememberPeer(client, other.replicaId, { name: 'Owner' });
+      if (fault === 'changes') {
+        // With no call evidence, the write-evidence query must run and fail loudly.
+        expect(
+          client.execute(
+            'UPDATE record_peers SET last_call_at = NULL, last_ok_at = NULL WHERE replica_id = ?',
+            [other.replicaId]
+          ).success
+        ).toBe(true);
+      }
       let injected = 0;
       const failure = {
         success: false as const,

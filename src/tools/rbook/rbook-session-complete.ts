@@ -9,6 +9,7 @@
  * @module tools/rbook/rbook-session-complete
  */
 
+import { formatUploadReceipt, type DashboardUploadReceipt } from './dashboard-upload-receipt';
 import { ensureDecisionShapeColumns } from './schema-migrations';
 import { prepareRecordLinkWrite, requireRecordLinks, recordLinkFailure } from './record-link-write';
 import { missionCompletedSql } from './terminal-status';
@@ -60,6 +61,7 @@ import {
  * Result of session complete operation.
  */
 export interface RbookSessionCompleteResult {
+  dashboardUpload?: DashboardUploadReceipt;
   /** Completed session ID */
   sessionId: string;
 
@@ -797,7 +799,7 @@ export async function rbookSessionComplete(
       // Two sources feed this block:
       //   (1) The `decisions[]` parameter passed to session-complete — the
       //       primary use case. These had no persistence path before the
-      //       fix; OODS-Foundry-MCP retros lost entire decision corpora
+      //       fix; a sibling project's retros lost entire decision corpora
       //       because rbook_decisions(list) couldn't surface them.
       //   (2) Decision-category captures already on the session. The
       //       capture path eagerly promotes these so the dedup SELECT will
@@ -969,6 +971,7 @@ export function formatSessionCompleteForLLM(
   const data = result.data;
   const lines = [
     `✅ **Session Completed**`,
+    ...(data.dashboardUpload ? [formatUploadReceipt(data.dashboardUpload)] : []),
     '',
     `**Session**: ${data.sessionId}`,
     `**Type**: ${data.type}`,

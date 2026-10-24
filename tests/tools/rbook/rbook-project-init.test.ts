@@ -9,6 +9,7 @@
  */
 
 import Database from 'better-sqlite3';
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -23,6 +24,7 @@ import { RBOOK_SCHEMA_VERSION, RBOOK_SCHEMA } from '../../../src/tools/rbook/sch
 import { RBOOK_ERROR_CODES } from '../../../src/tools/rbook/errors';
 import { RbookDetector } from '../../../src/intelligence/rbook-detector';
 import { ProjectGraphRegistry } from '../../../src/intelligence/project-graph-registry';
+import * as levelFiles from '../../../src/tools/rbook/level-files';
 
 describe('rbook_project_init', () => {
   let tempDir: string;
@@ -174,13 +176,47 @@ describe('rbook_project_init', () => {
       }
     });
 
-    it('should copy .gitignore from seed', async () => {
-      const result = await rbookProjectInit({
-        projectRoot: tempDir,
+    it('keeps the store, sidecars and every snapshot out of git when the package omits .gitignore', async () => {
+      const seed = path.join(tempDir, 'packed-seed');
+      fs.cpSync(resolveSeedPath()!, seed, {
+        recursive: true,
+        filter: (file) => path.basename(file) !== '.gitignore',
       });
+      const resolve = jest.spyOn(levelFiles, 'resolveSeedPath').mockReturnValue(seed);
+      try {
+        const result = await rbookProjectInit({ projectRoot: tempDir });
+        expect(result.success).toBe(true);
+        expect(result.data?.created.files).toContain('.gitignore');
+        execFileSync('git', ['init', '-q', tempDir]);
+        const runtime = [
+          'rbook/db/rbook.sqlite',
+          'rbook/db/rbook.sqlite-wal',
+          'rbook/db/rbook.sqlite-shm',
+          'rbook/db/snapshots/pre-migrate-example.sqlite',
+          'rbook/db/snapshots/manual-example.sqlite',
+        ];
+        const ignored = execFileSync('git', ['check-ignore', '--stdin'], {
+          cwd: tempDir,
+          input: runtime.join('\n') + '\n',
+          encoding: 'utf8',
+        })
+          .trim()
+          .split('\n');
+        expect(ignored).toEqual(runtime);
+      } finally {
+        resolve.mockRestore();
+      }
+    });
 
+    it('preserves an existing ignore file exactly, including a deliberate tracked-store policy', async () => {
+      fs.mkdirSync(path.join(tempDir, 'rbook'));
+      const ignore = path.join(tempDir, 'rbook', '.gitignore');
+      const policy = '# This project deliberately tracks its store.\n*.local\n';
+      fs.writeFileSync(ignore, policy);
+      const result = await rbookProjectInit({ projectRoot: tempDir });
       expect(result.success).toBe(true);
-      expect(fs.existsSync(path.join(tempDir, 'rbook', '.gitignore'))).toBe(true);
+      expect(result.data?.created.files).not.toContain('.gitignore');
+      expect(fs.readFileSync(ignore, 'utf8')).toBe(policy);
     });
 
     // s93-m12: CLAUDE.md imports the agents file and names no tool prefix, which depends on what

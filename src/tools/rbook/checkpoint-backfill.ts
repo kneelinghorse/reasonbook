@@ -17,24 +17,22 @@
  */
 
 import { getSetting, settingIsOff } from '../../intelligence/legacy-compat';
-import { rbookDbBackfill } from './rbook-db-backfill';
+import { attemptDashboardUpload, probeDashboardUpload } from './dashboard-upload-attempt';
 import {
-  DashboardClient,
   RBOOK_DASHBOARD_API_KEY_ENV,
   RBOOK_DASHBOARD_USER_ENV,
   RBOOK_DASHBOARD_PASSWORD_ENV,
 } from './dashboard-client';
 import { CredentialStore } from '../../intelligence/credential-store';
-import { checkAndRegister } from './checkpoint-registration';
 import { resolveSenderContext } from '../../intelligence/sender-context';
 import { isReadOnlyAgentSession } from './read-only-agent-guard';
 import {
   isMembersStore,
   readUploadProject,
   withUploadLease,
-  withUploadSnapshot,
+  trackDashboardUpload,
+  uploadLog,
 } from './dashboard-upload';
-import type { UploadOutcome } from '../../intelligence/project-upload-state';
 
 /**
  * s86-m01 — write diagnostics straight to fd 2 instead of through the console
@@ -57,7 +55,7 @@ import type { UploadOutcome } from '../../intelligence/project-upload-state';
  * this module — and the other two on this path — free of console calls.
  */
 function log(line: string): void {
-  process.stderr.write(line + '\n');
+  uploadLog(line);
 }
 
 /**
@@ -169,7 +167,7 @@ export function triggerCheckpointBackfill(options: {
   if (settingIsOff(RBOOK_CHECKPOINT_SYNC_ENV) || isReadOnlyAgentSession()) {
     return Promise.resolve();
   }
-  const inFlight = (async () => {
+  const inFlight = trackDashboardUpload(async () => {
     if ((await whyCloseUploadsNothing()) === 'signed-out') return;
     // Freeze resolution before detached work. Production dispatch always passes its resolved root.
     const projectRoot = options.projectRoot ?? (await resolveSenderContext({})).projectRoot;
@@ -183,76 +181,18 @@ export function triggerCheckpointBackfill(options: {
       // A store the read cannot open is reported by the upload below, as before.
     }
     if (membersCopy) return;
-    await withUploadLease(projectRoot, options.automatic !== true, async () => {
-      const dashResult = await DashboardClient.fromEnvForProject(projectRoot);
-      if (!dashResult.success || !dashResult.data) return uploadFailure(dashResult.error);
-      const dashClient = dashResult.data.client;
-      const info = await checkAndRegister(
-        projectRoot,
-        dashClient,
-        dashResult.data.keySource,
-        options.automatic !== true
-      );
-      for (const warning of info?.warnings ?? []) log(warning);
-      if (info?.projectSlug) {
-        const result = await withUploadSnapshot(info.sqlitePath, (snapshot) =>
-          dashClient.syncSqliteFile(snapshot, info.projectSlug!, info.expectedSlug ?? undefined)
-        );
-        if (!result.success || !result.data) {
-          log(
-            `File sync failed (no event-replay fallback on this path): ${result.error?.message ?? 'unknown'}`
-          );
-          return uploadFailure(result.error);
-        }
-        const data = result.data;
-        log(
-          `File sync: ${info.projectSlug} (${data.durationMs}ms)` +
-            (Object.keys(data.counts).length
-              ? ` — ${Object.entries(data.counts)
-                  .map(([key, count]) => `${key}:${count}`)
-                  .join(', ')}`
-              : '') +
-            (data.errors.length ? ` — ${data.errors.length} error(s)` : '')
-        );
-        if (data.errors.length) return { success: false, error: data.errors.join('; ') };
-        return { success: true };
-      }
-      // Registration remains explicit-close-only. Legacy event replay refuses. An automatic attempt must
-      // never create/purge a dashboard project when registration disappeared between reads.
-      if (options.automatic)
-        return { success: false, error: 'Registered upload destination is unavailable.' };
-      const result = await rbookDbBackfill({ projectRoot, force: options.force, dryRun: false });
-      if (!result.success || !result.data) {
-        log(
-          `Backfill failed: ${result.error?.code ?? 'UNKNOWN'}: ${result.error?.message ?? 'unknown'} ${result.error?.suggestion ?? ''}`
-        );
-        return uploadFailure(result.error);
-      }
-      if (result.data.pushed || result.data.failed)
-        log(
-          `Backfill: ${result.data.pushed} pushed, ${result.data.failed} failed` +
-            (result.data.deduped ? ` — ${result.data.deduped} deduped` : '')
-        );
-      return result.data.failed
-        ? { success: false, error: `${result.data.failed} events failed.` }
-        : { success: true };
+    if (options.automatic) await probeDashboardUpload(projectRoot);
+    await withUploadLease(
+      projectRoot,
+      options.automatic !== true,
+      async () => (await attemptDashboardUpload(projectRoot, options.automatic !== true)).outcome
+    );
+  })
+    .then(() => undefined)
+    .catch((error: unknown) => {
+      log(`Sync error: ${error instanceof Error ? error.message : String(error)}`);
     });
-  })().catch((error: unknown) => {
-    log(`Sync error: ${error instanceof Error ? error.message : String(error)}`);
-  });
   inFlightCheckpoints.add(inFlight);
   void inFlight.finally(() => inFlightCheckpoints.delete(inFlight));
   return inFlight;
-}
-
-function uploadFailure(error?: { code: string; message: string }): UploadOutcome {
-  return {
-    success: false,
-    error: error?.message ?? 'Dashboard credentials or upload unavailable.',
-    blocked: [
-      'DASHBOARD_AUTH_FAILED',
-      'DASHBOARD_UPGRADE_REQUIRED',
-      'DASHBOARD_FORBIDDEN',
-    ].includes(error?.code ?? ''),
-  };
 }

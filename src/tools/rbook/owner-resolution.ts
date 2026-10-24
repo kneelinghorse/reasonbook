@@ -1,10 +1,12 @@
-// ABOUTME: Resolves and persists the project owner (username) to metadata.owner by
-// consulting the authenticated dashboard identity. Lets sync project-identity seeding
-// produce canonical rbook://<owner>/<slug> addresses instead of rbook://unknown/*.
+// ABOUTME: Resolves the authenticated owner and reconciles only the store's registered dashboard id.
+// ABOUTME: Renames keep that identity; another account or a reused name never replaces it.
 
+import path from 'path';
 import { LEGACY, normalizeAddressScheme, storedAddress } from '../../intelligence/legacy-compat';
 import type { RbookDatabaseClient } from './client';
 import { DashboardClient } from './dashboard-client';
+import { RbookErrors } from './errors';
+import type { RbookToolError } from './types';
 import { isMembersCopy } from './record-membership';
 import { checkWrite, type WriteSink } from './write-guard';
 
@@ -13,8 +15,7 @@ export interface OwnerResolutionResult {
   source: 'metadata' | 'dashboard' | 'unresolved';
   /**
    * s81-m02 — true only when the incumbent dashboard project was POSITIVELY confirmed
-   * against a live dashboard row THIS cycle (a trusted id/slug/address match, not a
-   * self-referential dashboard_slug-hint reaffirmation). The push path relaxes its
+   * against a live dashboard row THIS cycle by the stored dashboard_project_id. The push path relaxes its
    * expectedSlug guard only when this is true; otherwise it keeps the stricter
    * derive(project_name) check so a stale/wrong dashboard_slug is refused, not mis-routed.
    * Every early return (reconcile skipped / dashboard unreachable) reports false.
@@ -27,6 +28,9 @@ export interface OwnerResolutionResult {
    * addresses. Callers with a warnings channel should splice this into it.
    */
   warnings?: string[];
+  /** Safety evidence from this listing, for the upload caller; messaging may retain its local identity. */
+  ownerConfirmed?: boolean;
+  error?: RbookToolError;
 }
 
 interface DashboardProjectLike {
@@ -36,6 +40,7 @@ interface DashboardProjectLike {
   [LEGACY.wireAddressKey]?: string | null;
   slug?: string | null;
   name?: string | null;
+  isOwner?: boolean;
 }
 
 function parseOwnerFromAddress(address: string | null | undefined): string | null {
@@ -49,102 +54,10 @@ function parseOwnerFromAddress(address: string | null | undefined): string | nul
   return owner && owner.trim().length > 0 ? owner.trim() : null;
 }
 
-function normalizeSlug(value: string | null | undefined): string | null {
-  if (!value) return null;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed.toLowerCase().replace(/\s+/g, '-') : null;
-}
-
-/**
- * The result of matching the local store against the owner's dashboard projects.
- * `confirmed` distinguishes a POSITIVE identity match (by dashboard_project_id with a
- * passing slug cross-check, by a LOCAL stable-identity slug — project_id/project_name —
- * or by rbook_address) from a WEAK adoption (matched only by reaffirming the local
- * dashboard_slug hint, or the single-project fallback). Only a confirmed match may relax
- * the push's expectedSlug guard (s81-m02 adversarial-review fix): a wrong dashboard_slug
- * can reaffirm itself via the weak tier, so trusting it there would mis-route a push.
- */
-interface ProjectMatch {
-  project: DashboardProjectLike | undefined;
-  confirmed: boolean;
-}
-
-function selectMatchingProject(
-  projects: DashboardProjectLike[],
-  hints: {
-    dashboardProjectId: string | null;
-    rbookAddress: string | null;
-    projectId: string | null;
-    projectName: string | null;
-    dashboardSlug: string | null;
-  }
-): ProjectMatch {
-  const trustedSlugs = new Set(
-    [hints.projectId, hints.projectName]
-      .map((value) => normalizeSlug(value))
-      .filter((value): value is string => value !== null)
-  );
-  const expectedSlugs = new Set(
-    [hints.dashboardSlug, hints.projectId, hints.projectName]
-      .map((value) => normalizeSlug(value))
-      .filter((value): value is string => value !== null)
-  );
-
-  if (hints.dashboardProjectId) {
-    const byId = projects.find((project) => project.id === hints.dashboardProjectId);
-    if (byId) {
-      const matchedSlug = normalizeSlug(byId.slug ?? byId.name ?? null);
-      const slugSetToTrust = trustedSlugs.size > 0 ? trustedSlugs : expectedSlugs;
-      if (slugSetToTrust.size === 0 || (matchedSlug !== null && slugSetToTrust.has(matchedSlug))) {
-        return { project: byId, confirmed: true };
-      }
-    }
-  }
-
-  if (expectedSlugs.size > 0) {
-    // Trusted tier: match by a LOCAL stable-identity slug (project_id / project_name).
-    // These are the store's own identity, not dashboard-echoed state — a positive match.
-    if (trustedSlugs.size > 0) {
-      const byTrusted = projects.find((project) => {
-        const projectSlug = normalizeSlug(project.slug ?? project.name ?? null);
-        return projectSlug !== null && trustedSlugs.has(projectSlug);
-      });
-      if (byTrusted) return { project: byTrusted, confirmed: true };
-    }
-    // Weak tier: the only slug in expectedSlugs NOT already tried above is the local
-    // dashboard_slug hint, so a match here is self-referential — a wrong dashboard_slug
-    // reaffirms itself. Adopt the row (so a legit divergent-name copy still resolves an
-    // owner) but mark it UNCONFIRMED so the push guard is NOT relaxed on its say-so.
-    const byExpected = projects.find((project) => {
-      const projectSlug = normalizeSlug(project.slug ?? project.name ?? null);
-      return projectSlug !== null && expectedSlugs.has(projectSlug);
-    });
-    if (byExpected) return { project: byExpected, confirmed: false };
-  }
-
-  if (hints.rbookAddress) {
-    const byAddress = projects.find(
-      (project) =>
-        normalizeAddressScheme(project[LEGACY.wireAddressKey] ?? project.address ?? '') ===
-        normalizeAddressScheme(hints.rbookAddress!)
-    );
-    if (byAddress) return { project: byAddress, confirmed: true };
-  }
-
-  // s81-m02: only fall back to projects[0] when the account holds exactly ONE project
-  // (unambiguous — a fresh store adopting the account's sole project). In a MULTI-project
-  // account with no confident id/slug/address match, return undefined rather than
-  // mis-adopting an arbitrary first project's slug/id — resolveAndPersistOwner persists
-  // the matched slug/id back to local metadata (below), so a wrong pick corrupts the
-  // push key and mints a dup container on the next checkpoint. Undefined = "no confident
-  // incumbent" → the caller leaves the local key untouched. The single-project fallback is
-  // unambiguous but is NOT a positive identity confirmation, so it stays `confirmed: false`.
-  return { project: projects.length === 1 ? projects[0] : undefined, confirmed: false };
-}
-
 function readMetadata(client: RbookDatabaseClient, key: string): string | null {
   const r = client.getOne<{ value: string }>('SELECT value FROM metadata WHERE key = ?', [key]);
-  if (!r.success || !r.data) return null;
+  if (!r.success) throw new Error(r.error?.message ?? `Could not read metadata.${key}.`);
+  if (!r.data) return null;
   const v = r.data.value;
   return v && v.trim().length > 0 ? v.trim() : null;
 }
@@ -193,9 +106,8 @@ function writeMetadata(
  *      metadata.dashboard_username → done.
  *   3. Otherwise return { owner: null, source: 'unresolved' }.
  *
- * Never throws — dashboard reachability is best-effort. Callers should still tolerate
- * a null owner (the identity row will be seeded with an empty rbook_address until a
- * later checkpoint can fill it in).
+ * Dashboard errors retain the local identity and carry safety evidence for uploads.
+ * A failed metadata read throws instead of silently treating a registered store as new.
  */
 export async function resolveAndPersistOwner(
   client: RbookDatabaseClient,
@@ -211,9 +123,13 @@ export async function resolveAndPersistOwner(
     currentAddress !== null &&
     (currentAddress.length === 0 || currentAddress.startsWith('rbook://unknown/'));
   const localProjectId = readMetadata(client, 'dashboard_project_id');
-  const localDashboardSlug = readMetadata(client, 'dashboard_slug');
-  const localProjectKey = readMetadata(client, 'project_id');
-  const localProjectName = readMetadata(client, 'project_name');
+  const unavailable = (error: RbookToolError): OwnerResolutionResult => ({
+    owner: existing,
+    source: existing ? 'metadata' : 'unresolved',
+    incumbentConfirmed: false,
+    ownerConfirmed: false,
+    ...(localProjectId ? { error } : {}),
+  });
 
   if (existing && !needsProjectIdentityRepair && !localProjectId) {
     return { owner: existing, source: 'metadata', incumbentConfirmed: false };
@@ -221,49 +137,65 @@ export async function resolveAndPersistOwner(
 
   let dashClient: DashboardClient | null = dashClientOverride ?? null;
   if (!dashClient) {
-    const envResult = DashboardClient.fromEnv();
+    const envResult = await DashboardClient.fromEnvForProject(
+      path.dirname(path.dirname(path.dirname(client.path)))
+    );
     if (!envResult.success || !envResult.data) {
-      return existing
-        ? { owner: existing, source: 'metadata', incumbentConfirmed: false }
-        : { owner: null, source: 'unresolved', incumbentConfirmed: false };
+      return unavailable(envResult.error ?? RbookErrors.dashboardNotConfigured());
     }
-    dashClient = envResult.data;
+    dashClient = envResult.data.client;
   }
 
-  // Trigger authentication. getMyProjects() is a cheap authenticated GET; its side
-  // effect is populating dashClient.userIdentity with the username we need.
+  // This listing is the latest account and project evidence before an upload.
   const probe = await dashClient.getMyProjects();
-  if (!probe.success) {
-    return existing
-      ? { owner: existing, source: 'metadata', incumbentConfirmed: false }
-      : { owner: null, source: 'unresolved', incumbentConfirmed: false };
-  }
+  if (!probe.success || !probe.data)
+    return unavailable(probe.error ?? RbookErrors.dashboardError('The owner listing had no data.'));
+  const ownerConfirmed = Boolean(existing && probe.data.user?.username === existing);
+  if (localProjectId && existing && !ownerConfirmed)
+    return unavailable({
+      code: 'DASHBOARD_OWNER_MISMATCH',
+      message: `The latest dashboard listing could not confirm this store's owner (${existing}).`,
+      suggestion: 'Sign in to the account that owns this store; no upload was sent.',
+    });
   // s96-m02: this is a write path (a checkpoint, a message send), so the sign-in's identity is kept
   // here for author names; reads never keep it.
   if (probe.data?.user) dashClient.rememberIdentity(probe.data.user);
 
   const identity = dashClient.userIdentity;
-  let username = identity?.username ?? null;
+  let username = probe.data?.user?.username ?? identity?.username ?? null;
   const projects = (probe.data?.projects ?? []) as DashboardProjectLike[];
-  const match = selectMatchingProject(projects, {
-    dashboardProjectId: localProjectId,
-    rbookAddress: currentAddress,
-    projectId: localProjectKey,
-    projectName: localProjectName,
-    dashboardSlug: localDashboardSlug,
-  });
-  const matchedProject = match.project;
+  // A dashboard id survives rename. Names, addresses and slugs can be reused by another store.
+  const matchedProject = localProjectId
+    ? projects.find((project) => project.id === localProjectId)
+    : undefined;
+  const confirmed = matchedProject !== undefined;
+  if (localProjectId && ownerConfirmed && !confirmed) {
+    const slug = readMetadata(client, 'dashboard_slug');
+    const name = readMetadata(client, 'project_name');
+    if (
+      projects.some(
+        (project) =>
+          project.isOwner === true &&
+          ((slug !== null && project.slug === slug) || (name !== null && project.name === name))
+      )
+    )
+      return {
+        owner: existing,
+        source: 'metadata',
+        incumbentConfirmed: false,
+        ownerConfirmed: true,
+        error: {
+          code: 'PROJECT_REPLACED',
+          message: 'This project was replaced on reasonbook.ai. Nothing was uploaded.',
+          suggestion:
+            'Uploads for this project are stopped. Creating it again is not available in this version; a new registration needs your consent.',
+        },
+      };
+  }
 
   // s86-m02b — every metadata write below is reported as done by the returned result;
   // a failed one is carried out on `warnings` rather than assumed to have landed.
   const warnings: string[] = [];
-
-  if (matchedProject?.slug && matchedProject.slug.trim().length > 0) {
-    writeMetadata(client, 'dashboard_slug', matchedProject.slug.trim(), warnings);
-  }
-  if (matchedProject?.id && matchedProject.id.trim().length > 0) {
-    writeMetadata(client, 'dashboard_project_id', matchedProject.id.trim(), warnings);
-  }
 
   // API-key auth skips the login that populates cachedIdentity. Fall back to the
   // matching project row returned by /api/projects/me.
@@ -277,6 +209,36 @@ export async function resolveAndPersistOwner(
     }
   }
 
+  if (existing && username && username.trim() !== existing)
+    return unavailable({
+      code: 'DASHBOARD_OWNER_MISMATCH',
+      message: `The dashboard account differs from this store's owner (${existing}).`,
+      suggestion: 'Sign in to the account that owns this store; no upload was sent.',
+    });
+
+  if (matchedProject?.slug && matchedProject.slug.trim().length > 0) {
+    const destination = matchedProject.slug.trim();
+    writeMetadata(client, 'dashboard_slug', destination, warnings);
+    // A failed or ignored rename must not leave the upload using a sibling's old slug.
+    if (readMetadata(client, 'dashboard_slug') !== destination)
+      return {
+        owner: existing,
+        source: existing ? 'metadata' : 'unresolved',
+        incumbentConfirmed: false,
+        ownerConfirmed,
+        warnings: warnings.length > 0 ? warnings : undefined,
+        error: {
+          code: 'DASHBOARD_DESTINATION_NOT_SAVED',
+          message: `The dashboard destination '${destination}' could not be saved in this store. Nothing was uploaded.`,
+          suggestion:
+            "Check this store's write errors and retry after its dashboard destination can be saved.",
+        },
+      };
+  }
+  if (matchedProject?.id && matchedProject.id.trim().length > 0) {
+    writeMetadata(client, 'dashboard_project_id', matchedProject.id.trim(), warnings);
+  }
+
   const surfaced = (): string[] | undefined => (warnings.length > 0 ? warnings : undefined);
 
   if (!username || username.trim().length === 0) {
@@ -284,13 +246,15 @@ export async function resolveAndPersistOwner(
       ? {
           owner: existing,
           source: 'metadata',
-          incumbentConfirmed: match.confirmed,
+          incumbentConfirmed: confirmed,
+          ownerConfirmed,
           warnings: surfaced(),
         }
       : {
           owner: null,
           source: 'unresolved',
-          incumbentConfirmed: match.confirmed,
+          incumbentConfirmed: confirmed,
+          ownerConfirmed,
           warnings: surfaced(),
         };
   }
@@ -301,7 +265,8 @@ export async function resolveAndPersistOwner(
   return {
     owner: trimmed,
     source: 'dashboard',
-    incumbentConfirmed: match.confirmed,
+    incumbentConfirmed: confirmed,
+    ownerConfirmed,
     warnings: surfaced(),
   };
 }

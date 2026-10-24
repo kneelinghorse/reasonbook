@@ -65,7 +65,7 @@ describe('the signals on stores that are not today’s (s97-m01)', () => {
     const report = readSignals(store300(), { now: NOW });
     const absent: Record<string, RegExp> = {
       drafts_pending: /no proposals table/,
-      feedback_open: /no agent_feedback table/,
+      feedback_open: /no feedback yet/,
       shared_conflicts: /no record_conflicts table/,
     };
     for (const kind of SIGNAL_KINDS) {

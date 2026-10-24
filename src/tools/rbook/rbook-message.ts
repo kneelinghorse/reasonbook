@@ -225,7 +225,7 @@ export interface MessageListResult {
    * while `totalCount` and `messages` are scoped to this call's credential, tab and filters.
    * Printed side by side under one name they produced a header that read "0 total, 7 unread"
    * against an empty pending inbox — a badge that names no project and can never clear, which
-   * is how two Stage1 defect reports sat unread through a whole sprint.
+   * is how two project defect reports sat unread through a whole sprint.
    */
   unreadCountUserWide: number;
   /**
@@ -428,10 +428,10 @@ export const rbookMessageToolDefinition = {
     'Actions: send (send message to another project), list (byte-capped inbox/sent summaries), ' +
     'get (full body + notes + evidence for one message by id), ' +
     'respond (accept/decline/reply to a message), ack (mark a pending message read/acknowledged), ' +
-    'directory (discover addressable projects), whoami (diagnose sender attribution). ' +
+    'directory (list projects you own or that are shared with you), whoami (diagnose sender attribution). ' +
     'Each message accepts one response; send a new message for a follow-up. ' +
     'Send auto-detects senderProjectId, normalizes addresses (spaces→hyphens, lowercase), ' +
-    'and validates target against the project directory before sending. ' +
+    'and resolves the target address before sending. ' +
     'Needs a dashboard sign-in: run rbook_auth(action="login_init"), then login_complete. ' +
     UNTRUSTED_CONTENT_CONTRACT,
   inputSchema: {
@@ -1023,7 +1023,7 @@ async function handleSend(
     );
   }
 
-  // Pre-send address resolution — validate target exists
+  // Resolve the target before sending; the dashboard applies its recipient access rules.
   const resolveResult = await client.resolveAddress({ address: targetAddress });
   if (!resolveResult.success) {
     // On 404, try to suggest close matches from directory
@@ -1032,7 +1032,7 @@ async function handleSend(
       const hint =
         suggestions.length > 0
           ? `Did you mean: ${suggestions.join(', ')}?`
-          : 'Use rbook_message action="directory" to see all addressable projects.';
+          : 'Use rbook_message action="directory" to see projects you own or that are shared with you.';
       return createError(
         RbookErrors.dashboardNotFound(
           targetAddress,

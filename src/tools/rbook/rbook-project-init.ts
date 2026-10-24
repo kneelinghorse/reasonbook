@@ -59,6 +59,7 @@ import {
 } from './rules-files';
 import { readmeNote, resolveSeedPath, writeLevelFiles } from './level-files';
 import { TIER_SOURCES, tierOf } from './project-level';
+import { enableWal } from './sqlite-busy';
 
 // s95-m06: the seed lookup and copy live in level-files.ts, beside each level's file list;
 // re-exported here for existing importers.
@@ -107,12 +108,12 @@ function ensureAgentsMd(
 }
 
 /**
- * s93-m12: on a re-init that passes a name or a level, the identity row and the master context's
- * project section take it too (only when they exist; a missing one is seeded from metadata later).
+ * A re-init's changed name or level reaches the existing identity and master context too.
+ * The current metadata name is read under the write lock; a missing context is seeded later.
  */
 function syncIdentityContexts(
   db: Database.Database,
-  change: { readonly name?: string; readonly tier?: string },
+  change: { readonly syncName: boolean; readonly tier?: string },
   now: string
 ): void {
   const read = db.prepare('SELECT content FROM contexts WHERE id = ?');
@@ -121,7 +122,14 @@ function syncIdentityContexts(
   // better-sqlite3 statements throw on failure, so the rollback runs on any error.
   db.exec('BEGIN IMMEDIATE');
   try {
-    applyIdentityChange(read, write, change, now);
+    const name = change.syncName
+      ? (
+          db.prepare("SELECT value FROM metadata WHERE key = 'project_name'").get() as
+            | { value: string }
+            | undefined
+        )?.value
+      : undefined;
+    applyIdentityChange(read, write, { name, tier: change.tier }, now);
     db.exec('COMMIT');
   } catch (error) {
     db.exec('ROLLBACK');
@@ -772,7 +780,7 @@ export async function rbookProjectInit(
     const db = new Database(dbPath);
 
     try {
-      db.pragma('journal_mode = WAL');
+      enableWal(db, 5000);
 
       // Execute schema (all CREATE IF NOT EXISTS, safe on existing DB)
       db.exec(RBOOK_SCHEMA);
@@ -792,14 +800,50 @@ export async function rbookProjectInit(
       const stored = (key: string): string | undefined =>
         (readMetadata.get(key) as { value: string } | undefined)?.value;
 
-      // s93-m12: the id settled above, re-read here in case a concurrent init stored one since.
-      // An existing store's name and TraceLab link change only when the caller passes them.
+      // A concurrent init can claim the id after this read. Only fill an absent or blank row,
+      // then use the stored winner; replacing it would leave the two callers with different ids.
       const storedProjectId = stored('project_id')?.trim() || null;
-      const projectId =
+      let projectId =
         storedProjectId ?? knownProjectId ?? (providedProjectId || crypto.randomUUID());
-      if (!storedProjectId) updateMetadata.run('project_id', projectId);
-      if (projectName || !stored('project_name')?.trim()) {
-        updateMetadata.run('project_name', projectName || restoredName);
+      if (!storedProjectId) {
+        db.prepare(
+          `INSERT INTO metadata (key, value) VALUES ('project_id', ?)
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value
+           WHERE metadata.value IS NULL OR trim(metadata.value) = ''`
+        ).run(projectId);
+        projectId = stored('project_id')?.trim() || projectId;
+      }
+      if (providedProjectId && providedProjectId !== projectId) {
+        db.close();
+        return createError({
+          code: RBOOK_ERROR_CODES.INVALID_PARAMETER,
+          message: `This project's id is '${projectId}'; init does not change it to '${providedProjectId}'.`,
+          suggestion:
+            'Re-run init without projectId (or with that id). A project keeps its id for life: the project registry and the dashboard know it by that id.',
+          field: 'projectId',
+          providedValue: providedProjectId,
+        });
+      }
+      // A supplied name still wins; otherwise preserve a stored name or fill an unnamed store
+      // from the registry, then its folder. Claim only the blank value we read, so a concurrent
+      // explicit name is never replaced by the default. Shared identities change only through
+      // the recorded paths, so an implicit default never changes a shared copy.
+      let nameChanged = Boolean(projectName);
+      if (projectName) {
+        updateMetadata.run('project_name', projectName);
+      } else if (!sharedCopy) {
+        const previousName = stored('project_name');
+        if (!previousName?.trim()) {
+          nameChanged =
+            db
+              .prepare(
+                `INSERT INTO metadata (key, value) VALUES ('project_name', ?)
+               ON CONFLICT(key) DO UPDATE SET value = excluded.value
+               WHERE metadata.value IS NULL OR metadata.value = ?`
+              )
+              .run(restoredName || path.basename(path.resolve(projectRoot)), previousName ?? '')
+              .changes > 0;
+        }
       }
       // A harmless shared re-init must not introduce an absent recorded identity key.
       if (tracelabProjectId || (!sharedCopy && stored('tracelab_project_id') === undefined)) {
@@ -870,10 +914,10 @@ export async function rbookProjectInit(
       if (isNewProject) {
         updateMetadata.run('created_at', now);
       }
-      // s93-m12 (the confirming critic): a re-init that renames the project or changes its level
-      // says so wherever the identity is kept, not only in metadata.
-      if (dbExisted && (projectName || projectType)) {
-        syncIdentityContexts(db, { name: projectName || undefined, tier: projectType }, now);
+      // A re-init that renames the project, fills an old missing name, or changes its level says
+      // so wherever the identity is kept, not only in metadata.
+      if (dbExisted && (nameChanged || projectType)) {
+        syncIdentityContexts(db, { syncName: nameChanged, tier: projectType }, now);
       }
 
       // Initialize contexts if they don't exist
@@ -890,7 +934,7 @@ export async function rbookProjectInit(
         }
 
         db.prepare(
-          'INSERT INTO contexts (id, source_path, content, updated_at) VALUES (?, ?, ?, ?)'
+          'INSERT OR IGNORE INTO contexts (id, source_path, content, updated_at) VALUES (?, ?, ?, ?)'
         ).run('project_context', 'rbook/context/project_context.json', contextContent, now);
       }
 
@@ -909,21 +953,23 @@ export async function rbookProjectInit(
             masterObj = {};
           }
         }
-        // Set project identity
-        masterObj.project_identity = {
-          name: projectName || restoredName,
-          description: '',
-          status: 'active_development',
-        };
-
-        db.prepare(
-          'INSERT INTO contexts (id, source_path, content, updated_at) VALUES (?, ?, ?, ?)'
-        ).run(
-          'master_context',
-          'rbook/context/master_context.json',
-          JSON.stringify(masterObj),
-          now
-        );
+        // Read the winning name under the same lock as the insert: a concurrent explicit
+        // rename must not leave a newly seeded context carrying an earlier default.
+        db.transaction(() => {
+          masterObj.project_identity = {
+            name: stored('project_name') ?? '',
+            description: '',
+            status: 'active_development',
+          };
+          db.prepare(
+            'INSERT OR IGNORE INTO contexts (id, source_path, content, updated_at) VALUES (?, ?, ?, ?)'
+          ).run(
+            'master_context',
+            'rbook/context/master_context.json',
+            JSON.stringify(masterObj),
+            now
+          );
+        }).immediate();
       }
 
       // Create initial sprint if provided

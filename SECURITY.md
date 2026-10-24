@@ -92,8 +92,12 @@ Reasonbook runtime and plugin installation make outbound requests in these situa
      backoff blocks it; transfer time is additional. A running server must have opened the
      project. An owed upload survives process exit in the per-user registry, and concurrent
      servers share one lease per project. Only explicit closes may register a new project.
-     Upload results and failures appear in `rbook_status` and `rbook_review`; HTTP 401, 402 or 403
-     pauses automatic retries until an explicit close succeeds. Event replay is retired: a missing project slug or a failed file upload never
+     Upload results and failures appear in `rbook_status`, `rbook_review` and close receipts.
+     Transient failures back off for 1, 5, 15 and then 60 minutes, never before Retry-After.
+     Authentication failures are rechecked before pausing, and an hourly probe resumes uploads once
+     authentication works. Confirmed deletion or replacement holds all uploads for that project,
+     including explicit closes and manual backfill. Restoring it as a new project is not available
+     in this version. Tier and confirmed forbidden responses pause until an explicit success. Event replay is retired: a missing project slug or a failed file upload never
      falls back to replay. A later checkpoint can retry the file upload. Implicit process-exit closes do not upload; explicitly completing an
      implicit session through the tool does. Set
      **`RBOOK_CHECKPOINT_SYNC=off`** to disable these automatic upload paths and manual backfill
@@ -539,4 +543,4 @@ subagent type (e.g. the `Explore` agent) — that is a mitigation, not the machi
 
 ---
 
-_Last verified against the source for release 4.5.0._
+_Last verified against the source for release 4.5.1._

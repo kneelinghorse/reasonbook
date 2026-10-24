@@ -1,0 +1,337 @@
+{
+  "now": "2026-10-28T12:00:00.000Z",
+  "windowDays": 7,
+  "reports": [
+    {
+      "schema": "rbook.signals/1",
+      "library": {
+        "name": "@aquex/reasonbook/signals",
+        "version": "4.3.0"
+      },
+      "computedAt": "2026-10-19T12:00:00.000Z",
+      "project": {
+        "id": "atlas",
+        "name": "Atlas"
+      },
+      "rules": {
+        "drafts_pending": "proposals with outcome 'pending' and not revised after an approval (replaced_by unset), drafted at or before now and no more than 7 days before it, with fewer than 3 session starts after the draft and at or before now in this machine's draft runtime; a runtime that is not found or cannot be read is named in the reason, and its drafts expire by age only; an unreadable draft time counts apart as undated; ids oldest first, and oldestAt is the oldest counted draft's time",
+        "next_steps_lapsing": "pending or carried next steps whose lease anchor (the last carry, else the creation) is at or before now and has survived 3 or more closes: sprints with status exactly 'Completed' whose recorded end_date is at or before now and after the anchor; lapseDue counts those at 4 or more closes and 14 days past the anchor, which the next close drops unless they are carried; an unreadable anchor counts apart as undated; ids most closes first, and oldestAt is the oldest counted anchor",
+        "reviews_due": "active decisions and active learnings that are not evergreen, made at or before now, whose review age is 20 or more closes (sprints Completed, without regard to case, closed at or before now and after the close of the row's own sprint, else after its creation), not reviewed in the 280 days before now, and for decisions without evidence and not a replacement in a supersession; the threshold is pinned and RBOOK_STALENESS_THRESHOLD_SPRINTS is not read; becameDue counts the rows due at now that were not due at the window's start; an unreadable anchor counts apart as undated; ids oldest anchor first",
+        "superseded_cited": "decisions and learnings with status 'active', made at or before now, that cite a decision with status 'superseded', by the project's own citation reader (typed citations only where no persisted citation graph exists), leaving out a decision's citations of a decision it replaced, directly or along the chain; statuses are read as stored, not as of now",
+        "missions_blocked": "missions whose status is 'Blocked', longest blocked first by domain_fields.blockedSince, else the newest session_events block row; sinceUnknown counts those with neither; oldestAt is the longest block's start",
+        "feedback_open": "agent_feedback rows with status 'open' written at or before now; count is the friction rows, by kind, and unclassified the rest (a row's kind is that of the first rule in FEEDBACK_KIND_RULES whose pattern matches its text, among rows that name Reasonbook (reasonbook, rbook, cmos or one of their tools); a row that names it nowhere, that no rule matches, or whose first rule is a folded kind's, is unclassified; the tool name decides nothing); an unreadable time counts apart as undated; ids oldest first",
+        "quiet_days": "whole days from the newest occurred_at at or before now, across missions, sprints, sessions, learnings, decisions and next steps, to now; the review calls a project silent after more than 21 days",
+        "constraints_expiring": "active constraints whose expires_at falls after now and within 7 days of it; an unreadable expires_at counts apart as undated",
+        "shared_conflicts": "on a shared copy, the fields copies set apart that no one has settled (record_conflicts), oldest first, and oldestAt is the oldest one's detection; removed says a peer told this copy its member was removed (record_peers.removed_at), and is false where no peer has told it, including a copy that keeps no peer record, such as the referee's snapshot, where it says nothing",
+        "window": "decisions and learnings created, missions completed and sprints closed (Completed, by end_date) after now minus the window and at or before now; null where the table or its time column is absent",
+        "feedbackKinds": "agent_feedback rows written after now minus the window and at or before now, by kind (a row's kind is that of the first rule in FEEDBACK_KIND_RULES whose pattern matches its text, among rows that name Reasonbook (reasonbook, rbook, cmos or one of their tools); a row that names it nowhere, that no rule matches, or whose first rule is a folded kind's, is unclassified; the tool name decides nothing); null when unavailable"
+      },
+      "signals": [
+        {
+          "kind": "drafts_pending",
+          "available": true,
+          "count": 2,
+          "ids": ["P14", "P15"],
+          "oldestAt": "2026-10-14T09:30:00.000Z"
+        },
+        {
+          "kind": "next_steps_lapsing",
+          "available": true,
+          "count": 4,
+          "ids": ["n:31", "n:7", "n:40", "n:41"],
+          "lapseDue": 1,
+          "oldestAt": "2026-07-02T08:00:00.000Z"
+        },
+        {
+          "kind": "reviews_due",
+          "available": true,
+          "count": 12,
+          "ids": ["d:3", "d:9", "l:2", "l:5"],
+          "becameDue": 4
+        },
+        {
+          "kind": "superseded_cited",
+          "available": true,
+          "count": 1,
+          "ids": ["d:88"]
+        },
+        {
+          "kind": "missions_blocked",
+          "available": true,
+          "count": 1,
+          "ids": ["a3-m02"],
+          "oldestAt": "2026-09-28T16:00:00.000Z"
+        },
+        {
+          "kind": "feedback_open",
+          "available": true,
+          "count": 3,
+          "ids": ["f:11", "f:12", "f:19"],
+          "byKind": {
+            "ceremony": 0,
+            "surfacing": 2,
+            "identity": 0,
+            "sync": 0,
+            "payload": 1
+          },
+          "unclassified": 4
+        },
+        {
+          "kind": "quiet_days",
+          "available": true,
+          "count": 0,
+          "ids": []
+        },
+        {
+          "kind": "constraints_expiring",
+          "available": true,
+          "count": 0,
+          "ids": []
+        },
+        {
+          "kind": "shared_conflicts",
+          "available": false,
+          "count": null,
+          "ids": [],
+          "reason": "not a shared copy (no record_conflicts table)"
+        }
+      ],
+      "window": {
+        "days": 7,
+        "counts": {
+          "decisions": 9,
+          "learnings": 2,
+          "missionsCompleted": 3,
+          "sprintsClosed": 1
+        }
+      },
+      "feedbackKinds": {
+        "available": true,
+        "counts": {
+          "ceremony": 0,
+          "surfacing": 2,
+          "identity": 0,
+          "sync": 0,
+          "payload": 1
+        },
+        "unclassified": 1
+      }
+    },
+    {
+      "schema": "rbook.signals/1",
+      "library": {
+        "name": "@aquex/reasonbook/signals",
+        "version": "4.3.0"
+      },
+      "computedAt": "2026-10-19T12:00:00.000Z",
+      "project": {
+        "id": "birch-7f3a",
+        "name": "Birch Notes"
+      },
+      "rules": {
+        "drafts_pending": "proposals with outcome 'pending' and not revised after an approval (replaced_by unset), drafted at or before now and no more than 7 days before it, with fewer than 3 session starts after the draft and at or before now in this machine's draft runtime; a runtime that is not found or cannot be read is named in the reason, and its drafts expire by age only; an unreadable draft time counts apart as undated; ids oldest first, and oldestAt is the oldest counted draft's time",
+        "next_steps_lapsing": "pending or carried next steps whose lease anchor (the last carry, else the creation) is at or before now and has survived 3 or more closes: sprints with status exactly 'Completed' whose recorded end_date is at or before now and after the anchor; lapseDue counts those at 4 or more closes and 14 days past the anchor, which the next close drops unless they are carried; an unreadable anchor counts apart as undated; ids most closes first, and oldestAt is the oldest counted anchor",
+        "reviews_due": "active decisions and active learnings that are not evergreen, made at or before now, whose review age is 20 or more closes (sprints Completed, without regard to case, closed at or before now and after the close of the row's own sprint, else after its creation), not reviewed in the 280 days before now, and for decisions without evidence and not a replacement in a supersession; the threshold is pinned and RBOOK_STALENESS_THRESHOLD_SPRINTS is not read; becameDue counts the rows due at now that were not due at the window's start; an unreadable anchor counts apart as undated; ids oldest anchor first",
+        "superseded_cited": "decisions and learnings with status 'active', made at or before now, that cite a decision with status 'superseded', by the project's own citation reader (typed citations only where no persisted citation graph exists), leaving out a decision's citations of a decision it replaced, directly or along the chain; statuses are read as stored, not as of now",
+        "missions_blocked": "missions whose status is 'Blocked', longest blocked first by domain_fields.blockedSince, else the newest session_events block row; sinceUnknown counts those with neither; oldestAt is the longest block's start",
+        "feedback_open": "agent_feedback rows with status 'open' written at or before now; count is the friction rows, by kind, and unclassified the rest (a row's kind is that of the first rule in FEEDBACK_KIND_RULES whose pattern matches its text, among rows that name Reasonbook (reasonbook, rbook, cmos or one of their tools); a row that names it nowhere, that no rule matches, or whose first rule is a folded kind's, is unclassified; the tool name decides nothing); an unreadable time counts apart as undated; ids oldest first",
+        "quiet_days": "whole days from the newest occurred_at at or before now, across missions, sprints, sessions, learnings, decisions and next steps, to now; the review calls a project silent after more than 21 days",
+        "constraints_expiring": "active constraints whose expires_at falls after now and within 7 days of it; an unreadable expires_at counts apart as undated",
+        "shared_conflicts": "on a shared copy, the fields copies set apart that no one has settled (record_conflicts), oldest first, and oldestAt is the oldest one's detection; removed says a peer told this copy its member was removed (record_peers.removed_at), and is false where no peer has told it, including a copy that keeps no peer record, such as the referee's snapshot, where it says nothing",
+        "window": "decisions and learnings created, missions completed and sprints closed (Completed, by end_date) after now minus the window and at or before now; null where the table or its time column is absent",
+        "feedbackKinds": "agent_feedback rows written after now minus the window and at or before now, by kind (a row's kind is that of the first rule in FEEDBACK_KIND_RULES whose pattern matches its text, among rows that name Reasonbook (reasonbook, rbook, cmos or one of their tools); a row that names it nowhere, that no rule matches, or whose first rule is a folded kind's, is unclassified; the tool name decides nothing); null when unavailable"
+      },
+      "signals": [
+        {
+          "kind": "drafts_pending",
+          "available": true,
+          "count": 1,
+          "ids": ["P3"],
+          "oldestAt": "2026-10-17T20:15:00.000Z"
+        },
+        {
+          "kind": "next_steps_lapsing",
+          "available": true,
+          "count": 0,
+          "ids": []
+        },
+        {
+          "kind": "reviews_due",
+          "available": true,
+          "count": 30,
+          "ids": ["d:1", "d:2", "l:9"],
+          "becameDue": 0
+        },
+        {
+          "kind": "superseded_cited",
+          "available": true,
+          "count": 0,
+          "ids": []
+        },
+        {
+          "kind": "missions_blocked",
+          "available": true,
+          "count": 0,
+          "ids": []
+        },
+        {
+          "kind": "feedback_open",
+          "available": true,
+          "count": 0,
+          "ids": [],
+          "byKind": {
+            "ceremony": 0,
+            "surfacing": 0,
+            "identity": 0,
+            "sync": 0,
+            "payload": 0
+          },
+          "unclassified": 0
+        },
+        {
+          "kind": "quiet_days",
+          "available": true,
+          "count": 0,
+          "ids": []
+        },
+        {
+          "kind": "constraints_expiring",
+          "available": true,
+          "count": 1,
+          "ids": ["c:4"]
+        },
+        {
+          "kind": "shared_conflicts",
+          "available": true,
+          "count": 2,
+          "ids": ["strategic_decisions:01M5DFZ6D0KA3PG18VTXK3TRPR/status", "missions:s2-m1/name"],
+          "removed": false,
+          "oldestAt": "2026-10-10T11:00:00.000Z"
+        }
+      ],
+      "window": {
+        "days": 7,
+        "counts": {
+          "decisions": 3,
+          "learnings": 1,
+          "missionsCompleted": 0,
+          "sprintsClosed": 0
+        }
+      },
+      "feedbackKinds": {
+        "available": true,
+        "counts": {
+          "ceremony": 0,
+          "surfacing": 0,
+          "identity": 0,
+          "sync": 3,
+          "payload": 0
+        },
+        "unclassified": 0
+      }
+    },
+    {
+      "schema": "rbook.signals/1",
+      "library": {
+        "name": "@aquex/reasonbook/signals",
+        "version": "4.3.0"
+      },
+      "computedAt": "2026-10-19T12:00:00.000Z",
+      "project": {
+        "id": "cedar",
+        "name": null
+      },
+      "rules": {
+        "drafts_pending": "proposals with outcome 'pending' and not revised after an approval (replaced_by unset), drafted at or before now and no more than 7 days before it, by age only: no draft runtime was given, so session starts were not applied; an unreadable draft time counts apart as undated; ids oldest first, and oldestAt is the oldest counted draft's time",
+        "next_steps_lapsing": "pending or carried next steps whose lease anchor (the last carry, else the creation) is at or before now and has survived 3 or more closes: sprints with status exactly 'Completed' whose recorded end_date is at or before now and after the anchor; lapseDue counts those at 4 or more closes and 14 days past the anchor, which the next close drops unless they are carried; an unreadable anchor counts apart as undated; ids most closes first, and oldestAt is the oldest counted anchor",
+        "reviews_due": "active decisions and active learnings that are not evergreen, made at or before now, whose review age is 20 or more closes (sprints Completed, without regard to case, closed at or before now and after the close of the row's own sprint, else after its creation), not reviewed in the 280 days before now, and for decisions without evidence and not a replacement in a supersession; the threshold is pinned and RBOOK_STALENESS_THRESHOLD_SPRINTS is not read; becameDue counts the rows due at now that were not due at the window's start; an unreadable anchor counts apart as undated; ids oldest anchor first",
+        "superseded_cited": "decisions and learnings with status 'active', made at or before now, that cite a decision with status 'superseded', by the project's own citation reader (typed citations only where no persisted citation graph exists), leaving out a decision's citations of a decision it replaced, directly or along the chain; statuses are read as stored, not as of now",
+        "missions_blocked": "missions whose status is 'Blocked', longest blocked first by domain_fields.blockedSince, else the newest session_events block row; sinceUnknown counts those with neither; oldestAt is the longest block's start",
+        "feedback_open": "agent_feedback rows with status 'open' written at or before now; count is the friction rows, by kind, and unclassified the rest (a row's kind is that of the first rule in FEEDBACK_KIND_RULES whose pattern matches its text, among rows that name Reasonbook (reasonbook, rbook, cmos or one of their tools); a row that names it nowhere, that no rule matches, or whose first rule is a folded kind's, is unclassified; the tool name decides nothing); an unreadable time counts apart as undated; ids oldest first",
+        "quiet_days": "whole days from the newest occurred_at at or before now, across missions, sprints, sessions, learnings, decisions and next steps, to now; the review calls a project silent after more than 21 days",
+        "constraints_expiring": "active constraints whose expires_at falls after now and within 7 days of it; an unreadable expires_at counts apart as undated",
+        "shared_conflicts": "on a shared copy, the fields copies set apart that no one has settled (record_conflicts), oldest first, and oldestAt is the oldest one's detection; removed says a peer told this copy its member was removed (record_peers.removed_at), and is false where no peer has told it, including a copy that keeps no peer record, such as the referee's snapshot, where it says nothing",
+        "window": "decisions and learnings created, missions completed and sprints closed (Completed, by end_date) after now minus the window and at or before now; null where the table or its time column is absent",
+        "feedbackKinds": "agent_feedback rows written after now minus the window and at or before now, by kind (a row's kind is that of the first rule in FEEDBACK_KIND_RULES whose pattern matches its text, among rows that name Reasonbook (reasonbook, rbook, cmos or one of their tools); a row that names it nowhere, that no rule matches, or whose first rule is a folded kind's, is unclassified; the tool name decides nothing); null when unavailable"
+      },
+      "signals": [
+        {
+          "kind": "drafts_pending",
+          "available": false,
+          "count": null,
+          "ids": [],
+          "reason": "no proposals table"
+        },
+        {
+          "kind": "next_steps_lapsing",
+          "available": true,
+          "count": 2,
+          "ids": ["n:5", "n:6"],
+          "lapseDue": 2,
+          "oldestAt": "2026-05-20T10:00:00.000Z"
+        },
+        {
+          "kind": "reviews_due",
+          "available": true,
+          "count": 0,
+          "ids": [],
+          "becameDue": 0
+        },
+        {
+          "kind": "superseded_cited",
+          "available": true,
+          "count": 0,
+          "ids": [],
+          "reason": "no persisted citation graph: typed citations only, bare #N not seen"
+        },
+        {
+          "kind": "missions_blocked",
+          "available": true,
+          "count": 0,
+          "ids": []
+        },
+        {
+          "kind": "feedback_open",
+          "available": false,
+          "count": null,
+          "ids": [],
+          "reason": "no agent_feedback table"
+        },
+        {
+          "kind": "quiet_days",
+          "available": true,
+          "count": 64,
+          "ids": []
+        },
+        {
+          "kind": "constraints_expiring",
+          "available": true,
+          "count": 0,
+          "ids": []
+        },
+        {
+          "kind": "shared_conflicts",
+          "available": false,
+          "count": null,
+          "ids": [],
+          "reason": "not a shared copy (no record_conflicts table)"
+        }
+      ],
+      "window": {
+        "days": 7,
+        "counts": {
+          "decisions": 0,
+          "learnings": 0,
+          "missionsCompleted": 0,
+          "sprintsClosed": 0
+        }
+      },
+      "feedbackKinds": {
+        "available": false,
+        "counts": null,
+        "unclassified": null,
+        "reason": "no agent_feedback table"
+      }
+    }
+  ]
+}

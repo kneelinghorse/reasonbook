@@ -10,6 +10,7 @@
  * @module tools/rbook/rbook-sprint-complete
  */
 
+import { formatUploadReceipt, type DashboardUploadReceipt } from './dashboard-upload-receipt';
 import { prepareSpinOutRead, spinOutHistoryLines } from './spin-out-read';
 import { normalizeMissionStatus } from './terminal-status';
 import * as crypto from 'crypto';
@@ -267,6 +268,7 @@ export interface SprintPendingNextStepsSurvey {
  * Result returned by rbook_sprint_complete.
  */
 export interface RbookSprintCompleteResult {
+  dashboardUpload?: DashboardUploadReceipt;
   sprintId: string;
   previousStatus: string | null;
   currentStatus: 'Completed';
@@ -912,7 +914,7 @@ export async function rbookSprintComplete(
       //  (c) drop the advisory entirely — rejected. The growth signal is genuinely useful; it
       //      is the prescription that was wrong, not the observation.
       //
-      // TWO STAGE1 CLAIMS ABOUT THIS SITE WERE REFUTED at plan time and are recorded so a later
+      // TWO REPORTED CLAIMS ABOUT THIS SITE WERE REFUTED at plan time and are recorded so a later
       // sprint does not act on them: the advisory is NOT emitted inside the closeout transaction
       // (it runs after the COMMIT, as the comment above says), and it does NOT auto-prune or
       // otherwise mutate context_snapshots — it only counts rows and bytes.
@@ -1967,6 +1969,7 @@ export function formatSprintCompleteForLLM(
         ];
   const lines = [
     `✓ Sprint '${data.sprintId}' completed`,
+    ...(data.dashboardUpload ? [formatUploadReceipt(data.dashboardUpload)] : []),
     '',
     `Status: ${data.previousStatus ?? 'Unknown'} → ${data.currentStatus}`,
     `Completed at: ${data.completedAt} (stamped as end_date${

@@ -1,0 +1,105 @@
+{
+  "measuredAt": "2026-10-23T06:13:46.164Z",
+  "head": "c7314ace1a935a8d092ef63af9d99d1d7b047e21",
+  "predicate": "git ls-files -z; every UTF-8 file across all extensions; matching lines counted once per class",
+  "counts": {
+    "registration": {
+      "wholeTree": 140,
+      "production": 12
+    },
+    "defaultName": {
+      "wholeTree": 5,
+      "production": 1
+    },
+    "senderAddressMatch": {
+      "wholeTree": 1,
+      "production": 0
+    }
+  },
+  "classes": {
+    "registration": [
+      {
+        "file": "src/auth/auth-state.ts",
+        "line": 38,
+        "text": "* /api/projects/register which itself authenticates via the *user-scoped*"
+      },
+      {
+        "file": "src/auth/auth-state.ts",
+        "line": 46,
+        "text": "*   `registration_auto` — minted by /api/projects/register auto-issue (m02)"
+      },
+      {
+        "file": "src/auth/auth-state.ts",
+        "line": 190,
+        "text": "'No project-scoped key for this project root yet. Sends will use the user-scoped key until /api/projects/register-new auto-issues one.';"
+      },
+      {
+        "file": "src/auth/project-key-capture.ts",
+        "line": 11,
+        "text": "*     `POST /api/projects/register` returns `{ key, keyId, label }` on"
+      },
+      {
+        "file": "src/intelligence/credential-store.ts",
+        "line": 9,
+        "text": "* once m02 lands, by POST /api/projects/register response capture"
+      },
+      {
+        "file": "src/tools/rbook/checkpoint-registration.ts",
+        "line": 158,
+        "text": "dashClient.registerProject({"
+      },
+      {
+        "file": "src/tools/rbook/dashboard-client.ts",
+        "line": 552,
+        "text": "/** Result from POST /api/projects/register-new — project registration. */"
+      },
+      {
+        "file": "src/tools/rbook/dashboard-client.ts",
+        "line": 896,
+        "text": "* when known. Used by `registerProject()` to stamp `parentKeyId` on the auto-issued"
+      },
+      {
+        "file": "src/tools/rbook/dashboard-client.ts",
+        "line": 970,
+        "text": "*      auto-issue capture on `POST /api/projects/register-new`)."
+      },
+      {
+        "file": "src/tools/rbook/dashboard-client.ts",
+        "line": 2249,
+        "text": "* Endpoint: POST /api/projects/register-new (multipart/form-data)"
+      },
+      {
+        "file": "src/tools/rbook/dashboard-client.ts",
+        "line": 2346,
+        "text": "async registerProject(params: {"
+      },
+      {
+        "file": "src/tools/rbook/dashboard-client.ts",
+        "line": 2385,
+        "text": "const url = `${this.baseUrl}/api/projects/register-new`;"
+      }
+    ],
+    "defaultName": [
+      {
+        "file": "src/tools/rbook/rbook-project-init.ts",
+        "line": 586,
+        "text": "projectName = '',"
+      }
+    ],
+    "senderAddressMatch": []
+  },
+  "retainedScopes": {
+    "registration": {
+      "CHANGELOG.md": 1,
+      "rbook": 72,
+      "scripts": 2,
+      "tests": 53
+    },
+    "defaultName": {
+      "tests": 4
+    },
+    "senderAddressMatch": {
+      "tests": 1
+    }
+  }
+}

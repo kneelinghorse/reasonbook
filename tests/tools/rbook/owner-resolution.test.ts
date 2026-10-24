@@ -79,12 +79,100 @@ function stubDashboardClient(opts: {
     return createSuccess({
       projects,
       totalCount: projects.length,
+      ...(opts.username ? { user: { id: 'stub-account', username: opts.username } } : {}),
     });
   };
   return stub;
 }
 
 describe('resolveAndPersistOwner', () => {
+  it('uses the authenticated account identity before a new store has a dashboard id', async () => {
+    const { tempDir, client } = await makeTempClient();
+    try {
+      const dashboard = stubDashboardClient({ username: null });
+      dashboard.getMyProjects = async () =>
+        createSuccess({ projects: [], totalCount: 0, user: { id: 'account', username: 'derek' } });
+      const result = await resolveAndPersistOwner(client, dashboard);
+      expect(result.owner).toBe('derek');
+      expect(readMeta(client, 'dashboard_project_id')).toBeNull();
+    } finally {
+      cleanup(tempDir, client);
+    }
+  });
+
+  it('keeps the stored dashboard id when another store reuses its name', async () => {
+    const { tempDir, client } = await makeTempClient();
+    try {
+      for (const [key, value] of Object.entries({
+        owner: 'derek',
+        dashboard_project_id: 'old-id',
+        dashboard_slug: 'record',
+        project_name: 'Record',
+      }))
+        client.execute('INSERT INTO metadata (key,value) VALUES (?,?)', [key, value]);
+      const result = await resolveAndPersistOwner(
+        client,
+        stubDashboardClient({
+          username: 'derek',
+          projects: [{ id: 'replacement', name: 'Record', slug: 'record', owner: 'derek' }],
+        })
+      );
+      expect(result.incumbentConfirmed).toBe(false);
+      expect(readMeta(client, 'dashboard_project_id')).toBe('old-id');
+    } finally {
+      cleanup(tempDir, client);
+    }
+  });
+
+  it('accepts a renamed project by stored id without a name or slug cross-check', async () => {
+    const { tempDir, client } = await makeTempClient();
+    try {
+      for (const [key, value] of Object.entries({
+        owner: 'derek',
+        dashboard_project_id: 'same-id',
+        dashboard_slug: 'old',
+        project_name: 'Old',
+      }))
+        client.execute('INSERT INTO metadata (key,value) VALUES (?,?)', [key, value]);
+      const result = await resolveAndPersistOwner(
+        client,
+        stubDashboardClient({
+          username: 'derek',
+          projects: [{ id: 'same-id', name: 'New', slug: 'new', owner: 'derek' }],
+        })
+      );
+      expect(result.incumbentConfirmed).toBe(true);
+      expect(readMeta(client, 'dashboard_slug')).toBe('new');
+      expect(readMeta(client, 'dashboard_project_id')).toBe('same-id');
+    } finally {
+      cleanup(tempDir, client);
+    }
+  });
+
+  it('never replaces the stored owner with the newest signed-in account', async () => {
+    const { tempDir, client } = await makeTempClient();
+    try {
+      for (const [key, value] of Object.entries({
+        owner: 'derek',
+        dashboard_project_id: 'same-id',
+        dashboard_slug: 'old',
+      }))
+        client.execute('INSERT INTO metadata (key,value) VALUES (?,?)', [key, value]);
+      const result = await resolveAndPersistOwner(
+        client,
+        stubDashboardClient({
+          username: 'darryl',
+          projects: [{ id: 'same-id', name: 'Other', slug: 'other', owner: 'darryl' }],
+        })
+      );
+      expect(result.owner).toBe('derek');
+      expect(result.incumbentConfirmed).toBe(false);
+      expect(readMeta(client, 'dashboard_slug')).toBe('old');
+    } finally {
+      cleanup(tempDir, client);
+    }
+  });
+
   it('reconciles a registered owner repeatedly without dirtying unchanged metadata', async () => {
     const { tempDir, client } = await makeTempClient();
     try {
@@ -94,7 +182,10 @@ describe('resolveAndPersistOwner', () => {
         projectsId: 'registered-project',
         projectsSlug: 'owner-test',
       });
-      // Seed through the same reconciliation that a first checkpoint performs. The presence of
+      client.execute(
+        "INSERT INTO metadata (key,value) VALUES ('dashboard_project_id','registered-project')"
+      );
+      // A registration stores the id before subsequent reconciliation. The presence of
       // dashboard_project_id deliberately prevents the owner's early-return path on later calls.
       await resolveAndPersistOwner(client, dashboard);
       const changes = () =>
@@ -145,9 +236,10 @@ describe('resolveAndPersistOwner', () => {
     }
   });
 
-  it('falls back to projects[0].owner when cachedIdentity.username is null (API-key auth)', async () => {
+  it('falls back to the stored-id project owner when cachedIdentity is absent', async () => {
     const { tempDir, client } = await makeTempClient();
     try {
+      client.execute("INSERT INTO metadata (key,value) VALUES ('dashboard_project_id','p1')");
       const result = await resolveAndPersistOwner(
         client,
         stubDashboardClient({ username: null, projectsOwner: 'derek' })
@@ -163,6 +255,7 @@ describe('resolveAndPersistOwner', () => {
   it('parses owner from the dashboard address when the owner field is absent', async () => {
     const { tempDir, client } = await makeTempClient();
     try {
+      client.execute("INSERT INTO metadata (key,value) VALUES ('dashboard_project_id','p1')");
       const result = await resolveAndPersistOwner(
         client,
         stubDashboardClient({
@@ -222,7 +315,7 @@ describe('resolveAndPersistOwner', () => {
       const result = await resolveAndPersistOwner(
         client,
         stubDashboardClient({
-          username: null,
+          username: 'derek',
           projectsId: 'ddb34d24-30e3-4eb3-b13c-20b106a75970',
           projectsSlug: 'stage1',
           projectsRbookAddress: 'rbook://derek/stage1',
@@ -237,7 +330,7 @@ describe('resolveAndPersistOwner', () => {
     }
   });
 
-  it('repairs stale dashboard_project_id by matching the local project slug/name', async () => {
+  it('does not replace a missing stored id with a matching project name', async () => {
     const { tempDir, client } = await makeTempClient();
     try {
       client.execute(`INSERT INTO metadata (key, value) VALUES ('dashboard_project_id', ?)`, [
@@ -250,7 +343,7 @@ describe('resolveAndPersistOwner', () => {
       const result = await resolveAndPersistOwner(
         client,
         stubDashboardClient({
-          username: null,
+          username: 'derek',
           projectsId: 'ddb34d24-30e3-4eb3-b13c-20b106a75970',
           projectsSlug: 'stage1',
           projectsRbookAddress: 'rbook://derek/stage1',
@@ -258,15 +351,16 @@ describe('resolveAndPersistOwner', () => {
       );
 
       expect(result.owner).toBe('derek');
-      expect(readMeta(client, 'dashboard_project_id')).toBe('ddb34d24-30e3-4eb3-b13c-20b106a75970');
-      expect(readMeta(client, 'dashboard_slug')).toBe('stage1');
+      expect(readMeta(client, 'dashboard_project_id')).toBe('09fb9553-6413-479a-8a5c-af6a9d949ae6');
+      expect(readMeta(client, 'dashboard_slug')).toBe('stage1-2');
+      expect(result.incumbentConfirmed).toBe(false);
       expect(readMeta(client, 'owner')).toBe('derek');
     } finally {
       cleanup(tempDir, client);
     }
   });
 
-  it('prefers local slug/name hints over a stale canonical rbook_address', async () => {
+  it('does not adopt a project from either a name or a stale canonical address', async () => {
     const { tempDir, client } = await makeTempClient();
     try {
       client.execute(`INSERT INTO metadata (key, value) VALUES ('dashboard_project_id', ?)`, [
@@ -278,13 +372,17 @@ describe('resolveAndPersistOwner', () => {
       client.execute(
         `INSERT INTO contexts (id, source_path, content, updated_at)
          VALUES ('project_identity', 'rbook/contexts/project-identity.json', ?, datetime('now'))`,
-        [JSON.stringify({ [LEGACY.identityAddressKey]: `${LEGACY.addressScheme}derek/parts-town` })]
+        [
+          JSON.stringify({
+            [LEGACY.identityAddressKey]: `${LEGACY.addressScheme}derek/example-project`,
+          }),
+        ]
       );
 
       const result = await resolveAndPersistOwner(
         client,
         stubDashboardClient({
-          username: null,
+          username: 'derek',
           projectsId: 'ddb34d24-30e3-4eb3-b13c-20b106a75970',
           projectsSlug: 'stage1',
           projectsRbookAddress: 'rbook://derek/stage1',
@@ -292,20 +390,23 @@ describe('resolveAndPersistOwner', () => {
       );
 
       expect(result.owner).toBe('derek');
-      expect(readMeta(client, 'dashboard_project_id')).toBe('ddb34d24-30e3-4eb3-b13c-20b106a75970');
-      expect(readMeta(client, 'dashboard_slug')).toBe('stage1');
+      expect(readMeta(client, 'dashboard_project_id')).toBe('09fb9553-6413-479a-8a5c-af6a9d949ae6');
+      expect(readMeta(client, 'dashboard_slug')).toBe('stage1-2');
+      expect(result.incumbentConfirmed).toBe(false);
     } finally {
       cleanup(tempDir, client);
     }
   });
 
-  it('overrides a conflicting dashboard_project_id when its project slug disagrees with local hints', async () => {
+  it('keeps a stored dashboard id even when local name hints disagree', async () => {
     const { tempDir, client } = await makeTempClient();
     try {
       client.execute(`INSERT INTO metadata (key, value) VALUES ('dashboard_project_id', ?)`, [
         '96ce2349-b7e7-45b1-99e3-23277db407f5',
       ]);
-      client.execute(`INSERT INTO metadata (key, value) VALUES ('dashboard_slug', 'parts-town')`);
+      client.execute(
+        `INSERT INTO metadata (key, value) VALUES ('dashboard_slug', 'example-project')`
+      );
       client.execute(`INSERT INTO metadata (key, value) VALUES ('project_id', 'stage1')`);
       client.execute(`INSERT INTO metadata (key, value) VALUES ('project_name', 'Stage1')`);
 
@@ -316,9 +417,9 @@ describe('resolveAndPersistOwner', () => {
           projects: [
             {
               id: '96ce2349-b7e7-45b1-99e3-23277db407f5',
-              name: 'Parts Town',
-              slug: 'parts-town',
-              [LEGACY.wireAddressKey]: `${LEGACY.addressScheme}derek/parts-town`,
+              name: 'Example Project',
+              slug: 'example-project',
+              [LEGACY.wireAddressKey]: `${LEGACY.addressScheme}derek/example-project`,
             },
             {
               id: 'ddb34d24-30e3-4eb3-b13c-20b106a75970',
@@ -331,8 +432,8 @@ describe('resolveAndPersistOwner', () => {
       );
 
       expect(result.owner).toBe('derek');
-      expect(readMeta(client, 'dashboard_project_id')).toBe('ddb34d24-30e3-4eb3-b13c-20b106a75970');
-      expect(readMeta(client, 'dashboard_slug')).toBe('stage1');
+      expect(readMeta(client, 'dashboard_project_id')).toBe('96ce2349-b7e7-45b1-99e3-23277db407f5');
+      expect(readMeta(client, 'dashboard_slug')).toBe('example-project');
     } finally {
       cleanup(tempDir, client);
     }
@@ -377,20 +478,20 @@ describe('resolveAndPersistOwner', () => {
     }
   });
 
-  it('s81-m02: single-project account still adopts its sole project (unambiguous fallback preserved)', async () => {
+  it('never adopts a project for an unregistered store even when the account has only one', async () => {
     const { tempDir, client } = await makeTempClient();
     try {
       const result = await resolveAndPersistOwner(
         client,
         stubDashboardClient({
-          username: null,
+          username: 'derek',
           projects: [{ id: 'p-solo', name: 'Solo', slug: 'solo', owner: 'derek' }],
         })
       );
 
       expect(result.owner).toBe('derek');
-      expect(readMeta(client, 'dashboard_slug')).toBe('solo');
-      expect(readMeta(client, 'dashboard_project_id')).toBe('p-solo');
+      expect(readMeta(client, 'dashboard_slug')).toBeNull();
+      expect(readMeta(client, 'dashboard_project_id')).toBeNull();
     } finally {
       cleanup(tempDir, client);
     }

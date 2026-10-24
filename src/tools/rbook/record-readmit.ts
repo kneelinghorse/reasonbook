@@ -4,6 +4,10 @@
 import type { RbookDatabaseClient } from './client';
 import { createError, createSuccess } from './errors';
 import { canonicalJson } from './record-capture';
+import { authorityValue } from './record-authority';
+import { activeProtocolCopies } from './record-protocol-active';
+import { readerRefusal } from './record-reader-gate';
+import { ReplicaRefusal } from './replica-identity';
 import { recordOwnChanges } from './record-changes';
 import { rejudgeTransactions } from './record-decide';
 import { carriedSetAsideCuts, setAsideCut } from './record-member-cuts';
@@ -76,6 +80,28 @@ function removalQuarantines(
   });
 }
 
+/** Remove temporary removal cuts in the preview, retaining every permanent/recovery exclusion. */
+function restoredContext(ctx: MergeContext, member: MemberView, role: string): MergeContext {
+  const members = new Map(ctx.members);
+  const dropped = new Set<string>();
+  for (const term of ctx.terms) {
+    if (term.ended === 'recovery') dropped.add(term.replicaId);
+    if (term.change)
+      for (const id of Object.keys(authorityValue(term.change).dropped ?? {})) dropped.add(id);
+  }
+  for (const [id, copy] of members) {
+    if (copy.member !== member.memberId || dropped.has(id)) continue;
+    const cut = setAsideCut(ctx, id);
+    members.set(id, {
+      ...copy,
+      role,
+      cut,
+      cutReason: cut === undefined ? undefined : copy.cutReason,
+    });
+  }
+  return { ...ctx, members };
+}
+
 /** Restore only removal cuts; do not use a human-readable cause as a permission to accept work. */
 export function readmit(
   client: RbookDatabaseClient,
@@ -84,27 +110,53 @@ export function readmit(
 ): RbookToolResult<
   MemberView & { readonly invited: boolean; readonly accepted: number; readonly refused: number }
 > {
-  const before = mergeContext(client);
-  const candidates = removalQuarantines(client, before, member);
   const done = client.writeTransaction(() => {
-    return recordOwnChanges(client, [
+    const before = mergeContext(client);
+    const returning = activeProtocolCopies(
+      client,
+      restoredContext(before, member, role),
+      true
+    ).filter((copy) => copy.memberId === member.memberId);
+    const refusals = returning.flatMap((copy) => {
+      const refusal = readerRefusal(client, copy.replicaId, copy, member.name, before);
+      return refusal ? [refusal] : [];
+    });
+    if (refusals.length)
+      throw new ReplicaRefusal({
+        ...refusals[0],
+        message: refusals.map((refusal) => refusal.message).join(' '),
+        suggestion: `Ask ${member.name} to upgrade and sync once while still removed, then invite again.`,
+      });
+    const candidates = removalQuarantines(client, before, member);
+    recordOwnChanges(
+      client,
+      [
+        {
+          kind: 'member',
+          entity: 'member',
+          entityId: member.memberId,
+          field: null,
+          value: canonicalJson({
+            name: member.name,
+            role,
+            ...carriedSetAsideCuts(before, member.memberId),
+          }),
+        },
+      ],
       {
-        kind: 'member',
-        entity: 'member',
-        entityId: member.memberId,
-        field: null,
-        value: canonicalJson({
-          name: member.name,
-          role,
-          ...carriedSetAsideCuts(before, member.memberId),
-        }),
-      },
-    ]);
+        admittingReads: returning.reduce<number | null>(
+          (least, copy) =>
+            least === null || copy.reads === null ? null : Math.min(least, copy.reads),
+          2
+        ),
+      }
+    );
+    return candidates;
   });
   if (!done.success) return createError(done.error!);
   const after = mergeContext(client);
-  const eligible = candidates
-    .filter((txn) => {
+  const eligible = done
+    .data!.filter((txn) => {
       const cut = after.members.get(txn.replica_id)?.cut;
       return cut === undefined || txn.last <= cut;
     })

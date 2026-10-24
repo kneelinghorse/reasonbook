@@ -897,9 +897,8 @@ describe('Error handling', () => {
     );
   });
 
-  // s84-m02 SC4: a 401 STILL clears the cached token (unchanged behavior) — an apiKey
-  // client with no re-login path then sends `Bearer null` on the next call, proving the clear.
-  it('401 STILL clears the cached token', async () => {
+  // An intermediary's 401 must not destroy the only credential an API-key client has.
+  it('401 preserves an API key so a later attempt can recover', async () => {
     mockFetch
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401 })
@@ -919,8 +918,9 @@ describe('Error handling', () => {
 
     await client.listMessages();
     const [, secondOpts] = mockFetch.mock.calls[1];
-    // Token was cleared by the 401 → the next call carries `Bearer null`.
-    expect((secondOpts?.headers as Record<string, string>)['Authorization']).toBe('Bearer null');
+    expect((secondOpts?.headers as Record<string, string>)['Authorization']).toBe(
+      'Bearer cmk_live-key'
+    );
   });
 
   it('returns DASHBOARD_NOT_FOUND for 404 response', async () => {
@@ -1277,7 +1277,7 @@ describe('registerProject', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('should POST multipart form to /api/projects/register with API key', async () => {
+  it('should POST multipart form to /api/projects/register-new with API key', async () => {
     const registerData = {
       slug: 'my-project',
       projectId: 'proj-uuid-123',
@@ -1311,7 +1311,7 @@ describe('registerProject', () => {
     // Verify the fetch call
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const [url, options] = mockFetch.mock.calls[0];
-    expect(url).toBe('http://localhost:3100/api/projects/register');
+    expect(url).toBe('http://localhost:3100/api/projects/register-new');
     expect(options?.method).toBe('POST');
 
     // Verify auth header
@@ -1325,7 +1325,7 @@ describe('registerProject', () => {
     expect(await (formData.get('database') as Blob).text()).toBe('fake-sqlite-data');
   });
 
-  it('should handle re-registration (200 response)', async () => {
+  it('refuses a re-registration response instead of adopting another record', async () => {
     const registerData = {
       slug: 'my-project',
       projectId: 'proj-uuid-123',
@@ -1350,8 +1350,9 @@ describe('registerProject', () => {
       sqlitePath: tmpFilePath,
     });
 
-    expect(result.success).toBe(true);
-    expect(result.data?.reregistered).toBe(true);
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe('UNSAFE_REGISTRATION_RESPONSE');
+    expect(result.data).toBeUndefined();
   });
 
   it('should include localDbPath in form data when provided', async () => {
@@ -1512,7 +1513,7 @@ describe('registerProject', () => {
     expect(result.success).toBe(true);
     expect(mockFetch).toHaveBeenCalledTimes(2);
     expect(mockFetch.mock.calls[0][0]).toBe('http://localhost:3100/api/auth/login');
-    expect(mockFetch.mock.calls[1][0]).toBe('http://localhost:3100/api/projects/register');
+    expect(mockFetch.mock.calls[1][0]).toBe('http://localhost:3100/api/projects/register-new');
   });
 });
 

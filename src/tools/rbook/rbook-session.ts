@@ -46,6 +46,7 @@ import {
   type RbookSessionSearchResult,
 } from './rbook-session-search';
 import { triggerCheckpointBackfill } from './checkpoint-backfill';
+import { closeUploadReceipt } from './dashboard-upload-receipt';
 
 export const RBOOK_SESSION_ACTIONS = ['list', 'start', 'capture', 'complete', 'search'] as const;
 
@@ -439,7 +440,8 @@ export async function rbookSession(
         citesLearningIds: params.citesLearningIds,
         projectRoot: params.projectRoot,
       } as RbookSessionCompleteParams);
-      if (result.success) {
+      if (result.success && result.data) {
+        result.data.dashboardUpload = await closeUploadReceipt(params.projectRoot);
         triggerCheckpointBackfill({ projectRoot: params.projectRoot, force: false });
       }
       return result;

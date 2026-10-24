@@ -33,7 +33,7 @@ export const CONSTRAINTS_EXPIRING_DAYS = 7;
 
 export function feedbackOpen(ctx: RecordsContext): SignalEntry {
   const columns = columnsOf(ctx.db, 'agent_feedback');
-  if (!columns.size) return unavailable('feedback_open', 'no agent_feedback table');
+  if (!columns.size) return unavailable('feedback_open', 'no feedback yet');
   if (!columns.has('status') || !columns.has('body'))
     return unavailable('feedback_open', 'agent_feedback has no status or body column');
   const created = columns.has('created_at') ? 'created_at' : 'NULL AS created_at';
@@ -204,9 +204,7 @@ export function windowFeedbackKinds(ctx: RecordsContext, days: number): Feedback
       available: false,
       counts: null,
       unclassified: null,
-      reason: columns.size
-        ? 'agent_feedback has no body or created_at column'
-        : 'no agent_feedback table',
+      reason: columns.size ? 'agent_feedback has no body or created_at column' : 'no feedback yet',
     };
   }
   const start = ctx.nowMs - days * DAY_MS;

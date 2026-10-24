@@ -289,9 +289,39 @@ it('discloses a locked store without waiting for a writer or mutating the unlock
   }
 });
 
-it('shows the open fleet count in the shared digest with stable bytes and explicit partial coverage', async () => {
+it('keeps fleet feedback out of the first digest even when another project has feedback', async () => {
   const local = path.join(root, 'local');
   seedRbookDb(local, { projectId: 'local' });
+  insert(store('alpha'), 1);
+  const before = hash(local);
+  const model = await readDigestV2(local, { RBOOK_CONFIG_DIR: process.env.RBOOK_CONFIG_DIR });
+  expect(model.feedback).toBeNull();
+  expect(renderDigestV2(model).text).not.toContain('Fleet feedback');
+  expect(hash(local)).toBe(before);
+});
+
+it('keeps local feedback visible when it is the project’s only durable record', async () => {
+  const local = path.join(root, 'local');
+  seedRbookDb(local, { projectId: 'local' });
+  store('local');
+  insert(local, 1);
+  const model = await readDigestV2(local, { RBOOK_CONFIG_DIR: process.env.RBOOK_CONFIG_DIR });
+  expect(model.emptyRecord).toBe(false);
+  expect(model.feedback).toContain('Fleet feedback: 1 open; 1/1 stores');
+});
+
+it('shows fleet feedback for a mature quiet store with stable bytes and explicit partial coverage', async () => {
+  const local = path.join(root, 'local');
+  seedRbookDb(local, { projectId: 'local' });
+  // Nothing appears in the recent section, but this is still an established project.
+  const localDb = new Database(dbFile(local));
+  localDb
+    .prepare('INSERT INTO strategic_decisions(decision_text, created_at) VALUES (?, ?)')
+    .run(
+      'An earlier choice remains part of this project.',
+      new Date(Date.now() - 30 * 86_400_000).toISOString()
+    );
+  localDb.close();
   const a = store('alpha');
   insert(a, 1);
   insert(a, 2, 'triaged');

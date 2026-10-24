@@ -1,0 +1,135 @@
+{
+  "measuredAt": "2026-10-23T04:00:14.262Z",
+  "head": "a6b59b4e0384829d7e18648f9bfbf999192c0e26",
+  "predicate": "git ls-files -z; every UTF-8 file across all extensions; matching lines counted once per class",
+  "counts": {
+    "renameResidue": {
+      "wholeTree": 298,
+      "production": 0
+    },
+    "nameFallback": {
+      "wholeTree": 282,
+      "production": 13
+    },
+    "unsharedGenericError": {
+      "wholeTree": 13,
+      "production": 6
+    }
+  },
+  "classes": {
+    "renameResidue": [],
+    "nameFallback": [
+      {
+        "file": "src/cli/brief.ts",
+        "line": 42,
+        "text": "return { ...report, project: { id: error.projectId, name: null } };"
+      },
+      {
+        "file": "src/cli/signals.ts",
+        "line": 55,
+        "text": "const name = report.project.name ?? report.project.id;"
+      },
+      {
+        "file": "src/signals/brief-text.ts",
+        "line": 28,
+        "text": "return name && name !== id ? `${plain(name)} (${plain(id)})` : plain(id);"
+      },
+      {
+        "file": "src/signals/brief-text.ts",
+        "line": 110,
+        "text": "? `; ${brief.unreadable.length} could not be read (${brief.unreadable.map((id) => plain(id)).join(', ')})`"
+      },
+      {
+        "file": "src/signals/brief-text.ts",
+        "line": 113,
+        "text": "? `; ${brief.partly.length} had a signal that could not be read (${brief.partly.map((id) => plain(id)).join(', ')})`"
+      },
+      {
+        "file": "src/signals/read-signals.ts",
+        "line": 140,
+        "text": "return identity ? content?.project_name : (content?.project_identity ?? content?.project)?.name;"
+      },
+      {
+        "file": "src/signals/read-signals.ts",
+        "line": 280,
+        "text": "project: { id: storeProjectId(() => undefined), name: null },"
+      },
+      {
+        "file": "src/tools/rbook/project-identity.ts",
+        "line": 427,
+        "text": "getMetadataValue(client, 'dashboard_slug') ?? current.project_name ?? current.project_id ?? '';"
+      },
+      {
+        "file": "src/tools/rbook/rbook-context-project-identity.ts",
+        "line": 109,
+        "text": "(field === 'project_name' || field === 'project_id') &&"
+      },
+      {
+        "file": "src/tools/rbook/rbook-feedback.ts",
+        "line": 362,
+        "text": "message: `Project ${JSON.stringify(projectName ?? projectId)} (${JSON.stringify(projectId)}). Resolved ${data.resolved.length} feedback row${data.resolved.length === 1 ? '' : 's'}: ${data.resolved"
+      },
+      {
+        "file": "src/tools/rbook/record-changes.ts",
+        "line": 388,
+        "text": "recordChanges(client, transactionId(client), drafts, { name: null, userId: null });"
+      },
+      {
+        "file": "src/tools/rbook/wire-descriptions.ts",
+        "line": 61,
+        "text": "name: null,"
+      },
+      {
+        "file": "src/tools/rbook/wire-descriptions.ts",
+        "line": 289,
+        "text": "name: null,"
+      }
+    ],
+    "unsharedGenericError": [
+      {
+        "file": "src/tools/rbook/record-changes.ts",
+        "line": 325,
+        "text": "if (!identity) throw new Error('Only a copy of a shared record keeps a change log.');"
+      },
+      {
+        "file": "src/tools/rbook/record-import-apply.ts",
+        "line": 131,
+        "text": "if (!identity) throw new Error('Only a copy of a shared record takes in an import.');"
+      },
+      {
+        "file": "src/tools/rbook/record-import-plan.ts",
+        "line": 153,
+        "text": "if (!identity) throw new Error('Only a copy of a shared record takes in an import.');"
+      },
+      {
+        "file": "src/tools/rbook/replica-check.ts",
+        "line": 266,
+        "text": "if (!old) throw new Error('This store is not a copy of a shared record; nothing re-identifies.');"
+      },
+      {
+        "file": "src/tools/rbook/replica-identity.ts",
+        "line": 187,
+        "text": "if (!projectId) throw new Error('A shared record needs a recorded project_id.');"
+      },
+      {
+        "file": "src/tools/rbook/replica-identity.ts",
+        "line": 343,
+        "text": "throw new Error('Only a copy of a shared record takes sequences.');"
+      }
+    ]
+  },
+  "retainedScopes": {
+    "renameResidue": {
+      "rbook": 282,
+      "tests": 16
+    },
+    "nameFallback": {
+      "CHANGELOG.md": 1,
+      "rbook": 220,
+      "tests": 48
+    },
+    "unsharedGenericError": {
+      "tests": 7
+    }
+  }
+}

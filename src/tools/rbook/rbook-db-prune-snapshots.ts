@@ -3,7 +3,7 @@
 // ABOUTME: snapshot copies. A dry run unless confirm=true; applying snapshots the database first.
 
 /**
- * Stage1 asked for this (msg 738cb21e): 1,192 snapshot rows, 49.2 MB, no supported way to reclaim
+ * Requested in msg 738cb21e: 1,192 snapshot rows, 49.2 MB, no supported way to reclaim
  * them, and a local DELETE is unsafe because the table is event-sourced and referenced.
  *
  * WHAT A PRUNE NEVER DOES: delete a row. It empties the content, stamps `content_pruned_at` and

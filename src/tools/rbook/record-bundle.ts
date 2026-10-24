@@ -5,7 +5,8 @@
 import { createHash } from 'crypto';
 import type { RbookDatabaseClient } from './client';
 import { createError, createSuccess } from './errors';
-import { applyRemote, changesSince, type ApplyReport } from './record-apply';
+import { applyRemote, type ApplyReport } from './record-apply';
+import { changesSinceReport, type ChangeSelection } from './record-since';
 import { embedLive } from './record-apply-embed';
 import { attachWarnings } from './format-warnings';
 import { canonicalJson } from './record-capture';
@@ -66,12 +67,22 @@ export function writeBundle(
   since: Readonly<Record<string, number>>,
   recipient: Pick<CopyReport, 'reads'> = {}
 ): Bundle {
+  return writeBundleReport(client, since, recipient).bundle;
+}
+
+/** Keep sender diagnostics beside the bundle, never inside its hashed wire payload. */
+export function writeBundleReport(
+  client: RbookDatabaseClient,
+  since: Readonly<Record<string, number>>,
+  recipient: Pick<CopyReport, 'reads'> = {}
+): Omit<ChangeSelection, 'changes'> & { readonly bundle: Bundle } {
   const self = hello(client);
   const assumed = Object.fromEntries(
     Object.entries(since).filter(
       ([replicaId, mark]) => mark > 0 && (self.marks[replicaId] ?? 0) >= mark
     )
   );
+  const selected = changesSinceReport(client, since, recipient);
   const body: Omit<Bundle, 'hash'> = {
     format: BUNDLE_FORMAT,
     protocol: SYNC_PROTOCOL,
@@ -79,9 +90,13 @@ export function writeBundle(
     from: self,
     since,
     chains: chainsAt(client, assumed),
-    changes: changesSince(client, since, recipient),
+    changes: selected.changes,
   };
-  return { ...body, hash: contentHash(body) };
+  return {
+    bundle: { ...body, hash: contentHash(body) },
+    withheld: selected.withheld,
+    withheldProtocol: selected.withheldProtocol,
+  };
 }
 
 /** A refusal, its remedy named where it is authored. */

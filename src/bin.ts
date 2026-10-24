@@ -90,11 +90,20 @@ if (require.main === module) {
   } else if (target.kind === 'cli') {
     void import('./cli').then((cli) => cli.main(target.argv));
   } else {
-    void import('./cli/usage').then(async ({ firstUnknownOption }) => {
+    void import('./cli/usage').then(async ({ firstUnknownOption, unexpectedArgument }) => {
       if (firstUnknownOption('serve', target.argv)) {
         process.stderr.write('reasonbook: unknown option. Use reasonbook --help for usage.\n');
         process.exitCode = 1;
         return;
+      }
+      const stray = unexpectedArgument('serve', target.argv);
+      if (stray) {
+        process.stderr.write(`reasonbook: ${stray}\n`);
+        process.exitCode = 1;
+        return;
+      }
+      if (process.argv.length === 2 && process.stdin.isTTY) {
+        process.stderr.write('Serving MCP; use reasonbook --help for terminal commands.\n');
       }
       (await import('./index')).runServer(target.argv);
     });

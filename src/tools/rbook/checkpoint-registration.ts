@@ -4,7 +4,8 @@
 
 import { withClientAsync } from './client';
 import { DashboardClient } from './dashboard-client';
-import { createSuccess } from './errors';
+import { createSuccess, RbookErrors } from './errors';
+import type { RbookToolError } from './types';
 import { resolveAndPersistOwner } from './owner-resolution';
 import { isMembersCopy } from './record-membership';
 import { backfillUnknownRbookAddress } from './project-identity';
@@ -14,6 +15,8 @@ import type { KeySource } from '../../intelligence/credential-store';
 import { withUploadSnapshot, uploadLog as log } from './dashboard-upload';
 
 interface CheckResult {
+  error?: RbookToolError;
+  ownerConfirmed?: boolean;
   sqlitePath: string;
   projectSlug: string | null;
   expectedSlug: string | null;
@@ -105,10 +108,18 @@ export async function checkAndRegister(
         try {
           const ownerResult = await resolveAndPersistOwner(client, dashClient);
           incumbentConfirmed = ownerResult.incumbentConfirmed;
+          captured.ownerConfirmed = ownerResult.ownerConfirmed;
           warnings.push(...(ownerResult.warnings ?? []));
+          if (ownerResult.error) {
+            captured.error = ownerResult.error;
+            return createSuccess(undefined);
+          }
           backfillUnknownRbookAddress(client);
-        } catch {
-          // best-effort — never block the registration/sync flow
+        } catch (error) {
+          captured.error = RbookErrors.dashboardError(
+            `Owner reconciliation failed: ${error instanceof Error ? error.message : String(error)}`
+          );
+          return createSuccess(undefined);
         }
 
         // Check if already registered
@@ -182,6 +193,9 @@ export async function checkAndRegister(
               (result.data.reregistered ? ' (re-registration)' : '')
           );
           captured.projectSlug = result.data.slug;
+          // A fresh create-only response may allocate a suffix when a different name has the
+          // same normalized slug. Its returned id/slug, not the original name, owns this upload.
+          captured.expectedSlug = result.data.slug;
 
           // Sprint 57 m02: capture the auto-issued project-scoped key into the
           // local credential store so subsequent sends bear it via
@@ -218,6 +232,7 @@ export async function checkAndRegister(
             }
           }
         } else if (!result.success) {
+          captured.error = result.error;
           log(`Registration failed: ${result.error?.message ?? 'unknown'}`);
         }
 
@@ -226,8 +241,16 @@ export async function checkAndRegister(
       { projectRoot }
     );
   } catch (error) {
-    log(`Registration check failed: ${error instanceof Error ? error.message : String(error)}`);
-    return null;
+    const message = `Registration check failed: ${error instanceof Error ? error.message : String(error)}`;
+    log(message);
+    return {
+      error: RbookErrors.dashboardError(message),
+      sqlitePath: '',
+      projectSlug: null,
+      expectedSlug: null,
+      projectId: null,
+      warnings,
+    };
   }
 
   return captured;

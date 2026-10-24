@@ -5,8 +5,7 @@ import { createSuccess } from '../../src/tools/rbook/errors';
 import { recordOwnChanges } from '../../src/tools/rbook/record-changes';
 import { upgradeRecordProtocolForTesting } from '../../src/tools/rbook/record-protocol';
 import { changesSince } from '../../src/tools/rbook/record-since';
-import type { LoggedChange } from '../../src/tools/rbook/record-standing';
-import { peer, peers } from '../../src/referee';
+import { peer, peers, refereeStatus } from '../../src/referee';
 import { withReferee } from '../../src/referee/open';
 import { replicaFixture, type ReplicaFixture } from '../helpers/replica-fixture';
 import { ask, callerOf, hostProject } from '../helpers/referee-fixture';
@@ -17,7 +16,7 @@ beforeEach(() => {
 });
 afterEach(() => fixture.restore());
 
-it('legacy paged and unpaged requests hold protocol2 and report only actually served marks', async () => {
+it('legacy requests disclose held protocol2 without claiming served marks and upgrade recovers the stream', async () => {
   const hosted = await hostProject(fixture.tmp);
   const caller = await callerOf(fixture.tmp, hosted.owner, hosted.ownerAccount);
   const changed = await ask(hosted.referee, (at) =>
@@ -47,22 +46,24 @@ it('legacy paged and unpaged requests hold protocol2 and report only actually se
   expect((await ask(hosted.referee, (at) => peer(at, 'hello', { reads: 1 }, caller))).success).toBe(
     true
   );
+  const before = (await ask(hosted.referee, peers)).data?.find(
+    (copy) => copy.replicaId === caller.replicaId
+  )?.servedThrough;
   const page = await ask(hosted.referee, (at) =>
     peer(at, 'changesSince', { marks: {}, maxBytes: 1024 * 1024 }, caller)
   );
-  expect(page.success).toBe(true);
-  const delivered = page.data as { changes: LoggedChange[]; more: boolean };
-  expect(delivered.more).toBe(false);
-  expect(delivered.changes.some((row) => row.protocol_version > 1)).toBe(false);
-  const expected: Record<string, number> = {};
-  for (const row of delivered.changes)
-    expected[row.replica_id] = Math.max(expected[row.replica_id] ?? 0, row.replica_seq);
+  expect(page.success).toBe(false);
+  expect(page.error?.code).toBe('REFEREE_READS_OLD_PROTOCOL');
+  expect(page.error?.message).toMatch(/^Upgrade Reasonbook here/);
+  expect(page.error?.suggestion).toMatch(/upgrade|sync/i);
+  expect(page.error?.suggestion).not.toMatch(/move --to owner/);
+  expect(refereeStatus(page)).toBe(409);
   const copies = await ask(hosted.referee, peers);
   expect(copies.data?.find((copy) => copy.replicaId === caller.replicaId)?.servedThrough).toEqual(
-    expected
+    before
   );
   const raw = await ask(hosted.referee, (at) => peer(at, 'changesSince', {}, caller));
-  expect(raw.data).toEqual(delivered.changes);
+  expect(raw.error).toEqual(page.error);
   await ask(hosted.referee, (at) => peer(at, 'hello', { reads: 2 }, caller));
   expect((await ask(hosted.referee, (at) => peer(at, 'changesSince', {}, caller))).data).toEqual(
     full

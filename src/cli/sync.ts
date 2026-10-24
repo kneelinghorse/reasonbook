@@ -9,7 +9,7 @@ import { createError, createSuccess } from '../tools/rbook/errors';
 import {
   importBundleAndEmbed,
   readBundle,
-  writeBundle,
+  writeBundleReport,
   type Bundle,
 } from '../tools/rbook/record-bundle';
 import {
@@ -21,6 +21,7 @@ import {
 } from '../tools/rbook/record-join';
 import { memberNamed } from '../tools/rbook/record-membership';
 import { copyReport } from '../tools/rbook/record-copy-report';
+import { protocolDeliveryNotice } from '../tools/rbook/record-protocol-notice';
 import { reportedCopy } from '../tools/rbook/record-peer-report';
 import { forgetPeers, peerMarks, recordExchanged } from '../tools/rbook/record-peers';
 import { COPY_KEYS, writeCopyKey } from '../tools/rbook/replica-copy-keys';
@@ -162,21 +163,27 @@ export async function runSync(argv: readonly string[], io: CliIo): Promise<numbe
             });
           target = replica;
         }
+        const selected = writeBundleReport(
+          client,
+          target ? peerMarks(client, target) : {},
+          target ? reportedCopy(client, target) : {}
+        );
         return createSuccess(
-          writeBundle(
-            client,
-            target ? peerMarks(client, target) : {},
-            target ? reportedCopy(client, target) : {}
-          )
+          selected.bundle,
+          selected.withheld
+            ? [protocolDeliveryNotice(selected).message.replace('here', 'on the receiving copy')]
+            : []
         );
       })
     );
     if (!written.success || !written.data) return report(io, written, () => '');
     fs.writeFileSync(flags['bundle-out'], JSON.stringify(written.data));
-    io.stdout(
-      `Wrote ${written.data.changes.length} change(s) to ${flags['bundle-out']}; import it on the other copy with reasonbook sync --bundle-in.\n`
+    return report(
+      io,
+      written,
+      (bundle) =>
+        `Wrote ${bundle.changes.length} change(s) to ${flags['bundle-out']}; import it on the other copy with reasonbook sync --bundle-in.`
     );
-    return 0;
   }
   if (flags['bundle-in']) {
     const read = readBundle(fs.readFileSync(flags['bundle-in'], 'utf8'));
@@ -232,11 +239,13 @@ export async function runSync(argv: readonly string[], io: CliIo): Promise<numbe
   }
   // Two triggers at once, such as a session end and the timer, run one sync; the second says so.
   const synced = await withSyncLock(dbPath, () =>
-    syncPeers(open, {
-      unchecked: storeOpener(dbPath, { replicaCheck: false }),
-      projectRoot: storeFolder(dbPath),
-      auto: flags['auto'] === 'true',
-    })
+    answered(
+      syncPeers(open, {
+        unchecked: storeOpener(dbPath, { replicaCheck: false }),
+        projectRoot: storeFolder(dbPath),
+        auto: flags['auto'] === 'true',
+      })
+    )
   );
   if (!synced) {
     io.stdout('A sync of this copy is already running, so this one did nothing.\n');

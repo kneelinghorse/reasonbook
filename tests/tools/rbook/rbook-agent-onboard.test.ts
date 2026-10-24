@@ -755,7 +755,7 @@ describe('rbook_agent_onboard', () => {
       const result = await rbookAgentOnboardWithDb(dbPath);
 
       expect(result.success).toBe(true);
-      expect(result.data?.project.name).toBe('Reasonbook Project'); // Default name
+      expect(result.data?.project.name).toBe(path.basename(tempDir)); // Display-only folder fallback
     });
 
     it('should handle no active session', async () => {

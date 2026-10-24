@@ -198,6 +198,8 @@ describe('the signals library has no side effects of its own (s97-m01)', () => {
     // the client, discovery, embeddings or the network.
     expect(ours).toEqual(
       [
+        'src/intelligence/legacy-compat.ts',
+        'src/intelligence/product-names.ts',
         'src/server-version.ts',
         'src/signals/brief.ts',
         'src/signals/brief-text.ts',
@@ -222,6 +224,7 @@ describe('the signals library has no side effects of its own (s97-m01)', () => {
         'src/tools/rbook/stored-time.ts',
         'src/tools/rbook/terminal-status.ts',
         'src/utils/one-line.ts',
+        'src/utils/project-display-name.ts',
       ].sort()
     );
     expect(outside).toEqual([]);

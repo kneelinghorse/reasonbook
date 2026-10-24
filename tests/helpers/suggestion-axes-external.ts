@@ -70,6 +70,7 @@ export interface MessageNotFoundScenario {
 
 export type DashboardScenario =
   | HttpScenario
+  | Readonly<{ kind: 'http-sequence'; steps: readonly HttpScenario[] }>
   | SocketDisconnectScenario
   | DeviceTerminalScenario
   | DeviceCodeErrorScenario
@@ -141,7 +142,7 @@ function routePath(url: string): string {
 }
 
 function handleScenario(
-  scenario: DashboardScenario | undefined,
+  scenario: Exclude<DashboardScenario, { kind: 'http-sequence' }> | undefined,
   origin: string,
   request: http.IncomingMessage,
   response: http.ServerResponse
@@ -287,6 +288,7 @@ export async function startDashboardDouble(
   const requests: DashboardRequest[] = [];
   const sockets = new Set<Socket>();
   let scenario = initialScenario;
+  let sequenceIndex = 0;
   let origin = '';
   let closed = false;
 
@@ -294,7 +296,9 @@ export async function startDashboardDouble(
     const method = request.method ?? '';
     const url = request.url ?? '';
     const authorization = String(request.headers.authorization ?? '');
-    const matchedScenario = handleScenario(scenario, origin, request, response);
+    const current = scenario?.kind === 'http-sequence' ? scenario.steps[sequenceIndex] : scenario;
+    const matchedScenario = handleScenario(current, origin, request, response);
+    if (matchedScenario && scenario?.kind === 'http-sequence') sequenceIndex++;
     requests.push({
       method,
       url,
@@ -337,6 +341,7 @@ export async function startDashboardDouble(
     requests,
     setScenario(nextScenario: DashboardScenario): void {
       scenario = nextScenario;
+      sequenceIndex = 0;
     },
     clearRequests(): void {
       requests.length = 0;

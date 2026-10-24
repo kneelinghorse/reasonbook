@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // ABOUTME: Syntax-level currentState emit census and mutation helpers for answer-shape tests.
+// ABOUTME: Explicit emit allowances preserve the guard against unsafe object interpolation.
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -109,26 +110,35 @@ export function censusCurrentState(sources: readonly SourceText[]): EmitCensus {
   };
 }
 
+// s101-m01: dashboard HTTP failures carry status/backoff evidence; their formatters use message
+// and suggestion, never interpolate currentState. s101-m10 adds two create-only registration
+// refusals consumed by upload/checkpoint error handling, not the mission-state formatters below.
+// s101-m03 adds local and version-aware owner-copy share evidence; shared-project and CLI
+// formatters consume message/suggestion, and never interpolate these objects.
+// This explicit allowlist does not permit other new emitters.
 const EMIT_RISK =
-  'A second object emit would render `[object Object]` at any of these unguarded formatter ' +
+  'An additional object emit could render `[object Object]` at any of these unguarded formatter ' +
   `sites: ${EXPECTED_INTERPOLATION_FILES.join(', ')}.`;
 
 export function emitCensusFindings(census: EmitCensus): string[] {
   const findings: string[] = [];
-  if (census.assignments !== 15) {
+  if (census.assignments !== 20) {
     findings.push(
-      `Expected 15 direct currentState property assignments; found ${census.assignments}.`
+      `Expected 20 direct currentState property assignments; found ${census.assignments}.`
     );
   }
-  if (census.directObjectLiterals !== 1) {
+  if (census.directObjectLiterals !== 6) {
     findings.push(
-      `Expected exactly 1 direct currentState object-literal emit; found ${census.directObjectLiterals} ` +
+      `Expected exactly 6 direct currentState object-literal emit; found ${census.directObjectLiterals} ` +
         `in [${census.objectLiteralFiles.join(', ')}].`
     );
   }
-  if (census.objectLiteralFiles.join('\n') !== 'rbook-session-start.ts') {
+  if (
+    census.objectLiteralFiles.join('\n') !==
+    'dashboard-http-error.ts\nrbook-session-start.ts\nrecord-dashboard-share-state.ts\nrecord-dashboard-share-state.ts\nregistration-error.ts\nregistration-error.ts'
+  ) {
     findings.push(
-      `The sole direct object emit must remain in rbook-session-start.ts; found [${census.objectLiteralFiles.join(', ')}].`
+      `Direct object emits must remain in dashboard-http-error.ts, rbook-session-start.ts, two record-dashboard-share-state.ts sites and two registration-error.ts sites; found [${census.objectLiteralFiles.join(', ')}].`
     );
   }
   if (census.interpolationFiles.join('\n') !== EXPECTED_INTERPOLATION_FILES.join('\n')) {

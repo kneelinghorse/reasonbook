@@ -31,7 +31,7 @@ export const BRIEF_LINE_IDS = 3;
 const DAY_MS = 86_400_000;
 
 export interface BriefOptions {
-  /** The instant the brief is for: the reports' computedAt. */
+  /** The instant the brief is for; stored reports may have an earlier computedAt. */
   readonly now: Date | number | string;
   /** The window the reports counted, in days (default 7). */
   readonly windowDays?: number;
@@ -203,17 +203,26 @@ function stuck(reports: readonly SignalsReport[]): Ranked[] {
   return out;
 }
 
-function goneQuiet(reports: readonly SignalsReport[]): Ranked[] {
+function goneQuiet(reports: readonly SignalsReport[], now: number): Ranked[] {
   const out: Ranked[] = [];
   for (const report of reports) {
-    const quiet = entry(report, 'quiet_days');
-    if (!quiet || (quiet.count ?? 0) < QUIET_SILENT_DAYS) continue;
+    const quiet = report.signals.find((signal) => signal.kind === 'quiet_days');
+    if (!quiet?.available || quiet.count === null) continue;
+    const computed = storedTimeMs(report.computedAt);
+    // The report retains whole quiet days only: add whole elapsed days, not an invented remainder.
+    const sinceUpload = Number.isFinite(computed)
+      ? Math.max(0, Math.floor((now - computed) / DAY_MS))
+      : 0;
+    const days = quiet.count + sinceUpload;
+    if (days < QUIET_SILENT_DAYS) continue;
     out.push({
       projectId: report.project.id,
-      rank: [-(quiet.count ?? 0)],
+      rank: [-days],
       item: {
         projectId: report.project.id,
-        text: `${projectLabel(report)}: ${plural(quiet.count ?? 0, 'day', 'days')} without a new row`,
+        text: `${projectLabel(report)}: ${plural(days, 'day', 'days')} without a new row${
+          sinceUpload ? `, ${sinceUpload} of them since its last upload` : ''
+        }`,
         ids: [],
       },
     });
@@ -349,8 +358,8 @@ export function buildBrief(reports: readonly SignalsReport[], options: BriefOpti
       section(
         'gone_quiet',
         'Gone quiet',
-        `projects with no new row for ${QUIET_SILENT_DAYS} days or more, the quietest first`,
-        goneQuiet(readable)
+        `projects with no new row for ${QUIET_SILENT_DAYS} days or more, adding whole elapsed days since readable report times, the quietest first`,
+        goneQuiet(readable, nowMs)
       ),
       section(
         'drifting',

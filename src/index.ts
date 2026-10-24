@@ -17,10 +17,17 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getServerVersion } from './server-version';
 import { debugEnabled, debugLog } from './debug-log';
+import {
+  createServerShutdown,
+  installStderrPipeGuard,
+  type ShutdownBounds,
+} from './server-shutdown';
 import { isProjectAddress } from './intelligence/project-address';
 import { currentCodexRequest, withCodexRequest } from './codex-request-context';
 
 export { getServerVersion };
+
+installStderrPipeGuard();
 
 // Load .env if present (before any other imports that read process.env).
 // Resolve project root from: env var → directory containing this script.
@@ -127,8 +134,13 @@ import { observeSharedSync } from './tools/rbook/record-sync-scheduler';
 import {
   markDashboardUploadOwed,
   observeDashboardUploadProject,
+  stopDashboardUploadScheduler,
 } from './tools/rbook/dashboard-upload-scheduler';
-import { cleanupActiveUploadCopies } from './tools/rbook/dashboard-upload';
+import {
+  cleanupActiveUploadCopies,
+  drainDashboardUploads,
+  interruptDashboardUploads,
+} from './tools/rbook/dashboard-upload';
 import { RBOOK_CHECKPOINT_SYNC_ENV } from './tools/rbook/checkpoint-backfill';
 import { RBOOK_TOOL_SCHEMAS } from './tools/rbook/tool-schemas';
 import { validateRbookArguments } from './tools/rbook/tool-validation';
@@ -1236,7 +1248,7 @@ export async function executeMissionProtocolTool(
       // Sprint 53 m02: `send` must resolve through the audited boundary with
       // `requireSenderIdentity=true`. The former path bypassed root resolution
       // entirely (see sprint-53-attribution-rebuild.md §Verified Root Cause #2)
-      // and was the structural source of the Stage1→OODS P0. Non-send actions
+      // and was the structural source of the cross-project attribution P0. Non-send actions
       // (list/respond/directory) hit the dashboard directly and don't need a
       // local project identity, so they skip resolution.
       let projectRoot: string | undefined;
@@ -1832,6 +1844,9 @@ async function main(argv: readonly string[] = process.argv.slice(2)): Promise<vo
 }
 
 export const __test__ = {
+  setShutdownBounds: (bounds: ShutdownBounds) => {
+    shutdownServer = makeShutdownServer(bounds);
+  },
   registerToolHandlers,
   initializeServer,
   main,
@@ -1892,35 +1907,36 @@ export const __test__ = {
   },
 };
 
-let shuttingDown = false;
-
-// Close only this process's sessions and upload copies, before its transport goes away.
-async function shutdownServer(signal: string): Promise<void> {
-  if (shuttingDown) return;
-  shuttingDown = true;
-  debugLog(`[INFO] Received ${signal}, shutting down gracefully...`);
-  cleanupActiveUploadCopies();
-  await closeOwnImplicitSessions().catch(() => undefined);
-  try {
-    await (stdioHandle ? stdioHandle.close() : server.close());
-  } catch (error) {
-    ErrorHandler.handle(
-      error,
-      'server.shutdown',
-      {
-        module: 'server',
-        data: {
-          signal,
-        },
+function makeShutdownServer(bounds?: ShutdownBounds): (reason: string) => Promise<void> {
+  return createServerShutdown(
+    {
+      stop: stopDashboardUploadScheduler,
+      drain: drainDashboardUploads,
+      interrupt: interruptDashboardUploads,
+      cleanup: cleanupActiveUploadCopies,
+      close: async () => {
+        await closeOwnImplicitSessions().catch(() => undefined);
+        await (stdioHandle ? stdioHandle.close() : server.close());
       },
-      {
-        rethrow: false,
-        userMessage: 'Graceful shutdown encountered an issue.',
-      }
-    );
-  }
-  process.exit(0);
+      exit: () => process.exit(0),
+      report: (error) =>
+        ErrorHandler.handle(
+          error,
+          'server.shutdown',
+          {
+            module: 'server',
+          },
+          {
+            rethrow: false,
+            userMessage: 'Graceful shutdown encountered an issue.',
+          }
+        ),
+    },
+    bounds
+  );
 }
+
+let shutdownServer = makeShutdownServer();
 
 process.on('SIGINT', () => shutdownServer('SIGINT'));
 process.on('SIGTERM', () => shutdownServer('SIGTERM'));

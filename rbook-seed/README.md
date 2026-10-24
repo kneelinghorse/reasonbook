@@ -1,8 +1,8 @@
 # Reasonbook seed
 
-**Minimal seed for Reasonbook (Context + Mission Orchestration System) projects.**
+**The files Reasonbook writes for a Builder project.**
 
-Reasonbook is a project management layer for AI-assisted development. This seed provides the minimal structure for MCP-based project initialization.
+Reasonbook keeps decisions, lessons and the next steps in a local record that survives an agent session. The Builder level also keeps sprints and missions.
 
 ---
 
@@ -59,27 +59,24 @@ This creates:
 - `rbook/context/`, `rbook/foundational-docs/`, and `rbook/templates/`
 - `rbook/docs/` - Documentation (the Builder level's; a Ledger or Planner project gets its own short `rbook/README.md` instead)
 
-### Option 2: Manual Setup
+### Option 2: The CLI
 
-1. Copy this seed into your project:
+From your project folder, initialize the Builder level this guide uses:
 
-   ```bash
-   cp -r rbook-seed/ yourproject/rbook/
-   ```
+```bash
+npx --prefer-offline -y @aquex/reasonbook@4.5.1 init --level builder
+```
 
-2. Initialize the database:
-
-   ```bash
-   sqlite3 yourproject/rbook/db/rbook.sqlite < yourproject/rbook/db/schema.sql
-   ```
-
-3. Use MCP tools to manage the project.
+Commit the rest of `rbook/`, including `rbook/.gitignore`, and the root `AGENTS.md` and
+`CLAUDE.md` that init writes. The ignore file keeps the local store, its WAL and SHM files and
+snapshots out of git. To deliberately track the store, remove those ignore rules; a tracked store
+cannot be shared through Reasonbook.
 
 ---
 
 ## Using Reasonbook
 
-Day-to-day database-backed operations are performed via MCP tools. No Python CLI is required.
+Use the MCP tools from your agent session to read and update the record.
 
 ### Core Workflow
 
@@ -102,23 +99,23 @@ rbook_mission_transition(action="complete", missionId="s01-m01", notes="What was
 
 ### Available MCP Tools
 
-| Tool                       | Actions                                                                                               |
-| -------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `rbook_review`             | _(no action — the session-opener digest)_                                                             |
-| `rbook_agent_onboard`      | _(no action — cold-start project state)_                                                              |
-| `rbook_project`            | init, register, list, unregister, validate, prune, update, sweep                                      |
-| `rbook_status`             | _(no action — identity and dashboard diagnostics)_                                                    |
-| `rbook_db`                 | health, snapshot, restore, backfill, reconcile, purge, pull, clone, identify_orphans, prune_snapshots |
-| `rbook_mission`            | list, show, status, add, update, move, depends, undepends                                             |
-| `rbook_mission_transition` | start, complete, block, unblock, drop, defer                                                          |
-| `rbook_sprint`             | list, show, add, update, complete, retro, carry_forward, analytics                                    |
-| `rbook_session`            | list, start, capture, complete, search                                                                |
-| `rbook_context`            | view, update, condense, snapshot, history, next_steps, constraints, search                            |
-| `rbook_decisions`          | list, search, show, update, review, batch_update, record                                              |
-| `rbook_learnings`          | list, search, show, update, reaffirm                                                                  |
-| `rbook_feedback`           | list, triage, resolve, archive                                                                        |
-| `rbook_auth`               | login_init, login_complete, login, logout, rotate, revoke, list, reissue                              |
-| `rbook_message`            | send, list, get, respond, ack, directory, whoami                                                      |
+| Tool                       | Actions                                                                                                            |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `rbook_review`             | _(no action — the session-opener digest)_                                                                          |
+| `rbook_agent_onboard`      | _(no action — cold-start project state)_                                                                           |
+| `rbook_project`            | init, register, list, unregister, validate, prune, update, sweep, share, invite, join, members, remove, sync, move |
+| `rbook_status`             | _(no action — identity and dashboard diagnostics)_                                                                 |
+| `rbook_db`                 | health, snapshot, restore, backfill, reconcile, purge, identify_orphans, prune_snapshots, conflicts, settle        |
+| `rbook_mission`            | list, show, status, add, update, move, depends, undepends                                                          |
+| `rbook_mission_transition` | start, complete, block, unblock, drop, defer                                                                       |
+| `rbook_sprint`             | list, show, add, update, complete, retro, carry_forward, analytics                                                 |
+| `rbook_session`            | list, start, capture, complete, search                                                                             |
+| `rbook_context`            | view, update, condense, snapshot, history, next_steps, constraints, search                                         |
+| `rbook_decisions`          | list, search, show, update, review, batch_update, record                                                           |
+| `rbook_learnings`          | list, search, show, update, reaffirm                                                                               |
+| `rbook_feedback`           | list, triage, resolve, archive                                                                                     |
+| `rbook_auth`               | login_init, login_complete, login, logout, rotate, revoke, list, reissue                                           |
+| `rbook_message`            | send, list, get, respond, ack, directory, whoami                                                                   |
 
 ---
 
@@ -168,4 +165,4 @@ See `docs/` for complete documentation:
 ---
 
 **Schema Version**: 2.1
-**Last Updated**: 2026-10-12
+**Last Updated**: 2026-10-23

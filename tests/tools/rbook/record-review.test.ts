@@ -23,7 +23,14 @@ import {
   useMachine,
   type ReplicaFixture,
 } from '../../helpers/replica-fixture';
-import { exchange, memberCopy, ownerCopy, sync, type Copy } from '../../helpers/shared-copies';
+import {
+  exchange,
+  memberCopy,
+  ownerCopy,
+  sync,
+  syncCopies,
+  type Copy,
+} from '../../helpers/shared-copies';
 
 let fixture: ReplicaFixture;
 beforeEach(() => {
@@ -78,16 +85,25 @@ describe("the review of a shared copy (rbook_review's digest, the session-start 
       });
     await exchange(fixture.tmp, owner, member);
     await sync(fixture.tmp, owner, member);
-    const text = await digestOf(owner);
+    // Row-transfer helpers do not report readers; a real handshake identifies this current copy.
+    await syncCopies(fixture.tmp, member, owner);
+    useMachine(fixture.tmp, owner.machine);
+    const model = await readDigestV2(owner.root);
+    const text = renderDigestV2(model).text;
     expect(text).toContain('Shared record:');
-    expect(text).toContain(
-      `1 field(s) in conflict, so reads show a provisional value: strategic_decisions ${id}'s status (2 values).`
+    // Protocol and sync notices put this fixture over the 600-character shared-section cap.
+    // The short digest keeps counts and the lookup; the structured review retains every detail.
+    expect(text).toContain('1 field(s) in conflict');
+    expect(text).toContain('1 state(s) need a person');
+    expect(text).toContain('2 change(s) not live yet (2 refused)');
+    expect(text).toContain('rbook_db(action="conflicts")');
+    expect(model.shared?.protocol?.stranded).toEqual([]);
+    expect(model.shared?.conflicts).toContain(`strategic_decisions ${id}'s status (2 values)`);
+    expect(model.shared?.states.join(' ')).toMatch(/r-sprint-1 and r-sprint-2 are all open/);
+    expect(model.shared?.waiting.join(' ')).toMatch(
+      /\d+ refused by the owner's copy, so never applied \((the first )?an outsider's copy is not a member of this shared record\)/
     );
-    expect(text).toMatch(/1 state\(s\) need a person: r-sprint-1 and r-sprint-2 are all open/);
-    expect(text).toMatch(
-      /Changes not live: \d+ refused by the owner's copy, so never applied \((the first )?an outsider's copy is not a member of this shared record\)\./
-    );
-    expect(text).toContain('In progress: r-m01, started by member.');
+    expect(model.shared?.started).toContain('r-m01, started by member');
     expect(text).toMatch(/d:\d+ \d{4}-\d{2}-\d{2} \(member\) The member chose this\./);
     // This copy's own writer is not named on its own rows.
     expect(text).not.toMatch(/\(Owner\)/);

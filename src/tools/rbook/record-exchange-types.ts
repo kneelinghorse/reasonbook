@@ -2,7 +2,7 @@
 // ABOUTME: Public exchange report shapes shared by wire, bundle and local copy callers.
 // ABOUTME: Type-only dependencies keep these interfaces separate from merge execution.
 import type { CopyReport } from './record-copy-report';
-import type { ChangeRecipient } from './record-since';
+import type { ChangeRecipient, ChangeSelection } from './record-since';
 import type { ApplyReport } from './record-apply';
 import type { LoggedChange } from './record-standing';
 import type { Successor, SuccessorReason, SuccessorTaken } from './record-successor';
@@ -60,6 +60,11 @@ export interface Peer {
     marks: Readonly<Record<string, number>>,
     recipient?: ChangeRecipient
   ): Promise<LoggedChange[]>;
+  /** Local authority only: retain delivery diagnostics without adding fields to the wire. */
+  changesSinceReport?(
+    marks: Readonly<Record<string, number>>,
+    recipient: ChangeRecipient
+  ): Promise<ChangeSelection>;
   /** Apply what arrived; a catch-up between epochs applies without judging. */
   apply(
     changes: readonly LoggedChange[],

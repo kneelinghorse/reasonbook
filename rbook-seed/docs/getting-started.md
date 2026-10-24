@@ -6,7 +6,7 @@
 
 ## What is Reasonbook?
 
-**Reasonbook** (Context + Mission Orchestration System) is a project management layer for AI-assisted development. It provides:
+**Reasonbook** keeps decisions, lessons and next steps in a local record that survives an agent session. At the Builder level, it provides:
 
 - **SQLite-backed mission tracking** - History, sprints, dependencies
 - **Context management** - PROJECT_IDENTITY, PROJECT_CONTEXT, MASTER_CONTEXT with snapshots
@@ -51,6 +51,11 @@ yourproject/
     ├── tiers/           # Tier behavioral guides
     └── docs/            # Documentation (always copied)
 ```
+
+Commit the rest of `rbook/`, including `rbook/.gitignore`, and the root `AGENTS.md` and
+`CLAUDE.md` that init writes. The ignore file keeps the local store, its WAL and SHM files and
+snapshots out of git. Remove those ignore rules only if you deliberately want to track the store;
+Reasonbook refuses to share a store git tracks.
 
 ### 2. Onboard a New Project
 
@@ -160,5 +165,5 @@ It creates a snapshot only when it changes `master_context`; it is not a routine
 
 ---
 
-**Last Updated**: 2026-10-12
+**Last Updated**: 2026-10-22
 **Schema Version**: 2.1

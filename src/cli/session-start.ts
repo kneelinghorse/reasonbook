@@ -87,7 +87,7 @@ export async function run(ctx: HookVerbContext): Promise<string | HookDelivery |
   assertStoreReadable(store.dbPath, processBusyTimeout() ?? 250);
   const text = await (
     await import('./digest')
-  ).buildDigest(store.projectRoot, io, ctx.deadlineAtMs, 'explicit');
+  ).buildDigest(store.projectRoot, io, ctx.deadlineAtMs, 'explicit', true);
   const context = preparedRenderedContext(io);
   return {
     deliver: (emit) => {

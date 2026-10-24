@@ -1,0 +1,32 @@
+src/bin.ts:84 EXIT-PATH process.exit(0)
+src/cli.ts:393 EXIT-PATH process.exit(code)
+src/cli/core.ts:57 EXIT-PATH process.stdin.on('data')
+src/cli/core.ts:58 EXIT-PATH process.stdin.on('end')
+src/cli/core.ts:59 EXIT-PATH process.stdin.on('error')
+src/index.ts:472 observeDashboardUploadProject awaited/returned
+src/index.ts:521 markDashboardUploadOwed awaited/returned
+src/index.ts:1740 EXIT-PATH process.exit(0)
+src/index.ts:1757 EXIT-PATH process.exit(0)
+src/index.ts:1763 EXIT-PATH process.exit(1)
+src/index.ts:1772 EXIT-PATH process.exit(exitCode)
+src/index.ts:1792 EXIT-PATH process.stdin.once('end')
+src/index.ts:1830 EXIT-PATH process.exit(1)
+src/index.ts:1922 EXIT-PATH process.exit(0)
+src/index.ts:1925 EXIT-PATH process.on('SIGINT')
+src/index.ts:1926 EXIT-PATH process.on('SIGTERM')
+src/index.ts:1951 EXIT-PATH process.exit(1)
+src/tools/rbook/checkpoint-backfill.ts:186 withUploadLease awaited/returned
+src/tools/rbook/checkpoint-backfill.ts:198 withUploadSnapshot awaited/returned
+src/tools/rbook/checkpoint-backfill.ts:199 syncSqliteFile awaited/returned
+src/tools/rbook/checkpoint-backfill.ts:224 rbookDbBackfill awaited/returned
+src/tools/rbook/checkpoint-registration.ts:146 withUploadSnapshot awaited/returned
+src/tools/rbook/checkpoint-registration.ts:147 registerProject awaited/returned
+src/tools/rbook/dashboard-upload-scheduler.ts:25 triggerCheckpointBackfill awaited/returned
+src/tools/rbook/dashboard-upload-scheduler.ts:37 launch NOT AWAITED (dropped)
+src/tools/rbook/dashboard-upload-scheduler.ts:46 launch NOT AWAITED (dropped)
+src/tools/rbook/dashboard-upload-scheduler.ts:63 observeDashboardUploadProject awaited/returned
+src/tools/rbook/rbook-db-backfill.ts:185 syncSqliteFile awaited/returned
+src/tools/rbook/rbook-db.ts:345 rbookDbBackfill awaited/returned
+src/tools/rbook/rbook-session.ts:443 triggerCheckpointBackfill NOT AWAITED (dropped)
+src/tools/rbook/rbook-sprint.ts:398 triggerCheckpointBackfill NOT AWAITED (dropped)
+# upload: 31 sites over 428 tracked src .ts files

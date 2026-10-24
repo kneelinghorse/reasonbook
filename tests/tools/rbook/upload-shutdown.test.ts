@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // ABOUTME: Stops real stdio server children while their loopback dashboard upload is still pending.
-// ABOUTME: Proves graceful shutdown removes only the process's upload copy and preserves its source.
+// ABOUTME: Proves closes drain real uploads, interrupted leases recover, and only owned copies are removed.
 
 import Database from 'better-sqlite3';
-import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as http from 'http';
 import * as os from 'os';
@@ -11,6 +10,10 @@ import * as path from 'path';
 import { LEGACY } from '../../../src/intelligence/legacy-compat';
 import { RawStdioServer } from '../../helpers/raw-stdio-server';
 import { seedRbookDb } from '../../helpers/seedRbookDb';
+import {
+  prepareUploadServerSources,
+  uploadServerSourceLoader,
+} from '../../helpers/upload-server-source';
 
 const repo = path.resolve(__dirname, '../../..');
 let directory: string;
@@ -18,59 +21,10 @@ let child: RawStdioServer | undefined;
 let dashboard: http.Server | undefined;
 let compiled: string;
 
-/**
- * s98-m08 (#733): load the TypeScript source, compiled once per test file. Each child used to
- * transpile src/index.ts and its imports itself inside its 25 s budget, and under two concurrent
- * full suites that alone spent it ("Upload did not start"). The children now read what the warm-up
- * below compiled, keyed by path and content, so the budget covers starting and uploading only.
- */
-const loader = (): string => `const fs = require('fs');
-const crypto = require('crypto');
-const ts = require(${JSON.stringify(require.resolve('typescript'))});
-require.extensions['.ts'] = (module, file) => {
-  const source = fs.readFileSync(file, 'utf8');
-  const key = crypto.createHash('sha256').update(file).update(source).digest('hex');
-  const cached = require('path').join(${JSON.stringify(compiled)}, key + '.js');
-  let output;
-  try {
-    output = fs.readFileSync(cached, 'utf8');
-  } catch {
-    output = ts.transpileModule(source, {
-      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true }
-    }).outputText;
-    fs.writeFileSync(cached + '.' + process.pid, output);
-    fs.renameSync(cached + '.' + process.pid, cached);
-  }
-  module._compile(output, file);
-};
-`;
+const loader = (): string => uploadServerSourceLoader(compiled);
 
 beforeAll(() => {
-  compiled = fs.mkdtempSync(path.join(os.tmpdir(), 'rbook-upload-shutdown-compiled-'));
-  const warm = spawnSync(
-    process.execPath,
-    [
-      '-e',
-      `${loader()}
-for (const file of ['src/index.ts', 'src/tools/rbook/dashboard-client.ts', 'src/tools/rbook/dashboard-upload.ts'])
-  require(require('path').join(${JSON.stringify(repo)}, file));`,
-    ],
-    {
-      encoding: 'utf8',
-      timeout: 150_000,
-      env: {
-        PATH: process.env.PATH ?? path.dirname(process.execPath),
-        RBOOK_CONFIG_DIR: path.join(compiled, 'config'),
-        RBOOK_CHECKPOINT_SYNC: 'off',
-        RBOOK_SHARED_SYNC: 'off',
-      },
-    }
-  );
-  expect({ status: warm.status, signal: warm.signal, stderr: warm.stderr }).toEqual({
-    status: 0,
-    signal: null,
-    stderr: '',
-  });
+  compiled = prepareUploadServerSources(repo);
 }, 180_000);
 
 afterAll(() => fs.rmSync(compiled, { recursive: true, force: true }));
@@ -131,7 +85,9 @@ it.each(['SIGINT', 'SIGTERM', 'stdin close'] as const)(
       bootstrap,
       `${loader()}
 (async () => {
-  await require(${JSON.stringify(path.join(repo, 'src/index.ts'))}).__test__.main(['--project-root', ${JSON.stringify(project)}]);
+  const server = require(${JSON.stringify(path.join(repo, 'src/index.ts'))}).__test__;
+  server.setShutdownBounds({ endMs: 100, signalMs: 100 });
+  await server.main(['--project-root', ${JSON.stringify(project)}]);
   const { DashboardClient } = require(${JSON.stringify(path.join(repo, 'src/tools/rbook/dashboard-client.ts'))});
   const { withUploadSnapshot } = require(${JSON.stringify(path.join(repo, 'src/tools/rbook/dashboard-upload.ts'))});
   const resolved = await DashboardClient.fromEnvForProject(${JSON.stringify(project)}, {
@@ -189,4 +145,241 @@ it.each(['SIGINT', 'SIGTERM', 'stdin close'] as const)(
     );
   },
   45000
+);
+
+async function closeFixture(
+  delay: number | null,
+  beforeClaimMs = 0
+): Promise<{
+  project: string;
+  start: () => Promise<void>;
+  complete: () => Promise<void>;
+  uploaded: Promise<void>;
+  recover: () => void;
+  posts: () => number;
+  state: () => Record<string, unknown>;
+}> {
+  const project = path.join(directory, 'close-project');
+  const dbPath = seedRbookDb(project, {
+    projectId: 'close-test',
+    projectName: 'Close test',
+    dashboardProjectId: 'dashboard-close-test',
+    owner: 'shutdown-owner',
+    rbookAddress: 'rbook://shutdown-owner/close-test',
+  });
+  const db = new Database(dbPath);
+  db.prepare("INSERT OR REPLACE INTO metadata VALUES ('dashboard_registered','true')").run();
+  db.close();
+  let uploadDelay = delay;
+  let posts = 0;
+  let received!: () => void;
+  const uploaded = new Promise<void>((resolve) => (received = resolve));
+  dashboard = http.createServer((request, response) => {
+    if (request.url === '/api/projects/me') {
+      response.writeHead(200, { 'Content-Type': 'application/json' }).end(
+        JSON.stringify({
+          projects: [
+            {
+              id: 'dashboard-close-test',
+              name: 'Close test',
+              slug: 'close-test',
+              owner: 'shutdown-owner',
+            },
+          ],
+          user: { id: 'shutdown-owner-id', username: 'shutdown-owner' },
+        })
+      );
+    } else if (request.url === '/api/sync/sqlite-backfill') {
+      posts++;
+      request.resume();
+      request.once('end', () => {
+        received();
+        if (uploadDelay !== null)
+          setTimeout(
+            () =>
+              response
+                .writeHead(200, { 'Content-Type': 'application/json' })
+                .end(JSON.stringify({ counts: {}, errors: [], durationMs: uploadDelay })),
+            uploadDelay
+          );
+      });
+    } else response.writeHead(404).end();
+  });
+  await new Promise<void>((resolve) => dashboard!.listen(0, '127.0.0.1', resolve));
+  const port = (dashboard.address() as { port: number }).port;
+  const bootstrap = path.join(directory, 'close-server.cjs');
+  fs.writeFileSync(
+    bootstrap,
+    `${loader()}
+// Keep the accepted close before its lease claim until after stdin ends.
+const uploads = require(${JSON.stringify(path.join(repo, 'src/tools/rbook/dashboard-upload.ts'))});
+const claim = uploads.withUploadLease;
+uploads.withUploadLease = async (...args) => {
+  if (${beforeClaimMs}) await new Promise((resolve) => setTimeout(resolve, ${beforeClaimMs}));
+  return claim(...args);
+};
+require(${JSON.stringify(path.join(repo, 'src/index.ts'))}).runServer(['--project-root', ${JSON.stringify(project)}]);
+`
+  );
+  const start = async (): Promise<void> => {
+    child = new RawStdioServer(bootstrap, directory, {
+      PATH: process.env.PATH ?? path.dirname(process.execPath),
+      RBOOK_CONFIG_DIR: path.join(directory, 'config'),
+      RBOOK_PROJECT_ROOT: project,
+      RBOOK_DASHBOARD_URL: `http://127.0.0.1:${port}`,
+      RBOOK_DASHBOARD_API_KEY: 'shutdown-fixture-key',
+      RBOOK_SHARED_SYNC: 'off',
+    });
+    await child.request('initialize', {
+      protocolVersion: '2025-11-25',
+      capabilities: {},
+      clientInfo: { name: 'upload-shutdown', version: '1' },
+    });
+    child.notify('notifications/initialized');
+  };
+  const complete = async (): Promise<void> => {
+    const opened = await child!.request('tools/call', {
+      name: 'rbook_session',
+      arguments: {
+        action: 'start',
+        type: 'check-in',
+        title: 'Drain witness',
+        projectRoot: project,
+      },
+    });
+    expect(opened.structuredContent.success).toBe(true);
+    const closed = await child!.request('tools/call', {
+      name: 'rbook_session',
+      arguments: {
+        action: 'complete',
+        sessionId: opened.structuredContent.data.sessionId,
+        summary: 'Drain witness complete',
+        projectRoot: project,
+      },
+    });
+    expect(closed.structuredContent.success).toBe(true);
+    expect(closed.structuredContent.data.dashboardUpload).toMatchObject({
+      started: true,
+      why: null,
+    });
+    expect(closed.content.map((part: { text?: string }) => part.text ?? '').join('\n')).toContain(
+      'Dashboard upload: started for this close'
+    );
+  };
+  await start();
+  return {
+    project,
+    start,
+    complete,
+    uploaded,
+    recover: () => {
+      uploadDelay = 0;
+    },
+    posts: () => posts,
+    state: () => {
+      const registry = new Database(path.join(directory, 'config', 'project-graph.sqlite'), {
+        readonly: true,
+      });
+      try {
+        return registry
+          .prepare("SELECT * FROM projects WHERE project_id='close-test'")
+          .get() as Record<string, unknown>;
+      } finally {
+        registry.close();
+      }
+    },
+  };
+}
+
+it.each([false, true])(
+  'R1 drains the close upload after stdin ends, including a closed stderr pipe (%s)',
+  async (closedStderr) => {
+    const fixture = await closeFixture(300, 100);
+    await fixture.complete();
+    if (closedStderr) child!.child.stderr.destroy();
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    expect(await child!.close()).toBe(0);
+    expect(fixture.posts()).toBe(1);
+    expect(fixture.state()).toMatchObject({
+      upload_last_outcome: 'success',
+      upload_lease_token: null,
+    });
+  },
+  45_000
+);
+
+it('manual backfill reports an owned hanging lease and shutdown still releases that holder', async () => {
+  const fixture = await closeFixture(null);
+  await fixture.complete();
+  await fixture.uploaded;
+  const heldToken = fixture.state().upload_lease_token;
+  const backfill = await child!.request('tools/call', {
+    name: 'rbook_db',
+    arguments: { action: 'backfill', projectRoot: fixture.project },
+  });
+  expect(backfill.structuredContent).toMatchObject({
+    success: false,
+    error: { code: 'UPLOAD_IN_PROGRESS' },
+  });
+  expect(fixture.posts()).toBe(1);
+  expect(fixture.state().upload_lease_token).toBe(heldToken);
+  expect(await child!.close('SIGTERM')).toBe(0);
+  expect(fixture.state()).toMatchObject({
+    upload_last_outcome: 'interrupted',
+    upload_lease_token: null,
+  });
+}, 45_000);
+
+it('stdin drain includes manual backfill whose own lease is still uploading', async () => {
+  const fixture = await closeFixture(300);
+  // The request may lose its transport response at stdin end; the durable upload must still finish.
+  const request = child!
+    .request('tools/call', {
+      name: 'rbook_db',
+      arguments: { action: 'backfill', projectRoot: fixture.project },
+    })
+    .catch(() => undefined);
+  await fixture.uploaded;
+  expect(fixture.state().upload_lease_token).not.toBeNull();
+  expect(await child!.close()).toBe(0);
+  await request;
+  expect(fixture.posts()).toBe(1);
+  expect(fixture.state()).toMatchObject({
+    upload_last_outcome: 'success',
+    upload_lease_token: null,
+  });
+}, 45_000);
+
+it.each(['SIGTERM', 'SIGKILL'] as const)(
+  'R2/R3 %s leaves debt recoverable by the next process without waiting for expiry',
+  async (signal) => {
+    const fixture = await closeFixture(null);
+    await fixture.complete();
+    await fixture.uploaded;
+    const started = Date.now();
+    const exit = await child!.close(signal);
+    expect(Date.now() - started).toBeLessThan(4_000);
+    if (signal === 'SIGTERM') {
+      expect(exit).toBe(0);
+      expect(fixture.state()).toMatchObject({
+        upload_last_outcome: 'interrupted',
+        upload_lease_token: null,
+      });
+    } else expect(child!.child.signalCode).toBe('SIGKILL');
+    fixture.recover();
+    await fixture.start();
+    if (signal === 'SIGKILL') await fixture.complete();
+    else
+      await child!.request('tools/call', {
+        name: 'rbook_status',
+        arguments: { projectRoot: fixture.project },
+      });
+    expect(await child!.close()).toBe(0);
+    expect(fixture.posts()).toBeGreaterThanOrEqual(2);
+    expect(fixture.state()).toMatchObject({
+      upload_last_outcome: 'success',
+      upload_lease_token: null,
+    });
+  },
+  45_000
 );

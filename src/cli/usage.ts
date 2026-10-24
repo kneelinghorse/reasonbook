@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // ABOUTME: Pure CLI usage and accepted options, available before loading a command or the server.
-// ABOUTME: Reject unknown option names without changing the argv existing handlers receive.
+// ABOUTME: Reject unknown options and stray words without changing the argv handlers receive.
 
 const ROOT = ['project-root'];
 const ROUTE = ['ssh', 'remote-root', 'node', 'bin', 'config-dir'];
@@ -97,6 +97,64 @@ export function firstUnknownOption(verb: string, argv: readonly string[]): strin
       i += 1;
   }
   return null;
+}
+
+const POSITIONAL_LIMIT: Readonly<Record<string, number>> = {
+  decisions: 1,
+  session: 1,
+  ambient: 1,
+  profile: 1,
+  drafts: 1,
+};
+const LIKELY_FLAG: Readonly<Record<string, string>> = {
+  init: 'name',
+  relevant: 'query',
+  decisions: 'content',
+  capture: 'content',
+  feedback: 'content',
+  session: 'session-id',
+  move: 'to',
+  copy: 'to',
+  'set-aside': 'replica',
+  import: 'from',
+  join: 'dashboard',
+  handover: 'ssh',
+  recover: 'members',
+  brief: 'days',
+  'spin-out': 'from',
+};
+
+/** Options consume only their declared value; a switch must never swallow a stray project name. */
+export function unexpectedArgument(verb: string, argv: readonly string[]): string | null {
+  if (!Object.prototype.hasOwnProperty.call(OPTIONS, verb)) return null;
+  const options = OPTIONS[verb];
+  const words: Array<{ value: string; precedingFlag?: string }> = [];
+  let lastValueFlag: string | undefined;
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg.startsWith('--')) {
+      const name = arg.slice(2).split('=', 1)[0];
+      lastValueFlag = undefined;
+      if (options.values.includes(name)) {
+        lastValueFlag = name;
+        if (!arg.includes('=') && argv[i + 1] !== undefined && !argv[i + 1].startsWith('--')) i++;
+      }
+    } else {
+      words.push({ value: arg, precedingFlag: lastValueFlag });
+      lastValueFlag = undefined;
+    }
+  }
+  // Author names intentionally accept several words; the config handler validates its action.
+  const limit =
+    verb === 'config'
+      ? words[0]?.value === 'author'
+        ? Infinity
+        : 1
+      : (POSITIONAL_LIMIT[verb] ?? 0);
+  if (words.length <= limit) return null;
+  const word = words[limit].value.replace(/[\r\n]/g, ' ');
+  const hint = words[limit].precedingFlag ?? LIKELY_FLAG[verb] ?? (limit ? 'help' : 'project-root');
+  return `unexpected argument ${JSON.stringify(word)}. Use --${hint}${hint === 'help' ? ' for usage' : ' for this value; quote values containing spaces'}.`;
 }
 
 export const USAGE =

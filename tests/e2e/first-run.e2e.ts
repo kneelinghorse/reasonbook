@@ -110,6 +110,145 @@ describe('first-run E2E: pack -> install -> drive quickstart over stdio (s77-m10
 
     const tools = await client.listTools();
     expect(tools.tools).toHaveLength(15);
+    const readme = fs.readFileSync(
+      path.join(hostDir, 'node_modules', PKG.name, 'rbook-seed', 'README.md'),
+      'utf8'
+    );
+    const listed = [...readme.matchAll(/^\|\s*`(rbook_[a-z_]+)`\s*\|/gm)].map((row) => row[1]);
+    expect(listed.sort()).toEqual(tools.tools.map((tool) => tool.name).sort());
+  });
+
+  it('s101-m04: packed init keeps runtime files out of git and still refuses a forcibly tracked store', async () => {
+    const root = mkTmp('rbook-e2e-ignore-');
+    await callOk('rbook_project', { action: 'init', projectRoot: root });
+    const ignore = path.join(root, 'rbook', '.gitignore');
+    expect(fs.existsSync(ignore)).toBe(true);
+    expect(spawnSync('git', ['init', '-q', root]).status).toBe(0);
+    const runtime = [
+      'rbook/db/rbook.sqlite',
+      'rbook/db/rbook.sqlite-wal',
+      'rbook/db/rbook.sqlite-shm',
+      'rbook/db/snapshots/manual-example.sqlite',
+    ];
+    const ignored = spawnSync('git', ['check-ignore', '--stdin'], {
+      cwd: root,
+      input: runtime.join('\n') + '\n',
+      encoding: 'utf8',
+    });
+    expect(ignored.status).toBe(0);
+    expect(ignored.stdout.trim().split('\n')).toEqual(runtime);
+    const policy = '# Deliberately track this project store.\n*.local\n';
+    fs.writeFileSync(ignore, policy);
+    await callOk('rbook_project', { action: 'init', projectRoot: root });
+    expect(fs.readFileSync(ignore, 'utf8')).toBe(policy);
+    expect(spawnSync('git', ['add', '-f', 'rbook/db/rbook.sqlite'], { cwd: root }).status).toBe(0);
+    const shared = await client.callTool({
+      name: 'rbook_project',
+      arguments: { action: 'share', projectRoot: root, authorName: 'First-hour test' },
+    });
+    expect(shared.isError).toBe(true);
+    expect(shared.structuredContent).toMatchObject({
+      error: { code: 'RECORD_WRITE_REFUSED', message: expect.stringMatching(/tracks its store/) },
+    });
+  });
+
+  it.each(['project_name', 'project_id'])(
+    's101-m04: rejects numeric %s over MCP before it can break status',
+    async (field) => {
+      const root = mkTmp('rbook-e2e-identity-');
+      await callOk('rbook_project', { action: 'init', projectRoot: root });
+      const update = await client.callTool({
+        name: 'rbook_context',
+        arguments: {
+          action: 'update',
+          contextType: 'project_identity',
+          projectRoot: root,
+          fieldUpdates: [{ path: field, value: 1984 }],
+        },
+      });
+      const status = await client.callTool({
+        name: 'rbook_status',
+        arguments: { projectRoot: root },
+      });
+      expect(update.isError).toBe(true);
+      expect(update.structuredContent).toMatchObject({
+        success: false,
+        error: { code: 'INVALID_PARAMETER', field },
+      });
+      expect(status.isError).toBe(false);
+    }
+  );
+
+  it('s101-m10: two installed processes agree on the default name with checkpoint sync unset', async () => {
+    const root = mkTmp('rbook-e2e-concurrent-init-');
+    const env = {
+      HOME: mkTmp('rbook-e2e-concurrent-home-'),
+      RBOOK_CONFIG_DIR: mkTmp('rbook-e2e-concurrent-config-'),
+      PATH: process.env.PATH ?? path.dirname(process.execPath),
+    };
+    const peers: StdioHarness[] = [];
+    try {
+      for (let index = 0; index < 2; index += 1) {
+        peers.push(await connectStdioServer({ serverPath: installedServer, cwd: root, env }));
+      }
+      const initialized = await Promise.all(
+        peers.map((peer) => peer.callOk('rbook_project', { action: 'init', projectRoot: root }))
+      );
+      const ids = initialized.map((result) => dataOf(result)?.projectId);
+      expect(ids[0]).toEqual(expect.any(String));
+      expect(ids[1]).toBe(ids[0]);
+      expect(fs.existsSync(path.join(root, 'rbook', '.gitignore'))).toBe(true);
+      expect(fs.readdirSync(root).filter((name) => name.toLowerCase() === 'agents.md')).toEqual([
+        'AGENTS.md',
+      ]);
+      // m10 stores the default name together with the create-only registration guard.
+      const db = new Database(path.join(root, 'rbook', 'db', 'rbook.sqlite'), { readonly: true });
+      try {
+        expect(
+          db.prepare("SELECT value FROM metadata WHERE key = 'project_id'").pluck().get()
+        ).toBe(ids[0]);
+        expect(
+          db.prepare("SELECT value FROM metadata WHERE key = 'project_name'").pluck().get()
+        ).toBe(path.basename(root));
+        expect(
+          JSON.parse(
+            db
+              .prepare("SELECT content FROM contexts WHERE id = 'master_context'")
+              .pluck()
+              .get() as string
+          ).project_identity.name
+        ).toBe(path.basename(root));
+      } finally {
+        db.close();
+      }
+      await peers[0].callOk('rbook_status', { projectRoot: root });
+      const onboard = await peers[0].callOk('rbook_agent_onboard', { projectRoot: root });
+      expect(dataOf(onboard)?.project?.name).toBe(path.basename(root));
+      const review = await peers[0].callOk('rbook_review', { projectRoot: root });
+      expect(textOf(review)).toContain(path.basename(root));
+      // An empty brief has no per-project row; a real decision gives it an item to name.
+      await peers[0].callOk('rbook_decisions', {
+        action: 'record',
+        projectRoot: root,
+        content: 'Keep this first-hour record local until sharing is needed.',
+        mode: 'autonomous',
+      });
+      for (const args of [['signals', '--project-root', root], ['brief']]) {
+        const displayed = spawnSync(
+          process.execPath,
+          [path.join(path.dirname(installedServer), 'bin.js'), ...args],
+          { cwd: root, env, encoding: 'utf8' }
+        );
+        expect({ args, status: displayed.status, stderr: displayed.stderr }).toEqual({
+          args,
+          status: 0,
+          stderr: '',
+        });
+        expect(displayed.stdout).toContain(path.basename(root));
+      }
+    } finally {
+      await Promise.all(peers.map((peer) => peer.close()));
+    }
   });
 
   it('s92-m07: a clean-room start writes at most two stderr lines; RBOOK_DEBUG=1 brings the rest back', async () => {

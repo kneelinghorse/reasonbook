@@ -193,3 +193,25 @@ describe('the bin answers server --version without loading the server', () => {
     expect(fs.existsSync(path.join(fixture, 'forbidden'))).toBe(false);
   });
 });
+
+describe('terminal first-hour entry', () => {
+  it('refuses stray server positionals before loading the server', () => {
+    const result = run(['serve', 'extra']);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/unexpected argument.*--project-root/);
+    expect(result.stderr).not.toContain('DEPENDENCY_DENIED');
+  });
+
+  it('gives a bare terminal one hint on stderr and still enters the server', () => {
+    const tty = path.join(fixture, 'tty.cjs');
+    fs.writeFileSync(tty, 'Object.defineProperty(process.stdin, "isTTY", {value: true});');
+    const result = spawnSync(process.execPath, ['--require', tty, '--require', guard, bin], {
+      cwd: fixture,
+      encoding: 'utf8',
+      timeout: 5000,
+    });
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('Serving MCP; use reasonbook --help for terminal commands.');
+    expect(result.stderr).toContain('DEPENDENCY_DENIED: ./index');
+  });
+});

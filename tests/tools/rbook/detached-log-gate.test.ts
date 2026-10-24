@@ -143,11 +143,14 @@ describe('s86-m01 detached-log gate', () => {
    * has to say, in this list, that the new function is safe to detach.
    *
    * MEASURED, not assumed:
+   *   - trackDashboardUpload — reserves work synchronously before its first await and tracks both
+   *     resolution paths for shutdown draining. Its module is covered by Arm A; the detached
+   *     checkpoint caller catches failures, while the manual backfill caller awaits its result.
    *   - triggerCheckpointBackfill  — the detached checkpoint sync itself.
    *   - __drainCheckpointBackfill is now async: it drains all projects' pending attempts,
    *     including attempts started while the drain was awaiting an earlier one.
    */
-  const ARM_B_EXPECTED = ['triggerCheckpointBackfill'];
+  const ARM_B_EXPECTED = ['trackDashboardUpload', 'triggerCheckpointBackfill'];
 
   it('ARM B: the exported non-async Promise-returning declarations under src/tools/rbook are exactly the known set', () => {
     const found: string[] = [];

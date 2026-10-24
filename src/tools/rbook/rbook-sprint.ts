@@ -27,6 +27,7 @@ import {
   type RbookSprintCompleteResult,
 } from './rbook-sprint-complete';
 import { triggerCheckpointBackfill } from './checkpoint-backfill';
+import { closeUploadReceipt } from './dashboard-upload-receipt';
 import { maybePropagateSprintStatus } from './sync-locks';
 import {
   rbookSprintList,
@@ -179,7 +180,7 @@ export const rbookSprintSchema = z
     targetAddress: z
       .string()
       .optional()
-      .describe('rbook:// address for carry_forward action (e.g., rbook://derek/cmos-dashboard)'),
+      .describe('rbook:// address for carry_forward action (e.g., rbook://example/dashboard)'),
     send: z
       .boolean()
       .optional()
@@ -298,8 +299,7 @@ export const rbookSprintToolDefinition = {
       },
       targetAddress: {
         type: 'string',
-        description:
-          'rbook:// address for carry_forward action (e.g., rbook://derek/cmos-dashboard)',
+        description: 'rbook:// address for carry_forward action (e.g., rbook://example/dashboard)',
       },
       send: {
         type: 'boolean',
@@ -394,7 +394,8 @@ export async function rbookSprint(
         archive: params.archive,
         projectRoot: params.projectRoot,
       } satisfies RbookSprintCompleteParams);
-      if (result.success) {
+      if (result.success && result.data) {
+        result.data.dashboardUpload = await closeUploadReceipt(params.projectRoot);
         triggerCheckpointBackfill({ projectRoot: params.projectRoot, force: true });
       }
       // Sprint 72 m02: a completed sprint flips status → 'Completed'; propagate it.

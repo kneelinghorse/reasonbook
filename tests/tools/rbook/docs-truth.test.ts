@@ -203,7 +203,11 @@ describe('s92-m06 — the shipped documents agree with the code and with each ot
       expect(text).toContain('30 minutes');
       expect(text).toContain('60 seconds');
       expect(text).toMatch(/whole.*SQLite.*snapshot|snapshot.*whole.*SQLite/i);
-      expect(text).toMatch(/401.*402.*403/);
+      // A transient authentication outage must not be described as a permanent pause.
+      expect(text).toContain('Authentication failures are rechecked before pausing');
+      expect(text).toMatch(/hourly probe(?:s)?.*resum(?:e|es) uploads/);
+      expect(text).toMatch(/Tier and confirmed forbidden responses.*until.*explicit/);
+      expect(text).toContain('Confirmed deletion or replacement holds');
       expect(text).toContain('RBOOK_CHECKPOINT_SYNC=off');
       expect(text).toContain('rbook_status');
       expect(text).toMatch(/process.exit closes do not upload/i);

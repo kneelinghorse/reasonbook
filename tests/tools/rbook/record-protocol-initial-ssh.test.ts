@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // ABOUTME: Bootstrap a late join's recovery catch-up through the real SSH wire before admission is known.
-// ABOUTME: Historical read capacity stays connection-local and cannot grant ordinary delivery or admission.
+// ABOUTME: Only removed historical members may persist factual read reports; no report grants delivery or admission.
 import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
@@ -92,10 +92,13 @@ async function wire<T>(
 }
 const snapshot = (authority: Copy, replicaId: string) =>
   on(authority, (client) => ({
-    rows: changesSince(client, {}),
-    members: [...mergeContext(client).members.keys()],
+    rows: client.getMany('SELECT * FROM record_changes ORDER BY change_id').data,
+    members: [...mergeContext(client).members.entries()],
     report: reportedCopy(client, replicaId),
-    peer: client.getOne('SELECT * FROM record_peers WHERE replica_id = ?', [replicaId]),
+    peer: client.getOne<Record<string, unknown>>(
+      'SELECT * FROM record_peers WHERE replica_id = ?',
+      [replicaId]
+    ),
   }));
 
 it.each([false, true])(
@@ -112,7 +115,8 @@ it.each([false, true])(
         expect(result.data?.caughtUp).toMatchObject({ epoch: 2, authority: authority.replicaId });
         expect((await on(erin, hello)).pending?.authority).toBe(authority.replicaId);
         // The catch-up does not turn ordinary requests into read2 requests for an unadmitted copy.
-        expect((await peer.changesSince({})).some((row) => row.protocol_version > 1)).toBe(false);
+        if (prove) expect(await peer.changesSince({})).toEqual([]);
+        else await expect(peer.changesSince({})).rejects.toThrow(/Upgrade Reasonbook here/);
       }
     );
     expect(await snapshot(authority, erin.replicaId)).toEqual(before);
@@ -136,12 +140,13 @@ it('old/missing/foreign/forged hello cannot borrow request-supplied read capacit
   for (const offer of offers)
     await wire(authority, offer ? async () => offer : undefined, async (peer) => {
       await peer.hello();
-      const rows = (await peer.call('changesSince', {
-        marks: {},
-        catchUp: true,
-        reads: 99,
-      })) as LoggedChange[];
-      expect(rows.some((row) => row.protocol_version > 1)).toBe(false);
+      await expect(
+        peer.call('changesSince', {
+          marks: {},
+          catchUp: true,
+          reads: 99,
+        })
+      ).rejects.toThrow(/Upgrade Reasonbook here/);
     });
   expect(await snapshot(authority, erin.replicaId)).toEqual(before);
 });
@@ -201,7 +206,32 @@ it.each(['removed', 'cut'])(
         expect(await peer.call('changesSince', { marks: {}, catchUp: true })).toEqual([]);
       }
     );
-    expect(await snapshot(studio, erin.replicaId)).toEqual(before);
+    const after = await snapshot(studio, erin.replicaId);
+    if (kind === 'removed') {
+      expect(after.rows).toEqual(before.rows);
+      expect(after.members).toEqual(before.members);
+      expect(after.report).toEqual({ libraryVersion: near.libraryVersion, reads: near.reads });
+      expect(after.peer).toEqual({
+        success: true,
+        data: {
+          replica_id: erin.replicaId,
+          name: null,
+          route: null,
+          marks: null,
+          digest: null,
+          last_ok_at: null,
+          last_error: null,
+          last_error_at: null,
+          failures: 0,
+          failing_since: null,
+          removed_at: null,
+          ...before.peer.data,
+          library_version: near.libraryVersion,
+          reads: near.reads,
+          last_call_at: expect.any(String),
+        },
+      });
+    } else expect(after).toEqual(before);
     await wire(
       studio,
       async () => former,
@@ -228,11 +258,12 @@ it('a copy that is not current authority cannot grant unknown historical catch-u
     async () => ({ ...near, replicaId: 'unproved-copy' }),
     async (peer) => {
       await peer.hello();
-      const rows = (await peer.call('changesSince', {
-        marks: {},
-        catchUp: true,
-      })) as LoggedChange[];
-      expect(rows.some((row) => row.protocol_version > 1)).toBe(false);
+      await expect(
+        peer.call('changesSince', {
+          marks: {},
+          catchUp: true,
+        })
+      ).rejects.toThrow(/Upgrade Reasonbook here/);
     }
   );
 });

@@ -7,7 +7,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as http from 'http';
-import { fork } from 'child_process';
+import { fork, spawnSync } from 'child_process';
 import * as ts from 'typescript';
 import {
   ensureUploadColumns,
@@ -16,6 +16,8 @@ import {
   finishUpload,
   readUploadState,
   renewUploadLease,
+  claimUploadProbe,
+  finishUploadProbe,
 } from '../../src/intelligence/project-upload-state';
 
 let db: Database.Database;
@@ -75,7 +77,7 @@ it('retains a write after claim even when the timestamp is identical', () => {
   expect(readUploadState(db, 'one')?.firstOwedAt).toBeNull();
 });
 
-it('auth failures stop automatic retries until an explicit upload succeeds', () => {
+it('a recovered auth probe resumes automatic debt without an explicit upload', () => {
   markUploadOwed(db, 'one', now);
   const first = claimUpload(db, 'one', now, true)!;
   finishUpload(db, 'one', first, now + 1, {
@@ -85,8 +87,11 @@ it('auth failures stop automatic retries until an explicit upload succeeds', () 
   });
   expect(readUploadState(db, 'one')?.lastError).toHaveLength(500);
   expect(claimUpload(db, 'one', now + 600000, false)).toBeNull();
-  const explicit = claimUpload(db, 'one', now + 600001, true)!;
-  finishUpload(db, 'one', explicit, now + 600002, { success: true });
+  const probe = claimUploadProbe(db, 'one', now + 3600001)!;
+  expect(finishUploadProbe(db, 'one', probe, now + 3600002, { recovered: true })).toBe(true);
+  const automatic = claimUpload(db, 'one', now + 3600003, false)!;
+  expect(automatic).not.toBeNull();
+  finishUpload(db, 'one', automatic, now + 3600004, { success: true });
   expect(readUploadState(db, 'one')).toMatchObject({
     blocked: false,
     lastError: null,
@@ -113,23 +118,40 @@ it('renews only a live matching lease and leaves missing/archived projects alone
   expect(markUploadOwed(db, 'one', now)).toBe(false);
 });
 
-it('two independent processes contend for one lease and only its holder sends to loopback', async () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rbook-upload-race-'));
-  const database = path.join(directory, 'registry.sqlite');
-  markUploadOwed(db, 'one', now - 300001);
-  await db.backup(database);
-  const implementation = path.join(directory, 'state.cjs');
-  fs.writeFileSync(
-    implementation,
-    ts.transpileModule(
-      fs.readFileSync(path.resolve('src/intelligence/project-upload-state.ts'), 'utf8'),
-      { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }
-    ).outputText
-  );
-  const worker = path.join(directory, 'worker.cjs');
-  fs.writeFileSync(
-    worker,
-    `
+it.each(['unclaimed', 'crashed'])(
+  'two processes contend for one %s lease and only its holder sends',
+  async (initial) => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rbook-upload-race-'));
+    const database = path.join(directory, 'registry.sqlite');
+    markUploadOwed(db, 'one', now - 300001);
+    if (initial === 'crashed') {
+      const child = spawnSync(process.execPath, ['-e', ''], { timeout: 5000 });
+      expect(child.status).toBe(0);
+      const lease = claimUpload(db, 'one', now, false)!;
+      db.prepare('UPDATE projects SET upload_lease_holder=?').run(
+        `${lease.token}:${child.pid}@${os.hostname()}`
+      );
+    }
+    await db.backup(database);
+    const implementation = path.join(directory, 'state.cjs');
+    fs.writeFileSync(
+      implementation,
+      ts.transpileModule(
+        fs.readFileSync(path.resolve('src/intelligence/project-upload-state.ts'), 'utf8'),
+        { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }
+      ).outputText
+    );
+    fs.writeFileSync(
+      path.join(directory, 'project-upload-reader.js'),
+      ts.transpileModule(
+        fs.readFileSync(path.resolve('src/intelligence/project-upload-reader.ts'), 'utf8'),
+        { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }
+      ).outputText
+    );
+    const worker = path.join(directory, 'worker.cjs');
+    fs.writeFileSync(
+      worker,
+      `
     const Database = require(process.argv[2]);
     const state = require('./state.cjs');
     const db = new Database(process.argv[3], {timeout:5000});
@@ -139,49 +161,50 @@ it('two independent processes contend for one lease and only its holder sends to
       const lease = state.claimUpload(db, 'one', Date.now(), false);
       if (!lease) { db.close(); process.exit(0); }
       require('http').get(process.env.RBOOK_DASHBOARD_URL, res => {
-        res.resume(); res.on('end', () => { db.close(); process.exit(0); });
+        res.resume(); res.on('end', () => { state.finishUpload(db, 'one', lease, Date.now(), {success:true}); db.close(); process.exit(0); });
       }).on('error', () => process.exit(1));
     });
   `
-  );
-  let uploads = 0;
-  const server = http.createServer((_req, response) => {
-    uploads++;
-    response.end('ok');
-  });
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const address = server.address() as { port: number };
-  const children = [0, 1].map(() =>
-    fork(worker, [require.resolve('better-sqlite3'), database], {
-      silent: true,
-      env: {
-        ...process.env,
-        RBOOK_CONFIG_DIR: directory,
-        RBOOK_DASHBOARD_URL: `http://127.0.0.1:${address.port}`,
-      },
-    })
-  );
-  const exits = children.map(
-    (child) =>
-      new Promise<void>((resolve, reject) => {
-        child.once('exit', (code) =>
-          code === 0 ? resolve() : reject(new Error(`lease worker exited ${code}`))
-        );
-        child.once('error', reject);
-      })
-  );
-  try {
-    await Promise.all(
-      children.map(
-        (child) => new Promise<void>((resolve) => child.once('message', () => resolve()))
-      )
     );
-    for (const child of children) child.send('go');
-    await Promise.all(exits);
-    expect(uploads).toBe(1);
-  } finally {
-    for (const child of children) if (child.exitCode === null) child.kill();
-    await new Promise<void>((resolve) => server.close(() => resolve()));
-    fs.rmSync(directory, { recursive: true, force: true });
+    let uploads = 0;
+    const server = http.createServer((_req, response) => {
+      uploads++;
+      response.end('ok');
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address() as { port: number };
+    const children = [0, 1].map(() =>
+      fork(worker, [require.resolve('better-sqlite3'), database], {
+        silent: true,
+        env: {
+          ...process.env,
+          RBOOK_CONFIG_DIR: directory,
+          RBOOK_DASHBOARD_URL: `http://127.0.0.1:${address.port}`,
+        },
+      })
+    );
+    const exits = children.map(
+      (child) =>
+        new Promise<void>((resolve, reject) => {
+          child.once('exit', (code) =>
+            code === 0 ? resolve() : reject(new Error(`lease worker exited ${code}`))
+          );
+          child.once('error', reject);
+        })
+    );
+    try {
+      await Promise.all(
+        children.map(
+          (child) => new Promise<void>((resolve) => child.once('message', () => resolve()))
+        )
+      );
+      for (const child of children) child.send('go');
+      await Promise.all(exits);
+      expect(uploads).toBe(1);
+    } finally {
+      for (const child of children) if (child.exitCode === null) child.kill();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
   }
-});
+);

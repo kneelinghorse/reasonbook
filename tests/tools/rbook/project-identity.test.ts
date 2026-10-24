@@ -593,9 +593,17 @@ describe('rbookContextUpdateProjectIdentity', () => {
     cleanup(tempDir);
   });
 
-  it.each(['project_name', 'project_id'])(
-    'refuses null %s before any earlier field in the batch can be written',
-    async (identityPath) => {
+  it.each(
+    ['project_name', 'project_id'].flatMap((identityPath) => [
+      ...[null, 1984, false, {}, [], undefined, '', ' \t\n '].map((value) => ({
+        identityPath,
+        value,
+      })),
+      { identityPath: `${identityPath}.nested`, value: 'Must not turn a scalar into an object.' },
+    ])
+  )(
+    'refuses $identityPath=$value before any earlier field in the batch can be written',
+    async ({ identityPath, value }) => {
       const seeded = await rbookContextUpdateProjectIdentity({
         fieldUpdates: [
           { path: 'project_name', value: 'Stable project' },
@@ -610,14 +618,14 @@ describe('rbookContextUpdateProjectIdentity', () => {
       const result = await rbookContextUpdateProjectIdentity({
         fieldUpdates: [
           { path: 'description', value: 'Must not be partially written.' },
-          { path: identityPath, value: null },
+          { path: identityPath, value },
         ],
         projectRoot: tempDir,
       });
       expect(result.success).toBe(false);
       expect(result.error).toMatchObject({
         code: 'INVALID_PARAMETER',
-        suggestion: expect.stringContaining(identityPath),
+        suggestion: expect.stringContaining(identityPath.split('.')[0]),
       });
       expect(fs.readFileSync(dbPath)).toEqual(before);
     }

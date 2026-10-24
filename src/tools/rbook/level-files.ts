@@ -31,6 +31,9 @@ const LEVEL_README: Readonly<Partial<Record<ProjectLevel, string>>> = {
   planner: 'templates/README-planner.md',
 };
 
+// npm omits .gitignore files, so this source ships under a non-dotfile name.
+const IGNORE_TEMPLATE = 'templates/gitignore-rbook';
+
 function readmeSource(seedPath: string, level: ProjectLevel): string {
   return path.join(seedPath, LEVEL_README[level] ?? 'README.md');
 }
@@ -42,7 +45,8 @@ function readmeSource(seedPath: string, level: ProjectLevel): string {
  * are sources: they are rendered to rbook/README.md, never copied as themselves.
  */
 export function seedFileForLevel(level: ProjectLevel, rel: string): boolean {
-  if (rel === 'README.md' || /^templates\/README-[a-z]+\.md$/.test(rel)) return false;
+  if (rel === 'README.md' || rel === IGNORE_TEMPLATE || /^templates\/README-[a-z]+\.md$/.test(rel))
+    return false;
   if (level === 'builder') return true;
   if (
     rel.startsWith('docs/') ||
@@ -174,6 +178,15 @@ export function writeLevelFiles(
     seedPath,
     created
   );
+
+  if (
+    writeExclusive(
+      path.join(rbookDir, '.gitignore'),
+      fs.readFileSync(path.join(seedPath, IGNORE_TEMPLATE), 'utf8')
+    )
+  ) {
+    created.files.push('.gitignore');
+  }
 
   const readmeText = fs.readFileSync(readmeSource(seedPath, level), 'utf8');
   const readmePath = path.join(rbookDir, 'README.md');

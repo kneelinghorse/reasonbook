@@ -215,10 +215,12 @@ const EXPECTED_SCHEMA_VERSION_LITERALS: readonly SourceSite[] = sortSourceSites(
   // s96-m01 (fold): init checks a shared copy before it writes, moving these down 26 lines, and 9
   // more when the check opened read-only.
   // s96-m02: down six more (the author-time stamp for a new store).
-  { file: INIT_FILE, line: 809, role: 'rbookProjectInit' },
-  { file: INIT_FILE, line: 840, role: 'rbookProjectInit' },
-  { file: INIT_FILE, line: 840, role: 'rbookProjectInit' },
-  { file: INIT_FILE, line: 1012, role: 'rbookProjectInit' },
+  // s101-m04: WAL import and atomic identity claim move label locations; label roles are unchanged.
+  // The literal project_id claim replaces one generic-writer key site below.
+  { file: INIT_FILE, line: 853, role: 'rbookProjectInit' },
+  { file: INIT_FILE, line: 884, role: 'rbookProjectInit' },
+  { file: INIT_FILE, line: 884, role: 'rbookProjectInit' },
+  { file: INIT_FILE, line: 1058, role: 'rbookProjectInit' },
   // s96-m02: down five lines (the author stamp's imports). s96-m03: one more (record-guards).
   { file: 'tools/rbook/genesis-columns.ts', line: 34, role: '<module>' },
   // s96-m03: the change log's column classes name schema_version among the recorded genesis
@@ -377,15 +379,14 @@ const EXPECTED_WRITER_KEYS: readonly WriterKeySite[] = sortSourceSites([
   },
   // s96-m01 (fold): down 35 lines, and s96-m02 six more, as above; the keys are unchanged.
   ...[
-    [800, "'project_id'"],
-    [802, "'project_name'"],
-    [806, "'tracelab_project_id'"],
-    [857, "'project_type'"],
-    [860, "'project_type'"],
+    [833, "'project_name'"],
+    [850, "'tracelab_project_id'"],
+    [901, "'project_type'"],
+    [904, "'project_type'"],
     // s93-m12: a store recreated beside an agents file takes back the level its Reasonbook line names.
-    [863, "'project_type'"],
+    [907, "'project_type'"],
     // s94-m11: recreated stores no longer adopt an ambient setting from the agents file.
-    [871, "'created_at'"],
+    [915, "'created_at'"],
   ].map(([line, key]) => ({
     file: INIT_FILE,
     line: Number(line),
@@ -463,21 +464,20 @@ const EXPECTED_WRITER_KEYS: readonly WriterKeySite[] = sortSourceSites([
     callee: 'metadata.execute',
     key: 'MARKER',
   },
-  // s96-m13: down one line (the member's-copy import), and the keys below five (a member's copy
-  // never overwrites the owner or the dashboard keys).
+  // s101-m01: stored-id reconciliation removes name adoption; the same metadata writers remain.
   {
     file: 'tools/rbook/owner-resolution.ts',
-    line: 176,
+    line: 89,
     role: 'writeMetadata',
     callee: 'metadata.execute',
     key: 'key',
   },
-  // s96-m02: down three lines (owner resolution keeps the sign-in's identity for author names).
+  // Owner resolution keeps the sign-in's identity and only the already registered dashboard id.
   ...[
-    [262, "'dashboard_slug'"],
-    [265, "'dashboard_project_id'"],
-    [299, "'owner'"],
-    [300, "'dashboard_username'"],
+    [221, "'dashboard_slug'"],
+    [239, "'dashboard_project_id'"],
+    [263, "'owner'"],
+    [264, "'dashboard_username'"],
   ].map(([line, key]) => ({
     file: 'tools/rbook/owner-resolution.ts',
     line: Number(line),
@@ -659,7 +659,7 @@ function logicalSetterSites(sources: SourceMap): SourceSite[] {
 const EXPECTED_LOGICAL_SETTERS: readonly SourceSite[] = [
   // s96-m01: down one line (init imports rawGenesisColumns).
   // s96-m01 (fold): down 35 lines, and s96-m02 six more, as the init sites above.
-  { file: INIT_FILE, line: 821, role: 'prepared-run:rbookProjectInit:RBOOK_SCHEMA_VERSION' },
+  { file: INIT_FILE, line: 865, role: 'prepared-run:rbookProjectInit:RBOOK_SCHEMA_VERSION' },
   {
     file: MIGRATIONS_FILE,
     line: 326,
@@ -839,7 +839,7 @@ function auditSources(sources: SourceMap): string[] {
   });
   if (
     JSON.stringify(parameterizedInitReads) !==
-    JSON.stringify([{ file: INIT_FILE, line: 791, role: 'rbookProjectInit' }])
+    JSON.stringify([{ file: INIT_FILE, line: 799, role: 'rbookProjectInit' }])
   ) {
     findings.push(
       `parameterized init label read changed: ${JSON.stringify(parameterizedInitReads)}`

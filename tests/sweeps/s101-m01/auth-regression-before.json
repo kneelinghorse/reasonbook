@@ -1,0 +1,358 @@
+{
+  "measuredAt": "2026-10-23T02:37:34.363Z",
+  "sha": "3f9135610711c87b6c1dc901ecc571fd30a052d7",
+  "predicate": {
+    "lexicalIssuedAt": "Physical lines matching /issuedAt.*(?:localeCompare| > | < )/",
+    "resolverApiKeyOverride": "Resolver call pattern plus apiKey property in that line and next three lines",
+    "universe": "Every git ls-files path whose bytes decode as UTF-8, across all extensions",
+    "falseNegativeProfile": "Text only: aliases, dynamic calls, multiline time comparisons, longer argument lists, untracked and generated files are outside the predicate; matches may be comments or tests, not defects.",
+    "longLineEvidence": "Matched physical lines above 500 characters retain a 300-character prefix, full character count and SHA-256; replay against the recorded SHA for full evidence."
+  },
+  "counts": {
+    "lexicalIssuedAt": {
+      "wholeTree": 43,
+      "src": 3
+    },
+    "resolverApiKeyOverride": {
+      "wholeTree": 6,
+      "src": 1
+    }
+  },
+  "changed": ["src/tools/rbook/dashboard-upload-auth.ts lexical comparison and resolver override"],
+  "deliberatelyUnchanged": [
+    "src/auth/auth-state.ts existing ISO-key lexical pick",
+    "src/tools/rbook/dashboard-client.ts existing ISO-key lexical pick",
+    "All test-only explicit apiKey overrides exercise the existing public contract"
+  ],
+  "matches": {
+    "lexicalIssuedAt": [
+      {
+        "file": "rbook/research/2026-10-s93-probes/m10-repo-rules-preservation.json",
+        "line": 22,
+        "text": "\"content\": \"# CMOS-MCP Architecture Reference\\n\\nHow the server works: moved out of [agents.md](../../agents.md) in s93-m12 so the rules file\\nstays under Codex's 32 KiB. The rules and the process stay there; this is the reference they\\npoint at.\\n\\n## Project Registry System\\n\\nThe Project Registry",
+        "textLength": 79534,
+        "textSha256": "ee9c3a89ed0dc25f8302888542e572aa340684286a89f8b7b55a8b9805de7033"
+      },
+      {
+        "file": "rbook/research/2026-10-s94-m06/implementation-before.json",
+        "line": 5189,
+        "text": "\"text\": \"{\\\"store\\\": \\\"cmos-mcp-pro\\\", \\\"decisions\\\": [{\\\"id\\\": 1, \\\"ms\\\": 1763864790000, \\\"status\\\": \\\"archived\\\", \\\"sprint\\\": null, \\\"inactive_from\\\": null, \\\"superseded_by\\\": null, \\\"text\\\": \\\"Mission Protocol will use file-based storage by default (project root)\\\"}, {\\\"id\\\": 2, \\\"ms\\\": 176386479",
+        "textLength": 1684529,
+        "textSha256": "620e14fd0ba2caa070787cb5a83fff6887d13a98c2d235b239d8a130214fee7b"
+      },
+      {
+        "file": "rbook/research/2026-10-s94-m06/implementation-before.json",
+        "line": 5195,
+        "text": "\"text\": \"          \\\"text\\\": \\\"{\\\\\\\"store\\\\\\\": \\\\\\\"cmos-mcp-pro\\\\\\\", \\\\\\\"decisions\\\\\\\": [{\\\\\\\"id\\\\\\\": 1, \\\\\\\"ms\\\\\\\": 1763864790000, \\\\\\\"status\\\\\\\": \\\\\\\"archived\\\\\\\", \\\\\\\"sprint\\\\\\\": null, \\\\\\\"inactive_from\\\\\\\": null, \\\\\\\"superseded_by\\\\\\\": null, \\\\\\\"text\\\\\\\": \\\\\\\"Mission Protocol will use file-based",
+        "textLength": 1769049,
+        "textSha256": "9cd0828d1e200e65c08707378675d5a3a6973dee9edae812a95f79e58e61ebaa"
+      },
+      {
+        "file": "rbook/research/2026-10-s94-m06/implementation-before.json",
+        "line": 10036,
+        "text": "\"text\": \"{\\\"store\\\": \\\"cmos-mcp-pro\\\", \\\"decisions\\\": [{\\\"id\\\": 1, \\\"ms\\\": 1763864790000, \\\"status\\\": \\\"archived\\\", \\\"sprint\\\": null, \\\"inactive_from\\\": null, \\\"superseded_by\\\": null, \\\"text\\\": \\\"Mission Protocol will use file-based storage by default (project root)\\\"}, {\\\"id\\\": 2, \\\"ms\\\": 176386479",
+        "textLength": 1684529,
+        "textSha256": "620e14fd0ba2caa070787cb5a83fff6887d13a98c2d235b239d8a130214fee7b"
+      },
+      {
+        "file": "rbook/research/2026-10-s94-m06/implementation-before.json",
+        "line": 10048,
+        "text": "\"text\": \"          \\\"text\\\": \\\"{\\\\\\\"store\\\\\\\": \\\\\\\"cmos-mcp-pro\\\\\\\", \\\\\\\"decisions\\\\\\\": [{\\\\\\\"id\\\\\\\": 1, \\\\\\\"ms\\\\\\\": 1763864790000, \\\\\\\"status\\\\\\\": \\\\\\\"archived\\\\\\\", \\\\\\\"sprint\\\\\\\": null, \\\\\\\"inactive_from\\\\\\\": null, \\\\\\\"superseded_by\\\\\\\": null, \\\\\\\"text\\\\\\\": \\\\\\\"Mission Protocol will use file-based",
+        "textLength": 1769049,
+        "textSha256": "9cd0828d1e200e65c08707378675d5a3a6973dee9edae812a95f79e58e61ebaa"
+      },
+      {
+        "file": "rbook/research/2026-10-s94-m06/implementation-before.json",
+        "line": 11845,
+        "text": "\"text\": \"{\\\"store\\\": \\\"cmos-mcp-pro\\\", \\\"decisions\\\": [{\\\"id\\\": 1, \\\"ms\\\": 1763864790000, \\\"status\\\": \\\"archived\\\", \\\"sprint\\\": null, \\\"inactive_from\\\": null, \\\"superseded_by\\\": null, \\\"text\\\": \\\"Mission Protocol will use file-based storage by default (project root)\\\"}, {\\\"id\\\": 2, \\\"ms\\\": 176386479",
+        "textLength": 1684529,
+        "textSha256": "620e14fd0ba2caa070787cb5a83fff6887d13a98c2d235b239d8a130214fee7b"
+      },
+      {
+        "file": "rbook/research/2026-10-s94-m06/implementation-before.json",
+        "line": 11851,
+        "text": "\"text\": \"          \\\"text\\\": \\\"{\\\\\\\"store\\\\\\\": \\\\\\\"cmos-mcp-pro\\\\\\\", \\\\\\\"decisions\\\\\\\": [{\\\\\\\"id\\\\\\\": 1, \\\\\\\"ms\\\\\\\": 1763864790000, \\\\\\\"status\\\\\\\": \\\\\\\"archived\\\\\\\", \\\\\\\"sprint\\\\\\\": null, \\\\\\\"inactive_from\\\\\\\": null, \\\\\\\"superseded_by\\\\\\\": null, \\\\\\\"text\\\\\\\": \\\\\\\"Mission Protocol will use file-based",
+        "textLength": 1769049,
+        "textSha256": "9cd0828d1e200e65c08707378675d5a3a6973dee9edae812a95f79e58e61ebaa"
+      },
+      {
+        "file": "rbook/research/2026-10-s94-m06/implementation-before.json",
+        "line": 12131,
+        "text": "\"text\": \"      \\\"content\\\": \\\"# CMOS-MCP Architecture Reference\\\\n\\\\nHow the server works: moved out of [agents.md](../../agents.md) in s93-m12 so the rules file\\\\nstays under Codex's 32 KiB. The rules and the process stay there; this is the reference they\\\\npoint at.\\\\n\\\\n## Project Registry System",
+        "textLength": 80635,
+        "textSha256": "87ecdca998b99d8391bce7f0f2aadd80c08bac6b0acbbfd5c32c37de7dc4dcd3"
+      },
+      {
+        "file": "rbook/research/2026-10-s94-m06/implementation-before.json",
+        "line": 12137,
+        "text": "\"text\": \"      \\\"content\\\": \\\"# CMOS-MCP Architecture Reference\\\\n\\\\nHow the server works: moved out of [agents.md](../../agents.md) in s93-m12 so the rules file\\\\nstays under Codex's 32 KiB. The rules and the process stay there; this is the reference they\\\\npoint at.\\\\n\\\\n## Project Registry System",
+        "textLength": 80635,
+        "textSha256": "87ecdca998b99d8391bce7f0f2aadd80c08bac6b0acbbfd5c32c37de7dc4dcd3"
+      },
+      {
+        "file": "rbook/research/2026-10-s94-m06/implementation-before.json",
+        "line": 12521,
+        "text": "\"text\": \"          \\\"text\\\": \\\"      \\\\\\\"content\\\\\\\": \\\\\\\"# CMOS-MCP Architecture Reference\\\\\\\\n\\\\\\\\nHow the server works: moved out of [agents.md](../../agents.md) in s93-m12 so the rules file\\\\\\\\nstays under Codex's 32 KiB. The rules and the process stay there; this is the reference they\\\\\\\\npoint",
+        "textLength": 82829,
+        "textSha256": "42b1c735ca6f4f490ee18be05e6f890e756174c07edb7aa372e66f92a796622e"
+      },
+      {
+        "file": "rbook/research/2026-10-s94-m06/implementation-before.json",
+        "line": 12527,
+        "text": "\"text\": \"          \\\"text\\\": \\\"      \\\\\\\"content\\\\\\\": \\\\\\\"# CMOS-MCP Architecture Reference\\\\\\\\n\\\\\\\\nHow the server works: moved out of [agents.md](../../agents.md) in s93-m12 so the rules file\\\\\\\\nstays under Codex's 32 KiB. The rules and the process stay there; this is the reference they\\\\\\\\npoint",
+        "textLength": 82829,
+        "textSha256": "42b1c735ca6f4f490ee18be05e6f890e756174c07edb7aa372e66f92a796622e"
+      },
+      {
+        "file": "rbook/research/2026-10-s94-m06/implementation-before.json",
+        "line": 12539,
+        "text": "\"text\": \"          \\\"text\\\": \\\"      \\\\\\\"content\\\\\\\": \\\\\\\"# CMOS-MCP Architecture Reference\\\\\\\\n\\\\\\\\nHow the server works: moved out of [agents.md](../../agents.md) in s93-m12 so the rules file\\\\\\\\nstays under Codex's 32 KiB. The rules and the process stay there; this is the reference they\\\\\\\\npoint",
+        "textLength": 82829,
+        "textSha256": "42b1c735ca6f4f490ee18be05e6f890e756174c07edb7aa372e66f92a796622e"
+      },
+      {
+        "file": "rbook/research/2026-10-s94-m06/implementation-before.json",
+        "line": 12545,
+        "text": "\"text\": \"          \\\"text\\\": \\\"      \\\\\\\"content\\\\\\\": \\\\\\\"# CMOS-MCP Architecture Reference\\\\\\\\n\\\\\\\\nHow the server works: moved out of [agents.md](../../agents.md) in s93-m12 so the rules file\\\\\\\\nstays under Codex's 32 KiB. The rules and the process stay there; this is the reference they\\\\\\\\npoint",
+        "textLength": 82829,
+        "textSha256": "42b1c735ca6f4f490ee18be05e6f890e756174c07edb7aa372e66f92a796622e"
+      },
+      {
+        "file": "rbook/research/2026-10-s94-m06/implementation-before.json",
+        "line": 13223,
+        "text": "\"text\": \"{\\\"store\\\": \\\"cmos-mcp-pro\\\", \\\"decisions\\\": [{\\\"id\\\": 1, \\\"ms\\\": 1763864790000, \\\"status\\\": \\\"archived\\\", \\\"sprint\\\": null, \\\"inactive_from\\\": null, \\\"superseded_by\\\": null, \\\"text\\\": \\\"Mission Protocol will use file-based storage by default (project root)\\\"}, {\\\"id\\\": 2, \\\"ms\\\": 176386479",
+        "textLength": 1684529,
+        "textSha256": "620e14fd0ba2caa070787cb5a83fff6887d13a98c2d235b239d8a130214fee7b"
+      },
+      {
+        "file": "rbook/research/2026-10-s94-m06/implementation-before.json",
+        "line": 13229,
+        "text": "\"text\": \"{\\\"store\\\": \\\"cmos-mcp-pro\\\", \\\"decisions\\\": [{\\\"id\\\": 1, \\\"ms\\\": 1763864790000, \\\"status\\\": \\\"archived\\\", \\\"sprint\\\": null, \\\"inactive_from\\\": null, \\\"superseded_by\\\": null, \\\"text\\\": \\\"Mission Protocol will use file-based storage by default (project root)\\\"}, {\\\"id\\\": 2, \\\"ms\\\": 176386479",
+        "textLength": 1684529,
+        "textSha256": "620e14fd0ba2caa070787cb5a83fff6887d13a98c2d235b239d8a130214fee7b"
+      },
+      {
+        "file": "rbook/research/2026-10-s94-m06/implementation-before.json",
+        "line": 13235,
+        "text": "\"text\": \"{\\\"store\\\": \\\"cmos-mcp-pro\\\", \\\"decisions\\\": [{\\\"id\\\": 1, \\\"ms\\\": 1763864790000, \\\"status\\\": \\\"archived\\\", \\\"sprint\\\": null, \\\"inactive_from\\\": null, \\\"superseded_by\\\": null, \\\"text\\\": \\\"Mission Protocol will use file-based storage by default (project root)\\\"}, {\\\"id\\\": 2, \\\"ms\\\": 176386479",
+        "textLength": 1684529,
+        "textSha256": "620e14fd0ba2caa070787cb5a83fff6887d13a98c2d235b239d8a130214fee7b"
+      },
+      {
+        "file": "rbook/research/2026-10-s94-m06/implementation-before.json",
+        "line": 13241,
+        "text": "\"text\": \"{\\\"store\\\": \\\"cmos-mcp-pro\\\", \\\"decisions\\\": [{\\\"id\\\": 1, \\\"ms\\\": 1763864790000, \\\"status\\\": \\\"archived\\\", \\\"sprint\\\": null, \\\"inactive_from\\\": null, \\\"superseded_by\\\": null, \\\"text\\\": \\\"Mission Protocol will use file-based storage by default (project root)\\\"}, {\\\"id\\\": 2, \\\"ms\\\": 176386479",
+        "textLength": 1684529,
+        "textSha256": "620e14fd0ba2caa070787cb5a83fff6887d13a98c2d235b239d8a130214fee7b"
+      },
+      {
+        "file": "rbook/research/2026-10-s94-m06/implementation-before.json",
+        "line": 13247,
+        "text": "\"text\": \"{\\\"store\\\": \\\"cmos-mcp-pro\\\", \\\"decisions\\\": [{\\\"id\\\": 1, \\\"ms\\\": 1763864790000, \\\"status\\\": \\\"archived\\\", \\\"sprint\\\": null, \\\"inactive_from\\\": null, \\\"superseded_by\\\": null, \\\"text\\\": \\\"Mission Protocol will use file-based storage by default (project root)\\\"}, {\\\"id\\\": 2, \\\"ms\\\": 176386479",
+        "textLength": 1684529,
+        "textSha256": "620e14fd0ba2caa070787cb5a83fff6887d13a98c2d235b239d8a130214fee7b"
+      },
+      {
+        "file": "rbook/research/2026-10-s94-m06/implementation-before.json",
+        "line": 13253,
+        "text": "\"text\": \"{\\\"store\\\": \\\"cmos-mcp-pro\\\", \\\"decisions\\\": [{\\\"id\\\": 1, \\\"ms\\\": 1763864790000, \\\"status\\\": \\\"archived\\\", \\\"sprint\\\": null, \\\"inactive_from\\\": null, \\\"superseded_by\\\": null, \\\"text\\\": \\\"Mission Protocol will use file-based storage by default (project root)\\\"}, {\\\"id\\\": 2, \\\"ms\\\": 176386479",
+        "textLength": 1684529,
+        "textSha256": "620e14fd0ba2caa070787cb5a83fff6887d13a98c2d235b239d8a130214fee7b"
+      },
+      {
+        "file": "rbook/research/2026-10-s94-m06/implementation-before.json",
+        "line": 13259,
+        "text": "\"text\": \"{\\\"store\\\": \\\"cmos-mcp-pro\\\", \\\"decisions\\\": [{\\\"id\\\": 1, \\\"ms\\\": 1763864790000, \\\"status\\\": \\\"archived\\\", \\\"sprint\\\": null, \\\"inactive_from\\\": null, \\\"superseded_by\\\": null, \\\"text\\\": \\\"Mission Protocol will use file-based storage by default (project root)\\\"}, {\\\"id\\\": 2, \\\"ms\\\": 176386479",
+        "textLength": 1684529,
+        "textSha256": "620e14fd0ba2caa070787cb5a83fff6887d13a98c2d235b239d8a130214fee7b"
+      },
+      {
+        "file": "rbook/research/2026-10-s94-m06/implementation-before.json",
+        "line": 13307,
+        "text": "\"text\": \"          \\\"text\\\": \\\"{\\\\\\\"store\\\\\\\": \\\\\\\"cmos-mcp-pro\\\\\\\", \\\\\\\"decisions\\\\\\\": [{\\\\\\\"id\\\\\\\": 1, \\\\\\\"ms\\\\\\\": 1763864790000, \\\\\\\"status\\\\\\\": \\\\\\\"archived\\\\\\\", \\\\\\\"sprint\\\\\\\": null, \\\\\\\"inactive_from\\\\\\\": null, \\\\\\\"superseded_by\\\\\\\": null, \\\\\\\"text\\\\\\\": \\\\\\\"Mission Protocol will use file-based",
+        "textLength": 1769049,
+        "textSha256": "9cd0828d1e200e65c08707378675d5a3a6973dee9edae812a95f79e58e61ebaa"
+      },
+      {
+        "file": "rbook/research/2026-10-s94-m06/implementation-before.json",
+        "line": 13313,
+        "text": "\"text\": \"          \\\"text\\\": \\\"{\\\\\\\"store\\\\\\\": \\\\\\\"cmos-mcp-pro\\\\\\\", \\\\\\\"decisions\\\\\\\": [{\\\\\\\"id\\\\\\\": 1, \\\\\\\"ms\\\\\\\": 1763864790000, \\\\\\\"status\\\\\\\": \\\\\\\"archived\\\\\\\", \\\\\\\"sprint\\\\\\\": null, \\\\\\\"inactive_from\\\\\\\": null, \\\\\\\"superseded_by\\\\\\\": null, \\\\\\\"text\\\\\\\": \\\\\\\"Mission Protocol will use file-based",
+        "textLength": 1769049,
+        "textSha256": "9cd0828d1e200e65c08707378675d5a3a6973dee9edae812a95f79e58e61ebaa"
+      },
+      {
+        "file": "rbook/research/2026-10-s94-m06/implementation-before.json",
+        "line": 13319,
+        "text": "\"text\": \"          \\\"text\\\": \\\"{\\\\\\\"store\\\\\\\": \\\\\\\"cmos-mcp-pro\\\\\\\", \\\\\\\"decisions\\\\\\\": [{\\\\\\\"id\\\\\\\": 1, \\\\\\\"ms\\\\\\\": 1763864790000, \\\\\\\"status\\\\\\\": \\\\\\\"archived\\\\\\\", \\\\\\\"sprint\\\\\\\": null, \\\\\\\"inactive_from\\\\\\\": null, \\\\\\\"superseded_by\\\\\\\": null, \\\\\\\"text\\\\\\\": \\\\\\\"Mission Protocol will use file-based",
+        "textLength": 1769049,
+        "textSha256": "9cd0828d1e200e65c08707378675d5a3a6973dee9edae812a95f79e58e61ebaa"
+      },
+      {
+        "file": "rbook/research/2026-10-s94-m06/implementation-before.json",
+        "line": 13325,
+        "text": "\"text\": \"          \\\"text\\\": \\\"{\\\\\\\"store\\\\\\\": \\\\\\\"cmos-mcp-pro\\\\\\\", \\\\\\\"decisions\\\\\\\": [{\\\\\\\"id\\\\\\\": 1, \\\\\\\"ms\\\\\\\": 1763864790000, \\\\\\\"status\\\\\\\": \\\\\\\"archived\\\\\\\", \\\\\\\"sprint\\\\\\\": null, \\\\\\\"inactive_from\\\\\\\": null, \\\\\\\"superseded_by\\\\\\\": null, \\\\\\\"text\\\\\\\": \\\\\\\"Mission Protocol will use file-based",
+        "textLength": 1769049,
+        "textSha256": "9cd0828d1e200e65c08707378675d5a3a6973dee9edae812a95f79e58e61ebaa"
+      },
+      {
+        "file": "rbook/research/2026-10-s94-m06/implementation-before.json",
+        "line": 13331,
+        "text": "\"text\": \"          \\\"text\\\": \\\"{\\\\\\\"store\\\\\\\": \\\\\\\"cmos-mcp-pro\\\\\\\", \\\\\\\"decisions\\\\\\\": [{\\\\\\\"id\\\\\\\": 1, \\\\\\\"ms\\\\\\\": 1763864790000, \\\\\\\"status\\\\\\\": \\\\\\\"archived\\\\\\\", \\\\\\\"sprint\\\\\\\": null, \\\\\\\"inactive_from\\\\\\\": null, \\\\\\\"superseded_by\\\\\\\": null, \\\\\\\"text\\\\\\\": \\\\\\\"Mission Protocol will use file-based",
+        "textLength": 1769049,
+        "textSha256": "9cd0828d1e200e65c08707378675d5a3a6973dee9edae812a95f79e58e61ebaa"
+      },
+      {
+        "file": "rbook/research/2026-10-s94-m06/implementation-before.json",
+        "line": 13337,
+        "text": "\"text\": \"          \\\"text\\\": \\\"{\\\\\\\"store\\\\\\\": \\\\\\\"cmos-mcp-pro\\\\\\\", \\\\\\\"decisions\\\\\\\": [{\\\\\\\"id\\\\\\\": 1, \\\\\\\"ms\\\\\\\": 1763864790000, \\\\\\\"status\\\\\\\": \\\\\\\"archived\\\\\\\", \\\\\\\"sprint\\\\\\\": null, \\\\\\\"inactive_from\\\\\\\": null, \\\\\\\"superseded_by\\\\\\\": null, \\\\\\\"text\\\\\\\": \\\\\\\"Mission Protocol will use file-based",
+        "textLength": 1769049,
+        "textSha256": "9cd0828d1e200e65c08707378675d5a3a6973dee9edae812a95f79e58e61ebaa"
+      },
+      {
+        "file": "rbook/research/2026-10-s94-m06/implementation-before.json",
+        "line": 13343,
+        "text": "\"text\": \"          \\\"text\\\": \\\"{\\\\\\\"store\\\\\\\": \\\\\\\"cmos-mcp-pro\\\\\\\", \\\\\\\"decisions\\\\\\\": [{\\\\\\\"id\\\\\\\": 1, \\\\\\\"ms\\\\\\\": 1763864790000, \\\\\\\"status\\\\\\\": \\\\\\\"archived\\\\\\\", \\\\\\\"sprint\\\\\\\": null, \\\\\\\"inactive_from\\\\\\\": null, \\\\\\\"superseded_by\\\\\\\": null, \\\\\\\"text\\\\\\\": \\\\\\\"Mission Protocol will use file-based",
+        "textLength": 1769049,
+        "textSha256": "9cd0828d1e200e65c08707378675d5a3a6973dee9edae812a95f79e58e61ebaa"
+      },
+      {
+        "file": "rbook/research/2026-10-s94-m06/pre-edit.json",
+        "line": 2830,
+        "text": "\"text\": \"      \\\"content\\\": \\\"# CMOS-MCP Architecture Reference\\\\n\\\\nHow the server works: moved out of [agents.md](../../agents.md) in s93-m12 so the rules file\\\\nstays under Codex's 32 KiB. The rules and the process stay there; this is the reference they\\\\npoint at.\\\\n\\\\n## Project Registry System",
+        "textLength": 80635,
+        "textSha256": "87ecdca998b99d8391bce7f0f2aadd80c08bac6b0acbbfd5c32c37de7dc4dcd3"
+      },
+      {
+        "file": "rbook/research/2026-10-s94-m06/pre-edit.json",
+        "line": 2836,
+        "text": "\"text\": \"      \\\"content\\\": \\\"# CMOS-MCP Architecture Reference\\\\n\\\\nHow the server works: moved out of [agents.md](../../agents.md) in s93-m12 so the rules file\\\\nstays under Codex's 32 KiB. The rules and the process stay there; this is the reference they\\\\npoint at.\\\\n\\\\n## Project Registry System",
+        "textLength": 80635,
+        "textSha256": "87ecdca998b99d8391bce7f0f2aadd80c08bac6b0acbbfd5c32c37de7dc4dcd3"
+      },
+      {
+        "file": "rbook/research/2026-10-s94-m06/pre-m04-fixture/labels.corpus.json",
+        "line": 1,
+        "text": "{\"store\": \"cmos-mcp-pro\", \"decisions\": [{\"id\": 1, \"ms\": 1763864790000, \"status\": \"archived\", \"sprint\": null, \"inactive_from\": null, \"superseded_by\": null, \"text\": \"Mission Protocol will use file-based storage by default (project root)\"}, {\"id\": 2, \"ms\": 1763864790000, \"status\": \"archived\", \"sprint\":",
+        "textLength": 1642271,
+        "textSha256": "8c5703eb7bbfa6663e86248b862517f81dce581c1d81c9a84aa9db5220c0620e"
+      },
+      {
+        "file": "rbook/research/2026-10-s94-m07/sweep-final-staged.json",
+        "line": 83,
+        "text": "\"text\": \"{\\\"store\\\": \\\"cmos-mcp-pro\\\", \\\"decisions\\\": [{\\\"id\\\": 1, \\\"ms\\\": 1763864790000, \\\"status\\\": \\\"archived\\\", \\\"sprint\\\": null, \\\"inactive_from\\\": null, \\\"superseded_by\\\": null, \\\"text\\\": \\\"Mission Protocol will use file-based storage by default (project root)\\\"}, {\\\"id\\\": 2, \\\"ms\\\": 176386479",
+        "textLength": 1684529,
+        "textSha256": "620e14fd0ba2caa070787cb5a83fff6887d13a98c2d235b239d8a130214fee7b"
+      },
+      {
+        "file": "rbook/research/2026-10-s95-probes/build/full-suite-build2.json",
+        "line": 1,
+        "text": "{\"numFailedTestSuites\":5,\"numFailedTests\":9,\"numPassedTestSuites\":372,\"numPassedTests\":5708,\"numPendingTestSuites\":0,\"numPendingTests\":7,\"numRuntimeErrorTestSuites\":1,\"numTodoTests\":0,\"numTotalTestSuites\":377,\"numTotalTests\":5724,\"openHandles\":[],\"snapshot\":{\"added\":0,\"didUpdate\":false,\"failure\":tru",
+        "textLength": 8180097,
+        "textSha256": "80c517d45746c20ac419a51b57a6942aabdbfb1805686fd807df513cc8655e7a"
+      },
+      {
+        "file": "rbook/research/2026-10-s98-build/s98-close/final-witness/jest-results.json.raw",
+        "line": 1,
+        "text": "{\"numFailedTestSuites\":0,\"numFailedTests\":0,\"numPassedTestSuites\":569,\"numPassedTests\":8136,\"numPendingTestSuites\":0,\"numPendingTests\":7,\"numRuntimeErrorTestSuites\":0,\"numTodoTests\":0,\"numTotalTestSuites\":569,\"numTotalTests\":8143,\"openHandles\":[],\"snapshot\":{\"added\":0,\"didUpdate\":false,\"failure\":fal",
+        "textLength": 11320719,
+        "textSha256": "a81e89a291574b054a24a99b1f57c7bf7fbaabd194520dda93eea2b04cd00606"
+      },
+      {
+        "file": "rbook/research/2026-10-s98-build/s98-m17/full-suite-green.json",
+        "line": 1,
+        "text": "{\"numFailedTestSuites\":0,\"numFailedTests\":0,\"numPassedTestSuites\":550,\"numPassedTests\":8005,\"numPendingTestSuites\":0,\"numPendingTests\":7,\"numRuntimeErrorTestSuites\":0,\"numTodoTests\":0,\"numTotalTestSuites\":550,\"numTotalTests\":8012,\"openHandles\":[],\"snapshot\":{\"added\":0,\"didUpdate\":false,\"failure\":fal",
+        "textLength": 11167948,
+        "textSha256": "83b5169ed6874579075eed4a8f3fc6d63d58c7921012637ffd6f88f7ef7e1588"
+      },
+      {
+        "file": "rbook/research/2026-10-s98-build/s98-m18/full-suite-first-red.json",
+        "line": 1,
+        "text": "{\"numFailedTestSuites\":3,\"numFailedTests\":6,\"numPassedTestSuites\":566,\"numPassedTests\":8125,\"numPendingTestSuites\":0,\"numPendingTests\":7,\"numRuntimeErrorTestSuites\":0,\"numTodoTests\":0,\"numTotalTestSuites\":569,\"numTotalTests\":8138,\"openHandles\":[],\"snapshot\":{\"added\":0,\"didUpdate\":false,\"failure\":fal",
+        "textLength": 11332272,
+        "textSha256": "f720a0c76d383c29eafd26111fe0d77c54726c4f80fdd6e042f1f62791987817"
+      },
+      {
+        "file": "rbook/research/2026-10-s98-build/s98-m18/full-suite-green.json",
+        "line": 1,
+        "text": "{\"numFailedTestSuites\":0,\"numFailedTests\":0,\"numPassedTestSuites\":569,\"numPassedTests\":8136,\"numPendingTestSuites\":0,\"numPendingTests\":7,\"numRuntimeErrorTestSuites\":0,\"numTodoTests\":0,\"numTotalTestSuites\":569,\"numTotalTests\":8143,\"openHandles\":[],\"snapshot\":{\"added\":0,\"didUpdate\":false,\"failure\":fal",
+        "textLength": 11320717,
+        "textSha256": "3a0ee829ad1be19fe2bde4102219fede64bf5a3e1fe757fabb59f7fe9ec5f8e3"
+      },
+      {
+        "file": "rbook/research/2026-10-s98-build/s98-m19/full-suite-first-red.json",
+        "line": 1,
+        "text": "{\"numFailedTestSuites\":2,\"numFailedTests\":2,\"numPassedTestSuites\":567,\"numPassedTests\":8134,\"numPendingTestSuites\":0,\"numPendingTests\":7,\"numRuntimeErrorTestSuites\":0,\"numTodoTests\":0,\"numTotalTestSuites\":569,\"numTotalTests\":8143,\"openHandles\":[],\"snapshot\":{\"added\":0,\"didUpdate\":false,\"failure\":fal",
+        "textLength": 11326382,
+        "textSha256": "6b311dc5f9dffe119fa3899b34b11819d4f2720fbbd990c1787d100396ed1b6b"
+      },
+      {
+        "file": "rbook/research/2026-10-s98-build/s98-m19/full-suite-green.json",
+        "line": 1,
+        "text": "{\"numFailedTestSuites\":0,\"numFailedTests\":0,\"numPassedTestSuites\":569,\"numPassedTests\":8136,\"numPendingTestSuites\":0,\"numPendingTests\":7,\"numRuntimeErrorTestSuites\":0,\"numTodoTests\":0,\"numTotalTestSuites\":569,\"numTotalTests\":8143,\"openHandles\":[],\"snapshot\":{\"added\":0,\"didUpdate\":false,\"failure\":fal",
+        "textLength": 11320948,
+        "textSha256": "42a84ca801963b00d058a946611ba59a332c6822db44f3533f58e035c911265e"
+      },
+      {
+        "file": "rbook/research/2026-10-s98-build/s98-m20/release-checkpoint/full-suite/jest-results.json",
+        "line": 1,
+        "text": "{\"numFailedTestSuites\":0,\"numFailedTests\":0,\"numPassedTestSuites\":569,\"numPassedTests\":8136,\"numPendingTestSuites\":0,\"numPendingTests\":7,\"numRuntimeErrorTestSuites\":0,\"numTodoTests\":0,\"numTotalTestSuites\":569,\"numTotalTests\":8143,\"openHandles\":[],\"snapshot\":{\"added\":0,\"didUpdate\":false,\"failure\":fal",
+        "textLength": 11321237,
+        "textSha256": "7b5894ba3924c929233a6bc581f02bb0d9e0e39c4ed81bd0aea4fcccd552864f"
+      },
+      {
+        "file": "rbook/research/2026-10-s98-build/s98-m21/full-suite/jest-results.json",
+        "line": 1,
+        "text": "{\"numFailedTestSuites\":0,\"numFailedTests\":0,\"numPassedTestSuites\":569,\"numPassedTests\":8136,\"numPendingTestSuites\":0,\"numPendingTests\":7,\"numRuntimeErrorTestSuites\":0,\"numTodoTests\":0,\"numTotalTestSuites\":569,\"numTotalTests\":8143,\"openHandles\":[],\"snapshot\":{\"added\":0,\"didUpdate\":false,\"failure\":fal",
+        "textLength": 11320868,
+        "textSha256": "de1c72a18fb8c87ce0dc9bfe9808f3d989a5a29f5d3dbf1c089571860239f6a9"
+      },
+      {
+        "file": "src/auth/auth-state.ts",
+        "line": 140,
+        "text": "const best = entries.reduce((a, b) => ((b[1].issuedAt ?? '') > (a[1].issuedAt ?? '') ? b : a));"
+      },
+      {
+        "file": "src/tools/rbook/dashboard-client.ts",
+        "line": 419,
+        "text": "const best = entries.reduce((a, b) => ((b[1].issuedAt ?? '') > (a[1].issuedAt ?? '') ? b : a));"
+      },
+      {
+        "file": "src/tools/rbook/dashboard-upload-auth.ts",
+        "line": 173,
+        "text": "return bv.issuedAt.localeCompare(av.issuedAt);"
+      }
+    ],
+    "resolverApiKeyOverride": [
+      {
+        "file": "src/tools/rbook/dashboard-upload-auth.ts",
+        "line": 180,
+        "text": "? await DashboardClient.fromEnvForProject(projectRoot, {"
+      },
+      {
+        "file": "tests/auth/reissue-resolution.test.ts",
+        "line": 396,
+        "text": "const resolved = await DashboardClient.fromEnvForUser({"
+      },
+      {
+        "file": "tests/auth/reissue-resolution.test.ts",
+        "line": 420,
+        "text": "const override = await DashboardClient.fromEnvForUser({"
+      },
+      {
+        "file": "tests/auth/reissue-resolution.test.ts",
+        "line": 558,
+        "text": "const resolved = await DashboardClient.fromEnvForUser({"
+      },
+      {
+        "file": "tests/tools/rbook/dashboard-client-key-selection.test.ts",
+        "line": 146,
+        "text": "const result = await DashboardClient.fromEnvForProject('/any', {"
+      },
+      {
+        "file": "tests/tools/rbook/upload-shutdown.test.ts",
+        "line": 93,
+        "text": "const resolved = await DashboardClient.fromEnvForProject(${JSON.stringify(project)}, {"
+      }
+    ]
+  }
+}

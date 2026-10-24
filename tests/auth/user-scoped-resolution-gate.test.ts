@@ -127,6 +127,11 @@ describe('s86-m06 structural gate: user-scoped resolution for credential repair'
       { file: path.join(AUTH_DIR, 'project-key-capture.ts'), premise: 'holds no user-scoped keys' },
       {
         file: path.join(REPO_ROOT, 'src', 'tools', 'rbook', 'checkpoint-backfill.ts'),
+        premise: 'attemptDashboardUpload(',
+      },
+      {
+        // s101-m01: the checkpoint now enters the shared upload attempt; registration lives here.
+        file: path.join(REPO_ROOT, 'src', 'tools', 'rbook', 'dashboard-upload-attempt.ts'),
         premise: 'checkAndRegister(',
       },
       {

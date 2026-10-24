@@ -2,13 +2,20 @@
 // ABOUTME: Old readers receive only complete transactions before their first unreadable stream entry.
 // ABOUTME: Exercise stored transaction boundaries, partial marks, independent streams and paging.
 import { recordOwnChanges } from '../../../src/tools/rbook/record-changes';
+import fs from 'fs';
+import path from 'path';
+import { runCli } from '../../../src/cli';
 import { writeBundle } from '../../../src/tools/rbook/record-bundle';
 import { firstPage } from '../../../src/tools/rbook/record-pages';
 import { upgradeRecordProtocolForTesting } from '../../../src/tools/rbook/record-protocol';
-import { changesSince, readableChanges } from '../../../src/tools/rbook/record-since';
+import {
+  changesSince,
+  changesSinceReport,
+  readableChanges,
+} from '../../../src/tools/rbook/record-since';
 import type { LoggedChange } from '../../../src/tools/rbook/record-standing';
 import type { RbookDatabaseClient } from '../../../src/tools/rbook/client';
-import { replicaFixture, type ReplicaFixture } from '../../helpers/replica-fixture';
+import { replicaFixture, useMachine, type ReplicaFixture } from '../../helpers/replica-fixture';
 import { onCopy, ownerCopy, type Copy } from '../../helpers/shared-copies';
 
 let fixture: ReplicaFixture;
@@ -128,6 +135,60 @@ it('a recovery requiring the complete log refuses a held row after its marks', a
     );
     expect(delivered(client, { [owner.replicaId]: txn[1].replica_seq }, complete)).toEqual([]);
   });
+});
+
+it('withheld counts include only rows after the recipient marks, including mixed transaction tails', async () => {
+  const txn = await mixedTransaction();
+  await onCopy(fixture.tmp, owner, (client) => {
+    expect(changesSinceReport(client, {}, { reads: 1 }).withheld).toBe(2);
+    const tail = changesSinceReport(
+      client,
+      { [owner.replicaId]: txn[0].replica_seq },
+      { reads: 1 }
+    );
+    expect(tail).toMatchObject({ changes: [], withheld: 1, withheldProtocol: 2 });
+    expect(
+      changesSinceReport(client, { [owner.replicaId]: txn[1].replica_seq }, { reads: 1 }).withheld
+    ).toBe(0);
+    expect(changesSinceReport(client, {}, { reads: 2 }).withheld).toBe(0);
+  });
+});
+
+it('bundle-out warns with shared-sync ENV unset and preserves the exact bundle wire shape', async () => {
+  await mixedTransaction();
+  const out = path.join(fixture.tmp, 'old-reader.bundle');
+  const notes: string[] = [];
+  useMachine(fixture.tmp, owner.machine);
+  const previous = process.env.RBOOK_SHARED_SYNC;
+  delete process.env.RBOOK_SHARED_SYNC;
+  let code;
+  try {
+    code = await runCli(['sync', '--bundle-out', out, '--project-root', owner.root], {
+      env: process.env,
+      cwd: owner.root,
+      readStdin: async () => '',
+      stdout: () => undefined,
+      stderr: (line) => notes.push(line),
+    });
+  } finally {
+    if (previous === undefined) delete process.env.RBOOK_SHARED_SYNC;
+    else process.env.RBOOK_SHARED_SYNC = previous;
+  }
+  expect(code).toBe(0);
+  expect(notes.join(' ')).toMatch(/Upgrade Reasonbook on the receiving copy/);
+  expect(notes.join(' ')).toMatch(/2 change\(s\).*withheld/);
+  const bundle = JSON.parse(fs.readFileSync(out, 'utf8'));
+  expect(Object.keys(bundle).sort()).toEqual([
+    'chains',
+    'changes',
+    'format',
+    'from',
+    'hash',
+    'projectId',
+    'protocol',
+    'since',
+  ]);
+  expect(bundle.changes.every((row: LoggedChange) => row.protocol_version === 1)).toBe(true);
 });
 
 it('holding one stream leaves another readable stream eligible for the same page', async () => {

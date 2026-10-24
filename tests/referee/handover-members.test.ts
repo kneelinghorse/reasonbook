@@ -24,10 +24,11 @@ import {
   syncWithReferee,
   type Hosted,
 } from '../helpers/referee-fixture';
-import { onCopy, ownerCopy } from '../helpers/shared-copies';
+import { onCopy, ownerCopy, read, type Copy } from '../helpers/shared-copies';
 
 let fixture: ReplicaFixture;
 let hosted: Hosted;
+let erin: Copy;
 let upload: string;
 let bindings: Array<{ memberId: string; accountId: string }>;
 let serial = 0;
@@ -35,7 +36,7 @@ beforeAll(async () => {
   fixture = replicaFixture('rbook-carried-members-');
   hosted = await hostProject(fixture.tmp);
   await joinThroughReferee(fixture.tmp, hosted, 'Darryl', 'acct-darryl');
-  await joinThroughReferee(fixture.tmp, hosted, 'Erin', 'acct-erin');
+  erin = await joinThroughReferee(fixture.tmp, hosted, 'Erin', 'acct-erin');
   expect((await ask(hosted.referee, (at) => remove(at, { accountId: 'acct-erin' }))).success).toBe(
     true
   );
@@ -138,6 +139,13 @@ it('carries exact present and removed identities; same-account removed re-invite
     invite(at, { accountId: 'another-account', name: 'Erin', role: 'editor' })
   );
   expect(wrong.error?.code).toBe('REFEREE_NAME_TAKEN');
+  const unknownReader = await ask(referee, (at) =>
+    invite(at, { accountId: 'acct-erin', name: 'Erin', role: 'editor' })
+  );
+  expect(unknownReader.error?.code).toBe('RECORD_COPY_TOO_OLD');
+  const held = read(erin, 'SELECT * FROM record_changes ORDER BY change_id');
+  expect((await syncWithReferee(fixture.tmp, next, erin, 'acct-erin')).removed).toBe(true);
+  expect(read(erin, 'SELECT * FROM record_changes ORDER BY change_id')).toEqual(held);
   const restored = await ask(referee, (at) =>
     invite(at, { accountId: 'acct-erin', name: 'Erin', role: 'editor' })
   );

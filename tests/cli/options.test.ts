@@ -275,3 +275,41 @@ describe('F9 public option boundary', () => {
     expect(runBrief).not.toHaveBeenCalled();
   });
 });
+
+describe('first-hour positional mistakes fail before side effects', () => {
+  it.each([
+    ['init', ['My project'], '--name'],
+    ['init', ['MyProject', '--project-root', '/tmp/example'], '--name'],
+    ['init', ['--name', 'My', 'Project', '--project-root', '/tmp/example'], '--name'],
+    ['init', ['--project-root', '/tmp/example', '--no-hooks', 'MyProject'], '--name'],
+    ['decisions', ['--session-id', 'session', 'record', 'the choice'], '--content'],
+    ['init', ['--no-hooks', 'My project'], '--name'],
+    ['relevant', ['architecture'], '--query'],
+    ['feedback', ['This is confusing'], '--content'],
+    ['capture', ['a lesson'], '--content'],
+    ['decisions', ['record', 'the choice'], '--content'],
+    ['move', ['owner'], '--to'],
+    ['set-aside', ['copy-id'], '--replica'],
+    ['review', ['/some/project'], '--project-root'],
+    ['brief', ['7'], '--days'],
+    ['session', ['ensure', 'my-session'], '--session-id'],
+    ['profile', ['show', 'extra'], '--help'],
+    ['ambient', ['off', 'extra'], '--help'],
+    ['drafts', ['list', 'extra'], '--help'],
+  ])('%s names the likely flag for %j', async (verb, args, flag) => {
+    const output = io();
+    expect(await runCli([verb, ...args], output)).toBe(1);
+    expect(output.stderr).toHaveBeenCalledWith(expect.stringContaining('unexpected argument'));
+    expect(output.stderr).toHaveBeenCalledWith(expect.stringContaining(flag));
+    expect(output.stdout).not.toHaveBeenCalled();
+    expect(CliTelemetry).not.toHaveBeenCalled();
+    for (const [, handler] of routes) expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('catches an unquoted multiword flag value and explains quoting', async () => {
+    const output = io();
+    expect(await runCli(['init', '--name', 'My', 'Project'], output)).toBe(1);
+    expect(output.stderr).toHaveBeenCalledWith(expect.stringMatching(/--name.*quot/i));
+    expect(runCommand).not.toHaveBeenCalled();
+  });
+});

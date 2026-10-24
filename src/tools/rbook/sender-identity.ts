@@ -40,18 +40,6 @@ export interface LocalSenderIdentity {
   rbookAddress: string | null;
 }
 
-/**
- * Normalise a rbook:// address the same way rbook_message(send) does before POSTing,
- * so that local-vs-directory comparison is case-insensitive + whitespace-tolerant.
- */
-function normalizeAddress(address: string): string {
-  address = normalizeAddressScheme(address);
-  if (!address.startsWith('rbook://')) return address;
-  const body = address.slice('rbook://'.length);
-  const normalized = body.toLowerCase().replace(/\s+/g, '-').replace(/-{2,}/g, '-');
-  return `rbook://${normalized}`;
-}
-
 function normalizeSlug(value: string | null | undefined): string | null {
   if (!value) return null;
   const trimmed = value.trim();
@@ -114,9 +102,8 @@ function shouldAttemptIdentityRepair(
  * `rbookAddress` is null when the identity row holds an empty or `rbook://unknown/*`
  * address; sending a bogus value would attribute the message to the wrong project.
  *
- * Attempts a best-effort owner resolution + backfill first so that a fresh project
- * with dashboard auth configured can emit a canonical address on its very first
- * send.
+ * Attempts a best-effort owner resolution + backfill first to recover a registered
+ * project's canonical address. An address alone does not authorize a send.
  */
 export async function readLocalSenderIdentity(projectRoot?: string): Promise<LocalSenderIdentity> {
   try {
@@ -169,39 +156,20 @@ export async function readLocalSenderIdentity(projectRoot?: string): Promise<Loc
 /**
  * Resolve the dashboard UUID to attribute an outbound message to.
  *
- * Resolution order (fail-closed):
- *   1. `metadata.dashboard_project_id` — the canonical UUID written at
- *      registration / first checkpoint. Authoritative: it is the dashboard's
- *      own id for *this* cwd's project, so there is no ambiguity.
- *   2. Match the local `project_identity.rbook_address` against
- *      `/api/projects/me` by canonical address. Used when a project was
- *      registered out-of-band and the metadata row is missing but the address
- *      is already canonical.
- *   3. Otherwise `undefined`. Callers pass it through as an omitted field; the
- *      dashboard can then reject or apply its own (unrelated) fallback.
- *
- * NEVER pick `projects[0]` — the /api/projects/me response is "every project
- * this user owns," and blindly taking the first one attributes unrelated messages
- * to whichever project happens to come first.
+ * Only `metadata.dashboard_project_id`, the UUID recorded at registration or join,
+ * identifies this store. A copied store retains that UUID. Names and canonical
+ * addresses can be reused by a different store, so an account listing cannot
+ * supply a missing ID. Return `undefined` and let the caller refuse publication.
  */
 export async function resolveLocalSenderProjectId(
-  client: DashboardClient,
+  _client: DashboardClient,
   identity: LocalSenderIdentity
 ): Promise<string | undefined> {
   if (identity.projectId && UUID_REGEX.test(identity.projectId)) {
     return identity.projectId;
   }
 
-  if (!identity.rbookAddress) return undefined;
-
-  const result = await client.getMyProjects();
-  if (!result.success || !result.data?.projects?.length) {
-    return undefined;
-  }
-
-  const normalizedLocal = normalizeAddress(identity.rbookAddress);
-  const match = result.data.projects.find((p) => normalizeAddress(p.address) === normalizedLocal);
-  return match?.id;
+  return undefined;
 }
 
 /**
@@ -219,11 +187,11 @@ export async function getLocalSenderProjectId(
 
 /**
  * Thrown when handleSend or any other authoritative-attribution call site cannot
- * produce a complete sender identity (UUID + canonical rbook_address). Defense in
- * depth on top of the dispatcher's `resolveSenderContext` gate — the resolver
+ * produce an authoritative sender ID. Defense in depth on top of the dispatcher's
+ * `resolveSenderContext` gate — the resolver
  * normally fail-closes before we ever reach this path, but keeping the assertion
  * here prevents any caller that bypasses the boundary from silently publishing
- * with a null sender.
+ * with only a reusable address.
  *
  * The thrown code `SENDER_ATTRIBUTION_INCOMPLETE` is distinct from the resolver's
  * `SENDER_UNRESOLVABLE` so operators can tell which layer rejected the send.
@@ -246,23 +214,16 @@ export class SenderAttributionIncompleteError extends Error {
 }
 
 /**
- * Throw `SenderAttributionIncompleteError` when local identity is null — i.e.
- * neither a resolved sender UUID nor a canonical rbook_address is available.
- *
- * Sprint 53 m02 decision: we fail-close only when there is *nothing* to
- * attribute with. When either the UUID or the address is present, we forward
- * what we have — the dashboard can cross-check (m04 adds echo-verification).
- * This preserves existing pass-through semantics for edge cases where metadata
- * is partially seeded, while still refusing to publish a completely-anonymous
- * send. The full UUID+address authoritative attribution is enforced upstream
- * by the dispatcher's `resolveSenderContext(requireSenderIdentity=true)` gate;
- * this function is defense-in-depth for any caller that bypasses the boundary.
+ * Require a sender ID even when the local address is canonical: a new store can
+ * reuse another record's address. The resolver validates stored UUIDs; explicit
+ * caller-supplied sender IDs retain their existing pass-through contract. The
+ * dispatcher's full UUID+address gate remains the MCP authorization boundary.
  */
 export function assertSenderIdentityValid(
   identity: LocalSenderIdentity,
   senderProjectId: string | undefined
 ): void {
-  if (!senderProjectId && !identity.rbookAddress) {
+  if (!senderProjectId) {
     throw new SenderAttributionIncompleteError(identity, senderProjectId);
   }
 }

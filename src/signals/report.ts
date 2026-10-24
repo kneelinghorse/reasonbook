@@ -110,7 +110,8 @@ export interface SignalsReport {
   readonly feedbackKinds: FeedbackKindsReport;
   /**
    * Present only on a report of a store that could not be opened or read at all, with the reason:
-   * every signal is then unavailable and failed, and `project.id` is not the store's.
+   * every signal is then unavailable and failed. The caller may supply a known project identity;
+   * otherwise its id is unknown-project and its name is null.
    */
   readonly unreadable?: string;
 }

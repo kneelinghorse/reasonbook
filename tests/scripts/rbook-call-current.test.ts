@@ -16,6 +16,13 @@ const { serveStdio } = require('@modelcontextprotocol/server/stdio');
 const log = (event) => fs.appendFileSync(process.env.CURRENT_CALL_LOG, JSON.stringify(event) + '\\n');
 log({ event: 'start', pid: process.pid });
 process.on('exit', () => log({ event: 'exit' }));
+if (process.env.CURRENT_CALL_MODE === 'drain') {
+  process.on('SIGTERM', () => { log({ event: 'signal' }); process.exit(0); });
+  process.stdin.on('end', () => {
+    log({ event: 'draining' });
+    setTimeout(() => { log({ event: 'drained' }); process.exit(0); }, 3000);
+  });
+}
 serveStdio(() => {
 const server = new Server({ name: 'fixture', version: '1.0.0' }, { capabilities: { tools: {} } });
 server.setRequestHandler('tools/call', async ({ params }) => {
@@ -116,6 +123,20 @@ function expectClosed(): void {
 }
 
 describe('scripts/rbook-call-current.js', () => {
+  it('R11 lets the server finish its three-second stdin drain without a termination signal', async () => {
+    const report = await run(request(), 'drain');
+    expect(report.status).toBe(0);
+    expect(events().map((event) => event.event)).toEqual([
+      'start',
+      'call',
+      'call',
+      'draining',
+      'drained',
+      'exit',
+    ]);
+    expectClosed();
+  });
+
   it('executes exactly once after verified health, preserving arguments and environment', async () => {
     const input = request();
     const report = await run(input);

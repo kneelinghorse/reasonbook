@@ -68,9 +68,13 @@ describe("the owner's other copies (s100-m01, settled item 9)", () => {
       expect(said.success).toBe(false);
       expect(said.error?.message).toMatch(new RegExp(`block ${second.block}`));
       expect(said.error?.message).toMatch(/unable to sync/);
-      // The remedy sends no one round in a loop: syncing does not unblock the share, and it says so.
-      expect(said.error?.suggestion).toMatch(/does not take your other copies along yet/);
-      expect(said.error?.suggestion).toMatch(/Keep sharing it directly/);
+      // An unknown referee cannot promise a safe cut; keep a working direct share.
+      expect(said.error?.suggestion).toMatch(/Keep sharing directly/);
+      expect(said.error?.suggestion).not.toMatch(/reasonbook set-aside|--yes/);
+      if (!confirm) {
+        expect(said.error?.suggestion).toMatch(/Only consider.*4\.5\.0 or later/);
+        expect(said.error?.suggestion).toMatch(/cut cannot be undone/);
+      }
     }
   }, 600000);
 
@@ -124,12 +128,34 @@ describe("the owner's other copies (s100-m01, settled item 9)", () => {
     expect(created.error?.code).toBe('REFEREE_UPLOAD_REFUSED');
   }, 600000);
 
-  it('lets the share go ahead past an admission no copy ever took up, such as a referee thrown away', async () => {
+  it('distinguishes an answered join from an admission with no recorded use', async () => {
     const owner = await ownerCopy(fixture.tmp);
-    // The owner's copy answered a join whose copy never joined, wrote or was routed to.
+    // Answering files records a call. The owner cannot know whether the answer was applied,
+    // so even this unapplied answer must refuse rather than risk stranding a real copy.
     const stray = path.join(fixture.tmp, 'stray');
     const place = { name: 'stray', root: stray, machine: 'machine-stray' };
-    await joinedCopyRequestOnly(owner, place);
+    const replicaId = await joinedCopyRequestOnly(owner, place);
+    const called = await dryRun(owner);
+    expect(called.success).toBe(false);
+    expect(called.error?.message).toContain(replicaId);
+    // Model an older unused admission with no call, route, exchange or authored write.
+    // Clearing only the call makes the prior positive case an independent negative control.
+    await onCopy(fixture.tmp, owner, (client) => {
+      expect(
+        client.getOne(
+          'SELECT route, last_ok_at, last_call_at FROM record_peers WHERE replica_id = ?',
+          [replicaId]
+        ).data
+      ).toEqual({ route: null, last_ok_at: null, last_call_at: expect.any(String) });
+      expect(
+        client.getMany('SELECT 1 FROM record_changes WHERE replica_id = ?', [replicaId]).data
+      ).toEqual([]);
+      expect(
+        client.execute('UPDATE record_peers SET last_call_at = NULL WHERE replica_id = ?', [
+          replicaId,
+        ]).success
+      ).toBe(true);
+    });
     const said = await dryRun(owner);
     expect(said.error).toBeUndefined();
     expect(said.success).toBe(true);
@@ -152,11 +178,11 @@ describe("the owner's other copies (s100-m01, settled item 9)", () => {
   }, 600000);
 });
 
-/** The owner answers a join from `place`, which never applies it: an admission no copy took up. */
+/** The owner answers a join from `place`, which never applies it, retaining its call evidence. */
 async function joinedCopyRequestOnly(
   owner: Copy,
   place: { readonly name: string; readonly root: string; readonly machine: string }
-): Promise<void> {
+): Promise<string> {
   const fs = await import('fs');
   const Database = (await import('better-sqlite3')).default;
   fs.mkdirSync(path.dirname(dbOf(place.root)), { recursive: true });
@@ -175,4 +201,5 @@ async function joinedCopyRequestOnly(
     answerJoin(client, request.data!, 'Owner')
   );
   if (!answer.success) throw new Error(answer.error?.message);
+  return request.data!.replicaId;
 }

@@ -16,7 +16,13 @@ import { RECORDED_TABLES } from './record-columns';
 import { dashboardClientFor, relayAnswer } from './record-dashboard-peer';
 import { dashboardName, type DashboardRoute } from './record-dashboard-route';
 import { formerDashboardReferees, libraryAtLeast } from './record-dashboard-history';
-import { pendingOf, shareProblem, spent, type PendingShare } from './record-dashboard-share-state';
+import {
+  confirmedShareProblem,
+  pendingOf,
+  shareProblem,
+  spent,
+  type PendingShare,
+} from './record-dashboard-share-state';
 import type { ExchangeReport } from './record-exchange';
 import { buildFreshCopy } from './record-fresh-copy';
 import { answerJoin, type JoinAnswer, type JoinRequest } from './record-join';
@@ -152,7 +158,10 @@ async function share(
   const checked = await unchecked((client) =>
     shareProblem(client, options.projectId, pending, uploadsNothing)
   );
-  if ('code' in checked) return createError(checked);
+  if ('code' in checked)
+    return createError(
+      options.confirm ? await confirmedShareProblem(checked, projectRoot) : checked
+    );
   const route: DashboardRoute = {
     kind: 'dashboard',
     url: new URL(resolveDashboardBaseUrl()).origin,

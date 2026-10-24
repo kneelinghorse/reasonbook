@@ -83,6 +83,7 @@ describe('member-safe peer refusals (s98-m13)', () => {
     REFEREE_ERROR_CODES.FORGED_RENUMBER,
     REFEREE_ERROR_CODES.MALFORMED,
     REFEREE_ERROR_CODES.PROTOCOL_NEWER,
+    REFEREE_ERROR_CODES.READS_OLD_PROTOCOL,
     REFEREE_ERROR_CODES.CLOCK_AHEAD,
     REFEREE_ERROR_CODES.NAME_TAKEN,
   ])('keeps the already member-facing %s remedy', async (code) => {

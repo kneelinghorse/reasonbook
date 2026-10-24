@@ -23,6 +23,8 @@ import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
 import { gzipSync } from 'zlib';
 import type { RbookToolError, RbookToolResult } from './types';
+import { dashboardHttpError } from './dashboard-http-error';
+import { registrationError } from './registration-error';
 import { createError, createSuccess, RbookErrors } from './errors';
 import {
   CredentialStore,
@@ -547,7 +549,7 @@ export interface SyncStatusResult {
   projectCount: number;
 }
 
-/** Result from POST /api/projects/register — project registration. */
+/** Result from POST /api/projects/register-new — project registration. */
 export interface RegisterProjectResult {
   slug: string;
   projectId: string;
@@ -965,7 +967,7 @@ export class DashboardClient {
    * Resolution order:
    *   1. Explicit `apiKey` override (tests / callers bypassing the store).
    *   2. Project-scoped key in CredentialStore for `projectRoot` (set by m02
-   *      auto-issue capture on `POST /api/projects/register`).
+   *      auto-issue capture on `POST /api/projects/register-new`).
    *   3. Newest user-scoped key in CredentialStore (minted by device code
    *      flow; used before a project-scoped key has been issued for this root).
    *   4. Legacy `RBOOK_DASHBOARD_API_KEY` env var — carried forward so users
@@ -1030,18 +1032,23 @@ export class DashboardClient {
    * mint, diverging from the dashboard's own binding to the CALLER's
    * parent_key_id and corrupting the mine-only filter in `rbook_auth(list)`.
    *
-   * Arm 1 (explicit `apiKey` override) is honored here too: silently ignoring a
-   * caller-supplied credential would be its own lie. It is the ONLY arm that can
-   * return `keySource: 'user-scoped'` with `authenticatingKeyId === undefined`,
-   * which is what makes the two attribution failures separable by rule.
+   * `userScopedKeyId` selects one exact saved user key through the shared attribution
+   * chain, refusing a missing row instead of authenticating as another account.
+   * Without that selection, arm 1 (explicit `apiKey` override) is honored here too.
+   * It is the ONLY arm that can return `keySource: 'user-scoped'` with
+   * `authenticatingKeyId === undefined`, which makes attribution failures separable.
    */
   static async fromEnvForUser(
-    overrides?: Partial<DashboardClientConfig> & { credentialStore?: CredentialStore }
+    overrides?: Partial<DashboardClientConfig> & {
+      credentialStore?: CredentialStore;
+      /** Select exactly this saved user key; never fall back if it has disappeared. */
+      userScopedKeyId?: string;
+    }
   ): Promise<RbookToolResult<ResolvedDashboardClient>> {
     const baseUrl = resolveDashboardBaseUrl(overrides?.baseUrl);
 
-    // (1) Explicit override.
-    if (overrides?.apiKey) {
+    // (1) Explicit override, unless the caller selected an attributable stored key.
+    if (overrides?.apiKey && overrides.userScopedKeyId === undefined) {
       return createSuccess({
         client: new DashboardClient(apiKeyConfig(baseUrl, overrides.apiKey, overrides.timeoutMs)),
         keySource: 'user-scoped' as KeySource,
@@ -1070,11 +1077,23 @@ export class DashboardClient {
   private static async resolveUserScopedChain(
     store: CredentialStore,
     baseUrl: string,
-    overrides?: Partial<DashboardClientConfig>
+    overrides?: Partial<DashboardClientConfig> & { userScopedKeyId?: string }
   ): Promise<RbookToolResult<ResolvedDashboardClient>> {
-    // (3) Newest user-scoped key in the credential store.
+    // (3) The requested saved key, or the newest user-scoped key when none was requested.
     const userScopedKeys = await store.listUserScopedKeys();
-    const pick = pickNewestUserScopedKey(userScopedKeys);
+    const selectedKeyId = overrides?.userScopedKeyId;
+    if (
+      selectedKeyId !== undefined &&
+      !Object.prototype.hasOwnProperty.call(userScopedKeys, selectedKeyId)
+    )
+      return createError({
+        ...RbookErrors.dashboardAuthFailed(baseUrl),
+        message: 'The selected saved user key is no longer available.',
+      });
+    const pick =
+      selectedKeyId === undefined
+        ? pickNewestUserScopedKey(userScopedKeys)
+        : { keyId: selectedKeyId, record: userScopedKeys[selectedKeyId] };
     if (pick) {
       const client = new DashboardClient(
         apiKeyConfig(baseUrl, pick.record.key, overrides?.timeoutMs)
@@ -1264,33 +1283,9 @@ export class DashboardClient {
         });
       } else clearTimeout(timeout);
 
-      if (response.status === 401) {
-        // 401 = token expired/invalid server-side — clear the cache so the next call
-        // re-authenticates (jwt clients re-login; apiKey clients surface the failure).
+      if (response.status === 401 && this.authMethod === 'jwt') {
         this.cachedToken = null;
         this.tokenExpiresAt = 0;
-        return createError(RbookErrors.dashboardAuthFailed(this.baseUrl));
-      }
-
-      if (response.status === 403) {
-        // s84-m02: a 403 is an AUTHZ denial, NOT token expiry — do NOT clear the cached
-        // token. Clearing poisoned apiKey auth (an apiKey client has no re-login path, so
-        // the very next call sent `Bearer null`) and mislabeled a genuine forbidden — e.g.
-        // ack/respond "not the recipient", or an owner-gated route that returns 403 (not
-        // 404) after the dashboard m04 cutover — as an authentication failure. Parse the
-        // unified {error,hint} envelope the same way the 404 branch does.
-        const { detail, hint } = await DashboardClient.parseErrorEnvelope(response);
-        return createError(RbookErrors.dashboardForbidden(path, detail, hint));
-      }
-
-      if (response.status === 402) {
-        const text = await response.text().catch(() => '');
-        return createError(RbookErrors.dashboardUpgradeRequired(text || undefined));
-      }
-
-      if (response.status === 404) {
-        const { detail, hint } = await DashboardClient.parseErrorEnvelope(response);
-        return createError(RbookErrors.dashboardNotFound(path, detail, hint));
       }
 
       // Only an endpoint that supplies its own conflict contract changes the generic 409 mapping.
@@ -1303,21 +1298,16 @@ export class DashboardClient {
         });
       }
 
-      if (response.status >= 500) {
-        const text = await response.text().catch(() => 'Unknown server error');
-        return createError(RbookErrors.dashboardError(`Server error ${response.status}: ${text}`));
-      }
-
       if (!response.ok) {
-        // Unified error envelope (dashboard m04): prefer the {error,hint} fields when the
-        // body carries them, else fall back to the raw text. Clone so a non-JSON body can
-        // still be read as text after the JSON parse attempt.
-        const { detail, hint } = await DashboardClient.parseErrorEnvelope(response.clone());
-        if (detail) {
-          return createError(RbookErrors.dashboardError(hint ? `${detail} (${hint})` : detail));
-        }
-        const text = await response.text().catch(() => 'Unknown error');
-        return createError(RbookErrors.dashboardError(`HTTP ${response.status}: ${text}`));
+        return createError(
+          await dashboardHttpError(
+            response,
+            this.baseUrl,
+            path,
+            undefined,
+            path === '/api/projects/me'
+          )
+        );
       }
 
       const json = (await response.json()) as Record<string, unknown>;
@@ -1525,7 +1515,7 @@ export class DashboardClient {
   }
 
   /**
-   * List all addressable projects in the dashboard directory.
+   * List projects the authenticated account owns or that are shared with it.
    */
   async listDirectory(): Promise<RbookToolResult<ListDirectoryResult>> {
     const result = await this.request<ListDirectoryResult>('GET', '/api/projects/directory/public');
@@ -2256,9 +2246,9 @@ export class DashboardClient {
    * Register a project with the dashboard by uploading the SQLite database.
    * Used for auto-registration on first checkpoint.
    *
-   * Endpoint: POST /api/projects/register (multipart/form-data)
+   * Endpoint: POST /api/projects/register-new (multipart/form-data)
    * - 201: New registration
-   * - 200: Re-registration (purges and re-backfills)
+   * - 409: Existing owner/name refused; no re-registration or purge
    */
   /**
    * POST the local SQLite file as multipart/form-data to /api/sync/sqlite-backfill.
@@ -2319,21 +2309,13 @@ export class DashboardClient {
 
       clearTimeout(timeout);
 
-      if (response.status === 401 || response.status === 403) {
+      if (response.status === 401 && this.authMethod === 'jwt') {
         this.cachedToken = null;
         this.tokenExpiresAt = 0;
-        return createError(RbookErrors.dashboardAuthFailed(this.baseUrl));
       }
-
-      if (response.status === 402) {
-        const text = await response.text().catch(() => '');
-        return createError(RbookErrors.dashboardUpgradeRequired(text || undefined));
-      }
-
       if (!response.ok) {
-        const text = await response.text().catch(() => 'Unknown error');
         return createError(
-          RbookErrors.dashboardError(`SQLite backfill failed: HTTP ${response.status}: ${text}`)
+          await dashboardHttpError(response, this.baseUrl, url, 'SQLite backfill failed', true)
         );
       }
 
@@ -2399,7 +2381,8 @@ export class DashboardClient {
       formData.append('localDbPath', params.localDbPath);
     }
 
-    const url = `${this.baseUrl}/api/projects/register`;
+    // A separate endpoint makes older dashboards fail safely instead of ignoring a new flag.
+    const url = `${this.baseUrl}/api/projects/register-new`;
     const token = tokenResult.data!;
     const controller = new AbortController();
     // Use longer timeout for file upload (60s minimum)
@@ -2420,21 +2403,13 @@ export class DashboardClient {
 
       clearTimeout(timeout);
 
-      if (response.status === 401 || response.status === 403) {
+      if (response.status === 401 && this.authMethod === 'jwt') {
         this.cachedToken = null;
         this.tokenExpiresAt = 0;
-        return createError(RbookErrors.dashboardAuthFailed(this.baseUrl));
       }
-
-      if (response.status === 402) {
-        const text = await response.text().catch(() => '');
-        return createError(RbookErrors.dashboardUpgradeRequired(text || undefined));
-      }
-
       if (!response.ok) {
-        const text = await response.text().catch(() => 'Unknown error');
         return createError(
-          RbookErrors.dashboardError(`Registration failed: HTTP ${response.status}: ${text}`)
+          await registrationError(response, this.baseUrl, url, params.projectName)
         );
       }
 
@@ -2442,6 +2417,15 @@ export class DashboardClient {
       const data = (
         json && typeof json === 'object' && 'data' in json ? json.data : json
       ) as RegisterProjectResult;
+      if (data.reregistered === true) {
+        return createError({
+          code: 'UNSAFE_REGISTRATION_RESPONSE',
+          message:
+            'The create-only endpoint returned a re-registration. Its identity was not adopted.',
+          suggestion:
+            'Check the dashboard create-only endpoint before retrying; it must refuse an existing owner/name instead of replacing it.',
+        });
+      }
       return createSuccess(data);
     } catch (error: unknown) {
       clearTimeout(timeout);

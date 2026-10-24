@@ -226,7 +226,7 @@ it.each(['row', 'table'] as const)(
   }
 );
 
-it('a former term holder is inactive despite a route/call until it writes past its handover cut', async () => {
+it('a former owner still blocks after handover, even without writes past its cut', async () => {
   const undo = upgradeRecordProtocolForTesting(1);
   let owner: Copy;
   let next: Copy;
@@ -244,7 +244,7 @@ it('a former term holder is inactive despite a route/call until it writes past i
   await onCopy(fixture.tmp, next!, (client) =>
     rememberCopyReport(client, owner.replicaId, { reads: 1 }, { called: true })
   );
-  expect(await blockers(next!)).toEqual([]);
+  expect(await blockers(next!)).toEqual([owner!.replicaId]);
   await onCopy(fixture.tmp, owner!, (client) =>
     expect(
       client.writeTransaction(() => {

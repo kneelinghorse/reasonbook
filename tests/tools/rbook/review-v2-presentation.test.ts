@@ -10,7 +10,7 @@ import {
   rbookReviewPresentation,
   formatReviewPresentation,
 } from '../../../src/tools/rbook/review-presentation';
-import { renderDigestV2 } from '../../../src/tools/rbook/digest-v2';
+import { DIGEST_POINTER, renderDigestV2 } from '../../../src/tools/rbook/digest-v2';
 import { seedRbookDb, reidentifyRbookTestStore } from '../../helpers/seedRbookDb';
 import { SERVER_INSTRUCTIONS } from '../../../src/server-instructions';
 
@@ -93,9 +93,8 @@ it('renders portfolio below the shared pointer and omits per-call ages and measu
     },
   };
   const text = formatReviewPresentation(context, portfolio, 'local');
-  expect(text.indexOf('Portfolio')).toBeGreaterThan(
-    text.indexOf('search: Reasonbook context search')
-  );
+  expect(text).toContain(DIGEST_POINTER);
+  expect(text.indexOf('Portfolio')).toBeGreaterThan(text.indexOf(DIGEST_POINTER));
   expect(text).toContain('⟪untrusted, from proj:sibling⟫');
   // s97-m01: another project's counts follow its framed name; its name is data, never a command.
   expect(text).toContain(

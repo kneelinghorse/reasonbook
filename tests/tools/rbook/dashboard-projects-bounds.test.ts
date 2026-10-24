@@ -26,7 +26,8 @@ const readers = [
   'refereeProtocol',
   'refereeRequestLimit',
 ] as const;
-const read = (method: (typeof readers)[number], timeoutMs = 2000) => {
+// Size checks use the normal client deadline; only the stalled-body case tightens it.
+const read = (method: (typeof readers)[number], timeoutMs?: number) => {
   const client = new DashboardClient({ baseUrl: origin, apiKey: 'owned-test-key', timeoutMs });
   return method === 'getMyProjects' ? client.getMyProjects() : client[method]('p');
 };

@@ -109,7 +109,7 @@ function explicitType(text: string, start: number): CandidatePrefix {
     if (FOREIGN.has(word) || UNSUPPORTED.has(word)) return 'blocked';
     if (TYPES[word]) {
       // A named qualifier before the type is not a local namespace. Ordinary connective words
-      // are published above; e.g. "this decision" is local, "Stage1 decision" is not.
+      // are published above; e.g. "this decision" is local, "ExampleProject decision" is not.
       return qualified(tokens, i) ? 'blocked' : TYPES[word];
     }
     if ((FILLER.has(word) || /^\d+$/.test(word)) && ++fillers <= 4) {

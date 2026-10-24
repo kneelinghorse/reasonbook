@@ -14,6 +14,13 @@ export interface ChangeRecipient extends Pick<CopyReport, 'reads'> {
   readonly requireComplete?: boolean;
 }
 
+export interface ChangeSelection {
+  readonly changes: LoggedChange[];
+  /** Undelivered rows after the recipient's marks, excluding refused non-member transactions. */
+  readonly withheld: number;
+  readonly withheldProtocol: number;
+}
+
 function rows<T>(client: RbookDatabaseClient, sql: string, params: unknown[] = []): T[] {
   const read = client.getMany<T>(sql, params);
   if (!read.success) throw new Error(read.error?.message ?? `could not read: ${sql}`);
@@ -29,6 +36,15 @@ export function changesSince(
   marks: Readonly<Record<string, number>>,
   recipient?: ChangeRecipient
 ): LoggedChange[] {
+  return changesSinceReport(client, marks, recipient).changes;
+}
+
+/** Select once and disclose unreadable rows without changing the array-only wire format. */
+export function changesSinceReport(
+  client: RbookDatabaseClient,
+  marks: Readonly<Record<string, number>>,
+  recipient?: ChangeRecipient
+): ChangeSelection {
   const ctx = mergeContext(client);
   const withheld = new Set(
     ctx.ownReplica === ctx.authority
@@ -46,8 +62,8 @@ export function changesSince(
   );
   // The whole stored transaction is inspected before marks, including a mark inside that txn.
   const readable = recipient === undefined ? all : readableChanges(all, recipient);
+  const included = new Set(readable);
   if (recipient?.requireComplete) {
-    const included = new Set(readable);
     const missing = all.find(
       (change) => change.replica_seq > (marks[change.replica_id] ?? 0) && !included.has(change)
     );
@@ -67,9 +83,18 @@ export function changesSince(
       });
     }
   }
-  return readable.filter(
-    (change) => change.replica_seq > (marks[change.replica_id] ?? 0) && !withheld.has(change.txn_id)
-  );
+  const changes: LoggedChange[] = [];
+  let withheldCount = 0;
+  let withheldProtocol = 0;
+  for (const change of all) {
+    if (!included.has(change))
+      withheldProtocol = Math.max(withheldProtocol, change.protocol_version);
+    if (change.replica_seq <= (marks[change.replica_id] ?? 0) || withheld.has(change.txn_id))
+      continue;
+    if (included.has(change)) changes.push(change);
+    else withheldCount++;
+  }
+  return { changes, withheld: withheldCount, withheldProtocol };
 }
 
 /** Stop each stream before the whole first transaction its recipient cannot read. */

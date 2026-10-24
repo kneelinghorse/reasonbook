@@ -63,6 +63,35 @@ it('previews the named owner copy and its last exchange without recording a cut'
   ).toBeUndefined();
 });
 
+it('shows a files-joined copy last call without claiming a completed exchange', async () => {
+  const owner = await ownerCopy(fixture.tmp);
+  const other = await joinedCopy(fixture.tmp, owner, 'other', 'Owner');
+  const lastCallAt = read<{ last_call_at: string }>(
+    owner,
+    'SELECT last_call_at FROM record_peers WHERE replica_id = ?',
+    [other.replicaId]
+  )[0].last_call_at;
+  expect(lastCallAt).toEqual(expect.any(String));
+  const before = log(owner);
+  const result = await command(owner, ['--replica', other.replicaId]);
+  expect(result.code).toBe(0);
+  expect(result.stdout).toContain(`Last call: ${lastCallAt}`);
+  expect(result.stdout).toMatch(/Last exchange: not observed/i);
+  expect(log(owner)).toEqual(before);
+});
+
+it('warns before consent that the cut is permanent and a later dashboard share needs a capable referee', async () => {
+  const owner = await ownerCopy(fixture.tmp);
+  const other = await joinedCopy(fixture.tmp, owner, 'other', 'Owner');
+  const before = log(owner);
+  const result = await command(owner, ['--replica', other.replicaId]);
+  expect(result.code).toBe(0);
+  expect(result.stdout).toMatch(/cannot be undone/i);
+  expect(result.stdout).toMatch(/(?:reasonbook\.ai|dashboard).*referee.*4\.5\.0.*(?:later|newer)/i);
+  expect(result.stdout).toContain('--yes');
+  expect(log(owner)).toEqual(before);
+});
+
 it('requires --yes to apply and leaves another copy of the same person uncut', async () => {
   const owner = await ownerCopy(fixture.tmp);
   const other = await joinedCopy(fixture.tmp, owner, 'other', 'Owner');

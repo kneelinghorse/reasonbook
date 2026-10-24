@@ -8,6 +8,8 @@ can pick up from it, even in another tool. No dashboard account is required.
 
 ## Install
 
+Start with [Your first ten minutes](first-ten-minutes.md): install, record a choice and find its reason in a new session.
+
 - **Claude Code:** install the plugin once for all your projects; see
   [Install it in Claude Code](../README.md#install-it-in-claude-code).
 - **Codex:** the developer plugin, or the conversation-focused chat plugin; see

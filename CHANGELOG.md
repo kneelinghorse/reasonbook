@@ -2,7 +2,70 @@
 
 All notable changes to Reasonbook (published as `@aquex/cmos-mcp` before 4.0.0) are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [4.5.1] — 2026-10-23
+
+### What's new since the demo
+
+The demo was recorded on a 4.0.0 candidate; it remains a replay of those runs.
+Since then, records gained direct sharing, hosted referee support and arrival-based id claims.
+Decisions still belong to the person making them; agents keep the local record.
+This update keeps older copies visible before and after a record-protocol switch.
+It makes upload retries, interruptions and deleted-project holds visible in the review.
+Explicit closes wait for their bounded upload drain before the server exits.
+Manual backfill now sends a consistent snapshot, including committed WAL pages.
+New projects get clearer first steps, and concurrent initialization preserves the first writer.
+A fresh store cannot take over another dashboard project merely by using its name.
+The README, first-ten-minutes guide and privacy disclosures explain the current behavior.
+Hosted recovery still needs the dashboard's routes and owner controls before people can use it.
+
+### Fixed
+
+- Weekly briefs keep aging a stored report's quiet-day count when uploads stop, and say how
+  many whole days came after its last upload. The 21-day listing threshold stays unchanged.
+- Concurrent initialization claims identity atomically and preserves the first context writer.
+  New-record digests and seed instructions explain what to do next; running the bare CLI in a
+  terminal shows a hint instead of appearing to hang.
+- Registration for a fresh named store uses the dashboard's atomic create-only endpoint.
+  Existing and archived names refuse without purging data; a concurrent registration has
+  one winner. Existing registered stores retain their identity.
+
+- Shared records wait for active former owners and re-invited members before switching to
+  protocol 2. Retired referees stay exempt. Re-inviting an older reader after the switch
+  names the upgrade-and-sync remedy; removing a member preserves its factual reader reports.
+- Older copies are told when sync withholds newer-protocol changes, including SSH, local
+  exchange and catch-up, hosted sync, and bundle-out warnings. Their own pushes still land.
+  Published 4.4.0 clients can truncate the upgrade instruction when an SSH route is long;
+  upgrade that client before retrying. Older review text can also truncate route errors.
+- Dashboard sharing counts an owner's copy joined by request and answer files before its
+  first exchange. Preview guidance stays offline; a confirmed refusal checks the referee
+  version before suggesting a permanent set-aside. Hosted refusals no longer name an
+  unavailable control, and a refused join after a protocol switch names a fresh request.
+- Explicit-close uploads drain before server exit, with token-bound lease recovery and durable
+  retry debt. Manual backfill shares the lease and uploads a consistent WAL-inclusive snapshot.
+  Transient outages back off, auth failures are rechecked, and owner-confirmed deleted/replaced
+  projects remain held across automatic and explicit uploads without adopting a reused name.
+
+### Changed
+
+- Sharing and privacy documentation now reflects the dashboard's narrowed directory,
+  invitation acceptance and recipient-controlled messaging. The directory's tool text names
+  the projects it can show: those you own or that are shared with you.
+- The signals library's `unreadableReport` accepts optional `projectId` and `projectName`
+  in its options, so hosts can retain known identity while every failed count remains unknown.
+- Owner-copy share refusals add `reason`, `replicaId` and `dashboardProjectId` in the existing
+  object form of `RbookToolError.currentState`; confirmed refusals also carry `refereeVersion`
+  and any `refereeCapabilityError`. Set-aside previews report `lastCallAt` separately from
+  `lastExchangeAt` and explain that a cut cannot be undone.
+- `RbookReviewResult.recordProtocol.stranded` lists active older readers after a switch.
+  Member reviews leave blockers empty; hosted reviews offer no unavailable set-aside action.
+  Long blocking or stranded lists remain complete and explain their digest budget overage.
+- Hosted delivery returns `REFEREE_READS_OLD_PROTOCOL` with HTTP 409 and an upgrade remedy
+  when a recipient cannot read the withheld stream. The dashboard must treat re-invite
+  refusals as lasting before its owner can see that refusal, and deploy the updated referee.
+- Session and sprint completion answers add `dashboardUpload`, with started/why, last success,
+  pause reason and next-attempt information. Status, review and session-start notices disclose
+  upload interruptions and holds. Dashboard HTTP errors retain status and Retry-After evidence
+  in the existing object form of `RbookToolError.currentState`.
 
 ## [4.5.0] — 2026-10-22
 
@@ -2485,8 +2548,13 @@ This is the section to read carefully if you've been tracking pre-1.0 internal b
 - **Existing CMOS databases are forward-compatible.** Lazy schema migrations run on first read/write. No manual migration step.
 - **Custom `cmos_learnings(action="update")` callers** should pass at least one of `status` or `evergreen` per call (see Tool-surface changes above).
 
-[1.0.0]: https://github.com/kneelinghorse/cmos-mcp/releases/tag/v1.0.0
-[Unreleased]: https://github.com/kneelinghorse/reasonbook/compare/v4.5.0...HEAD
+[1.0.0]: https://www.npmjs.com/package/@aquex/cmos-mcp/v/1.0.0
+[4.5.1]: https://github.com/kneelinghorse/reasonbook/compare/v4.5.0...v4.5.1
 [4.5.0]: https://github.com/kneelinghorse/reasonbook/compare/v4.4.0...v4.5.0
-[4.3.0]: https://github.com/kneelinghorse/reasonbook/releases/tag/v4.3.0
-[4.2.1]: https://github.com/kneelinghorse/reasonbook/releases/tag/v4.2.1
+[4.4.0]: https://github.com/kneelinghorse/reasonbook/tree/v4.4.0
+[4.3.0]: https://github.com/kneelinghorse/reasonbook/tree/v4.3.0
+[4.2.1]: https://github.com/kneelinghorse/reasonbook/tree/v4.2.1
+[4.2.0]: https://github.com/kneelinghorse/reasonbook/tree/v4.2.0
+[4.2.0-rc.3]: https://www.npmjs.com/package/@aquex/reasonbook/v/4.2.0-rc.3
+[4.2.0-rc.2]: https://www.npmjs.com/package/@aquex/reasonbook/v/4.2.0-rc.2
+[4.1.0]: https://github.com/kneelinghorse/reasonbook/tree/v4.1.0

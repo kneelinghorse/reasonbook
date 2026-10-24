@@ -56,7 +56,12 @@ export async function isMembersStore(project: UploadProject): Promise<boolean> {
 }
 
 export function uploadLog(message: string): void {
-  process.stderr.write(`[CHECKPOINT] ${message}\n`);
+  // A host may close stderr before ending stdin; diagnostics must not abort lease cleanup.
+  try {
+    process.stderr.write(`[CHECKPOINT] ${message}\n`, () => {});
+  } catch {
+    /* closed pipe */
+  }
 }
 
 /** Missing metadata means an old/foreign store; query failures remain visible to the caller. */
@@ -94,6 +99,45 @@ export function readUploadProject(projectRoot: string): UploadProject | null {
 const UPLOAD_COPY_PREFIX = 'rbook-dashboard-upload-';
 const activeUploadCopies = new Set<string>();
 let uploadsStopped = false;
+let acceptingUploads = true;
+const uploadJobs = new Set<Promise<unknown>>();
+const heldUploads = new Map<string, () => void>();
+
+/** Reserve the entire job before its first await, including credential resolution and lease waiting. */
+export function trackDashboardUpload<T>(work: () => Promise<T>): Promise<T | undefined> {
+  if (!acceptingUploads) return Promise.resolve(undefined);
+  const job = work();
+  uploadJobs.add(job);
+  void job.then(
+    () => uploadJobs.delete(job),
+    () => uploadJobs.delete(job)
+  );
+  return job;
+}
+
+export function stopAcceptingDashboardUploads(): void {
+  acceptingUploads = false;
+}
+
+export async function drainDashboardUploads(): Promise<void> {
+  while (uploadJobs.size) await Promise.allSettled([...uploadJobs]);
+}
+
+export function interruptDashboardUploads(): void {
+  uploadsStopped = true;
+  for (const release of heldUploads.values()) {
+    try {
+      release();
+    } catch (error) {
+      uploadLog(`Could not release an interrupted upload: ${errorText(error)}`);
+    }
+  }
+}
+
+export function __resetDashboardUploadLifecycle(): void {
+  acceptingUploads = true;
+  uploadsStopped = false;
+}
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -141,10 +185,11 @@ export async function withUploadSnapshot<T>(
 export async function withUploadLease(
   projectRoot: string,
   explicit: boolean,
-  send: () => Promise<UploadOutcome>
-): Promise<void> {
+  send: () => Promise<UploadOutcome>,
+  options: { waitForLease?: boolean } = {}
+): Promise<UploadOutcome | null> {
   const project = readUploadProject(projectRoot);
-  if (!project || (!explicit && !project.registered)) return;
+  if (!project || (!explicit && !project.registered)) return null;
   const registry = await ProjectGraphRegistry.create();
   let entry = registry.get(project.projectId);
   if (!entry && explicit)
@@ -155,14 +200,27 @@ export async function withUploadLease(
     });
   if (!entry || !isSameDirectory(entry.store_path, project.projectRoot))
     throw new Error('Upload project identity does not match its registered store path.');
-  if (explicit && !registry.markUploadOwed(project.projectId))
+  if (explicit && !registry.markUploadOwed(project.projectId, Date.now(), true))
     throw new Error('Could not mark the explicit upload owed.');
-  const lease = registry.claimUpload(project.projectId, explicit);
-  if (!lease) return;
+  if (uploadsStopped) return null;
+  let lease = registry.claimUpload(project.projectId, explicit);
+  while (!lease && explicit && options.waitForLease !== false && !uploadsStopped) {
+    const state = registry.readUploadState(project.projectId);
+    if (
+      !state?.leaseToken ||
+      (state.blocked && ['deleted', 'replaced'].includes(state.pauseReason ?? ''))
+    )
+      break;
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    if (uploadsStopped) return null;
+    lease = registry.claimUpload(project.projectId, explicit);
+  }
+  if (!lease) return null;
+  const claimed = lease;
   let lost = false;
   const keepAlive = setInterval(() => {
     try {
-      if (!registry.renewUploadLease(project.projectId, lease.token)) {
+      if (!registry.renewUploadLease(project.projectId, claimed.token)) {
         lost = true;
         uploadLog(
           `Upload lease lost for ${project.projectId}; completion cannot clear pending work.`
@@ -176,6 +234,15 @@ export async function withUploadLease(
     }
   }, 60_000);
   keepAlive.unref();
+  heldUploads.set(claimed.token, () => {
+    clearInterval(keepAlive);
+    lost = true;
+    registry.finishUpload(project.projectId, claimed, {
+      success: false,
+      interrupted: true,
+      error: 'The server ended before the upload finished.',
+    });
+  });
   let outcome: UploadOutcome;
   try {
     outcome = await send();
@@ -183,12 +250,19 @@ export async function withUploadLease(
     outcome = { success: false, error: error instanceof Error ? error.message : String(error) };
   } finally {
     clearInterval(keepAlive);
+    heldUploads.delete(claimed.token);
   }
-  if (lost || !registry.finishUpload(project.projectId, lease, outcome)) {
+  if (lost || !registry.finishUpload(project.projectId, claimed, outcome)) {
     uploadLog(
       `Upload result could not be committed for ${project.projectId}; its pending mark remains.`
     );
+    return {
+      success: false,
+      error:
+        'The upload result could not be committed because its lease was lost or expired; recovery is not confirmed.',
+    };
   }
   if (!outcome.success)
     uploadLog(`Upload failed for ${project.projectId}: ${outcome.error ?? 'unknown'}`);
+  return outcome;
 }

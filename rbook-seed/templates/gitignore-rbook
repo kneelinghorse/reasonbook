@@ -3,7 +3,7 @@
 db/*.sqlite
 db/*.sqlite-wal
 db/*.sqlite-shm
-db/snapshots/pre-migrate-*.sqlite
+db/snapshots/
 SESSIONS.jsonl
 dist/
 telemetry/events/*.jsonl

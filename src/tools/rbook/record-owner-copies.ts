@@ -26,11 +26,11 @@ export interface OwnersCopy {
  * dashboard would strand, since only the copy that shares is handed to the referee. They are the
  * replicas admitted for the owner that are not this copy and are not cut, and that are still in use,
  * read from the record so the referee can read it too:
- * - a former authority counts when it wrote past its term, retains an SSH route or completed an
- *   exchange; dashboard-route observations (including ended routes) never count as owner use;
- * - a predecessor counts until its successor wrote or completed a non-dashboard exchange; this
+ * - a former authority counts when it wrote past its term, retains an SSH route, called or completed
+ *   an exchange; dashboard-route observations (including ended routes) never count as owner use;
+ * - a predecessor counts until its successor wrote, called or completed a non-dashboard exchange; this
  *   copy's own former identities never count;
- * - any other copy counts when it wrote, has an SSH route or completed a non-dashboard exchange.
+ * - any other copy counts when it wrote, has an SSH route, called or completed a non-dashboard exchange.
  *   An unused admission with no such evidence does not count. This owner-stranding rule is not
  *   the future all-member protocol-activation rule (s98-m17, decision 1606).
  */
@@ -85,18 +85,18 @@ export function ownersOtherCopies(client: RbookDatabaseClient): OwnersCopy[] {
   });
 }
 
-/** A successful exchange or SSH route is evidence of owner use; dashboard observations are not. */
+/** A call, successful exchange or SSH route is evidence of owner use; dashboard observations are not. */
 function peerEvidence(
   client: RbookDatabaseClient,
   peers: boolean,
   replicaId: string
 ): { route: string | null; called: boolean } {
   if (!peers) return { route: null, called: false };
-  const [row] = rows<{ route: string | null; last_ok_at: string | null }>(
-    client,
-    'SELECT route, last_ok_at FROM record_peers WHERE replica_id = ?',
-    [replicaId]
-  );
+  const [row] = rows<{
+    route: string | null;
+    last_ok_at: string | null;
+    last_call_at?: string | null;
+  }>(client, 'SELECT * FROM record_peers WHERE replica_id = ?', [replicaId]);
   const parsed = row?.route ? (JSON.parse(row.route) as { host?: unknown; root?: unknown }) : null;
   if (isDashboardRoute(parsed)) return { route: null, called: false };
   return {
@@ -104,7 +104,7 @@ function peerEvidence(
       parsed && typeof parsed.host === 'string' && typeof parsed.root === 'string'
         ? `${parsed.host}:${parsed.root}`
         : null,
-    called: row?.last_ok_at != null,
+    called: row?.last_ok_at != null || row?.last_call_at != null,
   };
 }
 

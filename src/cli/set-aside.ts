@@ -61,6 +61,8 @@ export async function runSetAside(argv: readonly string[], io: CliIo): Promise<n
     [
       `${oneLine(data.memberName)}: copy ${oneLine(data.replicaId)}, block ${data.block}, held cutoff ${data.cut}.`,
       `Last exchange: ${oneLine(data.lastExchangeAt ?? 'not observed')}.`,
+      `Last call: ${oneLine(data.lastCallAt ?? 'not observed')}.`,
+      'A set-aside cut cannot be undone. A later share through reasonbook.ai needs a referee running 4.5.0 or later.',
       data.dryRun
         ? `Preview only; nothing changed. If this copy is gone, run reasonbook set-aside --replica ${oneLine(data.replicaId)} --yes.`
         : `${data.alreadySetAside ? 'Already set aside' : 'Set aside'}; later writes from this copy remain quarantined for its person to redo.`,

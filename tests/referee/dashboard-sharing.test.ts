@@ -1150,7 +1150,7 @@ describe('a member that missed the move back (s100-m01, F7)', () => {
     expect(logOf(darryl)).toEqual(logOf(owner));
   }, 600000);
 
-  it('a far end the dashboard referees serves catch-up reads and apply to the later owner, and only its post-apply exchange receipt', async () => {
+  it('a hosted far end checks catch-up reads and apply for the later owner, and permits only its post-apply receipt', async () => {
     const owner = await soloOwner();
     await shared(owner);
     const darryl = await joined('darryl');
@@ -1233,7 +1233,7 @@ describe('a member that missed the move back (s100-m01, F7)', () => {
     expect(served.map((answer) => 'result' in answer)).toEqual([
       true,
       true,
-      true,
+      false,
       true,
       false,
       false,
@@ -1242,6 +1242,12 @@ describe('a member that missed the move back (s100-m01, F7)', () => {
       false,
       false,
     ]);
+    // A synthetic future owner is permitted to ask, but its unbound reader report cannot
+    // authorize protocol-2 delivery. The refusal makes the withheld stream visible.
+    expect(served[2]).toHaveProperty(
+      'error.message',
+      expect.stringMatching(/^Upgrade Reasonbook here.*protocol 2/)
+    );
     for (const refused of served.slice(4))
       expect(String((refused.error as { message: string }).message)).toMatch(/catch-up/);
     // A copy at the same move, one that is not the owner copy in its own view, one of another

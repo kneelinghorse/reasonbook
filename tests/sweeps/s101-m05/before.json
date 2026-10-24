@@ -1,0 +1,2571 @@
+{
+  "measuredAt": "2026-10-23T14:22:30.219Z",
+  "head": "ef51a386363c9f5e8e927d3d80127d71807b0474",
+  "predicate": "git ls-files -z; all extensions; valid UTF-8 without NUL; each regex counts one matching physical line, not occurrences",
+  "patterns": {
+    "projectNames": "/stage1|oods|parts.?town|rbook:\\/\\/derek\\/cmos-dashboard/i",
+    "stage1": "/stage1/i",
+    "oods": "/oods/i",
+    "partsTown": "/parts.?town/i",
+    "toolExample": "/rbook:\\/\\/derek\\/cmos-dashboard/",
+    "docClaims": "/until reasonbook\\.ai runs 4\\.2\\.1|RBOOK_CHECKPOINT_SYNC|recover|delet/i"
+  },
+  "inspected": 7730,
+  "results": {
+    "projectNames": {
+      "count": 2865,
+      "scopes": {
+        "CHANGELOG.md": 2,
+        "TOOL_REFERENCE.md": 1,
+        "rbook": 2579,
+        "scripts": 8,
+        "src": 11,
+        "tests": 264
+      },
+      "repairSurface": [
+        {
+          "file": "src/index.ts",
+          "line": 1251
+        },
+        {
+          "file": "src/tools/rbook/decision-citations.ts",
+          "line": 112
+        },
+        {
+          "file": "src/tools/rbook/rbook-agent-onboard.ts",
+          "line": 1855
+        },
+        {
+          "file": "src/tools/rbook/rbook-db-prune-snapshots.ts",
+          "line": 6
+        },
+        {
+          "file": "src/tools/rbook/rbook-message.ts",
+          "line": 228
+        },
+        {
+          "file": "src/tools/rbook/rbook-mission-complete.ts",
+          "line": 291
+        },
+        {
+          "file": "src/tools/rbook/rbook-session-complete.ts",
+          "line": 802
+        },
+        {
+          "file": "src/tools/rbook/rbook-sprint-complete.ts",
+          "line": 917
+        },
+        {
+          "file": "src/tools/rbook/rbook-sprint.ts",
+          "line": 183
+        },
+        {
+          "file": "src/tools/rbook/rbook-sprint.ts",
+          "line": 303
+        },
+        {
+          "file": "src/tools/rbook/unknown-param-guard.ts",
+          "line": 12
+        },
+        {
+          "file": "tests/cli/migrate-docs-rules.test.ts",
+          "line": 20
+        },
+        {
+          "file": "tests/cli/migrate-docs-rules.test.ts",
+          "line": 26
+        },
+        {
+          "file": "tests/docs/notes-only-completion.test.ts",
+          "line": 8
+        },
+        {
+          "file": "tests/e2e/message-address-collision.e2e.ts",
+          "line": 348
+        },
+        {
+          "file": "tests/e2e/message-address-collision.e2e.ts",
+          "line": 390
+        },
+        {
+          "file": "tests/integration/fail-closed.test.ts",
+          "line": 63
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 44
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 51
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 52
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 63
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 64
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 89
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 103
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 105
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 106
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 107
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 109
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 111
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 116
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 135
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 146
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 152
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 153
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 172
+        },
+        {
+          "file": "tests/integration/p0-stage1-as-foreign-root.test.ts",
+          "line": 2
+        },
+        {
+          "file": "tests/integration/p0-stage1-as-foreign-root.test.ts",
+          "line": 48
+        },
+        {
+          "file": "tests/integration/p0-stage1-as-foreign-root.test.ts",
+          "line": 52
+        },
+        {
+          "file": "tests/integration/p0-stage1-as-foreign-root.test.ts",
+          "line": 79
+        },
+        {
+          "file": "tests/integration/p0-stage1-as-foreign-root.test.ts",
+          "line": 81
+        },
+        {
+          "file": "tests/integration/p0-stage1-as-foreign-root.test.ts",
+          "line": 100
+        },
+        {
+          "file": "tests/integration/p0-stage1-as-foreign-root.test.ts",
+          "line": 102
+        },
+        {
+          "file": "tests/integration/p0-stage1-as-foreign-root.test.ts",
+          "line": 103
+        },
+        {
+          "file": "tests/integration/p0-stage1-as-foreign-root.test.ts",
+          "line": 104
+        },
+        {
+          "file": "tests/integration/p0-stage1-as-foreign-root.test.ts",
+          "line": 106
+        },
+        {
+          "file": "tests/integration/p0-stage1-as-foreign-root.test.ts",
+          "line": 108
+        },
+        {
+          "file": "tests/integration/p0-stage1-as-foreign-root.test.ts",
+          "line": 112
+        },
+        {
+          "file": "tests/integration/p0-stage1-as-foreign-root.test.ts",
+          "line": 127
+        },
+        {
+          "file": "tests/integration/p0-stage1-as-foreign-root.test.ts",
+          "line": 132
+        },
+        {
+          "file": "tests/integration/p0-stage1-as-foreign-root.test.ts",
+          "line": 139
+        },
+        {
+          "file": "tests/integration/p0-stage1-as-foreign-root.test.ts",
+          "line": 150
+        },
+        {
+          "file": "tests/integration/roots-priority.test.ts",
+          "line": 43
+        },
+        {
+          "file": "tests/integration/roots-priority.test.ts",
+          "line": 44
+        },
+        {
+          "file": "tests/integration/roots-priority.test.ts",
+          "line": 45
+        },
+        {
+          "file": "tests/integration/roots-priority.test.ts",
+          "line": 47
+        },
+        {
+          "file": "tests/integration/roots-priority.test.ts",
+          "line": 49
+        },
+        {
+          "file": "tests/integration/roots-priority.test.ts",
+          "line": 84
+        },
+        {
+          "file": "tests/integration/roots-priority.test.ts",
+          "line": 85
+        },
+        {
+          "file": "tests/integration/roots-priority.test.ts",
+          "line": 86
+        },
+        {
+          "file": "tests/integration/roots-priority.test.ts",
+          "line": 88
+        },
+        {
+          "file": "tests/integration/roots-priority.test.ts",
+          "line": 94
+        },
+        {
+          "file": "tests/integration/roots-priority.test.ts",
+          "line": 95
+        },
+        {
+          "file": "tests/integration/roots-priority.test.ts",
+          "line": 96
+        },
+        {
+          "file": "tests/integration/roots-priority.test.ts",
+          "line": 98
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 22
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 28
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 30
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 31
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 32
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 34
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 36
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 44
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 52
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 75
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 83
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 86
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 99
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 115
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 119
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 125
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 126
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 131
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 134
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 165
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 171
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 181
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 186
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 209
+        },
+        {
+          "file": "tests/intelligence/content-sanitizer-wiring.test.ts",
+          "line": 376
+        },
+        {
+          "file": "tests/tools/rbook/dashboard-client.test.ts",
+          "line": 494
+        },
+        {
+          "file": "tests/tools/rbook/dashboard-client.test.ts",
+          "line": 764
+        },
+        {
+          "file": "tests/tools/rbook/dashboard-client.test.ts",
+          "line": 765
+        },
+        {
+          "file": "tests/tools/rbook/dashboard-client.test.ts",
+          "line": 766
+        },
+        {
+          "file": "tests/tools/rbook/dashboard-client.test.ts",
+          "line": 779
+        },
+        {
+          "file": "tests/tools/rbook/dashboard-client.test.ts",
+          "line": 780
+        },
+        {
+          "file": "tests/tools/rbook/dashboard-client.test.ts",
+          "line": 821
+        },
+        {
+          "file": "tests/tools/rbook/dashboard-client.test.ts",
+          "line": 822
+        },
+        {
+          "file": "tests/tools/rbook/dashboard-client.test.ts",
+          "line": 823
+        },
+        {
+          "file": "tests/tools/rbook/dashboard-client.test.ts",
+          "line": 836
+        },
+        {
+          "file": "tests/tools/rbook/dashboard-client.test.ts",
+          "line": 837
+        },
+        {
+          "file": "tests/tools/rbook/dashboard-client.test.ts",
+          "line": 1254
+        },
+        {
+          "file": "tests/tools/rbook/decision-citations.test.ts",
+          "line": 28
+        },
+        {
+          "file": "tests/tools/rbook/decision-citations.test.ts",
+          "line": 51
+        },
+        {
+          "file": "tests/tools/rbook/decision-citations.test.ts",
+          "line": 64
+        },
+        {
+          "file": "tests/tools/rbook/decision-citations.test.ts",
+          "line": 71
+        },
+        {
+          "file": "tests/tools/rbook/decision-citations.test.ts",
+          "line": 97
+        },
+        {
+          "file": "tests/tools/rbook/message-address-collision.test.ts",
+          "line": 11
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 88
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 101
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 102
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 104
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 108
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 109
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 111
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 196
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 198
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 199
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 215
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 223
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 227
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 279
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 346
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 535
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 539
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 542
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 559
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 565
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 263
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 281
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 288
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 289
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 294
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 308
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 312
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 320
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 321
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 327
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 339
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 340
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 341
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 348
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 349
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 355
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 369
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 370
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 371
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 375
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 383
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 384
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 390
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 403
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 404
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 405
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 414
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 415
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 416
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 420
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 421
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 422
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 430
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 498
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 499
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 500
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 508
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 513
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 515
+        },
+        {
+          "file": "tests/tools/rbook/project-identity.test.ts",
+          "line": 269
+        },
+        {
+          "file": "tests/tools/rbook/project-identity.test.ts",
+          "line": 274
+        },
+        {
+          "file": "tests/tools/rbook/project-identity.test.ts",
+          "line": 283
+        },
+        {
+          "file": "tests/tools/rbook/project-identity.test.ts",
+          "line": 284
+        },
+        {
+          "file": "tests/tools/rbook/project-identity.test.ts",
+          "line": 287
+        },
+        {
+          "file": "tests/tools/rbook/rbook-agent-onboard.test.ts",
+          "line": 352
+        },
+        {
+          "file": "tests/tools/rbook/rbook-agent-onboard.test.ts",
+          "line": 402
+        },
+        {
+          "file": "tests/tools/rbook/rbook-agent-onboard.test.ts",
+          "line": 599
+        },
+        {
+          "file": "tests/tools/rbook/rbook-agent-onboard.test.ts",
+          "line": 679
+        },
+        {
+          "file": "tests/tools/rbook/rbook-decisions-record.test.ts",
+          "line": 7
+        },
+        {
+          "file": "tests/tools/rbook/rbook-decisions-record.test.ts",
+          "line": 125
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1150
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1154
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1157
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1175
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1197
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1200
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1201
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1212
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1213
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1232
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1251
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1252
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1263
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1264
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1287
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1294
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1296
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1310
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1336
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1337
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1356
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1383
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1410
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1462
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1470
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1905
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1918
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1930
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1933
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1942
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1951
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1957
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1967
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1975
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2013
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2047
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2050
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2054
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2067
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2070
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2074
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2089
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2099
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2106
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2120
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2155
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2161
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2178
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2224
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2269
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2321
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2368
+        },
+        {
+          "file": "tests/tools/rbook/rbook-mission-update.test.ts",
+          "line": 484
+        },
+        {
+          "file": "tests/tools/rbook/rbook-session-complete.test.ts",
+          "line": 741
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 288
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 293
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 301
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 335
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 350
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 376
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 395
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 423
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 438
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 452
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 469
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 502
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 539
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 556
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 564
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 585
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 618
+        },
+        {
+          "file": "tests/tools/rbook/record-link-extractor.test.ts",
+          "line": 30
+        },
+        {
+          "file": "tests/tools/rbook/record-link-extractor.test.ts",
+          "line": 104
+        },
+        {
+          "file": "tests/tools/rbook/record-link-extractor.test.ts",
+          "line": 107
+        },
+        {
+          "file": "tests/tools/rbook/record-link-extractor.test.ts",
+          "line": 109
+        },
+        {
+          "file": "tests/tools/rbook/record-link-extractor.test.ts",
+          "line": 123
+        },
+        {
+          "file": "tests/tools/rbook/record-link-extractor.test.ts",
+          "line": 139
+        },
+        {
+          "file": "tests/tools/rbook/record-link-extractor.test.ts",
+          "line": 144
+        },
+        {
+          "file": "tests/tools/rbook/snapshot-diet.test.ts",
+          "line": 8
+        },
+        {
+          "file": "tests/tools/rbook/snapshot-diet.test.ts",
+          "line": 11
+        },
+        {
+          "file": "tests/tools/rbook/snapshot-diet.test.ts",
+          "line": 437
+        },
+        {
+          "file": "tests/tools/rbook/snapshot-diet.test.ts",
+          "line": 444
+        },
+        {
+          "file": "tests/tools/rbook/snapshot-diet.test.ts",
+          "line": 449
+        },
+        {
+          "file": "tests/tools/rbook/snapshot-diet.test.ts",
+          "line": 524
+        },
+        {
+          "file": "tests/tools/rbook/snapshot-diet.test.ts",
+          "line": 526
+        },
+        {
+          "file": "tests/tools/rbook/snapshot-diet.test.ts",
+          "line": 545
+        },
+        {
+          "file": "tests/tools/rbook/snapshot-diet.test.ts",
+          "line": 654
+        },
+        {
+          "file": "tests/tools/rbook/snapshot-diet.test.ts",
+          "line": 655
+        },
+        {
+          "file": "tests/tools/rbook/snapshot-diet.test.ts",
+          "line": 681
+        },
+        {
+          "file": "tests/tools/rbook/snapshot-diet.test.ts",
+          "line": 697
+        },
+        {
+          "file": "tests/tools/rbook/snapshot-diet.test.ts",
+          "line": 1031
+        },
+        {
+          "file": "tests/tools/rbook/snapshot-diet.test.ts",
+          "line": 1051
+        },
+        {
+          "file": "tests/tools/rbook/snapshot-diet.test.ts",
+          "line": 1102
+        },
+        {
+          "file": "tests/tools/rbook/spin-out-citation-spans.test.ts",
+          "line": 37
+        },
+        {
+          "file": "tests/tools/rbook/spin-out-citation-spans.test.ts",
+          "line": 63
+        },
+        {
+          "file": "tests/tools/rbook/spin-out-citations.test.ts",
+          "line": 55
+        },
+        {
+          "file": "tests/tools/rbook/suggestion-oracle.test.ts",
+          "line": 1866
+        },
+        {
+          "file": "tests/tools/rbook/write-sprint-tagging.test.ts",
+          "line": 12
+        }
+      ]
+    },
+    "stage1": {
+      "count": 1288,
+      "scopes": {
+        "CHANGELOG.md": 1,
+        "rbook": 1099,
+        "scripts": 7,
+        "src": 7,
+        "tests": 174
+      },
+      "repairSurface": [
+        {
+          "file": "src/index.ts",
+          "line": 1251
+        },
+        {
+          "file": "src/tools/rbook/decision-citations.ts",
+          "line": 112
+        },
+        {
+          "file": "src/tools/rbook/rbook-db-prune-snapshots.ts",
+          "line": 6
+        },
+        {
+          "file": "src/tools/rbook/rbook-message.ts",
+          "line": 228
+        },
+        {
+          "file": "src/tools/rbook/rbook-mission-complete.ts",
+          "line": 291
+        },
+        {
+          "file": "src/tools/rbook/rbook-sprint-complete.ts",
+          "line": 917
+        },
+        {
+          "file": "src/tools/rbook/unknown-param-guard.ts",
+          "line": 12
+        },
+        {
+          "file": "tests/cli/migrate-docs-rules.test.ts",
+          "line": 20
+        },
+        {
+          "file": "tests/cli/migrate-docs-rules.test.ts",
+          "line": 26
+        },
+        {
+          "file": "tests/docs/notes-only-completion.test.ts",
+          "line": 8
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 63
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 64
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 89
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 103
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 105
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 106
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 107
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 109
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 111
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 116
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 135
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 152
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 172
+        },
+        {
+          "file": "tests/integration/p0-stage1-as-foreign-root.test.ts",
+          "line": 2
+        },
+        {
+          "file": "tests/integration/p0-stage1-as-foreign-root.test.ts",
+          "line": 52
+        },
+        {
+          "file": "tests/integration/p0-stage1-as-foreign-root.test.ts",
+          "line": 79
+        },
+        {
+          "file": "tests/integration/p0-stage1-as-foreign-root.test.ts",
+          "line": 81
+        },
+        {
+          "file": "tests/integration/p0-stage1-as-foreign-root.test.ts",
+          "line": 100
+        },
+        {
+          "file": "tests/integration/p0-stage1-as-foreign-root.test.ts",
+          "line": 102
+        },
+        {
+          "file": "tests/integration/p0-stage1-as-foreign-root.test.ts",
+          "line": 103
+        },
+        {
+          "file": "tests/integration/p0-stage1-as-foreign-root.test.ts",
+          "line": 104
+        },
+        {
+          "file": "tests/integration/p0-stage1-as-foreign-root.test.ts",
+          "line": 106
+        },
+        {
+          "file": "tests/integration/p0-stage1-as-foreign-root.test.ts",
+          "line": 108
+        },
+        {
+          "file": "tests/integration/p0-stage1-as-foreign-root.test.ts",
+          "line": 112
+        },
+        {
+          "file": "tests/integration/p0-stage1-as-foreign-root.test.ts",
+          "line": 127
+        },
+        {
+          "file": "tests/integration/p0-stage1-as-foreign-root.test.ts",
+          "line": 132
+        },
+        {
+          "file": "tests/integration/p0-stage1-as-foreign-root.test.ts",
+          "line": 150
+        },
+        {
+          "file": "tests/integration/roots-priority.test.ts",
+          "line": 43
+        },
+        {
+          "file": "tests/integration/roots-priority.test.ts",
+          "line": 44
+        },
+        {
+          "file": "tests/integration/roots-priority.test.ts",
+          "line": 45
+        },
+        {
+          "file": "tests/integration/roots-priority.test.ts",
+          "line": 47
+        },
+        {
+          "file": "tests/integration/roots-priority.test.ts",
+          "line": 49
+        },
+        {
+          "file": "tests/integration/roots-priority.test.ts",
+          "line": 94
+        },
+        {
+          "file": "tests/integration/roots-priority.test.ts",
+          "line": 95
+        },
+        {
+          "file": "tests/integration/roots-priority.test.ts",
+          "line": 96
+        },
+        {
+          "file": "tests/integration/roots-priority.test.ts",
+          "line": 98
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 22
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 28
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 30
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 31
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 32
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 34
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 36
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 44
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 52
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 75
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 83
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 86
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 99
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 115
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 119
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 125
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 126
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 131
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 134
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 165
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 171
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 181
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 186
+        },
+        {
+          "file": "tests/integration/whoami.test.ts",
+          "line": 209
+        },
+        {
+          "file": "tests/intelligence/content-sanitizer-wiring.test.ts",
+          "line": 376
+        },
+        {
+          "file": "tests/tools/rbook/dashboard-client.test.ts",
+          "line": 494
+        },
+        {
+          "file": "tests/tools/rbook/dashboard-client.test.ts",
+          "line": 764
+        },
+        {
+          "file": "tests/tools/rbook/dashboard-client.test.ts",
+          "line": 765
+        },
+        {
+          "file": "tests/tools/rbook/dashboard-client.test.ts",
+          "line": 766
+        },
+        {
+          "file": "tests/tools/rbook/dashboard-client.test.ts",
+          "line": 779
+        },
+        {
+          "file": "tests/tools/rbook/dashboard-client.test.ts",
+          "line": 780
+        },
+        {
+          "file": "tests/tools/rbook/dashboard-client.test.ts",
+          "line": 821
+        },
+        {
+          "file": "tests/tools/rbook/dashboard-client.test.ts",
+          "line": 822
+        },
+        {
+          "file": "tests/tools/rbook/dashboard-client.test.ts",
+          "line": 823
+        },
+        {
+          "file": "tests/tools/rbook/dashboard-client.test.ts",
+          "line": 836
+        },
+        {
+          "file": "tests/tools/rbook/dashboard-client.test.ts",
+          "line": 837
+        },
+        {
+          "file": "tests/tools/rbook/dashboard-client.test.ts",
+          "line": 1254
+        },
+        {
+          "file": "tests/tools/rbook/decision-citations.test.ts",
+          "line": 28
+        },
+        {
+          "file": "tests/tools/rbook/decision-citations.test.ts",
+          "line": 51
+        },
+        {
+          "file": "tests/tools/rbook/decision-citations.test.ts",
+          "line": 64
+        },
+        {
+          "file": "tests/tools/rbook/decision-citations.test.ts",
+          "line": 71
+        },
+        {
+          "file": "tests/tools/rbook/decision-citations.test.ts",
+          "line": 97
+        },
+        {
+          "file": "tests/tools/rbook/message-address-collision.test.ts",
+          "line": 11
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 263
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 281
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 288
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 289
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 294
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 308
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 312
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 320
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 321
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 327
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 339
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 340
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 341
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 348
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 349
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 355
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 369
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 370
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 371
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 383
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 384
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 390
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 404
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 405
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 420
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 421
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 422
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 498
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 499
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 500
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 508
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 513
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 515
+        },
+        {
+          "file": "tests/tools/rbook/project-identity.test.ts",
+          "line": 269
+        },
+        {
+          "file": "tests/tools/rbook/project-identity.test.ts",
+          "line": 274
+        },
+        {
+          "file": "tests/tools/rbook/project-identity.test.ts",
+          "line": 283
+        },
+        {
+          "file": "tests/tools/rbook/project-identity.test.ts",
+          "line": 284
+        },
+        {
+          "file": "tests/tools/rbook/project-identity.test.ts",
+          "line": 287
+        },
+        {
+          "file": "tests/tools/rbook/rbook-decisions-record.test.ts",
+          "line": 7
+        },
+        {
+          "file": "tests/tools/rbook/rbook-decisions-record.test.ts",
+          "line": 125
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1212
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1213
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1263
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1264
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1294
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1296
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1462
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1470
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1930
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1933
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1942
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1951
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1957
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1967
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1975
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2047
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2050
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2054
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2067
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2070
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2074
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2089
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2099
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2106
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2120
+        },
+        {
+          "file": "tests/tools/rbook/rbook-mission-update.test.ts",
+          "line": 484
+        },
+        {
+          "file": "tests/tools/rbook/record-link-extractor.test.ts",
+          "line": 30
+        },
+        {
+          "file": "tests/tools/rbook/record-link-extractor.test.ts",
+          "line": 104
+        },
+        {
+          "file": "tests/tools/rbook/record-link-extractor.test.ts",
+          "line": 107
+        },
+        {
+          "file": "tests/tools/rbook/record-link-extractor.test.ts",
+          "line": 109
+        },
+        {
+          "file": "tests/tools/rbook/record-link-extractor.test.ts",
+          "line": 123
+        },
+        {
+          "file": "tests/tools/rbook/record-link-extractor.test.ts",
+          "line": 139
+        },
+        {
+          "file": "tests/tools/rbook/record-link-extractor.test.ts",
+          "line": 144
+        },
+        {
+          "file": "tests/tools/rbook/snapshot-diet.test.ts",
+          "line": 8
+        },
+        {
+          "file": "tests/tools/rbook/snapshot-diet.test.ts",
+          "line": 11
+        },
+        {
+          "file": "tests/tools/rbook/snapshot-diet.test.ts",
+          "line": 437
+        },
+        {
+          "file": "tests/tools/rbook/snapshot-diet.test.ts",
+          "line": 444
+        },
+        {
+          "file": "tests/tools/rbook/snapshot-diet.test.ts",
+          "line": 449
+        },
+        {
+          "file": "tests/tools/rbook/snapshot-diet.test.ts",
+          "line": 524
+        },
+        {
+          "file": "tests/tools/rbook/snapshot-diet.test.ts",
+          "line": 526
+        },
+        {
+          "file": "tests/tools/rbook/snapshot-diet.test.ts",
+          "line": 545
+        },
+        {
+          "file": "tests/tools/rbook/snapshot-diet.test.ts",
+          "line": 654
+        },
+        {
+          "file": "tests/tools/rbook/snapshot-diet.test.ts",
+          "line": 655
+        },
+        {
+          "file": "tests/tools/rbook/snapshot-diet.test.ts",
+          "line": 681
+        },
+        {
+          "file": "tests/tools/rbook/snapshot-diet.test.ts",
+          "line": 697
+        },
+        {
+          "file": "tests/tools/rbook/snapshot-diet.test.ts",
+          "line": 1031
+        },
+        {
+          "file": "tests/tools/rbook/snapshot-diet.test.ts",
+          "line": 1051
+        },
+        {
+          "file": "tests/tools/rbook/snapshot-diet.test.ts",
+          "line": 1102
+        },
+        {
+          "file": "tests/tools/rbook/spin-out-citation-spans.test.ts",
+          "line": 37
+        },
+        {
+          "file": "tests/tools/rbook/spin-out-citation-spans.test.ts",
+          "line": 63
+        },
+        {
+          "file": "tests/tools/rbook/spin-out-citations.test.ts",
+          "line": 55
+        },
+        {
+          "file": "tests/tools/rbook/suggestion-oracle.test.ts",
+          "line": 1866
+        }
+      ]
+    },
+    "oods": {
+      "count": 1413,
+      "scopes": {
+        "CHANGELOG.md": 1,
+        "rbook": 1382,
+        "scripts": 1,
+        "src": 3,
+        "tests": 26
+      },
+      "repairSurface": [
+        {
+          "file": "src/index.ts",
+          "line": 1251
+        },
+        {
+          "file": "src/tools/rbook/rbook-agent-onboard.ts",
+          "line": 1855
+        },
+        {
+          "file": "src/tools/rbook/rbook-session-complete.ts",
+          "line": 802
+        },
+        {
+          "file": "tests/cli/migrate-docs-rules.test.ts",
+          "line": 20
+        },
+        {
+          "file": "tests/cli/migrate-docs-rules.test.ts",
+          "line": 26
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 44
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 146
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 153
+        },
+        {
+          "file": "tests/integration/p0-stage1-as-foreign-root.test.ts",
+          "line": 48
+        },
+        {
+          "file": "tests/integration/p0-stage1-as-foreign-root.test.ts",
+          "line": 139
+        },
+        {
+          "file": "tests/integration/roots-priority.test.ts",
+          "line": 84
+        },
+        {
+          "file": "tests/integration/roots-priority.test.ts",
+          "line": 85
+        },
+        {
+          "file": "tests/integration/roots-priority.test.ts",
+          "line": 86
+        },
+        {
+          "file": "tests/integration/roots-priority.test.ts",
+          "line": 88
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 101
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 102
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 104
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 108
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 109
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 111
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 198
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 199
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 559
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 565
+        },
+        {
+          "file": "tests/tools/rbook/rbook-agent-onboard.test.ts",
+          "line": 352
+        },
+        {
+          "file": "tests/tools/rbook/rbook-agent-onboard.test.ts",
+          "line": 402
+        },
+        {
+          "file": "tests/tools/rbook/rbook-agent-onboard.test.ts",
+          "line": 599
+        },
+        {
+          "file": "tests/tools/rbook/rbook-agent-onboard.test.ts",
+          "line": 679
+        },
+        {
+          "file": "tests/tools/rbook/rbook-session-complete.test.ts",
+          "line": 741
+        }
+      ]
+    },
+    "partsTown": {
+      "count": 343,
+      "scopes": {
+        "rbook": 327,
+        "tests": 16
+      },
+      "repairSurface": [
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 51
+        },
+        {
+          "file": "tests/integration/multi-project-attribution.test.ts",
+          "line": 52
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 375
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 403
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 414
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 415
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 416
+        },
+        {
+          "file": "tests/tools/rbook/owner-resolution.test.ts",
+          "line": 430
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1197
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1200
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1201
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1251
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1252
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1336
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1337
+        },
+        {
+          "file": "tests/tools/rbook/write-sprint-tagging.test.ts",
+          "line": 12
+        }
+      ]
+    },
+    "toolExample": {
+      "count": 72,
+      "scopes": {
+        "TOOL_REFERENCE.md": 1,
+        "rbook": 19,
+        "src": 2,
+        "tests": 50
+      },
+      "repairSurface": [
+        {
+          "file": "src/tools/rbook/rbook-sprint.ts",
+          "line": 183
+        },
+        {
+          "file": "src/tools/rbook/rbook-sprint.ts",
+          "line": 303
+        },
+        {
+          "file": "tests/e2e/message-address-collision.e2e.ts",
+          "line": 348
+        },
+        {
+          "file": "tests/e2e/message-address-collision.e2e.ts",
+          "line": 390
+        },
+        {
+          "file": "tests/integration/fail-closed.test.ts",
+          "line": 63
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 88
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 196
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 215
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 223
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 227
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 279
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 346
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 535
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 539
+        },
+        {
+          "file": "tests/tools/rbook/messaging-integration.test.ts",
+          "line": 542
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1150
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1154
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1157
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1175
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1232
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1287
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1310
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1356
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1383
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1410
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1905
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 1918
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2013
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2155
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2161
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2178
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2224
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2269
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2321
+        },
+        {
+          "file": "tests/tools/rbook/rbook-message.test.ts",
+          "line": 2368
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 288
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 293
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 301
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 335
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 350
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 376
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 395
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 423
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 438
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 452
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 469
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 502
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 539
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 556
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 564
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 585
+        },
+        {
+          "file": "tests/tools/rbook/rbook-sprint-carry-forward.test.ts",
+          "line": 618
+        }
+      ]
+    },
+    "docClaims": {
+      "count": 15539,
+      "scopes": {
+        "CHANGELOG.md": 55,
+        "README.md": 12,
+        "SECURITY.md": 20,
+        "TOOL_REFERENCE.md": 3,
+        "agents.md": 11,
+        "analysis": 10,
+        "docs": 78,
+        "jest.config.js": 4,
+        "plugins": 17,
+        "rbook-seed": 34,
+        "rbook": 12149,
+        "scripts": 47,
+        "src": 979,
+        "templates": 3,
+        "tests": 2117
+      },
+      "repairSurface": [
+        {
+          "file": "README.md",
+          "line": 26
+        },
+        {
+          "file": "README.md",
+          "line": 129
+        },
+        {
+          "file": "README.md",
+          "line": 171
+        },
+        {
+          "file": "README.md",
+          "line": 404
+        },
+        {
+          "file": "README.md",
+          "line": 485
+        },
+        {
+          "file": "README.md",
+          "line": 506
+        },
+        {
+          "file": "README.md",
+          "line": 539
+        },
+        {
+          "file": "README.md",
+          "line": 544
+        },
+        {
+          "file": "README.md",
+          "line": 545
+        },
+        {
+          "file": "README.md",
+          "line": 549
+        },
+        {
+          "file": "README.md",
+          "line": 550
+        },
+        {
+          "file": "README.md",
+          "line": 551
+        },
+        {
+          "file": "docs/getting-started.md",
+          "line": 414
+        },
+        {
+          "file": "docs/getting-started.md",
+          "line": 504
+        },
+        {
+          "file": "docs/getting-started.md",
+          "line": 592
+        },
+        {
+          "file": "docs/getting-started.md",
+          "line": 594
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 37
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 40
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 41
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 42
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 48
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 49
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 50
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 72
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 74
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 89
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 104
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 105
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 110
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 111
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 116
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 117
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 119
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 120
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 137
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 139
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 143
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 144
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 151
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 153
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 154
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 156
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 229
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 243
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 246
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 247
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 249
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 254
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 258
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 263
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 265
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 270
+        },
+        {
+          "file": "docs/privacy.md",
+          "line": 276
+        },
+        {
+          "file": "docs/trust.md",
+          "line": 21
+        },
+        {
+          "file": "docs/trust.md",
+          "line": 65
+        },
+        {
+          "file": "docs/trust.md",
+          "line": 81
+        },
+        {
+          "file": "docs/trust.md",
+          "line": 118
+        },
+        {
+          "file": "docs/trust.md",
+          "line": 119
+        },
+        {
+          "file": "docs/trust.md",
+          "line": 145
+        },
+        {
+          "file": "docs/trust.md",
+          "line": 157
+        },
+        {
+          "file": "docs/trust.md",
+          "line": 158
+        },
+        {
+          "file": "docs/trust.md",
+          "line": 159
+        },
+        {
+          "file": "docs/trust.md",
+          "line": 166
+        },
+        {
+          "file": "docs/trust.md",
+          "line": 171
+        },
+        {
+          "file": "docs/trust.md",
+          "line": 174
+        },
+        {
+          "file": "docs/trust.md",
+          "line": 177
+        }
+      ]
+    }
+  }
+}

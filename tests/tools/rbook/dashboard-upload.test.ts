@@ -8,8 +8,10 @@ import * as os from 'os';
 import * as path from 'path';
 import { createHash } from 'crypto';
 import { ProjectGraphRegistry } from '../../../src/intelligence/project-graph-registry';
+import { UPLOAD_LEASE_MS } from '../../../src/intelligence/project-upload-state';
 import {
   readUploadProject,
+  __resetDashboardUploadLifecycle,
   withUploadLease,
   withUploadSnapshot,
 } from '../../../src/tools/rbook/dashboard-upload';
@@ -40,10 +42,39 @@ beforeEach(async () => {
   graph.register({ project_id: 'upload-test', store_path: root, name: 'Upload Test' });
 });
 afterEach(() => {
+  jest.restoreAllMocks();
+  __resetDashboardUploadLifecycle();
   writer.close();
   ProjectGraphRegistry.resetInstance();
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+it.each(['expired', 'replaced'] as const)(
+  'does not report recovery when a successful send has a %s lease',
+  async (change) => {
+    const first = graph.claimUpload('upload-test', true)!;
+    graph.finishUpload('upload-test', first, { success: false, pauseReason: 'auth' });
+    const outcome = await withUploadLease(root, true, async () => {
+      const future = Date.now() + UPLOAD_LEASE_MS + 1;
+      if (change === 'replaced')
+        expect(graph.claimUpload('upload-test', true, future)).not.toBeNull();
+      else
+        jest
+          .spyOn(graph, 'finishUpload')
+          .mockImplementation((id, lease, result) =>
+            ProjectGraphRegistry.prototype.finishUpload.call(graph, id, lease, result, future)
+          );
+      return { success: true };
+    });
+    expect(outcome).toMatchObject({ success: false });
+    expect(outcome?.error).toContain('could not be committed');
+    expect(graph.readUploadState('upload-test')).toMatchObject({
+      blocked: true,
+      pauseReason: 'auth',
+      lastSyncedAt: null,
+    });
+  }
+);
 
 it('uploads a consistent WAL-inclusive backup twice and never changes the source bytes', async () => {
   const before = [digest(database), digest(database + '-wal')];

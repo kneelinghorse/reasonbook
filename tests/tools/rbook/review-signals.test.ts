@@ -112,6 +112,26 @@ function textOf(response: Awaited<ReturnType<typeof executeMissionProtocolTool>>
 }
 
 describe('the review shows what needs a person in the other projects (s97-m01)', () => {
+  it('labels an unnamed registered project by its folder without replacing its stored name', async () => {
+    const local = await project('Local');
+    const other = await project('Other');
+    needsAPerson(other, [], 1);
+    const registry = await ProjectGraphRegistry.create();
+    registry.register({ project_id: other.projectId, store_path: other.root, name: '  ' });
+    const response = await executeMissionProtocolTool(
+      'rbook_review',
+      { projectRoot: local.root },
+      context
+    );
+    expect(response.isError).not.toBe(true);
+    const result = response.structuredContent as unknown as RbookToolResult<RbookReviewResult>;
+    expect(result.data!.portfolio!.signals!.top).toEqual([
+      { projectId: other.projectId, name: path.basename(other.root), blocked: 1 },
+    ]);
+    expect(textOf(response)).toContain(path.basename(other.root));
+    expect(registry.get(other.projectId)?.name).toBe('  ');
+  });
+
   it('counts them at the MCP boundary with this machine’s draft runtime, leaving this project’s own out', async () => {
     const local = await project('Local');
     const other = await project('Other');

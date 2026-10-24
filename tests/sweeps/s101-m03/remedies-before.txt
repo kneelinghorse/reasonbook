@@ -1,0 +1,50 @@
+src/cli.ts:360 [arg of import] ./cli/set-aside
+src/cli/set-aside.ts:11 [const USAGE] reasonbook set-aside --replica <id> [--yes] [--project-root <root>]: preview one gone copy; add --yes to record its cut.
+src/cli/set-aside.ts:32 [arg of io.stderr] reasonbook set-aside: no Reasonbook store found here; pass --project-root <root>.
+src/cli/set-aside.ts:49 [arg of io.stderr] A sync of this copy is running, so no copy was set aside. Ask again once it finishes.
+src/cli/set-aside.ts:55 [arg of oneLine] The copy could not be set aside.
+src/cli/set-aside.ts:65 [arg of [
+      `${oneLine(data.memberName)}: co] Preview only; nothing changed. If this copy is gone, run reasonbook set-aside --replica ${…} --yes.
+src/cli/set-aside.ts:66 [arg of [
+      `${oneLine(data.memberName)}: co] Already set aside
+src/cli/usage.ts:190 [const USAGE]  set-aside --replica <id> [--yes] preview or set aside one gone copy, on the authority copy
+src/referee/handover.ts:67 [arg of FreshCopyRefused] Keep sharing it directly while those copies are in use. If a copy is gone, preview setting it aside on the authority owner's copy: reasonbook set-asid
+src/referee/intake.ts:219 [suggestion] Membership, moves and verdicts are made on the dashboard, not on a member copy.
+src/referee/member-answer.ts:26 [arg of Map] Upgrade this owner's copy to Reasonbook 4.5.0 or later, then retry reasonbook move --to owner. The dashboard still holds authority and the set-aside c
+src/referee/member-answer.ts:30 [arg of Map] Keep your local copy. Ask the project's owner to open its page on the dashboard and contact the dashboard operator about recovery; sync again after re
+src/referee/member-answer.ts:46 [arg of Map] Ask the project's owner to check its handover state on the dashboard, then sync and retry the action.
+src/referee/membership.ts:78 [suggestion] Invite editors and owners only; show viewers the project on the dashboard.
+src/referee/peer.ts:154 [suggestion] Ask the project's owner to share it with your account on the dashboard, then join again.
+src/referee/recovery.ts:68 [suggestion] Keep writing locally. Upgrade Reasonbook to the latest release, then sync to upload your recovery copy; the owner reviews and confirms recovery on the
+src/referee/set-aside.ts:54 [message] ${…}'s copy called the referee at ${…}, within the last seven days, so it was not set aside.
+src/tools/rbook/rbook-auth.ts:323 [description] logout (symmetric to login — revokes the current user-scoped key on the dashboard + clears the local row).
+src/tools/rbook/rbook-project-shared.ts:385 [arg of lines.push] ✓ Shared through ${…}: its copy holds the record from move ${…}, and this copy is the owner's member copy, syncing through it. Share it with people on
+src/tools/rbook/rbook-status.ts:258 [arg of s.shared_sync.map] said this copy's member was removed (first said ${…}), so what this copy sends is set aside;
+src/tools/rbook/record-context.ts:157 [arg of cut] this copy was permanently set aside
+src/tools/rbook/record-dashboard-join.ts:101 [suggestion] Check the address with the project's owner, and that they shared the project with you on the dashboard.
+src/tools/rbook/record-dashboard-join.ts:293 [suggestion] Check this copy and the project with the owner. Keep this existing store; join a different project into an empty folder. A returning set-aside copy ca
+src/tools/rbook/record-dashboard-peer.ts:71 [?] its route names a place on the dashboard ("${…}"), and a route names the dashboard alone
+src/tools/rbook/record-dashboard-peer.ts:97 [suggestion] Check that the project is shared with you on the dashboard; if it is, the owner can share it again.
+src/tools/rbook/record-dashboard-peer.ts:109 [suggestion] Your copy keeps everything it holds. The project's page on the dashboard says which, and the owner decides what happens next.
+src/tools/rbook/record-dashboard-share-state.ts:94 [suggestion] Sharing through the dashboard does not take your other copies along yet. Keep sharing it directly while those copies are in use. If a copy is gone, pr
+src/tools/rbook/record-dashboard-share-state.ts:117 [message] This project is not on the dashboard yet, and this machine is not signed in to it, so nothing has uploaded it there.
+src/tools/rbook/record-dashboard-share-state.ts:123 [message] This project is not on the dashboard yet, and uploads are off on this machine (${…}=${…}), so nothing puts it there.
+src/tools/rbook/record-dashboard-share-state.ts:128 [message] This project is not on the dashboard yet, so it has no address there.
+src/tools/rbook/record-dashboard-share.ts:198 [message] This record holds a set-aside, so ${…} must report Reasonbook library 4.5.0 or later before sharing it; it reported ${…}.
+src/tools/rbook/record-decide.ts:90 [message] Transaction ${…} is past the permanent set-aside cutoff of its copy, so it cannot be accepted.
+src/tools/rbook/record-exchange.ts:225 [const what] the ${…} change(s) it sent, and anything else the owner's copy did not hold when it removed the member, are set aside and count
+src/tools/rbook/record-exchange.ts:226 [const what] anything the owner's copy did not hold when it removed the member is set aside and counts
+src/tools/rbook/record-membership.ts:144 [suggestion] Ask the project owner to manage members on its sharing page on ${…}.
+src/tools/rbook/record-moves.ts:112 [message] This record holds a set-aside, so copy ${…} (block ${…}) must report Reasonbook library 4.5.0 or later before it holds authority; it reported ${…}.
+src/tools/rbook/record-protocol-review.ts:60 [detail] , or have the authority set it aside if it is gone.
+src/tools/rbook/record-protocol-review.ts:78 [detail] Upgrade and sync each blocking copy, or have the authority set it aside if it is gone.
+src/tools/rbook/record-review.ts:116 [const removed] said this copy's member was removed (first said ${…}): what this copy sends is set aside, and counts only if the owner shares the project with it agai
+src/tools/rbook/record-set-aside.ts:56 [message] Set aside needs one replica id and an optional boolean dryRun.
+src/tools/rbook/record-set-aside.ts:66 [message] This project is refereed by ${…}; its referee records a set-aside.
+src/tools/rbook/record-set-aside.ts:67 [message] Only the current authority copy can set aside another copy.
+src/tools/rbook/record-set-aside.ts:69 [suggestion] Ask the owner to set aside the copy on the sharing page on ${…}.
+src/tools/rbook/record-set-aside.ts:70 [suggestion] Run the set-aside step on the current owner's copy.
+src/tools/rbook/record-set-aside.ts:92 [message] ${…} was removed, so this copy cannot be set aside separately.
+src/tools/rbook/record-set-aside.ts:94 [suggestion] Re-add the member first if they should participate, then preview the copy to set aside.
+src/tools/rbook/record-wire.ts:186 [message] This removed or set-aside copy cannot fetch the complete record, so no recovery log was returned.
+# 47 string expressions over 438 tracked src .ts files

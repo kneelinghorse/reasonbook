@@ -288,7 +288,7 @@ export async function rbookMissionComplete(
           message: `Mission '${missionId}' is already Completed`,
           currentState: currentStatus,
           // s91-m03: a retry that carries decisions/agentFeedback is recovering lost data, and
-          // "No action needed" told Stage1 the decisions were safe when they had never landed.
+          // "No action needed" told the caller the decisions were safe when they had never landed.
           suggestion:
             (cleanDecisions?.length ?? 0) > 0 || params.agentFeedback
               ? `The mission is already Completed and this call wrote nothing. Record each decision with rbook_decisions(action="record", missionId="${missionId}", content="..."); agentFeedback can be sent on rbook_session(action="complete").`

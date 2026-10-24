@@ -1,6 +1,6 @@
 # Reasonbook Documentation
 
-**Documentation for the Context + Mission Orchestration System (MCP-first architecture).**
+**Guides to Reasonbook's local record and the Builder workflow.**
 
 ---
 
@@ -130,6 +130,6 @@ rbook_db(action="snapshot")                                    # Snapshot the da
 
 ---
 
-**Last Updated**: 2026-10-12
+**Last Updated**: 2026-10-22
 **Schema Version**: 2.1 (MCP-first)
 **Tool Count**: 15 consolidated tools

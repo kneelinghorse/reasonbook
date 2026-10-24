@@ -12,13 +12,17 @@ export async function buildDigest(
   projectRoot: string,
   io?: CliIo,
   deadlineAtMs = Infinity,
-  resolvedBy: ResolvedBy = 'explicit'
+  resolvedBy: ResolvedBy = 'explicit',
+  sessionStart = false
 ): Promise<string> {
   try {
-    const context = renderDigestV2(await readDigestV2(projectRoot, io?.env, deadlineAtMs - 20), {
-      projectRoot,
-      resolvedBy,
-    });
+    const context = renderDigestV2(
+      await readDigestV2(projectRoot, io?.env, deadlineAtMs - 20, undefined, { sessionStart }),
+      {
+        projectRoot,
+        resolvedBy,
+      }
+    );
     observeRenderedContext(io, context);
     return context.text;
   } catch (error) {

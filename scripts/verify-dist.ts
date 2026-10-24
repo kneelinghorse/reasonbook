@@ -95,6 +95,7 @@ async function main(): Promise<void> {
   const env = {
     ...process.env,
     RBOOK_CONFIG_DIR: configDir,
+    RBOOK_CHECKPOINT_SYNC: 'off',
     [`${LEGACY.envPrefix}CONFIG_DIR`]: configDir,
   } as Record<string, string>;
   delete env.RBOOK_PROJECT_ROOT;
@@ -168,6 +169,36 @@ async function main(): Promise<void> {
 
     const review = await h.callOk('rbook_review', { projectRoot: projectDir });
     check('rbook_review returns a non-empty digest', textOf(review).length > 0);
+
+    // A legacy 401 row is read without a migration or a network probe in the digest path.
+    const uploadRegistry = new Database(path.join(configDir, 'project-graph.sqlite'));
+    try {
+      uploadRegistry
+        .prepare(
+          `UPDATE projects SET upload_blocked=1,
+        upload_last_error='HTTP 401', upload_last_attempt_at=? WHERE store_path=?`
+        )
+        .run(Date.now(), projectDir);
+      const pausedReview = await h.callOk('rbook_review', { projectRoot: projectDir });
+      const pausedText = textOf(pausedReview);
+      const pausedData = h.dataOf(pausedReview) as { digestSizeBytes?: number };
+      check(
+        's101-m01: built review includes upload attention exactly once within its budget',
+        (pausedText.match(/Dashboard upload:/g) ?? []).length === 1 &&
+          pausedText.includes('reason auth') &&
+          typeof pausedData.digestSizeBytes === 'number' &&
+          pausedData.digestSizeBytes <= 4096,
+        `digestSizeBytes=${pausedData.digestSizeBytes}`
+      );
+    } finally {
+      uploadRegistry
+        .prepare(
+          `UPDATE projects SET upload_blocked=0,
+        upload_last_error=NULL, upload_last_attempt_at=NULL WHERE store_path=?`
+        )
+        .run(projectDir);
+      uploadRegistry.close();
+    }
 
     // --- s80-m04: a pin-only read pins to the sender; a neutral multi-project dir
     //     fails CLOSED (never fans out). Register a 2nd project so the registry is
@@ -254,14 +285,23 @@ async function main(): Promise<void> {
         projectRoot: projectDir3,
       })
     ) as { sessionId?: string };
-    const closeData = h.dataOf(
-      await h.callOk('rbook_sprint', {
-        action: 'complete',
-        projectRoot: projectDir3,
-        sprintId: 'sv-1',
-        summary: 'verify:dist reconcile-receipt shape',
-      })
-    ) as Record<string, unknown>;
+    const closeReply = await h.callOk('rbook_sprint', {
+      action: 'complete',
+      projectRoot: projectDir3,
+      sprintId: 'sv-1',
+      summary: 'verify:dist reconcile-receipt shape',
+    });
+    const closeData = h.dataOf(closeReply) as Record<string, unknown>;
+    const uploadReceipt = closeData.dashboardUpload as
+      | { started?: boolean; why?: string }
+      | undefined;
+    check(
+      's101-m01: built close reports the disabled upload in both channels',
+      uploadReceipt?.started === false &&
+        uploadReceipt.why === 'off' &&
+        h.textOf(closeReply).includes('Dashboard upload: not started (off)'),
+      JSON.stringify(uploadReceipt)
+    );
     check(
       's98-m13: built sprint close names active implicit sessions beside direct sprint membership',
       typeof implicitCapture.sessionId === 'string' &&

@@ -2,11 +2,18 @@
 // ABOUTME: Pays durable dashboard upload debt for projects opened by this running server.
 // ABOUTME: A single unref timer uses a fresh request context; reads never mark a project dirty.
 
+import { formatUploadNotice } from './dashboard-upload-notice';
 import { settingIsOff } from '../../intelligence/legacy-compat';
 import { ProjectGraphRegistry } from '../../intelligence/project-graph-registry';
 import { isSameDirectory } from '../../intelligence/resolution-policy';
 import { triggerCheckpointBackfill } from './checkpoint-backfill';
-import { isMembersStore, readUploadProject, uploadLog } from './dashboard-upload';
+import {
+  isMembersStore,
+  readUploadProject,
+  uploadLog,
+  stopAcceptingDashboardUploads,
+  __resetDashboardUploadLifecycle,
+} from './dashboard-upload';
 import { isReadOnlyAgentSession } from './read-only-agent-guard';
 import { captureToolCall } from './tool-call-context';
 import { withoutCodexRequest } from '../../codex-request-context';
@@ -75,25 +82,7 @@ export async function readDashboardUploadStatus(projectRoot: string): Promise<st
     if (!projectId) return null;
     const state = graph.readUploadState(projectId);
     if (!state) return null;
-    // Registration alone is not an upload attempt. Keep actual debt and failure history visible.
-    if (
-      state.lastSyncedAt === null &&
-      state.lastAttemptAt === null &&
-      state.firstOwedAt === null &&
-      state.lastOutcome === null &&
-      state.lastError === null &&
-      !state.blocked
-    )
-      return null;
-    const last = state.lastSyncedAt === null ? 'never' : new Date(state.lastSyncedAt).toISOString();
-    return (
-      `Dashboard upload: last success ${last}` +
-      (state.lastOutcome ? `; ${state.lastOutcome}` : '') +
-      (state.firstOwedAt === null ? '' : '; pending') +
-      (state.lastError ? `; ${state.lastError.replace(/[\r\n\t]+/g, ' ')}` : '') +
-      (state.blocked ? '; automatic uploads paused until an explicit close succeeds' : '') +
-      '.'
-    );
+    return formatUploadNotice(state);
   } catch (error) {
     return `Dashboard upload status unavailable: ${(error instanceof Error ? error.message : String(error)).replace(/[\r\n\t]+/g, ' ')}`;
   }
@@ -103,9 +92,17 @@ export async function __drainDashboardUploads(): Promise<void> {
   while (pending.size) await Promise.all([...pending]);
 }
 
+export function stopDashboardUploadScheduler(): void {
+  if (timer) clearInterval(timer);
+  timer = undefined;
+  opened.clear();
+  stopAcceptingDashboardUploads();
+}
+
 export async function __resetDashboardUploadScheduler(): Promise<void> {
   if (timer) clearInterval(timer);
   timer = undefined;
   opened.clear();
   await __drainDashboardUploads();
+  __resetDashboardUploadLifecycle();
 }
