@@ -109,7 +109,7 @@ describe('reasonbook brief (s97-m03)', () => {
     const result = await run([]);
     expect(result).toMatchObject({ code: 0, stderr: [] });
     expect(result.stdout).toMatch(/^# Weekly brief, \d{4}-\d{2}-\d{2} to \d{4}-\d{2}-\d{2}\n/);
-    expect(result.stdout).toContain(`2 projects; 1 could not be read (${goneId})`);
+    expect(result.stdout).toContain(`2 projects; 1 could not be read (Gone (${goneId}))`);
     expect(result.stdout).toMatch(new RegExp(`- Busy \\(${busyId}\\): 1 draft \\(P1\\), oldest `));
     expect(result.stdout.trimEnd().split('\n').length).toBeLessThanOrEqual(BRIEF_MAX_LINES);
   });

@@ -47,6 +47,16 @@ sections are omitted; a new Builder says "no sprint" and has no fleet-feedback l
 text core is capped at 4,000 characters; MCP may append portfolio context. Use
 `rbook_agent_onboard` for the first cold start or its fuller structured payload.
 
+The 400-character Open work section keeps the mission line and adds "Next steps (k of N)":
+up to 3 open rows with `n:<id>` labels and first sentences cut to 72 characters. Next steps
+rank by lease state (lapsing, warning, idle), then the current sprint, then newest. When next
+steps appear, the digest shows up to 6 recent decisions.
+
+The digest and `rbook_context(action="next_steps", nextStepAction="list")` provide a preview;
+read a row in full with
+`rbook_context(action="next_steps", nextStepAction="show", nextStepIds=[123])`, using the
+numeric part of its `n:123` label.
+
 ## Session Loop
 
 1. **Review.** Call `rbook_review` at the start of normal work for the bounded project digest. Use `rbook_agent_onboard` for a first-run cold start or when the full tier-shaped payload is specifically needed. Act on warnings.

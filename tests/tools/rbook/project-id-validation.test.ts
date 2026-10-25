@@ -284,7 +284,11 @@ describe('Project ID Validation', () => {
       const db = new Database(dbPath);
       db.exec(`
         CREATE TABLE contexts (id TEXT PRIMARY KEY, source_path TEXT, content TEXT, updated_at TEXT);
-        CREATE TABLE sessions (id TEXT PRIMARY KEY, type TEXT, title TEXT, started_at TEXT, status TEXT);
+        CREATE TABLE sessions (
+      id TEXT PRIMARY KEY, type TEXT, title TEXT, sprint_id TEXT, started_at TEXT,
+      completed_at TEXT, agent TEXT, status TEXT, summary TEXT, captures TEXT,
+      next_steps TEXT, metadata TEXT
+    );
         CREATE TABLE sprints (id TEXT PRIMARY KEY, title TEXT, status TEXT);
         INSERT INTO missions (id, name, status) VALUES ('m1', 'Test Mission', 'Queued');
       `);
@@ -307,7 +311,11 @@ describe('Project ID Validation', () => {
       const db = new Database(dbPath);
       db.exec(`
         CREATE TABLE contexts (id TEXT PRIMARY KEY, source_path TEXT, content TEXT, updated_at TEXT);
-        CREATE TABLE sessions (id TEXT PRIMARY KEY, type TEXT, title TEXT, started_at TEXT, status TEXT);
+        CREATE TABLE sessions (
+      id TEXT PRIMARY KEY, type TEXT, title TEXT, sprint_id TEXT, started_at TEXT,
+      completed_at TEXT, agent TEXT, status TEXT, summary TEXT, captures TEXT,
+      next_steps TEXT, metadata TEXT
+    );
         CREATE TABLE sprints (id TEXT PRIMARY KEY, title TEXT, status TEXT);
         INSERT INTO missions (id, name, status) VALUES ('m1', 'Test Mission', 'Queued');
       `);

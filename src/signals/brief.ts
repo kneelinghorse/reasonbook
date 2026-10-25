@@ -2,6 +2,9 @@
 // ABOUTME: The weekly brief from signals reports: six ranked, capped sections, every listed row named by its id, the same
 // ABOUTME: bytes for the same reports and now on any machine. buildBrief gives the sections; renderBrief, the markdown.
 
+import type { BriefOptions, Brief, BriefItem, BriefSection, BriefSectionId } from './brief-types';
+export type { BriefOptions, Brief, BriefItem, BriefSection, BriefSectionId } from './brief-types';
+
 import { storedTimeMs } from '../tools/rbook/stored-time';
 import { FEEDBACK_KINDS, type FeedbackKind } from './feedback-kinds';
 import type { SignalEntry, SignalKind, SignalsReport } from './report';
@@ -13,6 +16,7 @@ import {
   plain,
   projectLabel,
   reportCaveats,
+  expiredDraftCount,
   type BriefReportCaveat,
 } from './brief-text';
 
@@ -29,55 +33,6 @@ export type { BriefReportCaveat };
 /** Row ids a line names for one signal before "…". */
 export const BRIEF_LINE_IDS = 3;
 const DAY_MS = 86_400_000;
-
-export interface BriefOptions {
-  /** The instant the brief is for; stored reports may have an earlier computedAt. */
-  readonly now: Date | number | string;
-  /** The window the reports counted, in days (default 7). */
-  readonly windowDays?: number;
-}
-
-export type BriefSectionId =
-  | 'needs_a_decision'
-  | 'stuck'
-  | 'gone_quiet'
-  | 'drifting'
-  | 'friction'
-  | 'what_moved';
-
-export interface BriefItem {
-  /** The project the line is about, or null for a friction kind's line. */
-  readonly projectId: string | null;
-  /** One line, without its leading "- ". */
-  readonly text: string;
-  /** The row ids the line names. */
-  readonly ids: readonly string[];
-}
-
-export interface BriefSection {
-  readonly id: BriefSectionId;
-  readonly title: string;
-  /** How the section chooses and orders its items, in words. */
-  readonly rule: string;
-  /** The items listed, at most {@link BRIEF_SECTION_ITEMS}. */
-  readonly items: readonly BriefItem[];
-  /** Items past the cap, said as "and N more". */
-  readonly more: number;
-}
-
-export interface Brief {
-  readonly from: string;
-  readonly to: string;
-  readonly windowDays: number;
-  /** Reports read, and those whose store could not be read at all. */
-  readonly projects: number;
-  readonly unreadable: readonly string[];
-  /** Projects that had a signal fail; their other signals are in the sections. */
-  readonly partly: readonly string[];
-  /** Reports whose age or counted window differs; raw provenance remains available in JSON. */
-  readonly reportCaveats: readonly BriefReportCaveat[];
-  readonly sections: readonly BriefSection[];
-}
 
 function nowMsOf(now: BriefOptions['now']): number {
   // Stored-time parsing, not Date.parse: a zone-less SQLite spelling is UTC on every machine.
@@ -148,10 +103,10 @@ function section(
   };
 }
 
-function needsADecision(reports: readonly SignalsReport[]): Ranked[] {
+function needsADecision(reports: readonly SignalsReport[], now: number): Ranked[] {
   const out: Ranked[] = [];
   for (const report of reports) {
-    const drafts = entry(report, 'drafts_pending');
+    const drafts = expiredDraftCount(report, now) ? undefined : entry(report, 'drafts_pending');
     const conflicts = entry(report, 'shared_conflicts');
     if (!drafts && !conflicts) continue;
     const parts = [
@@ -340,14 +295,19 @@ export function buildBrief(reports: readonly SignalsReport[], options: BriefOpti
     windowDays,
     projects: reports.length,
     unreadable,
+    unreadableProjects: reports
+      .filter((report) => report.unreadable)
+      .map((report) => report.project)
+      .sort((a, b) => byIdOf(a.id, b.id) || byIdOf(JSON.stringify(a.name), JSON.stringify(b.name))),
+    droppedDrafts: readable.reduce((sum, report) => sum + expiredDraftCount(report, nowMs), 0),
     partly,
     reportCaveats: reportCaveats(reports, nowMs, windowDays),
     sections: [
       section(
         'needs_a_decision',
         'Needs a decision',
-        'drafts awaiting a decision and unsettled conflicts on a shared copy, the project whose oldest such item is oldest first',
-        needsADecision(readable)
+        'drafts from reports no older than seven days awaiting a decision and unsettled conflicts on a shared copy, the project whose oldest such item is oldest first',
+        needsADecision(readable, nowMs)
       ),
       section(
         'stuck',

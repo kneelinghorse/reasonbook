@@ -124,6 +124,7 @@ import {
   noteTelemetryPresentedIds,
   withMcpTelemetry,
 } from './tools/rbook/telemetry-call';
+import { boundErrorFields, boundErrorValue } from './tools/rbook/error-bounds';
 import { rbookReviewPresentation } from './tools/rbook/review-presentation';
 import {
   runFirstWriteMaintenance,
@@ -654,10 +655,13 @@ export function buildResolvedToolResult(
   // s93-m11 (#606 c): every text answer names the project it touched, an error included: a call
   // refused after resolution still ran against that store. The structured envelope of an error is
   // left as the handler built it.
+  const displayRoot = (value: string) =>
+    inertProjectRoot(result.success ? value : boundErrorValue(value));
   const label = RESOLVED_BY_LABELS[stamp.resolvedBy];
-  const reason = stamp.note ?? (label ? `resolved by ${label}` : null);
+  const rawReason = stamp.note ?? (label ? `resolved by ${label}` : null);
+  const reason = rawReason && !result.success ? boundErrorValue(rawReason) : rawReason;
   if (stamp.projectRoot) {
-    text = `Project: ${stamp.projectAddress ? `${inertProjectRoot(stamp.projectAddress)} — ` : ''}${inertProjectRoot(stamp.projectRoot)}${reason ? ` (${reason})` : ''}\n\n${formatted}`;
+    text = `Project: ${stamp.projectAddress ? `${displayRoot(stamp.projectAddress)} — ` : ''}${displayRoot(stamp.projectRoot)}${reason ? ` (${reason})` : ''}\n\n${formatted}`;
   }
   return {
     content: [{ type: 'text', text }],
@@ -838,7 +842,7 @@ export function buildToolExecutionErrorResult(
     // measurably FALSE for the whole wrong-typed-parameter class (42 triples), where the cause
     // was exactly an input-validation problem. It also prescribed "retry the call", a loop with
     // no exit for any deterministic fault. Say only what this frame knows.
-    suggestion: `The tool raised an exception this boundary did not expect, so the cause is not classified here; the message above is the raw failure. If it repeats with the same inputs, it is deterministic — capture the tool inputs and report this${correlationSuffix}.`,
+    suggestion: `Cause unclassified. If this repeats with the same inputs, capture the inputs and report this${correlationSuffix}.`,
   };
   return buildKnownToolErrorResult(structuredError);
 }
@@ -849,7 +853,8 @@ export function buildToolExecutionErrorResult(
  * not internal incidents.
  */
 export function buildKnownToolErrorResult(error: RbookToolError): CallToolResult {
-  const structured = { success: false as const, error };
+  const structured = boundErrorFields({ success: false as const, error });
+  error = structured.error;
   const suggestion = error.suggestion ? `\nSuggestion: ${error.suggestion}` : '';
   const text =
     `Tool execution error [${error.code}]: ${error.message}${suggestion}\n\n` +
@@ -983,7 +988,10 @@ export async function executeMissionProtocolTool(
     (definition) => definition.name === name
   );
   if (!definitionExists) {
-    throw new ProtocolError(ProtocolErrorCode.MethodNotFound, `Unknown tool: ${name}`);
+    throw new ProtocolError(
+      ProtocolErrorCode.MethodNotFound,
+      boundErrorValue(`Unknown tool: ${name}`)
+    );
   }
 
   const preflightError = preflightMissionProtocolTool(name, args);
@@ -1021,7 +1029,8 @@ export async function executeMissionProtocolTool(
       const params = args as RbookDbParams;
       const ctx = await resolveToolSenderContext(params.projectRoot);
       const projectRoot = ctx.projectRoot;
-      const result = await rbookDb({ ...params, projectRoot });
+      let result = await rbookDb({ ...params, projectRoot });
+      result = boundErrorFields(result);
       const formatted = formatDbForLLM(params.action, result);
 
       return buildResolvedToolResult(result, formatted, stampOf(ctx));
@@ -1044,7 +1053,8 @@ export async function executeMissionProtocolTool(
         ? await resolveOptionalSenderContext(params.projectRoot)
         : await resolveToolSenderContext(params.projectRoot);
       const projectRoot = ctx?.projectRoot;
-      const result = await rbookMission({ ...params, projectRoot });
+      let result = await rbookMission({ ...params, projectRoot });
+      result = boundErrorFields(result);
       const formatted = formatMissionForLLM(params.action, result);
 
       return buildResolvedToolResult(result, formatted, portfolioRead ? NO_PROJECT : stampOf(ctx));
@@ -1055,7 +1065,8 @@ export async function executeMissionProtocolTool(
       const params = args as RbookMissionTransitionParams;
       const ctx = await resolveToolSenderContext(params.projectRoot);
       const projectRoot = ctx.projectRoot;
-      const result = await rbookMissionTransition({ ...params, projectRoot });
+      let result = await rbookMissionTransition({ ...params, projectRoot });
+      result = boundErrorFields(result);
       const formatted = formatMissionTransitionForLLM(params.action, result);
 
       return buildResolvedToolResult(result, formatted, stampOf(ctx));
@@ -1067,7 +1078,8 @@ export async function executeMissionProtocolTool(
 
       const ctx = await resolveToolSenderContext(params.projectRoot);
       const projectRoot = ctx.projectRoot;
-      const result = await rbookContext({ ...params, projectRoot });
+      let result = await rbookContext({ ...params, projectRoot });
+      result = boundErrorFields(result);
       const formatted = formatContextForLLM(params.action, result, params.contextType);
 
       return buildResolvedToolResult(result, formatted, stampOf(ctx));
@@ -1081,7 +1093,8 @@ export async function executeMissionProtocolTool(
       // §5.4 named portfolio query; documented deviation from the master-plan wording).
       const ctx = await resolveToolSenderContext(params.projectRoot);
       const projectRoot = ctx.projectRoot;
-      const result = await rbookSession({ ...params, projectRoot });
+      let result = await rbookSession({ ...params, projectRoot });
+      result = boundErrorFields(result);
       const formatted = formatSessionForLLM(params.action, result);
 
       return buildResolvedToolResult(result, formatted, stampOf(ctx));
@@ -1104,7 +1117,8 @@ export async function executeMissionProtocolTool(
         ? await resolveOptionalSenderContext(params.projectRoot)
         : await resolveToolSenderContext(params.projectRoot);
       const projectRoot = ctx?.projectRoot;
-      const result = await rbookDecisions({ ...params, projectRoot });
+      let result = await rbookDecisions({ ...params, projectRoot });
+      result = boundErrorFields(result);
       const formatted = formatDecisionsForLLM(params.action, result);
 
       return buildResolvedToolResult(result, formatted, portfolioRead ? NO_PROJECT : stampOf(ctx));
@@ -1121,7 +1135,8 @@ export async function executeMissionProtocolTool(
         ? await resolveOptionalSenderContext(params.projectRoot)
         : await resolveToolSenderContext(params.projectRoot);
       const projectRoot = ctx?.projectRoot;
-      const result = await rbookLearnings({ ...params, projectRoot });
+      let result = await rbookLearnings({ ...params, projectRoot });
+      result = boundErrorFields(result);
       const formatted = formatLearningsForLLM(params.action, result);
 
       return buildResolvedToolResult(result, formatted, portfolioRead ? NO_PROJECT : stampOf(ctx));
@@ -1135,7 +1150,8 @@ export async function executeMissionProtocolTool(
         ? await resolveOptionalSenderContext(params.projectRoot)
         : await resolveToolSenderContext(params.projectRoot);
       const projectRoot = ctx?.projectRoot;
-      const result = await rbookFeedback({ ...params, projectRoot });
+      let result = await rbookFeedback({ ...params, projectRoot });
+      result = boundErrorFields(result);
       const formatted = formatFeedbackForLLM(params.action, result);
 
       return buildResolvedToolResult(result, formatted, portfolioRead ? NO_PROJECT : stampOf(ctx));
@@ -1162,7 +1178,8 @@ export async function executeMissionProtocolTool(
         ? await resolveOptionalSenderContext(params.projectRoot)
         : await resolveToolSenderContext(params.projectRoot);
       const projectRoot = ctx?.projectRoot;
-      const result = await rbookAuth({ ...params, projectRoot });
+      let result = await rbookAuth({ ...params, projectRoot });
+      result = boundErrorFields(result);
       const formatted = formatAuthForLLM(params.action, result);
 
       return buildResolvedToolResult(result, formatted, stampOf(ctx));
@@ -1173,7 +1190,8 @@ export async function executeMissionProtocolTool(
       const params = args as RbookStatusParams;
       const ctx = await resolveToolSenderContext(params.projectRoot);
       const projectRoot = ctx.projectRoot;
-      const result = await rbookStatus({ ...params, projectRoot });
+      let result = await rbookStatus({ ...params, projectRoot });
+      result = boundErrorFields(result);
       const formatted = formatStatusForLLM(result);
 
       return buildResolvedToolResult(result, formatted, stampOf(ctx));
@@ -1185,7 +1203,8 @@ export async function executeMissionProtocolTool(
 
       const ctx = await resolveToolSenderContext(params.projectRoot);
       const projectRoot = ctx.projectRoot;
-      const result = await rbookSprint({ ...params, projectRoot });
+      let result = await rbookSprint({ ...params, projectRoot });
+      result = boundErrorFields(result);
       const formatted = formatSprintForLLM(params.action, result);
 
       return buildResolvedToolResult(result, formatted, stampOf(ctx));
@@ -1196,12 +1215,13 @@ export async function executeMissionProtocolTool(
       const advertisedRoots = await getClientProjectRoots(params.projectRoot);
       const ctx = await resolveToolSenderContext(params.projectRoot);
       const projectRoot = ctx.projectRoot;
-      const result = await rbookAgentOnboard({
+      let result = await rbookAgentOnboard({
         ...params,
         projectRoot,
         advertisedRoots,
         callerProvidedProjectRoot: callerNamedProject(params.projectRoot, ctx.source),
       });
+      result = boundErrorFields(result);
       const formatted = formatAgentOnboardForLLM(result);
 
       return buildResolvedToolResult(result, formatted, stampOf(ctx));
@@ -1235,10 +1255,11 @@ export async function executeMissionProtocolTool(
       const advertisedRoots = await getClientProjectRoots(params.projectRoot);
 
       if (params.action === 'whoami') {
-        const result = await getWhoamiDiagnostics({
+        let result = await getWhoamiDiagnostics({
           explicitProjectRoot: params.projectRoot,
           mcpRoots: advertisedRoots,
         });
+        result = boundErrorFields(result);
         const formatted = formatMessageForLLM(params.action, result);
 
         // whoami reports resolution itself; its stamp is the relaxed (local) resolution it found.
@@ -1291,7 +1312,8 @@ export async function executeMissionProtocolTool(
           // fail-open — user-scoped auth returns the operator's full inbox
         }
       }
-      const result = await rbookMessage({ ...params, projectRoot, advertisedRoots });
+      let result = await rbookMessage({ ...params, projectRoot, advertisedRoots });
+      result = boundErrorFields(result);
       const formatted = formatMessageForLLM(params.action, result);
 
       return buildResolvedToolResult(result, formatted, stamp);
@@ -1323,7 +1345,7 @@ export async function executeMissionProtocolTool(
       if (isLiteralPathAction) {
         if (typeof projectRoot === 'string' && isProjectAddress(projectRoot)) {
           const action = typeof params.action === 'string' ? params.action : '';
-          const result = {
+          const result = boundErrorFields({
             success: false,
             error: {
               code: 'PROJECT_FOLDER_REQUIRED',
@@ -1331,7 +1353,7 @@ export async function executeMissionProtocolTool(
               suggestion:
                 'Pass projectRoot as a project folder. Call rbook_project(action="list") to find an existing project path.',
             },
-          };
+          });
           return buildResolvedToolResult(result, formatProjectForLLM(action, result), NO_PROJECT);
         }
         if (typeof projectRoot === 'string' && projectRoot.trim() !== '') {
@@ -1342,7 +1364,8 @@ export async function executeMissionProtocolTool(
         projectRoot = ctx.projectRoot;
         stamp = stampOf(ctx);
       }
-      const result = await rbookProject({ ...params, projectRoot });
+      let result = await rbookProject({ ...params, projectRoot });
+      result = boundErrorFields(result);
       const formatted = formatProjectForLLM(params.action, result, {
         validate: params.validate,
       });
@@ -1351,7 +1374,10 @@ export async function executeMissionProtocolTool(
     }
 
     default:
-      throw new ProtocolError(ProtocolErrorCode.MethodNotFound, `Unknown tool: ${name}`);
+      throw new ProtocolError(
+        ProtocolErrorCode.MethodNotFound,
+        boundErrorValue(`Unknown tool: ${name}`)
+      );
   }
 }
 

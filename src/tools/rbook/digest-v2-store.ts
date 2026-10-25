@@ -17,11 +17,10 @@ import { resolveCurrentSprintId } from './current-sprint';
 import { typedCitations } from './decision-citations';
 import { getProjectId } from './genesis-columns';
 import type { DigestRow, DigestV2Model } from './digest-v2';
-import { readLeaseAges, leaseState } from './next-step-lease';
+import { digestWork } from './digest-work';
 import { readProfile } from './operator-profile';
 import { readProjectIdentity } from './project-identity';
 import { readProjectLevel } from './project-level';
-import { firstReady, orderByRequires } from './work-queue-order';
 import { storedTimeMs } from './stored-time';
 import { captureToolCall } from './tool-call-context';
 import { FLEET_DIGEST_BUDGET_MS, feedbackDigestLine } from './feedback-fleet';
@@ -222,70 +221,12 @@ function snapshot(
         [sprintId]
       )[0] ?? null)
     : null;
-  const stepCols = columns(client, 'next_steps');
-  const steps = rows<{ id: number; content: string; projectId: string | null }>(
+  const { work, nextSteps, stepCount, localTasks } = digestWork(
     client,
-    `SELECT id,content,${field(stepCols, 'project_id')} AS projectId FROM next_steps WHERE status IN ('pending','carried')`
-  ).filter((row) => !isForeignProject(row.projectId, local));
-  const missionCols = columns(client, 'missions');
-  const missions = rows<{
-    id: string;
-    name: string;
-    status: string;
-    sprintId: string;
-    projectId: string | null;
-  }>(
-    client,
-    `SELECT id,name,status,sprint_id AS sprintId,${field(missionCols, 'project_id')} AS projectId FROM missions
-     WHERE status IN ('In Progress','Current','Queued','Blocked')
-     ORDER BY CASE status WHEN 'In Progress' THEN 0 WHEN 'Current' THEN 1 WHEN 'Queued' THEN 2 ELSE 3 END,id`
+    level,
+    local,
+    sprintId ?? null
   );
-  let work: DigestRow[] = [];
-  if (level === 'planner') {
-    const leases = readLeaseAges(client);
-    if (leases === null) throw new Error('Digest next-step leases could not be read.');
-    const states = new Map(
-      leases.map((lease) => [lease.id, leaseState(lease.closesSurvived, lease.ageDays)])
-    );
-    work = steps
-      .sort(
-        (a, b) =>
-          Number(states.get(b.id) !== 'ok') - Number(states.get(a.id) !== 'ok') || b.id - a.id
-      )
-      .slice(0, 5)
-      .map((row) => ({
-        id: `n:${row.id}`,
-        text: `${states.get(row.id) !== 'ok' ? `[lease ${states.get(row.id)}] ` : ''}${row.content}`,
-        projectId: row.projectId,
-      }));
-  } else if (level === 'builder') {
-    // s97-m13 (#662): work under way first; else the first queued mission whose Requires targets
-    // are complete; else the first queued one, saying what it waits on; else a blocked one.
-    const inSprint = missions.filter((mission) => mission.sprintId === sprint?.id);
-    const ordered = orderByRequires(
-      client,
-      inSprint.filter((mission) => mission.status === 'Queued')
-    );
-    if (ordered.warning) throw new Error('Digest work-queue edges could not be read.');
-    const next:
-      | { id: string; name: string; status: string; projectId: string | null; waitsOn?: string[] }
-      | undefined =
-      inSprint.find(
-        (mission) => mission.status === 'In Progress' || mission.status === 'Current'
-      ) ??
-      firstReady(ordered.missions) ??
-      ordered.missions[0] ??
-      inSprint.find((mission) => mission.status === 'Blocked');
-    if (next)
-      work = [
-        {
-          id: next.id,
-          text: `[${next.status}${next.waitsOn ? `, waits on ${next.waitsOn.join(', ')}` : ''}] ${next.name}`,
-          projectId: next.projectId,
-        },
-      ];
-  }
-  const localTasks = missions.filter((row) => !isForeignProject(row.projectId, local)).length;
   const shared = sharedRecordReview(client);
   const writer = shared ? authorForWrite(client).name : undefined;
   // A quiet established store is not a first-hour store: inspect durable rows, not recent sections.
@@ -316,7 +257,7 @@ function snapshot(
     sprint,
     profile: readProfile(env),
     stepUp:
-      level === 'ledger' && steps.length >= 5
+      level === 'ledger' && stepCount >= 5
         ? 'Consider Planner: at least 5 open next steps.'
         : level === 'planner' && localTasks >= 10
           ? 'Consider Builder: at least 10 open tasks.'
@@ -325,6 +266,7 @@ function snapshot(
     decisions: recent(recordRows(client, 'strategic_decisions'), 'd', 8, now, writer),
     learnings: recent(recordRows(client, 'learnings'), 'l', 3, now, writer),
     work,
+    nextSteps,
     drafts: pendingUnexpired(client, env, now),
     shared,
   };

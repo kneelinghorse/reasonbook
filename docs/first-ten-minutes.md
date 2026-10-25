@@ -41,7 +41,7 @@ If you have a plugin under the former CMOS name, follow the
 Install the CLI and initialize the project folder you want to track:
 
 ```sh
-npm install -g @aquex/reasonbook@4.5.1
+npm install -g @aquex/reasonbook@4.6.0
 cd /absolute/path/to/your/project
 reasonbook init --level ledger
 reasonbook review --format=context
@@ -93,7 +93,7 @@ A plugin's private runtime does not put `reasonbook` on your terminal PATH. To r
 without a global install, run this from the project folder:
 
 ```sh
-npx --prefer-offline -y @aquex/reasonbook@4.5.1 review --format=context
+npx --prefer-offline -y @aquex/reasonbook@4.6.0 review --format=context
 ```
 
 [Trust](trust.md) explains local files, hooks and network activity.

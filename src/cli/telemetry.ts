@@ -199,6 +199,12 @@ export class CliTelemetry {
     this.patch({
       session: input.session_id?.trim() ? `ext:${harnessSessionHash(input.session_id)}` : null,
     });
+    const source = input.source;
+    if (
+      this.record.tool === 'hook session-start' &&
+      (source === 'startup' || source === 'resume' || source === 'clear' || source === 'compact')
+    )
+      this.patch({ source });
     if (this.record.tool !== 'hook prompt') return false;
     this.patch({ ...matchPrompt(input.prompt ?? ''), restatedRuleIds: [] });
     if (this.resolution?.kind !== 'store') return false;

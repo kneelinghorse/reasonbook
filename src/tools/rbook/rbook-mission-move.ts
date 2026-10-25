@@ -21,7 +21,7 @@
  * active sprint, so a re-queued mission on the wrong sprint never surfaces at all.
  *
  * WHY IT IS AN ACTION ON `rbook_mission` AND NOT A TRANSITION.
- * `RBOOK_MISSION_TRANSITION_ACTIONS` is exactly the six STATUS transitions. A sprint re-binding
+ * `RBOOK_MISSION_TRANSITION_ACTIONS` contains status transitions. A sprint re-binding
  * changes a CRUD field, not a status — it belongs beside list/show/add/update/depends.
  *
  * THE ID IS NOT RENUMBERED, DELIBERATELY. Four tables carry `REFERENCES missions`

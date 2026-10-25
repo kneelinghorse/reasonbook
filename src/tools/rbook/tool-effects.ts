@@ -89,6 +89,7 @@ export const TOOL_EFFECTS: Readonly<Record<string, ToolEffects>> = {
       unblock: write('local-write', 'overwrite', 'dashboard-write'),
       drop: write('local-write', 'overwrite', 'dashboard-write'),
       defer: write('local-write', 'overwrite', 'dashboard-write'),
+      reopen: write('local-write', 'overwrite', 'dashboard-write'),
     },
   },
   rbook_sprint: {

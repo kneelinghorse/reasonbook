@@ -1,7 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // ABOUTME: s96-m13 (design §s96-m13 items 4, 5) — a shared copy with a route syncs on its own under RBOOK_SHARED_SYNC
 // ABOUTME: alone, one sync per copy at a time, from Reasonbook's own entry; the review and status show each peer's health.
-import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  jest,
+} from '@jest/globals';
 import { createHash } from 'crypto';
 import fs from 'fs';
 import path from 'path';
@@ -37,6 +46,28 @@ import {
 import { onCopy, ownerCopy, read, type Copy } from '../../helpers/shared-copies';
 import { farEndsExited, routeTo, standinSsh } from '../../helpers/standin-ssh';
 import Database from 'better-sqlite3';
+import {
+  prepareUploadServerSources,
+  uploadServerSourceLoader,
+} from '../../helpers/upload-server-source';
+
+let compiled: string;
+let farEnd: string;
+beforeAll(() => {
+  const repo = path.resolve(__dirname, '../../..');
+  // s102-m13: the source stand-in previously transpiled the CLI during every 120 s handshake.
+  // Warm it before the transport starts; the production handshake deadline stays unchanged.
+  compiled = prepareUploadServerSources(repo, ['src/cli.ts']);
+  farEnd = path.join(compiled, 'sync-far-end.cjs');
+  fs.writeFileSync(
+    farEnd,
+    `${uploadServerSourceLoader(compiled)}
+require(${JSON.stringify(path.join(repo, 'src/cli.ts'))}).main(process.argv.slice(2));`
+  );
+}, 180_000);
+afterAll(() => {
+  if (compiled) fs.rmSync(compiled, { recursive: true, force: true });
+});
 
 let fixture: ReplicaFixture;
 const keys = ['RBOOK_SHARED_SYNC', 'RBOOK_CHECKPOINT_SYNC'] as const;
@@ -71,7 +102,7 @@ async function joinedPair(): Promise<{ owner: Copy; studio: { root: string; mach
   const { ssh } = standinSsh(path.join(fixture.tmp, 'bin'));
   const joined = await joinRoute(
     (step) => onCopy(fixture.tmp, owner, step),
-    routeTo(root, path.join(fixture.tmp, 'config-machine-studio')),
+    { ...routeTo(root, path.join(fixture.tmp, 'config-machine-studio')), bin: farEnd },
     'Darryl',
     { ssh }
   );
@@ -151,7 +182,10 @@ describe('one sync per copy at a time', () => {
     const marker = path.join(fixture.tmp, 'launched.json');
     fs.writeFileSync(
       path.join(dist, 'bin.js'),
-      `require('fs').writeFileSync(${JSON.stringify(marker)}, JSON.stringify(process.argv.slice(2)));\n`
+      `const fs = require('fs');\n` +
+        `const marker = ${JSON.stringify(marker)}, temporary = marker + '.' + process.pid + '.tmp';\n` +
+        `fs.writeFileSync(temporary, JSON.stringify(process.argv.slice(2)));\n` +
+        `fs.renameSync(temporary, marker);\n`
     );
     fs.writeFileSync(path.join(dist, 'cli.js'), '');
     expect(launchSync('/some/project', path.join(dist, 'bin.js'))).toBe(true);
@@ -193,7 +227,10 @@ describe('what starts a sync (s96-m13 build-time critics)', () => {
     const marker = path.join(fixture.tmp, 'launched.json');
     fs.writeFileSync(
       path.join(dist, 'bin.js'),
-      `require('fs').writeFileSync(${JSON.stringify(marker)}, JSON.stringify(process.argv.slice(2)));\n`
+      `const fs = require('fs');\n` +
+        `const marker = ${JSON.stringify(marker)}, temporary = marker + '.' + process.pid + '.tmp';\n` +
+        `fs.writeFileSync(temporary, JSON.stringify(process.argv.slice(2)));\n` +
+        `fs.renameSync(temporary, marker);\n`
     );
     fs.writeFileSync(path.join(dist, 'cli.js'), '');
     return { bin: path.join(dist, 'bin.js'), marker };

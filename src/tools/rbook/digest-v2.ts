@@ -3,8 +3,18 @@
 // ABOUTME: Preserve complete profiles, provenance fences and typed item spans within explicit section caps.
 
 import { formatCliRemedy, remedyCommand, type CliRemedyTarget } from '../../utils/cli-remedy';
-import { frameInlineIfForeign, isForeignProject } from '../../intelligence/provenance-frame';
+import { frameInlineIfForeign } from '../../intelligence/provenance-frame';
 import type { OperatorProfile } from './operator-profile';
+import {
+  cut,
+  digestHeadline,
+  section,
+  rowLine,
+  rowsSection,
+  type Line,
+  type Section,
+} from './digest-format';
+export { digestHeadline } from './digest-format';
 import { PROFILE_CAP_CHARS } from './operator-profile';
 import type { RenderedContext } from './rendered-context';
 import { levelName, type ProjectLevel } from './rules-files';
@@ -37,6 +47,7 @@ export interface DigestV2Model {
   readonly decisions: { readonly rows: readonly DigestRow[]; readonly total: number };
   readonly learnings: { readonly rows: readonly DigestRow[]; readonly total: number };
   readonly work: readonly DigestRow[];
+  readonly nextSteps?: { readonly rows: readonly DigestRow[]; readonly total: number };
   /** s93-m06: pending, unexpired drafts awaiting the operator, oldest first. */
   readonly drafts?: readonly DigestDraft[];
   readonly feedback?: string | null;
@@ -59,75 +70,6 @@ export const DRAFTS_SECTION_CAP = 450;
 /** s96-m12: the shared record's section, which takes its room before the drafts do. */
 export const SHARED_SECTION_CAP = 600;
 const DRAFTS_ASK = 'Name each as "draft P<n>" with its subject; record approval with fromDraft.';
-
-/** Cut only the body, before framing it; never split a provenance boundary or typed ID. */
-function cut(text: string, max: number): string {
-  if (max <= 0) return '';
-  if (text.length <= max) return text;
-  return `${text.slice(0, Math.max(0, max - 1)).trimEnd()}…`;
-}
-
-/** Published label rule: capitals, digits and punctuation ending in colon, em dash or period. */
-export function digestHeadline(text: string): string {
-  let value = text.replace(/\s+/g, ' ').trim();
-  const label = /^[\p{Lu}\d\p{P}\p{Zs}]*?[:—.](?:\s+|$)/u;
-  while (label.test(value)) value = value.replace(label, '').trim();
-  const sentence = /^.*?[.!?](?=\s|$)/u.exec(value)?.[0] ?? value;
-  return cut(sentence, 140);
-}
-
-type Line = { text: string; id?: string };
-type Section = { text: string; items: RenderedContext['items'] };
-
-function section(lines: readonly Line[]): Section {
-  const items: Array<{ typedId: string; start: number; end: number }> = [];
-  let text = '';
-  for (const line of lines) {
-    if (text) text += '\n';
-    const start = text.length;
-    text += line.text;
-    if (line.id) items.push({ typedId: line.id, start, end: text.length });
-  }
-  return { text, items };
-}
-
-function rowLine(row: DigestRow, cap: number, local: string | null): Line | null {
-  const prefix = `  • ${row.id}${row.date ? ` ${row.date}` : ''}${row.author ? ` (${cut(row.author, 24)})` : ''} `;
-  const overhead = frameInlineIfForeign('', row.projectId, local).length;
-  const room = Math.min(140, cap - prefix.length - overhead);
-  if (room < 16) return null;
-  const headline = digestHeadline(row.text) || '[no sentence; read in full]';
-  const text = prefix + frameInlineIfForeign(cut(headline, room), row.projectId, local);
-  return {
-    text,
-    ...(!isForeignProject(row.projectId, local) && /^[dlcn]:[1-9]\d*$/.test(row.id)
-      ? { id: row.id }
-      : {}),
-  };
-}
-
-function rowsSection(
-  title: string,
-  rows: readonly DigestRow[],
-  cap: number,
-  max: number,
-  local: string | null,
-  total = rows.length,
-  week = false
-): Section | null {
-  if (!rows.length) return null;
-  const selected = rows.slice(0, max);
-  const heading = (shown: number): string =>
-    `${title}:${total > shown ? ` (${shown} of ${total}${week ? ' this week' : ''})` : ''}`;
-  // Reserve the longest count heading before sharing space equally across complete rows.
-  const headingRoom = heading(0).length + String(selected.length).length;
-  const perRow = Math.floor((cap - headingRoom - selected.length) / selected.length);
-  const lines = selected
-    .map((row) => rowLine(row, perRow, local))
-    .filter((line): line is Line => !!line);
-  if (!lines.length) return section([{ text: `${heading(0)}\nRead these records in full.` }]);
-  return section([{ text: heading(lines.length) }, ...lines]);
-}
 
 function projectSection(model: DigestV2Model): Section {
   const step =
@@ -314,6 +256,23 @@ function draftsSection(
   return short.length <= cap ? section([{ text: short }]) : null;
 }
 
+/** Builder keeps its mission and next steps inside one 400-character section. */
+function openWork(model: DigestV2Model): Section | null {
+  const next = model.nextSteps;
+  if (!next?.rows.length) return rowsSection('Open work', model.work, 400, 5, model.localProjectId);
+  const lines: Line[] = [{ text: 'Open work:' }];
+  const selected = next.rows.slice(0, 3);
+  const heading = `Next steps (${selected.length} of ${next.total}):`;
+  // The mission receives the room left after three bounded next-step lines, including IDs.
+  const stepLines = selected
+    .map((row) => rowLine(row, 100, model.localProjectId))
+    .filter((line): line is Line => !!line);
+  const fixed = section([...lines, { text: heading }, ...stepLines]).text.length;
+  const mission = model.work[0] && rowLine(model.work[0], 400 - fixed - 1, model.localProjectId);
+  if (mission) lines.push(mission);
+  return section([...lines, { text: heading }, ...stepLines]);
+}
+
 /** Empty sections vanish; all caps include headings, except the profile's approved text allowance. */
 export function renderDigestV2(
   model: DigestV2Model,
@@ -334,17 +293,21 @@ export function renderDigestV2(
     );
   }
   const local = model.localProjectId;
+  const hasSteps =
+    !!model.nextSteps?.rows.length || model.work.some((row) => row.id.startsWith('n:'));
   const decisionsAt = (cap: number) =>
     rowsSection(
       'Recent decisions',
       model.decisions.rows,
       cap,
-      8,
+      hasSteps ? 6 : 8,
       local,
       model.decisions.total,
       true
     );
-  const recent = decisionsAt(1000 - (model.dashboardUpload ? model.dashboardUpload.length + 2 : 0));
+  const recent = decisionsAt(
+    (hasSteps ? 750 : 1000) - (model.dashboardUpload ? model.dashboardUpload.length + 2 : 0)
+  );
   for (const value of [
     rowsSection('Rules in force', model.rules, 500, 4, local),
     recent,
@@ -357,7 +320,7 @@ export function renderDigestV2(
       model.learnings.total,
       true
     ),
-    rowsSection('Open work', model.work, 400, 5, local),
+    openWork(model),
   ])
     if (value) sections.push(value);
   const tail: Section[] = [];
@@ -381,7 +344,7 @@ export function renderDigestV2(
   // On a shared copy the shared record's short form keeps its room too: the recent decisions give up
   // what the two need, since rbook_review's answer carries no shared-record notice of its own.
   const sharedShort = sharedShortForm(model.shared);
-  const owed = sharedShort ? sharedShort.length + draftsReserve - room() : 0;
+  const owed = (sharedShort?.length ?? 0) + draftsReserve - room();
   const at = recent ? sections.indexOf(recent) : -1;
   if (owed > 0 && recent && at >= 0) {
     const smaller = decisionsAt(recent.text.length - owed);

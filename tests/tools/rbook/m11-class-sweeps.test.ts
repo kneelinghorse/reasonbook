@@ -106,9 +106,9 @@ const STATUS_WRITES: ReadonlyArray<{ key: string; kind: Kind; why: string }> = [
     why: 'carry ids',
   },
   {
-    key: 'tools/rbook/rbook-decisions-record.ts|strategic_decisions|superseded',
+    key: 'tools/rbook/decision-correction.ts|strategic_decisions|superseded',
     kind: 'caller-requested',
-    why: 'record with supersedes=[...]',
+    why: 'record with supersedes=[...], through the s102-m03 correction helper',
   },
   {
     key: 'tools/rbook/rbook-learnings-update.ts|learnings|?',

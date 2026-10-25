@@ -78,7 +78,9 @@ describe('deriveDrift (s80-m06 strict partition + drift)', () => {
     expect(ids).not.toContain('unread');
     expect(r.drift!.stale[0].projectId).toBe('silent'); // 40d sorts before unmig (age 0)
     const unmig = r.drift!.stale.find((s) => s.projectId === 'unmig');
-    expect(unmig!.hint).toMatch(/backfill/i);
+    expect(unmig!.hint).toContain('rbook_session(action="start"');
+    expect(unmig!.hint).toContain('rbook_session(action="complete"');
+    expect(unmig!.hint).toContain('projectRoot="/s/unmig"');
     const silent = r.drift!.stale.find((s) => s.projectId === 'silent');
     expect(silent!.hint).toBeUndefined();
     expect(silent!.reason).toMatch(/40d/);

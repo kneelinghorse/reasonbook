@@ -1,8 +1,7 @@
 # Agent Rules
 
 Rules for every coding agent working in this repository. This file lives at
-`project-root/AGENTS.md`. Replace the bracketed placeholders with this project's details, and keep
-the Hard Operating Rules and the Learned Practices as they are.
+`project-root/AGENTS.md`. Keep the Hard Operating Rules and the Learned Practices as they are.
 
 Reasonbook keeps this project's record at the **Builder** level: decisions, lessons, sprints and missions. Its tools and hooks say when to use it; `reasonbook ambient off` turns the hooks off here.
 
@@ -70,55 +69,8 @@ Each of these was learned from a real failure. Keep them unless the operator rem
 
 ## Project Overview
 
-- **Name:** [project name]
-- **What it is:** [one or two sentences]
-- **Stack:** [language, framework, database]
-
-## Commands
-
-```bash
-[install command]       # install dependencies
-[dev command]           # run locally
-[test command]          # run the tests
-[lint command]          # lint and format
-[build command]         # build for release
-```
-
-## Structure
-
-```
-[source directory]/     # application code
-tests/                  # tests
-docs/                   # documentation
-rbook/                   # the project's record; no application code here
-```
-
-Key files: [entry point, config file, anything an agent must read first].
-
-## Conventions
-
-- **Code:** [naming, formatting, how modules are organized]
-- **Comments:** [when to write them, and the docstring style]
-- **Tests:** [framework], [where they live], [naming]. Run the full suite before calling work done.
-- **Commits:** [format, for example `type(scope): what and why`]
+- **Name:** This project
 
 ## Security
 
 - Never commit secrets; read them from the environment.
-- [authentication, authorization and data-protection rules]
-- [patterns this project forbids]
-
-## Outward Actions
-
-[Who runs actions that leave this machine (deploys, pushes to the main branch, releases, paid runs,
-writes to live systems): the agent end to end, or only with the operator's go-ahead.]
-
-## Communication
-
-- [how the operator likes options presented, and when to ask]
-- [documentation and report formats]
-
----
-
-Before relying on this file: replace every bracketed placeholder, and delete any section that does
-not apply.

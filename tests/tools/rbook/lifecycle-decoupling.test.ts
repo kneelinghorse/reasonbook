@@ -2,6 +2,13 @@
 // ABOUTME: s94-m05 exercises unscheduled work and repair/activation through real handlers.
 // ABOUTME: Store assertions prove no placeholder sprint, unsafe reopen, or lost audit/pointer state.
 import Database from 'better-sqlite3';
+import * as fs from 'fs';
+import * as path from 'path';
+import {
+  prepareUploadServerSources,
+  uploadServerSourceLoader,
+} from '../../helpers/upload-server-source';
+
 import { createSeededRbookProject, type SeededRbookProject } from '../../helpers/seedRbookDb';
 import { rbookMission } from '../../../src/tools/rbook/rbook-mission';
 import { rbookMissionAdd } from '../../../src/tools/rbook/rbook-mission-add';
@@ -390,15 +397,25 @@ describe('remaining lifecycle seams', () => {
 });
 
 describe('actual process and initialization boundaries', () => {
+  let compiled: string;
+  beforeAll(() => {
+    compiled = prepareUploadServerSources(path.resolve(__dirname, '../../..'), [
+      'src/tools/rbook/rbook-mission-start.ts',
+    ]);
+  }, 180_000);
+  afterAll(() => {
+    if (compiled) fs.rmSync(compiled, { recursive: true, force: true });
+  });
   it('two processes starting different Planned parents cannot create two open sprints', async () => {
     const { spawn } = await import('child_process');
-    const path = await import('path');
     sprint('left', 'Planned');
     sprint('right', 'Planned');
     mission('left-m', 'Queued', 'left');
     mission('right-m', 'Queued', 'right');
     const modulePath = path.resolve('src/tools/rbook/rbook-mission-start.ts');
-    const source = String.raw`const fs=require('fs'),ts=require('typescript');require.extensions['.ts']=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,f);const {rbookMissionStart}=require(process.argv[1]);process.stdout.write('ready\n');process.stdin.once('data',async()=>{try{const result=await rbookMissionStart({missionId:process.argv[3],projectRoot:process.argv[2]});process.stdout.write(JSON.stringify(result)+'\n');process.exit(0);}catch(e){process.stderr.write(String(e));process.exit(1);}});`;
+    const source =
+      uploadServerSourceLoader(compiled) +
+      String.raw`const {rbookMissionStart}=require(process.argv[1]);process.stdout.write('ready\n');process.stdin.once('data',async()=>{try{const result=await rbookMissionStart({missionId:process.argv[3],projectRoot:process.argv[2]});process.stdout.write(JSON.stringify(result)+'\n');process.exit(0);}catch(e){process.stderr.write(String(e));process.exit(1);}});`;
     const children = ['left-m', 'right-m'].map((id) => {
       const child = spawn(process.execPath, ['-e', source, modulePath, project.projectRoot, id], {
         cwd: process.cwd(),
@@ -413,6 +430,7 @@ describe('actual process and initialization boundaries', () => {
         readyResolve = resolve;
         readyReject = reject;
       });
+      child.once('error', (error) => readyReject(error));
       child.stdout.on('data', (chunk) => {
         output += String(chunk);
         if (output.includes('ready\n')) readyResolve();
@@ -427,12 +445,26 @@ describe('actual process and initialization boundaries', () => {
           resolve({ code, output, error });
         })
       );
-      return { child, ready, done };
+      return { child, ready, done, diagnostics: () => ({ output, error }) };
+    });
+    // s102-m13: the old timeout included two independent TypeScript compilations. Warm once
+    // before this test; this watchdog bounds only the real children and preserves their assertions.
+    let deadline: NodeJS.Timeout | undefined;
+    const expired = new Promise<never>((_, reject) => {
+      deadline = setTimeout(
+        () =>
+          reject(
+            new Error(
+              `Fixture children did not finish within 90 s: ${JSON.stringify(children.map((c) => c.diagnostics()))}`
+            )
+          ),
+        90_000
+      );
     });
     try {
-      await Promise.all(children.map((c) => c.ready));
+      await Promise.race([Promise.all(children.map((c) => c.ready)), expired]);
       children.forEach((c) => c.child.stdin.end('go'));
-      const results = await Promise.all(children.map((c) => c.done));
+      const results = await Promise.race([Promise.all(children.map((c) => c.done)), expired]);
       for (const result of results) {
         expect(result.code).toBe(0);
         // s96-m10: match the whole answer, so a failure prints the child's error code and message.
@@ -454,11 +486,26 @@ describe('actual process and initialization boundaries', () => {
         { status: 'In Progress' },
       ]);
     } finally {
-      children.forEach((c) => {
-        if (c.child.exitCode === null) c.child.kill();
-      });
+      clearTimeout(deadline);
+      for (const { child } of children) {
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+      }
+      let cleanupDeadline: NodeJS.Timeout | undefined;
+      try {
+        await Promise.race([
+          Promise.all(children.map((c) => c.done)),
+          new Promise<never>((_, reject) => {
+            cleanupDeadline = setTimeout(
+              () => reject(new Error('Owned fixture children did not close after SIGKILL')),
+              10_000
+            );
+          }),
+        ]);
+      } finally {
+        clearTimeout(cleanupDeadline);
+      }
     }
-  }, 20000);
+  }, 120_000);
   it.each([undefined, null, 'explicit'] as const)(
     'init preserves the %s initial mission assignment',
     async (requested) => {

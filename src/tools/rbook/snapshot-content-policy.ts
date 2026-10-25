@@ -219,12 +219,14 @@ export function isReservedExplicitSource(source: string): boolean {
 }
 
 /**
- * A row's creation instant (Unix ms). Accepts ISO strings and SQLite's `YYYY-MM-DD HH:MM:SS` (UTC);
+ * A row's creation instant (Unix ms). Accepts ISO strings with an offset and SQLite's `YYYY-MM-DD HH:MM:SS` (UTC);
  * an unparseable stamp reads as -Infinity, the oldest possible.
  */
 export function snapshotTimeMs(row: { createdAt: string }): number {
   const raw = row.createdAt?.trim() ?? '';
   const sqlite = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}(?:\.\d+)?)$/.exec(raw);
+  const iso = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})$/.test(raw);
+  if (!sqlite && !iso) return -Infinity;
   const t = Date.parse(sqlite ? `${sqlite[1]}T${sqlite[2]}Z` : raw);
   return Number.isNaN(t) ? -Infinity : t;
 }

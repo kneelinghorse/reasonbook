@@ -378,7 +378,7 @@ describe('local telemetry stats', () => {
       expect(exported).not.toContain(secret);
   });
 
-  it('measures emitted costs, restatements, same-day stable digests and fail-opens with distinct denominators', async () => {
+  it('measures emitted costs, restatements, consecutive stable digests and fail-opens with distinct denominators', async () => {
     event({
       tool: 'hook session-start',
       session: 'aaaaaaaaaaaaaaaa',
@@ -406,8 +406,8 @@ describe('local telemetry stats', () => {
       characters: 210,
       sessions: 2,
       meanCharactersPerSession: 105,
-      stableDigestSessions: 2,
-      comparableDigestSessions: 2,
+      stableDigestPairs: 1,
+      comparableDigestPairs: 1,
     });
     expect(report.events.restatement).toMatchObject({
       measuredPrompts: 2,
@@ -415,6 +415,63 @@ describe('local telemetry stats', () => {
       per100: 50,
     });
     expect(report.events.safety).toMatchObject({ deadlineMisses: 1, failOpens: 1, refusals: 1 });
+  });
+
+  it('keeps unjoinable and cross-session item details local while exporting only counts', async () => {
+    event({ ts: iso(now - 3000), idsInjected: ['l:532', 'd:1622'] });
+    event({
+      ts: iso(now - 2000),
+      surface: 'mcp',
+      tool: 'rbook_decisions',
+      action: 'record',
+      mode: 'write',
+      session: 'pid:1234abcd:1:2',
+      idsCited: ['l:532'],
+    });
+    event({
+      surface: 'mcp',
+      tool: 'rbook_decisions',
+      action: 'record',
+      mode: 'write',
+      session: 'bbbbbbbbbbbbbbbb',
+      idsCited: ['d:1622'],
+    });
+    const report = await collectTelemetryStats([root], bounds(), env);
+    const exported = exportTelemetryStats(report);
+    expect(exported.unjoinableUses).toEqual({
+      records: 1,
+      pidKeyedRecords: 1,
+      otherUnkeyedRecords: 0,
+      items: 1,
+    });
+    expect(exported.crossSessionReferences).toEqual({ records: 1, items: 1 });
+    expect(exported.citeThrough.prompt).toMatchObject({ used: 0 });
+    const json = JSON.stringify(exported);
+    for (const secret of [
+      root,
+      '1234abcd',
+      'l:532',
+      'd:1622',
+      'aaaaaaaaaaaaaaaa',
+      'bbbbbbbbbbbbbbbb',
+    ])
+      expect(json).not.toContain(secret);
+    let stdout = '';
+    expect(
+      await runStats([], {
+        cwd: root,
+        env,
+        readStdin: async () => '',
+        stdout: (text) => {
+          stdout += text;
+        },
+        stderr: () => undefined,
+      })
+    ).toBe(0);
+    expect(stdout).toContain('Unjoinable use:');
+    expect(stdout).toContain('l:532, 1 use records');
+    expect(stdout).toContain('Cross-session reference, uncounted:');
+    expect(stdout).toContain('d:1622, 1 use records');
   });
 
   it('surfaces unavailable query sources, then reads a table created afterward without caching its absence', async () => {

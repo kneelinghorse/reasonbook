@@ -163,7 +163,7 @@ async function synced(copy: Copy): Promise<ExchangeReport> {
   const result = await syncNow(copy);
   if (!result.success)
     throw new Error(
-      `${copy.name}: ${JSON.stringify(result.error)}; the network said: ${network.failures.join(' | ') || 'nothing'}`
+      `${copy.name}: ${JSON.stringify(result.error)}; the network said: ${network.failures.join(' | ') || 'nothing'}; reference server: ${JSON.stringify(server.diagnostics())}`
     );
   return result.data!.peers[0].report!;
 }
@@ -479,7 +479,10 @@ function fakeEntry(): { readonly bin: string; readonly marker: string } {
   const marker = path.join(fixture.tmp, 'launched.json');
   fs.writeFileSync(
     path.join(dist, 'bin.js'),
-    `require('fs').writeFileSync(${JSON.stringify(marker)}, JSON.stringify(process.argv.slice(2)));\n`
+    `const fs = require('fs');\n` +
+      `const marker = ${JSON.stringify(marker)}, temporary = marker + '.' + process.pid + '.tmp';\n` +
+      `fs.writeFileSync(temporary, JSON.stringify(process.argv.slice(2)));\n` +
+      `fs.renameSync(temporary, marker);\n`
   );
   fs.writeFileSync(path.join(dist, 'cli.js'), '');
   return { bin: path.join(dist, 'bin.js'), marker };

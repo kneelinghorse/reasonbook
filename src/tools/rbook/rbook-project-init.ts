@@ -78,13 +78,14 @@ export { AGENTS_FILE_NAME, findAgentsFile };
 function ensureAgentsMd(
   projectRoot: string,
   seedPath: string,
-  options: { level: ProjectLevel; hooks: boolean; ambient: RulesAmbient }
+  options: { level: ProjectLevel; projectName: string; hooks: boolean; ambient: RulesAmbient }
 ): { name: string; written: boolean } {
   const existing = findAgentsFile(projectRoot);
   if (existing) return { name: existing, written: false };
   const template = fs.readFileSync(path.join(seedPath, 'templates', AGENTS_FILE_NAME), 'utf8');
   const rendered = renderAgentsMd(template, {
     level: options.level,
+    projectName: options.projectName,
     hooks: options.hooks,
     ambient: options.ambient,
     ...(options.hooks
@@ -1068,6 +1069,7 @@ export async function rbookProjectInit(
 
       const agents = ensureAgentsMd(projectRoot, seedPath, {
         level: levelOfTier(storedTier),
+        projectName: storedName || path.basename(projectRoot),
         hooks: internalOpts.hooks !== false,
         ambient: storedAmbient,
       });

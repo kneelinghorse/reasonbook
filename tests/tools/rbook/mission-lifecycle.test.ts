@@ -97,6 +97,13 @@ function createTestDb(): TestDb {
       metadata TEXT
     );
 
+    -- Mission transitions now resolve their caller session as well as writing the status.
+    CREATE TABLE sessions (
+      id TEXT PRIMARY KEY, type TEXT, title TEXT, sprint_id TEXT, started_at TEXT,
+      completed_at TEXT, agent TEXT, status TEXT, summary TEXT, captures TEXT,
+      next_steps TEXT, metadata TEXT
+    );
+
     CREATE TABLE session_events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       ts TEXT,
@@ -618,14 +625,15 @@ describe('rbook_mission_block', () => {
       expect(result.error?.suggestion).toContain('unblock');
     });
 
-    it('should return INVALID_STATE_TRANSITION for Queued mission', async () => {
+    it('blocks Queued work without requiring a false start', async () => {
       const result = await callMissionBlock(testDb.dbPath, {
         missionId: 'm-queued',
-        reason: 'Cannot block queued',
+        reason: 'Waiting before work can begin',
       });
 
-      expect(result.success).toBe(false);
-      expect(result.error?.code).toBe(RBOOK_ERROR_CODES.MISSION_INVALID_TRANSITION);
+      expect(result.success).toBe(true);
+      expect(result.data?.previousStatus).toBe('Queued');
+      expect(result.data?.currentStatus).toBe('Blocked');
     });
 
     it('should return INVALID_STATE_TRANSITION for Completed mission', async () => {

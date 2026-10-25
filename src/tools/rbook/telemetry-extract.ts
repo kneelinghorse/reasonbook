@@ -70,13 +70,29 @@ export function citedIds(args: unknown): string[] {
     ...list(params.supersedes).flatMap((id) => typed('d', id)),
     ...list(params.citesLearningIds).flatMap((id) => typed('l', id)),
   ];
+  for (const value of list(params.evidence)) {
+    const entry = object(value);
+    const prefix =
+      entry.type === 'decision'
+        ? 'd'
+        : entry.type === 'learning'
+          ? 'l'
+          : entry.type === 'next-step'
+            ? 'n'
+            : null;
+    if (prefix && typeof entry.id === 'string' && /^[1-9]\d*$/.test(entry.id))
+      ids.push(...typed(prefix, Number(entry.id)));
+  }
   const text = [
     params.content,
+    params.context,
+    params.consequences,
     params.notes,
     params.summary,
     params.reason,
     params.resolution,
     ...list(params.decisions),
+    ...list(params.alternatives),
   ]
     .filter((v): v is string => typeof v === 'string')
     .join('\n');
@@ -118,12 +134,20 @@ export function usedIds(
     ((tool === 'rbook_decisions' && action === 'record') ||
       (tool === 'rbook_session' && ['capture', 'complete'].includes(String(action))) ||
       (tool === 'rbook_mission_transition' &&
-        ['start', 'complete', 'block', 'unblock', 'drop', 'defer'].includes(String(action))) ||
+        ['start', 'complete', 'block', 'unblock', 'drop', 'defer', 'reopen'].includes(
+          String(action)
+        )) ||
       (tool === 'rbook_mission' && ['add', 'update'].includes(String(action))));
   const ids = proseWrite ? citedIds(params) : [];
   if (action === 'show' && !foreign(data, data.localProjectId)) {
     if (tool === 'rbook_decisions') ids.push(...typed('d', data.id));
     if (tool === 'rbook_learnings') ids.push(...typed('l', data.id));
+  }
+  if (tool === 'rbook_context' && action === 'next_steps' && params.nextStepAction === 'show') {
+    for (const value of list(data.items)) {
+      const row = object(value);
+      if (!foreign(row, data.localProjectId)) ids.push(...typed('n', row.id));
+    }
   }
   if (tool === 'rbook_decisions' && action === 'update') ids.push(...typed('d', data.decisionId));
   if (tool === 'rbook_learnings' && ['update', 'reaffirm'].includes(String(action))) {

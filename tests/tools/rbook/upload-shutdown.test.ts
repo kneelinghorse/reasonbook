@@ -27,7 +27,9 @@ beforeAll(() => {
   compiled = prepareUploadServerSources(repo);
 }, 180_000);
 
-afterAll(() => fs.rmSync(compiled, { recursive: true, force: true }));
+afterAll(() => {
+  if (compiled) fs.rmSync(compiled, { recursive: true, force: true });
+});
 
 beforeEach(() => {
   directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rbook-upload-shutdown-'));
@@ -43,7 +45,7 @@ afterEach(async () => {
     await new Promise<void>((resolve) => dashboard!.close(() => resolve()));
   }
   dashboard = undefined;
-  fs.rmSync(directory, { recursive: true, force: true });
+  if (directory) fs.rmSync(directory, { recursive: true, force: true });
 });
 
 it.each(['SIGINT', 'SIGTERM', 'stdin close'] as const)(
@@ -222,14 +224,22 @@ require(${JSON.stringify(path.join(repo, 'src/index.ts'))}).runServer(['--projec
 `
   );
   const start = async (): Promise<void> => {
-    child = new RawStdioServer(bootstrap, directory, {
-      PATH: process.env.PATH ?? path.dirname(process.execPath),
-      RBOOK_CONFIG_DIR: path.join(directory, 'config'),
-      RBOOK_PROJECT_ROOT: project,
-      RBOOK_DASHBOARD_URL: `http://127.0.0.1:${port}`,
-      RBOOK_DASHBOARD_API_KEY: 'shutdown-fixture-key',
-      RBOOK_SHARED_SYNC: 'off',
-    });
+    child = new RawStdioServer(
+      bootstrap,
+      directory,
+      {
+        PATH: process.env.PATH ?? path.dirname(process.execPath),
+        RBOOK_CONFIG_DIR: path.join(directory, 'config'),
+        RBOOK_PROJECT_ROOT: project,
+        RBOOK_DASHBOARD_URL: `http://127.0.0.1:${port}`,
+        RBOOK_DASHBOARD_API_KEY: 'shutdown-fixture-key',
+        RBOOK_SHARED_SYNC: 'off',
+      },
+      [],
+      30_000
+    );
+    // s102-m13: allow loaded fixture startup to reach the upload scenario; the old
+    // 10 s initialize watchdog expired first. Explicit shutdown bounds stay unchanged.
     await child.request('initialize', {
       protocolVersion: '2025-11-25',
       capabilities: {},

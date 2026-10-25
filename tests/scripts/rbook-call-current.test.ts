@@ -6,6 +6,8 @@ import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { harnessSessionHash, linkHarness } from '../../src/tools/rbook/harness-session';
+import { seedRbookDb } from '../helpers/seedRbookDb';
 
 const ROOT = path.resolve(__dirname, '../..');
 const SCRIPT = path.join(ROOT, 'scripts', 'rbook-call-current.js');
@@ -13,6 +15,9 @@ const SERVER = `
 const fs = require('fs');
 const { Server } = require('@modelcontextprotocol/server');
 const { serveStdio } = require('@modelcontextprotocol/server/stdio');
+if (process.env.CURRENT_CALL_MODE === 'session-owner') {
+  require(process.env.CURRENT_CALL_SOURCE_ROOT + '/tests/helpers/ts-register.js');
+}
 const log = (event) => fs.appendFileSync(process.env.CURRENT_CALL_LOG, JSON.stringify(event) + '\\n');
 log({ event: 'start', pid: process.pid });
 process.on('exit', () => log({ event: 'exit' }));
@@ -26,7 +31,11 @@ if (process.env.CURRENT_CALL_MODE === 'drain') {
 serveStdio(() => {
 const server = new Server({ name: 'fixture', version: '1.0.0' }, { capabilities: { tools: {} } });
 server.setRequestHandler('tools/call', async ({ params }) => {
-  log({ event: 'call', name: params.name, args: params.arguments });
+  const owner = process.env.CURRENT_CALL_MODE === 'session-owner'
+    ? require(process.env.CURRENT_CALL_SOURCE_ROOT + '/src/tools/rbook/session-owner.ts')
+        .currentSessionOwner(require('path').join(params.arguments.projectRoot, 'rbook/db/rbook.sqlite'))
+    : undefined;
+  log({ event: 'call', name: params.name, args: params.arguments, owner });
   if (params.name === 'rbook_agent_onboard') {
     const mode = process.env.CURRENT_CALL_MODE;
     const health = {
@@ -47,6 +56,7 @@ server.setRequestHandler('tools/call', async ({ params }) => {
   if (process.env.CURRENT_CALL_MODE === 'unstructured') {
     return { content: [{ type: 'text', text: 'unstructured receipt' }] };
   }
+  if (owner) return { content: [], structuredContent: { success: true, data: { owner } } };
   return { content: [], structuredContent: { success: true, data: { marker: process.env.CURRENT_CALL_MARKER } } };
 });
 return server;
@@ -76,7 +86,7 @@ interface Report {
   stderr: string;
 }
 
-function run(request: unknown, mode = 'fresh'): Promise<Report> {
+function run(request: unknown, mode = 'fresh', env: NodeJS.ProcessEnv = {}): Promise<Report> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [script], {
       cwd: os.tmpdir(),
@@ -85,6 +95,10 @@ function run(request: unknown, mode = 'fresh'): Promise<Report> {
         CURRENT_CALL_LOG: logPath,
         CURRENT_CALL_MODE: mode,
         CURRENT_CALL_MARKER: 'preserved environment',
+        CURRENT_CALL_SOURCE_ROOT: ROOT,
+        RBOOK_CONFIG_DIR: path.join(checkout, 'config'),
+        CLAUDE_CODE_SESSION_ID: '',
+        ...env,
       },
     });
     let stdout = '';
@@ -97,7 +111,13 @@ function run(request: unknown, mode = 'fresh'): Promise<Report> {
   });
 }
 
-function events(): Array<{ event: string; name?: string; pid?: number; args?: unknown }> {
+function events(): Array<{
+  event: string;
+  name?: string;
+  pid?: number;
+  args?: unknown;
+  owner?: { key: string; kind: string };
+}> {
   return fs.existsSync(logPath)
     ? fs
         .readFileSync(logPath, 'utf8')
@@ -123,6 +143,58 @@ function expectClosed(): void {
 }
 
 describe('scripts/rbook-call-current.js', () => {
+  it('joins both helper calls to the inherited Claude conversation through the real server owner resolver', async () => {
+    seedRbookDb(checkout);
+    const env = {
+      RBOOK_CONFIG_DIR: path.join(checkout, 'config'),
+      CLAUDE_PID: String(process.pid),
+      CLAUDE_CODE_SESSION_ID: 'helper-conversation',
+    };
+    linkHarness(env.CLAUDE_CODE_SESSION_ID, 'startup', checkout, env);
+    const report = await run(request(), 'session-owner', env);
+    expect(report.status).toBe(0);
+    expect(events().filter((event) => event.event === 'call')).toEqual([
+      expect.objectContaining({
+        name: 'rbook_agent_onboard',
+        owner: expect.objectContaining({ key: `ext:${harnessSessionHash('helper-conversation')}` }),
+      }),
+      expect.objectContaining({
+        name: 'rbook_mutation_fixture',
+        owner: expect.objectContaining({ key: `ext:${harnessSessionHash('helper-conversation')}` }),
+      }),
+    ]);
+    expectClosed();
+
+    // /clear changes the hook link, while a shell can still carry its original inherited id.
+    linkHarness('helper-after-clear', 'clear', checkout, env);
+    const cleared = await run(request(), 'session-owner', env);
+    expect(cleared.status).toBe(0);
+    expect(JSON.parse(cleared.stdout).data.owner.key).toBe(
+      `ext:${harnessSessionHash('helper-after-clear')}`
+    );
+  });
+
+  it('keeps keyless Codex helper calls usable and does not borrow another project conversation', async () => {
+    seedRbookDb(checkout);
+    seedRbookDb(path.join(checkout, 'other'));
+    const env = {
+      RBOOK_CONFIG_DIR: path.join(checkout, 'config'),
+      CLAUDE_PID: String(process.pid),
+    };
+    linkHarness('another-project-session', 'startup', path.join(checkout, 'other'), env);
+    for (const session of ['', 'another-project-session']) {
+      const report = await run(request(), 'session-owner', {
+        ...env,
+        CLAUDE_CODE_SESSION_ID: session,
+      });
+      expect(report.status).toBe(0);
+      expect(JSON.parse(report.stdout)).toMatchObject({
+        success: true,
+        data: { owner: { kind: 'process', key: expect.stringMatching(/^pid:/) } },
+      });
+    }
+  });
+
   it('R11 lets the server finish its three-second stdin drain without a termination signal', async () => {
     const report = await run(request(), 'drain');
     expect(report.status).toBe(0);

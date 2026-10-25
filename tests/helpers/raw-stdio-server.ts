@@ -19,7 +19,13 @@ export class RawStdioServer {
     { resolve: (value: any) => void; reject: (error: Error) => void }
   >();
 
-  constructor(serverPath: string, cwd: string, env: Record<string, string>, args: string[] = []) {
+  constructor(
+    serverPath: string,
+    cwd: string,
+    env: Record<string, string>,
+    args: string[] = [],
+    private readonly requestTimeoutMs = 10000
+  ) {
     this.child = spawn(process.execPath, [serverPath, ...args], { cwd, env, stdio: 'pipe' });
     this.exited = new Promise((resolve) => this.child.once('exit', resolve));
     this.child.stderr.on('data', (chunk: Buffer) => {
@@ -71,7 +77,7 @@ export class RawStdioServer {
         timer = setTimeout(() => {
           this.pending.delete(id);
           reject(new Error(`${method} timed out: ${this.stderr}`));
-        }, 10000);
+        }, this.requestTimeoutMs);
         this.pending.set(id, { resolve, reject });
         this.write({ jsonrpc: '2.0', id, method, params });
       });

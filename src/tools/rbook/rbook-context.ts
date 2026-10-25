@@ -237,7 +237,7 @@ export const rbookContextSchema = z
       .array(z.number().int().positive())
       .optional()
       .describe(
-        'Next-step IDs for historical list lookup (includes moved/dropped rows and pointers unless explicitly status-filtered), or complete/carry/drop/reopen'
+        'Next-step IDs for full show, historical list lookup (includes moved/dropped rows and pointers unless explicitly status-filtered), or complete/carry/drop/reopen'
       ),
     carryToSprint: z
       .string()
@@ -430,7 +430,7 @@ export const rbookContextToolDefinition = {
         type: 'array',
         items: { type: 'integer', minimum: 1 },
         description:
-          'Next-step IDs for historical list lookup (includes moved/dropped rows and pointers unless explicitly status-filtered), or complete/carry/drop/reopen',
+          'Next-step IDs for full show, historical list lookup (includes moved/dropped rows and pointers unless explicitly status-filtered), or complete/carry/drop/reopen',
       },
       carryToSprint: {
         type: 'string',

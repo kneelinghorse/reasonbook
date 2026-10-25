@@ -40,6 +40,11 @@ requested project information to your AI client. The local usage log is never up
 - A session's Git note is deleted when the session-end hook completes; otherwise it remains until
   you delete it.
 - Your message after a draft is deleted at session end or expires after two hours.
+- A decline awaiting a busy store keeps only its draft id and first decline time until the store
+  confirms the draft is no longer pending. This retry marker survives session cleanup.
+- Shown draft references contain ids and times, without your words. They expire after three later
+  session starts in that store or more than seven days, and clear when that conversation restarts
+  or ends.
 - An interrupted upload, share, join, import or replay can leave record data in your temp folder.
   The next such operation removes matching directories owned by your user and older than a day;
   symlinks and other users' directories stay. Without a numeric user ID, including on Windows,
@@ -281,8 +286,9 @@ An owner can instead make an invite link on the project's Access page, choosing 
 expiry of 1, 7 or 30 days. Whoever opens the link, signs in and chooses Join gets that role; it does not
 readmit someone the owner removed. The service stores the token's SHA-256 hash, not the token.
 
-**Where it runs.** The hosted service uses Railway for hosting and its database, with Cloudflare in
-front of the website. Hosting providers receive connection information under their own policies.
+**Where it runs.** Since 2026-10-24, the hosted service uses a Render web service and a Render
+PostgreSQL 17 database, both in Virginia, with Cloudflare in front of the website. Hosting providers
+receive connection information under their own policies.
 
 **How long it is kept.**
 
@@ -296,12 +302,15 @@ front of the website. Hosting providers receive connection information under the
 - A signals report is replaced by the next readable report and removed with its project or account.
 - Project-deletion tombstones remain until their slug is deliberately taken again or the owning
   account is deleted. Deleting a project leaves its messages, with their project links removed.
-- Database backups are scheduled monthly with 89-day retention. Deleting a live record does not
-  remove it from an existing backup; it can remain there until that backup expires. This describes
-  the configured backup retention, not a guarantee of physical media erasure.
-- Railway's [log policy](https://docs.railway.com/observability/logs) gives the service's Pro plan a
-  30-day log-access window. Older logs can become available after a plan upgrade, so this is not a
-  promise that the underlying logs are deleted after 30 days.
+- Render keeps seven days of database point-in-time recovery and takes a snapshot of the service
+  disk every 24 hours, keeping each snapshot at least seven days. Nightly offsite copies to a private
+  Cloudflare R2 bucket are running, with 30-day retention: the database dump, hosted referee
+  snapshots and archives, and the volume mark. R2 encrypts them at rest; the service adds no separate
+  encryption layer. Deleting a live record does not remove it from an existing backup; it can remain
+  there until that backup expires. These are configured retention periods, not a guarantee of
+  physical media erasure.
+- Render's [log policy](https://render.com/docs/logging) gives the service's Pro plan 14 days of log
+  retention.
 
 **How to remove it.**
 

@@ -69,7 +69,7 @@ function renameSealedSources() {
     ],
   };
   fixture.candidate.evaluatorHashes['measure-retrieval-quality.js'] = hash(evaluator);
-  const reviewFile = `${fixturePath}/labels-v7-review/manifest.json`;
+  const reviewFile = `${fixturePath}/labels-v8-review/manifest.json`;
   const review = JSON.parse(fs.readFileSync(path.join(root, reviewFile), 'utf8'));
   Reflect.deleteProperty(review.extractorSources, 'src/parser.ts');
   review.extractorSources['src/renamed-parser.ts'] = hash('src/renamed-parser.ts');

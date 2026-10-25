@@ -57,7 +57,7 @@ function write(rel: string, content: string): void {
 }
 
 function generate(): Manifest {
-  execFileSync(process.execPath, [SCRIPT, '--dist', distDir], { stdio: 'pipe' });
+  execFileSync(process.execPath, [SCRIPT, '--root', distDir, '--dist', distDir], { stdio: 'pipe' });
   return JSON.parse(
     fs.readFileSync(path.join(distDir, '.build-manifest.json'), 'utf8')
   ) as Manifest;
@@ -99,7 +99,9 @@ describe('generate-build-manifest', () => {
 
   it('writes nothing when the directory holds no .js files', () => {
     write('notes.txt', 'nothing to hash');
-    execFileSync(process.execPath, [SCRIPT, '--dist', distDir], { stdio: 'pipe' });
+    execFileSync(process.execPath, [SCRIPT, '--root', distDir, '--dist', distDir], {
+      stdio: 'pipe',
+    });
     expect(fs.existsSync(path.join(distDir, '.build-manifest.json'))).toBe(false);
   });
 });

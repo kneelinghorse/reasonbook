@@ -89,6 +89,42 @@ interface Queue {
 }
 
 describe('the work queue follows Requires edges (s97-m13, #662)', () => {
+  it('keeps work blocked before it starts visible as blocked and out of the ready queue', async () => {
+    seed([
+      ['q-m01', 'Queued'],
+      ['q-m02', 'Queued'],
+    ]);
+    const blocked = await call('rbook_mission_transition', {
+      action: 'block',
+      missionId: 'q-m01',
+      reason: 'Access is not ready',
+    });
+    expect((blocked.structuredContent as { success: boolean }).success).toBe(true);
+    const status = structured<Queue & { blocked: Array<{ id: string }> }>(
+      await call('rbook_mission', { action: 'status', includeBlocked: true })
+    );
+    expect(status.blocked.map((mission) => mission.id)).toEqual(['q-m01']);
+    expect(status.queued.map((mission) => mission.id)).toEqual(['q-m02']);
+    expect(status.summary.nextAction).toContain('start q-m02');
+    const digest = await readDigestV2(root, process.env);
+    expect(digest.work).toEqual([
+      expect.objectContaining({ id: 'q-m02', text: '[Queued] Mission q-m02' }),
+    ]);
+
+    // When no ready work remains, the digest may name the blocked work only with its status.
+    const db = new Database(dbPath);
+    db.prepare("UPDATE missions SET status='Completed' WHERE id='q-m02'").run();
+    db.close();
+    const onlyBlocked = structured<Queue>(
+      await call('rbook_mission', { action: 'status', includeBlocked: true })
+    );
+    expect(onlyBlocked.queued).toEqual([]);
+    expect(onlyBlocked.summary.nextAction).not.toMatch(/(?:start|promote).*q-m01/i);
+    expect((await readDigestV2(root, process.env)).work).toEqual([
+      expect.objectContaining({ id: 'q-m01', text: '[Blocked] Mission q-m01' }),
+    ]);
+  });
+
   it('lists queued missions in dependency order, ties by id, and names the first that is ready', async () => {
     seed(OUT_OF_ORDER);
 

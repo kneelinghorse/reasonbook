@@ -3,6 +3,7 @@
 // ABOUTME: on success, 1 on a refusal, a failure or a usage error (never 2); one stderr line says why.
 
 import { getSetting } from '../intelligence/legacy-compat';
+import { formatCliRemedy } from '../utils/cli-remedy';
 import { prepareSpinOutRead, spinOutSqliteReader } from '../tools/rbook/spin-out-read';
 import Database from 'better-sqlite3';
 import * as path from 'path';
@@ -488,6 +489,15 @@ async function init(flags: Readonly<Record<string, string>>, io: CliIo): Promise
       (rulesFiles.length > 0 ? ` Wrote ${rulesFiles.join(' and ')}.` : '') +
       `\nLevel: ${rules.levelName(result.data.level)} (${levelFrom}).\n` +
       (result.warnings ?? []).map((warning) => `${warning}\n`).join('')
+  );
+  io.stdout(
+    '\nIf your harness has no Reasonbook hooks, give your agent these steps:\n' +
+      '1. At the start of a conversation, call rbook_review() and read its digest.\n' +
+      '2. Record a settled choice with rbook_decisions(action="record", content="...").\n' +
+      '3. Save a lesson or open thread with rbook_session(action="capture", category="learning", content="..."), or category="next-step".\n' +
+      '4. Before you stop, capture anything unfinished as a next step.\n' +
+      `Use ${formatCliRemedy('init --no-hooks', { projectRoot: target, resolvedBy: explicit ? 'explicit' : 'cwd' }, 'reasonbook')} to include these steps in a new AGENTS.md.\n` +
+      'Adding the plugin later keeps the existing hook-less line and block.\n'
   );
   return 0;
 }

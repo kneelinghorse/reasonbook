@@ -1,4 +1,4 @@
-// ABOUTME: Starts missions while preserving the single-open-sprint invariant and persisted tracking.
+// ABOUTME: Starts missions with atomic caller-session links and the single-open-sprint invariant.
 // ABOUTME: Validates lifecycle choices and discloses failed writes through the standard tool result.
 /**
  * rbook_mission_start Tool
@@ -21,7 +21,14 @@ import {
   RBOOK_ERROR_CODES,
   transitionsFrom,
 } from './errors';
-import { ensureMissionTimestamps } from './schema-migrations';
+import {
+  ensureMissionTimestamps,
+  ensureImplicitSessionColumns,
+  ensureFirehoseEventColumns,
+  ensureSessionMissionsTable,
+} from './schema-migrations';
+import { linkCallerMission } from './mission-session-link';
+import { storeNeedsReconcile } from './session-owner';
 import { getProjectId } from './genesis-columns';
 import { frameForeignText } from '../../intelligence/provenance-frame';
 import {
@@ -155,6 +162,7 @@ export async function rbookMissionStart(
   const promotion = targetStatus === 'Current';
 
   const warnings: string[] = [];
+  let storePath: string | null = null;
   const result = await withClientAsync(
     async (client) => {
       // Query mission by ID
@@ -252,6 +260,13 @@ export async function rbookMissionStart(
         updateParams = [targetStatus, now, now, missionId];
       }
 
+      if (!promotion) {
+        warnings.push(...(ensureImplicitSessionColumns(client).warnings ?? []));
+        warnings.push(...(ensureSessionMissionsTable(client).warnings ?? []));
+        warnings.push(...(ensureFirehoseEventColumns(client).warnings ?? []));
+        storePath = client.path;
+      }
+
       const beginResult = client.execute('BEGIN IMMEDIATE', []);
       if (!beginResult.success) {
         return createError<MissionStartResult>(
@@ -340,6 +355,14 @@ export async function rbookMissionStart(
         });
       }
 
+      if (!promotion) {
+        const linked = linkCallerMission(client, missionId, 'start', now, warnings);
+        if (!linked.success) {
+          rollbackTransaction();
+          return createError<MissionStartResult>(linked.error!);
+        }
+      }
+
       const commitResult = client.execute('COMMIT', []);
       if (!commitResult.success) {
         rollbackTransaction();
@@ -418,6 +441,11 @@ export async function rbookMissionStart(
     },
     { projectRoot: params.projectRoot }
   );
+  if (storePath !== null && storeNeedsReconcile(storePath)) {
+    const lifecycle = await import('./implicit-session-lifecycle');
+    const reconciled = await lifecycle.reconcileStoreOnce(storePath);
+    warnings.push(...reconciled.warnings, ...lifecycle.closedSessionLines(reconciled.receipts));
+  }
   return attachWarnings(result, warnings);
 }
 

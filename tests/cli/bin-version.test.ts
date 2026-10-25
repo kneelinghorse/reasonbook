@@ -17,8 +17,8 @@ beforeAll(() => {
   fixture = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'rbook-bin-version-')));
   const output = path.join(fixture, 'dist');
   fs.mkdirSync(output);
-  // Compile only the tested entry and its lightweight helper, never the real dist/ tree.
-  for (const name of ['bin', 'server-version', 'cli/usage']) {
+  // Compile only the entry and its pure/lightweight helpers, never the real dist/ tree.
+  for (const name of ['bin', 'server-version', 'cli/usage', 'tools/rbook/error-bounds']) {
     const source = path.resolve(__dirname, `../../src/${name}.ts`);
     const compiled = ts.transpileModule(fs.readFileSync(source, 'utf8'), {
       compilerOptions: {
@@ -42,7 +42,7 @@ beforeAll(() => {
     `const Module = require('module');
 const fs = require('fs');
 const path = require('path');
-const allowed = new Set(['fs', 'path', 'module', path.join(__dirname, 'dist/bin.js'), './server-version', './cli/usage']);
+const allowed = new Set(['fs', 'path', 'module', path.join(__dirname, 'dist/bin.js'), './server-version', './cli/usage', '../tools/rbook/error-bounds']);
 if (process.env.VERSION_TEST_ALLOW_CLI === '1') allowed.add('./cli');
 const originalLoad = Module._load;
 Module._load = function(request, parent, isMain) {
@@ -195,6 +195,17 @@ describe('the bin answers server --version without loading the server', () => {
 });
 
 describe('terminal first-hour entry', () => {
+  it('bounds an oversized stray word while the server and writes remain forbidden', () => {
+    const result = run(['serve', 'x'.repeat(100000)]);
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr.length).toBeLessThan(2000);
+    expect(result.stderr).toMatch(/unexpected argument.*--project-root/);
+    expect(result.stderr).toContain('original JSON length=');
+    expect(result.stderr).not.toContain('DEPENDENCY_DENIED');
+  });
+
   it('refuses stray server positionals before loading the server', () => {
     const result = run(['serve', 'extra']);
     expect(result.status).toBe(1);

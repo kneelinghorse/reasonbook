@@ -934,14 +934,15 @@ describe('no-silent-write: every execute(), raw(), and transaction() result is i
   // risk masking it.
   // s93-m11: 4 -> 5. staleness-detection.ts's repair unwinds the same way (a failed restore, ledger
   // write or COMMIT), and the failure it rolls back is already in the repair's warnings.
-  it('derives the transaction-verb exemption from the SQL and selects exactly the 9 known ROLLBACKs', () => {
+  it('derives the transaction-verb exemption from the SQL and selects exactly the 14 known ROLLBACKs', () => {
     const exempt = sites.filter((site) => site.bucket === 'exempt-transaction-verb');
     // s94-m05 adds rbook-mission-update's finally cleanup, guarded by transactionOpen.
     // The m04 migration rollback inspects its result, so it is NOT part of this exemption.
     // s94-m08 adds two mission-drop rollback arms after a failed required write or thrown fault.
     // s96-m11: 8 -> 9. schema-migrations.ts's underMigrationLock unwinds a first-write migration
     // that threw, and rethrows that error, which inspecting the ROLLBACK could only mask.
-    expect({ count: exempt.length, sites: render(exempt) }).toMatchObject({ count: 9 });
+    // s102-m04: block/unblock each add one rollback; reopen adds three inspected rollback arms.
+    expect({ count: exempt.length, sites: render(exempt) }).toMatchObject({ count: 14 });
     expect(exempt.every((site) => site.detail.startsWith('transaction verb: ROLLBACK'))).toBe(true);
   });
 });

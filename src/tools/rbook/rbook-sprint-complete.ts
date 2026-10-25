@@ -1121,7 +1121,10 @@ export async function rbookSprintComplete(
       // build-tier gated — a general/managed project is exactly where untagged sessions are
       // the norm, so suppressing it there would hide the signal from the projects that need
       // it most.
-      const untaggedSessionAdvisory = buildUntaggedSessionAdvisory(client);
+      const untaggedSessionAdvisory = buildUntaggedSessionAdvisory(client, 'sprint-tag', {
+        start: sprint.start_date,
+        end: completedAt,
+      });
       if (untaggedSessionAdvisory) {
         warnings.push(untaggedSessionAdvisory);
       }

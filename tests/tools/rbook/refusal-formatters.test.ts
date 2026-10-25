@@ -97,8 +97,9 @@ async function render(row: (typeof inventory)[number], result: RbookToolResult):
 }
 
 describe('all F8 refusal text paths', () => {
-  it('covers the original 94 declarations and all fifteen flagged sites without silent exclusions', () => {
-    expect(inventory).toHaveLength(94);
+  it('covers all 95 declarations and the original fifteen flagged sites without silent exclusions', () => {
+    // s102-m04 adds the reopen formatter; it is exercised by the same refusal matrix.
+    expect(inventory).toHaveLength(95);
     expect(
       inventory
         .filter((row) => flagged.includes(row.name))

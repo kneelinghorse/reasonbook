@@ -112,7 +112,10 @@ started: with `ps` on macOS, from `/proc` on Linux.
 - **Prompt submit** may add up to 1,500 characters: previews of related past decisions, drafts
   waiting for you, and reminders. When a reply has shown you a draft, Reasonbook keeps your next message,
   whatever it says, up to 1,000 characters, outside the record for up to two hours; a decision
-  recorded from the draft carries your words.
+  recorded from the draft carries your words. An answer after two hours can still address an
+  unexpired draft in the same conversation: an approval reads agent-judged; a decline remains
+  declined after its words expire. A busy write keeps an id-only refusal for retry; older binaries
+  see it only once saved in the store. Constraint, rule and profile drafts need a new plain approval.
 - **Stop** keeps up to three `Would record:` lines that close a reply, with up to 600 characters
   before them, as drafts. A draft is never a decision until it is recorded.
 - **Pre-compact** adds nothing. After compaction, session start runs again and adds the digest
@@ -149,7 +152,7 @@ tree and why.
 
 ## Turning parts off
 
-- **The hooks in one project:** `npx --prefer-offline -y @aquex/reasonbook@4.5.1 ambient off`, run in that project,
+- **The hooks in one project:** `npx --prefer-offline -y @aquex/reasonbook@4.6.0 ambient off`, run in that project,
   with the version the plugin installed if it differs. The hooks still start and log their use locally, but add
   nothing. The command also updates the Reasonbook line in that project's `AGENTS.md`. `ambient on` turns
   them back on.

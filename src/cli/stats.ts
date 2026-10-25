@@ -75,6 +75,8 @@ function humanReport(report: TelemetryStatistics): string {
       {
         proposals: counts.proposals,
         citeThrough: counts.citeThrough,
+        unjoinableUses: counts.unjoinableUses,
+        crossSessionReferences: counts.crossSessionReferences,
         repeatedNeverCited: counts.repeatedNeverCited,
         duplicateQuality: counts.duplicateQuality,
         leases: counts.leases,
@@ -119,6 +121,14 @@ function humanReport(report: TelemetryStatistics): string {
     lines.push(
       `Repeated without observed use: store ${oneLine(item.target)}, ${oneLine(item.id)}, ${item.sessions} sessions.`
     );
+  for (const [label, summary] of [
+    ['Unjoinable use', report.events.unjoinableUses],
+    ['Cross-session reference, uncounted', report.events.crossSessionReferences],
+  ] as const)
+    for (const item of summary.items)
+      lines.push(
+        `${label}: store ${oneLine(item.target)}, ${oneLine(item.id)}, ${item.records} use records.`
+      );
   for (const session of report.events.injectionSessions)
     lines.push(
       `Injected characters: store ${oneLine(session.target)}, session ${oneLine(session.session)}: ${session.characters}.`

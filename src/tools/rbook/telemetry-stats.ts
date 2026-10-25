@@ -187,6 +187,16 @@ export function exportTelemetryStats(report: TelemetryStatistics) {
     },
     decisionTiming: report.timing,
     citeThrough: e.citeThrough,
+    unjoinableUses: {
+      records: e.unjoinableUses.records,
+      pidKeyedRecords: e.unjoinableUses.pidKeyedRecords,
+      otherUnkeyedRecords: e.unjoinableUses.otherUnkeyedRecords,
+      items: e.unjoinableUses.items.length,
+    },
+    crossSessionReferences: {
+      records: e.crossSessionReferences.records,
+      items: e.crossSessionReferences.items.length,
+    },
     friction: report.friction,
     proposals: proposalTotals(report.projects.map((project) => project.store.proposals)),
     repeatedNeverCited: { minimumSessions: 2, items: e.repeatedNeverCited.items.length },

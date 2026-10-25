@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// ABOUTME: s95-m05 — each starter template is exactly what init writes at its level, so a copied template
+// ABOUTME: s95-m05 — each starter template matches init apart from the filled project name, so a copied template
 // ABOUTME: never disagrees with init, and no template carries this repository's own agents.md rules.
 
 import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
@@ -53,9 +53,16 @@ describe('s95-m05: the starter templates', () => {
       fs.mkdirSync(root);
       const result = await rbookProjectInit({ projectRoot: root, projectType: LEVEL_TIERS[level] });
       expect(result.success).toBe(true);
+      const agents = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8');
+      expect(agents).toContain(`- **Name:** ${level}`);
+      expect(agents).not.toMatch(/\[[^\]]+\](?!\()/);
       for (const file of FILES) {
         const same =
-          fs.readFileSync(path.join(root, file), 'utf8') === read(`templates/${level}/${file}`);
+          fs.readFileSync(path.join(root, file), 'utf8') ===
+          read(`templates/${level}/${file}`).replace(
+            '- **Name:** This project',
+            `- **Name:** ${level}`
+          );
         expect({ level, file, same }).toEqual({ level, file, same: true });
       }
     }

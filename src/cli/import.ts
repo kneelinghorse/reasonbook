@@ -13,8 +13,17 @@ import { keepLine, perhapsLeftOut, quoted, waitingLines } from './import-waits';
 const USAGE =
   'reasonbook import --from <folder> [--apply] [--include <table>:<id>,...] [--project-root <root>]: bring in a copy made before sharing, a dry run unless --apply.';
 
+/** Make invisible format characters inspectable before oneLine removes display controls. */
+const visibleFormats = (text: string): string =>
+  text.replace(/\p{Cf}/gu, (character) =>
+    character
+      .split('')
+      .map((unit) => `\\u${unit.charCodeAt(0).toString(16).padStart(4, '0')}`)
+      .join('')
+  );
+
 const shown = (value: unknown): string => {
-  const text = oneLine(JSON.stringify(value ?? null));
+  const text = oneLine(visibleFormats(JSON.stringify(value ?? null)));
   return text.length > 60 ? `${text.slice(0, 57)}...` : text;
 };
 
@@ -25,7 +34,7 @@ function fieldLines(heading: string, fields: readonly FieldChange[], writes = fa
     heading,
     ...fields.map(
       (field) =>
-        `  ${oneLine(field.table)} ${oneLine(field.id)} ${oneLine(field.field)}: the copy holds ${shown(field.copy)}, the record ${shown(field.owner)}${!writes || canonicalJson(field.write ?? null) === canonicalJson(field.copy ?? null) ? '' : `; applying writes ${shown(field.write)}`}${field.afterMarker ? "; the copy's row carries a time after the marker, so this may be its own change" : ''}`
+        `  ${oneLine(visibleFormats(field.table))} ${oneLine(visibleFormats(field.id))} ${oneLine(visibleFormats(field.field))}: the copy holds ${shown(field.copy)}, the record ${shown(field.owner)}${!writes || canonicalJson(field.write ?? null) === canonicalJson(field.copy ?? null) ? '' : `; applying writes ${shown(field.write)}`}${field.afterMarker ? "; the copy's row carries a time after the marker, so this may be its own change" : ''}`
     ),
   ];
 }

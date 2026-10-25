@@ -431,8 +431,8 @@
         },
         {
           "id": "current-4",
-          "file": "src/tools/rbook/draft-approval.ts",
-          "line": 131,
+          "file": "src/tools/rbook/draft-evaluation.ts",
+          "line": 140,
           "text": "suggestion: `Check the project (projectRoot) and the id with ${formatCliRemedy('drafts list', { projectRoot: path.resolve(client.path, '../../..') })}, or record without fromDraft.`,",
           "occurrence": 1,
           "class": "fixed",
@@ -441,7 +441,7 @@
         {
           "id": "current-5",
           "file": "src/tools/rbook/draft-approval.ts",
-          "line": 312,
+          "line": 176,
           "text": "suggestion: `Read the drafts with ${formatCliRemedy('drafts list', { projectRoot })} before recording again.`,",
           "occurrence": 1,
           "class": "fixed",

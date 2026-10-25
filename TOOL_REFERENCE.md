@@ -111,25 +111,25 @@ Consolidated mission tool with action parameter support. Actions: list, show, st
 
 ## rbook_mission_transition
 
-Consolidated mission state-machine tool with action parameter support. Actions: start, complete, block, unblock, drop, defer. Enforces state-machine rules and logs transition events.
+Consolidated mission state-machine tool with action parameter support. Actions: start, complete, block, unblock, drop, defer, reopen. Enforces state-machine rules and logs transition events.
 
-**Actions:** `start`, `complete`, `block`, `unblock`, `drop`, `defer`
+**Actions:** `start`, `complete`, `block`, `unblock`, `drop`, `defer`, `reopen`
 
 ### rbook_mission_transition(action="start")
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Transition action: start \| complete \| block \| unblock \| drop \| defer |
+| `action` | string | yes | Transition action: start \| complete \| block \| unblock \| drop \| defer \| reopen |
 | `missionId` | string | yes | The mission ID to transition |
 | `notes` | string | no | Notes for start/complete actions |
-| `targetStatus` | string | no | unblock: the status after it (default In Progress); start: Current promotes without starting |
+| `targetStatus` | string | no | unblock: override inferred Queued/In Progress; start: Current promotes without starting |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
 
 ### rbook_mission_transition(action="complete")
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Transition action: start \| complete \| block \| unblock \| drop \| defer |
+| `action` | string | yes | Transition action: start \| complete \| block \| unblock \| drop \| defer \| reopen |
 | `missionId` | string | yes | The mission ID to transition |
 | `notes` | string | no | Notes for start/complete actions |
 | `decisions` | array | no | Decisions made during mission for complete action. Prefer notes-only completion and rbook_decisions(action="record", missionId) per decision: a host that absorbs this array into notes makes the server refuse the completion. |
@@ -140,9 +140,9 @@ Consolidated mission state-machine tool with action parameter support. Actions: 
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Transition action: start \| complete \| block \| unblock \| drop \| defer |
+| `action` | string | yes | Transition action: start \| complete \| block \| unblock \| drop \| defer \| reopen |
 | `missionId` | string | yes | The mission ID to transition |
-| `reason` | string | no | Reason for block/drop/defer actions (required for block) |
+| `reason` | string | no | Reason for block/drop/defer/reopen (required for block/reopen) |
 | `blockers` | array | no | List of blockers for block action |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
 
@@ -150,29 +150,38 @@ Consolidated mission state-machine tool with action parameter support. Actions: 
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Transition action: start \| complete \| block \| unblock \| drop \| defer |
+| `action` | string | yes | Transition action: start \| complete \| block \| unblock \| drop \| defer \| reopen |
 | `missionId` | string | yes | The mission ID to transition |
 | `resolution` | string | no | Resolution notes for unblock action |
-| `targetStatus` | string | no | unblock: the status after it (default In Progress); start: Current promotes without starting |
+| `targetStatus` | string | no | unblock: override inferred Queued/In Progress; start: Current promotes without starting |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
 
 ### rbook_mission_transition(action="drop")
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Transition action: start \| complete \| block \| unblock \| drop \| defer |
+| `action` | string | yes | Transition action: start \| complete \| block \| unblock \| drop \| defer \| reopen |
 | `missionId` | string | yes | The mission ID to transition |
-| `reason` | string | no | Reason for block/drop/defer actions (required for block) |
+| `reason` | string | no | Reason for block/drop/defer/reopen (required for block/reopen) |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
 
 ### rbook_mission_transition(action="defer")
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `action` | string | yes | Transition action: start \| complete \| block \| unblock \| drop \| defer |
+| `action` | string | yes | Transition action: start \| complete \| block \| unblock \| drop \| defer \| reopen |
 | `missionId` | string | yes | The mission ID to transition |
-| `reason` | string | no | Reason for block/drop/defer actions (required for block) |
+| `reason` | string | no | Reason for block/drop/defer/reopen (required for block/reopen) |
 | `deferUntil` | string | no | Hint about when to re-queue for defer action (e.g., "after sprint 48") |
+| `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
+
+### rbook_mission_transition(action="reopen")
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `action` | string | yes | Transition action: start \| complete \| block \| unblock \| drop \| defer \| reopen |
+| `missionId` | string | yes | The mission ID to transition |
+| `reason` | string | no | Reason for block/drop/defer/reopen (required for block/reopen) |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
 
 ## rbook_sprint
@@ -335,9 +344,9 @@ Consolidated context tool with action parameter support. Actions: view, update, 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `action` | string | yes | Context action: view \| update \| condense \| snapshot \| history \| next_steps \| constraints \| search |
-| `nextStepAction` | string | no | Sub-action for next_steps: list \| complete \| carry \| drop \| reopen |
+| `nextStepAction` | string | no | Sub-action for next_steps: list \| show \| complete \| carry \| drop \| reopen |
 | `nextStepStatus` | string | no | Filter status for next_steps list (default: every open row, pending and carried, with its lease age) |
-| `nextStepIds` | array | no | Next-step IDs for historical list lookup (includes moved/dropped rows and pointers unless explicitly status-filtered), or complete/carry/drop/reopen |
+| `nextStepIds` | array | no | Next-step IDs for full show, historical list lookup (includes moved/dropped rows and pointers unless explicitly status-filtered), or complete/carry/drop/reopen |
 | `carryToSprint` | string | no | Existing target sprint ID for carry; missing targets are refused by name. Create one with rbook_sprint(action="add"), or omit to park with no target |
 | `missionId` | string | no | Only next steps recorded for this mission |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |

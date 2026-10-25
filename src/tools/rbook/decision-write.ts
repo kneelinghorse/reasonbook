@@ -55,13 +55,43 @@ export type DecisionRowOutcome =
 export function findExistingDecisionId(
   client: RbookDatabaseClient,
   content: string,
-  authorSessionId: string | null
+  authorSessionId: string | null,
+  fields: DecisionFieldsParams = {},
+  allowChangedFields = false
 ): number | undefined {
-  const existing = client.getOne<{ id: number }>(
-    'SELECT id FROM strategic_decisions WHERE decision_text = ? AND author_session_id IS ?',
+  const supplied = storedDecisionFields(fields);
+  const names = Object.keys(supplied);
+  const existing = client.getMany<{ id: number } & Record<string, unknown>>(
+    `SELECT id${names.length ? `, ${names.join(', ')}` : ''} FROM strategic_decisions
+     WHERE decision_text = ? AND author_session_id IS ?
+     ORDER BY (status = 'active') DESC, id DESC`,
     [content, authorSessionId]
   );
-  return existing.success && existing.data ? existing.data.id : undefined;
+  if (!existing.success)
+    throw new Error(existing.error?.message ?? 'Could not compare existing decisions.');
+  const rows = existing.data ?? [];
+  return (
+    rows.find((row) => changedDecisionFields(row, supplied).length === 0)?.id ??
+    (allowChangedFields ? rows[0]?.id : undefined)
+  );
+}
+
+/** Omitted fields match any value; legacy array whitespace does not make a new decision. */
+export function changedDecisionFields(
+  stored: Record<string, unknown>,
+  supplied: Record<string, string>
+): string[] {
+  return Object.keys(supplied).filter((name) => {
+    let original = stored[name];
+    if ((name === 'alternatives' || name === 'deciders') && typeof original === 'string') {
+      try {
+        original = JSON.stringify(JSON.parse(original));
+      } catch {
+        /* Malformed legacy data differs from a supplied valid array. */
+      }
+    }
+    return original !== supplied[name];
+  });
 }
 
 /** Genesis-stamped INSERT. A rejected INSERT is recorded into `writeSink` and returned as failed. */

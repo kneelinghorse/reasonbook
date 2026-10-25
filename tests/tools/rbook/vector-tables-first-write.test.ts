@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // ABOUTME: s96-m11 (#642) — a new store's first embedded record writes its vector without a warning.
 // ABOUTME: The vector tables used to appear only at a store's first search, after the first write.
-import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from '@jest/globals';
 import Database from 'better-sqlite3';
 import { execFileSync, spawn } from 'child_process';
 import * as fs from 'fs';
@@ -19,6 +19,10 @@ import { rbookSession } from '../../../src/tools/rbook/rbook-session';
 import { loadVecExtension } from '../../../src/tools/rbook/vec-loader';
 import { requiresPrivateEvidence } from '../../helpers/public-mirror';
 import { reidentifyRbookTestStore } from '../../helpers/seedRbookDb';
+import {
+  prepareUploadServerSources,
+  uploadServerSourceLoader,
+} from '../../helpers/upload-server-source';
 
 const PRIVATE = requiresPrivateEvidence({
   reason:
@@ -114,6 +118,16 @@ describe('the first embedded write on a store made by init', () => {
 });
 
 describe('the standing fixtures (s96-m11)', () => {
+  let compiled: string;
+  beforeAll(() => {
+    compiled = prepareUploadServerSources(REPO, [
+      'src/tools/rbook/rbook-decisions.ts',
+      'src/intelligence/embedding-pipeline.ts',
+    ]);
+  }, 180_000);
+  afterAll(() => {
+    if (compiled) fs.rmSync(compiled, { recursive: true, force: true });
+  });
   it('records through the MCP dispatch boundary on a new store', async () => {
     expect((await rbookProjectInit({ projectRoot })).success).toBe(true);
     const result = await executeMissionProtocolTool(
@@ -135,7 +149,9 @@ describe('the standing fixtures (s96-m11)', () => {
     expect((await rbookProjectInit({ projectRoot })).success).toBe(true);
     const decisions = path.resolve('src/tools/rbook/rbook-decisions.ts');
     const pipeline = path.resolve('src/intelligence/embedding-pipeline.ts');
-    const source = String.raw`const fs=require('fs'),ts=require('typescript');require.extensions['.ts']=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,f);require(process.argv[2]).setEmbedderForTesting(async()=>new Float32Array(384).fill(0.02));const {rbookDecisions}=require(process.argv[1]);process.stdout.write('ready\n');process.stdin.once('data',async()=>{const r=await rbookDecisions({action:'record',content:'Decision from '+process.argv[4],projectRoot:process.argv[3]});process.stdout.write(JSON.stringify(r)+'\n');process.exit(0);});`;
+    const source =
+      uploadServerSourceLoader(compiled) +
+      String.raw`require(process.argv[2]).setEmbedderForTesting(async()=>new Float32Array(384).fill(0.02));const {rbookDecisions}=require(process.argv[1]);process.stdout.write('ready\n');process.stdin.once('data',async()=>{const r=await rbookDecisions({action:'record',content:'Decision from '+process.argv[4],projectRoot:process.argv[3]});process.stdout.write(JSON.stringify(r)+'\n');process.exit(0);});`;
     const children = ['first', 'second'].map((name) => {
       const child = spawn(
         process.execPath,
@@ -148,6 +164,7 @@ describe('the standing fixtures (s96-m11)', () => {
       let error = '';
       child.stderr.on('data', (chunk) => (error += String(chunk)));
       const ready = new Promise<void>((resolve, reject) => {
+        child.once('error', reject);
         child.stdout.on('data', (chunk) => {
           output += String(chunk);
           if (output.includes('ready\n')) resolve();
@@ -157,30 +174,68 @@ describe('the standing fixtures (s96-m11)', () => {
         );
       });
       // 'close', not 'exit': the child's last stdout chunk may arrive after it exits (s96-m10).
-      const done = new Promise<string>((resolve) => child.once('close', () => resolve(output)));
-      return { child, ready, done };
+      const done = new Promise<{ code: number | null; output: string; error: string }>((resolve) =>
+        child.once('close', (code) => resolve({ code, output, error }))
+      );
+      return { child, ready, done, diagnostics: () => ({ output, error }) };
     });
-    await Promise.all(children.map((c) => c.ready));
-    children.forEach((c) => c.child.stdin.end('go'));
-    const answers = (await Promise.all(children.map((c) => c.done))).map(
-      (out) =>
-        JSON.parse(out.trim().split('\n').slice(-1)[0]) as {
+    // s102-m13: the old timeout included two independent TypeScript compilations. Warm once
+    // before this test; this watchdog bounds only the real children and preserves their assertions.
+    let deadline: NodeJS.Timeout | undefined;
+    const expired = new Promise<never>((_, reject) => {
+      deadline = setTimeout(
+        () =>
+          reject(
+            new Error(
+              `Fixture children did not finish within 90 s: ${JSON.stringify(children.map((c) => c.diagnostics()))}`
+            )
+          ),
+        90_000
+      );
+    });
+    try {
+      await Promise.race([Promise.all(children.map((c) => c.ready)), expired]);
+      children.forEach((c) => c.child.stdin.end('go'));
+      const results = await Promise.race([Promise.all(children.map((c) => c.done)), expired]);
+      const answers = results.map((result) => {
+        expect(result).toMatchObject({ code: 0 });
+        return JSON.parse(result.output.trim().split('\n').slice(-1)[0]) as {
           success: boolean;
           data: { decisionId: number };
           error?: unknown;
           warnings?: string[];
-        }
-    );
-    for (const answer of answers) {
-      // The error and warnings are part of the match, so a failure prints why (s96-m10's lesson).
-      expect({ success: answer.success, error: answer.error }).toEqual({
-        success: true,
-        error: undefined,
+        };
       });
-      expect((answer.warnings ?? []).join('\n')).not.toMatch(/_vec|last_embedded_hash/);
-      expect(embedded(answer.data.decisionId).vectors).toBe(1);
+      for (const answer of answers) {
+        // The error and warnings are part of the match, so a failure prints why (s96-m10's lesson).
+        expect({ success: answer.success, error: answer.error }).toEqual({
+          success: true,
+          error: undefined,
+        });
+        expect((answer.warnings ?? []).join('\n')).not.toMatch(/_vec|last_embedded_hash/);
+        expect(embedded(answer.data.decisionId).vectors).toBe(1);
+      }
+    } finally {
+      clearTimeout(deadline);
+      for (const { child } of children) {
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+      }
+      let cleanupDeadline: NodeJS.Timeout | undefined;
+      try {
+        await Promise.race([
+          Promise.all(children.map((c) => c.done)),
+          new Promise<never>((_, reject) => {
+            cleanupDeadline = setTimeout(
+              () => reject(new Error('Owned fixture children did not close after SIGKILL')),
+              10_000
+            );
+          }),
+        ]);
+      } finally {
+        clearTimeout(cleanupDeadline);
+      }
     }
-  }, 60000);
+  }, 120_000);
 });
 
 PRIVATE.describe('a real store from before vector tables (509ddcf)', () => {

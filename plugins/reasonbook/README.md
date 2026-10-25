@@ -78,7 +78,7 @@ explains collection, dashboard account visibility, retention and removal.
 | Pre-compact   | Adds nothing; the next session start adds the digest again                                                                                                                    |
 | Session end   | Closes the sessions the conversation opened                                                                                                                                   |
 
-To turn the hooks off in one project, run `npx --prefer-offline -y @aquex/reasonbook@4.5.1 ambient off` in that
+To turn the hooks off in one project, run `npx --prefer-offline -y @aquex/reasonbook@4.6.0 ambient off` in that
 project, with the version this plugin installed; `ambient on` turns them back on. To turn everything
 off, disable or uninstall the plugin.
 

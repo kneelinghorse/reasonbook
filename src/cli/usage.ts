@@ -2,6 +2,8 @@
 // ABOUTME: Pure CLI usage and accepted options, available before loading a command or the server.
 // ABOUTME: Reject unknown options and stray words without changing the argv handlers receive.
 
+import { boundErrorValue } from '../tools/rbook/error-bounds';
+
 const ROOT = ['project-root'];
 const ROUTE = ['ssh', 'remote-root', 'node', 'bin', 'config-dir'];
 const OPTIONS: Readonly<
@@ -152,8 +154,12 @@ export function unexpectedArgument(verb: string, argv: readonly string[]): strin
         : 1
       : (POSITIONAL_LIMIT[verb] ?? 0);
   if (words.length <= limit) return null;
-  const word = words[limit].value.replace(/[\r\n]/g, ' ');
-  const hint = words[limit].precedingFlag ?? LIKELY_FLAG[verb] ?? (limit ? 'help' : 'project-root');
+  const word = boundErrorValue(words[limit].value.replace(/[\r\n]/g, ' '));
+  const level = verb === 'init' && ['ledger', 'planner', 'builder'].includes(words[limit].value);
+  const hint =
+    words[limit].precedingFlag ??
+    (level ? 'level' : LIKELY_FLAG[verb]) ??
+    (limit ? 'help' : 'project-root');
   return `unexpected argument ${JSON.stringify(word)}. Use --${hint}${hint === 'help' ? ' for usage' : ' for this value; quote values containing spaces'}.`;
 }
 

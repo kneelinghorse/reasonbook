@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-// ABOUTME: Reaching the reference server from a test (s97-m09): start it in its own process, and a test-only peer that
-// ABOUTME: sends each exchange call to its peer route; the client's own HTTPS peer is s97-m10's.
+// ABOUTME: Start the reference server in its own process and retain evidence for failed network calls.
+// ABOUTME: Provide a test-only peer over its routes; the client's own HTTPS peer is s97-m10's.
 import { spawn, type ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -17,6 +17,24 @@ export interface RunningServer {
     readonly path: string;
     readonly version: string;
     readonly protocol: { readonly wire: number; readonly record: number };
+  };
+  diagnostics(): {
+    readonly pid: number | null;
+    readonly url: string | null;
+    /** Parent-observed spawn attempt; readiness and runtime metadata come from the child. */
+    readonly startedAt: string;
+    readonly readyAt: string | null;
+    readonly exitedAt: string | null;
+    readonly exitCode: number | null;
+    readonly signalCode: NodeJS.Signals | null;
+    readonly stopRequestedAt: string | null;
+    readonly runtime: {
+      readonly nodeVersion: string;
+      readonly v8Version: string;
+      readonly execArgv: readonly string[];
+    } | null;
+    readonly stderr: string;
+    readonly stderrTruncated: boolean;
   };
   stop(): Promise<void>;
 }
@@ -63,32 +81,77 @@ export async function spawnRefereeServer(
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, 'referee-server.json');
   fs.writeFileSync(file, JSON.stringify(config));
-  const child = spawn(process.execPath, [path.join(__dirname, 'referee-server-main.js'), file], {
-    stdio: ['pipe', 'pipe', 'pipe'],
-    env: { ...process.env, RBOOK_CONFIG_DIR: path.join(dir, 'server-home-config') },
-  });
+  const startedAt = new Date().toISOString();
+  // Test-child containment after a Node 24 V8 concurrent baseline compiler crash under load;
+  // this neither changes the product runtime nor claims to fix the underlying native crash.
+  const child = spawn(
+    process.execPath,
+    ['--no-concurrent-sparkplug', path.join(__dirname, 'referee-server-main.js'), file],
+    {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, RBOOK_CONFIG_DIR: path.join(dir, 'server-home-config') },
+    }
+  );
+  let url: string | null = null;
+  let readyAt: string | null = null;
+  let exitedAt: string | null = null;
+  let stopRequestedAt: string | null = null;
+  let runtime: ReturnType<RunningServer['diagnostics']>['runtime'] = null;
   let stderr = '';
+  let stderrTruncated = false;
+  const diagnostics: RunningServer['diagnostics'] = () => ({
+    pid: child.pid ?? null,
+    url,
+    startedAt,
+    readyAt,
+    exitedAt,
+    exitCode: child.exitCode,
+    signalCode: child.signalCode,
+    stopRequestedAt,
+    runtime,
+    stderr,
+    stderrTruncated,
+  });
   child.stderr!.on('data', (chunk: Buffer) => {
     stderr += chunk.toString();
+    if (stderr.length > 8192) {
+      stderr = stderr.slice(-8192);
+      stderrTruncated = true;
+    }
+  });
+  child.once('exit', () => {
+    exitedAt = new Date().toISOString();
   });
   const first = await new Promise<string>((resolve, reject) => {
     const lines = createInterface({ input: child.stdout! });
     lines.once('line', resolve);
-    child.once('exit', (code) =>
-      reject(new Error(`the reference server exited (${code}): ${stderr}`))
+    child.once('error', (error) =>
+      reject(new Error(`${error.message}; reference server: ${JSON.stringify(diagnostics())}`))
+    );
+    child.once('exit', () =>
+      reject(
+        new Error(`the reference server exited; reference server: ${JSON.stringify(diagnostics())}`)
+      )
     );
   });
-  const { port, engine } = JSON.parse(first) as {
+  const ready = JSON.parse(first) as {
     port: number;
-    engine: { path: string; version: string; protocol: { wire: number; record: number } };
+    engine: RunningServer['engine'];
+    runtime: NonNullable<ReturnType<RunningServer['diagnostics']>['runtime']>;
+    readyAt: string;
   };
+  url = `http://127.0.0.1:${ready.port}`;
+  readyAt = ready.readyAt;
+  runtime = ready.runtime;
   return {
-    url: `http://127.0.0.1:${port}`,
+    url,
     child,
-    engine,
+    engine: ready.engine,
+    diagnostics,
     stop: () =>
       new Promise((resolve) => {
         if (child.exitCode !== null || child.signalCode !== null) return resolve();
+        stopRequestedAt ??= new Date().toISOString();
         child.once('exit', () => resolve());
         child.kill('SIGTERM');
       }),
@@ -96,7 +159,7 @@ export async function spawnRefereeServer(
 }
 
 export async function request<T = unknown>(
-  server: Pick<RunningServer, 'url'>,
+  server: Pick<RunningServer, 'url'> & Partial<Pick<RunningServer, 'diagnostics'>>,
   route: string,
   options: {
     token?: string;
@@ -106,22 +169,38 @@ export async function request<T = unknown>(
     headers?: Record<string, string>;
   } = {}
 ): Promise<{ status: number; body: RbookToolResult<T> }> {
-  const response = await fetch(`${server.url}${route}`, {
-    method: options.method ?? (options.json !== undefined || options.body ? 'POST' : 'GET'),
-    headers: {
-      ...(options.token ? { authorization: `Bearer ${options.token}` } : {}),
-      ...(options.json !== undefined ? { 'content-type': 'application/json' } : {}),
-      ...(options.headers ?? {}),
-    },
-    body: options.body ?? (options.json !== undefined ? JSON.stringify(options.json) : undefined),
-  });
-  const text = await response.text();
-  return { status: response.status, body: (text ? JSON.parse(text) : {}) as RbookToolResult<T> };
+  try {
+    const response = await fetch(`${server.url}${route}`, {
+      method: options.method ?? (options.json !== undefined || options.body ? 'POST' : 'GET'),
+      headers: {
+        ...(options.token ? { authorization: `Bearer ${options.token}` } : {}),
+        ...(options.json !== undefined ? { 'content-type': 'application/json' } : {}),
+        ...(options.headers ?? {}),
+      },
+      body: options.body ?? (options.json !== undefined ? JSON.stringify(options.json) : undefined),
+    });
+    const text = await response.text();
+    return { status: response.status, body: (text ? JSON.parse(text) : {}) as RbookToolResult<T> };
+  } catch (error) {
+    if (!server.diagnostics) throw error;
+    const failed = error as {
+      name?: string;
+      message?: string;
+      cause?: { code?: string; message?: string };
+    };
+    const cause = failed.cause ? ` (${failed.cause.code ?? ''} ${failed.cause.message ?? ''})` : '';
+    throw Object.assign(
+      new Error(
+        `${failed.name}: ${failed.message}${cause}; reference server: ${JSON.stringify(server.diagnostics())}`
+      ),
+      { cause: error }
+    );
+  }
 }
 
 /** A test-only peer over the reference server's peer route; each call names the copy's replica as it is now. */
 export function httpPeer(
-  server: Pick<RunningServer, 'url'>,
+  server: Pick<RunningServer, 'url'> & Partial<Pick<RunningServer, 'diagnostics'>>,
   projectId: string,
   token: string,
   replicaIdNow: () => Promise<string>,

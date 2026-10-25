@@ -1,3 +1,5 @@
+// ABOUTME: Builds sprint retrospectives from recorded work and sprint-scoped session evidence.
+// ABOUTME: Explicit sprint sessions and sessions linked through mission work count once per sprint.
 /**
  * rbook_sprint retro action
  *
@@ -184,7 +186,9 @@ export async function rbookSprintRetro(
       const learnings = getLearnings(client, params.sprintId);
 
       // Get sessions with linked missions
-      const sessions = getSessions(client, params.sprintId);
+      const sessionResult = getSessions(client, params.sprintId);
+      if (!sessionResult.success) return createError<SprintRetroResult>(sessionResult.error!);
+      const sessions = sessionResult.data!;
       const sessionCount = sessions.length;
 
       // Compute KPIs
@@ -246,9 +250,8 @@ export async function rbookSprintRetro(
         carryForwards
       );
 
-      // s85-m03: retro counts sessions/decisions/learnings strictly by sprint_id, so
-      // untagged rows are invisible here. Say so rather than under-report silently.
-      const untaggedAdvisory = buildUntaggedSessionAdvisory(client);
+      // Mission links include untagged sessions here without changing their stored sprint tags.
+      const untaggedAdvisory = buildUntaggedSessionAdvisory(client, 'mission-link');
 
       return createSuccess<SprintRetroResult>(
         {
@@ -370,44 +373,55 @@ function getLearnings(client: RbookDatabaseClient, sprintId: string): RetroLearn
   }));
 }
 
-function getSessions(client: RbookDatabaseClient, sprintId: string): RetroSessionSummary[] {
+function getSessions(
+  client: RbookDatabaseClient,
+  sprintId: string
+): RbookToolResult<RetroSessionSummary[]> {
+  const failure = (message: string): RbookToolResult<RetroSessionSummary[]> =>
+    createError({
+      code: 'DB_QUERY_FAILED',
+      message: `Could not read sprint sessions: ${message}`,
+      suggestion:
+        'Check the sessions, missions and session_missions tables, then retry the retrospective.',
+    });
+  const tableCheck = client.getOne<{ name: string }>(
+    `SELECT name FROM sqlite_master WHERE type='table' AND name='session_missions'`
+  );
+  if (!tableCheck.success)
+    return failure(tableCheck.error?.message ?? 'junction table lookup failed');
+  const hasJunctionTable = !!tableCheck.data;
   const result = client.getMany<{
     id: string;
     type: string;
     title: string;
     status: string;
   }>(
-    `SELECT id, type, title, status FROM sessions WHERE sprint_id = ? ORDER BY julianday(started_at) ASC`,
-    [sprintId]
+    `SELECT s.id, s.type, s.title, s.status FROM sessions s WHERE s.sprint_id = ?
+     ${
+       hasJunctionTable
+         ? `OR EXISTS (SELECT 1 FROM session_missions sm JOIN missions m ON m.id = sm.mission_id
+       WHERE sm.session_id = s.id AND m.sprint_id = ?)`
+         : ''
+     }
+     ORDER BY julianday(s.started_at) ASC`,
+    hasJunctionTable ? [sprintId, sprintId] : [sprintId]
   );
-
-  if (!result.success || !result.data) return [];
-
-  // Check if session_missions table exists
-  const tableCheck = client.getOne<{ name: string }>(
-    `SELECT name FROM sqlite_master WHERE type='table' AND name='session_missions'`
-  );
-  const hasJunctionTable = tableCheck.success && !!tableCheck.data;
-
-  return result.data.map((s) => {
+  if (!result.success) return failure(result.error?.message ?? 'session lookup failed');
+  const sessions: RetroSessionSummary[] = [];
+  for (const session of result.data ?? []) {
     let linkedMissionIds: string[] = [];
     if (hasJunctionTable) {
-      const linksResult = client.getMany<{ mission_id: string }>(
-        `SELECT mission_id FROM session_missions WHERE session_id = ?`,
-        [s.id]
+      const links = client.getMany<{ mission_id: string }>(
+        `SELECT sm.mission_id FROM session_missions sm JOIN missions m ON m.id = sm.mission_id
+         WHERE sm.session_id = ? AND m.sprint_id = ? ORDER BY sm.mission_id`,
+        [session.id, sprintId]
       );
-      if (linksResult.success && linksResult.data) {
-        linkedMissionIds = linksResult.data.map((r) => r.mission_id);
-      }
+      if (!links.success) return failure(links.error?.message ?? 'session links lookup failed');
+      linkedMissionIds = (links.data ?? []).map((link) => link.mission_id);
     }
-    return {
-      id: s.id,
-      type: s.type,
-      title: s.title,
-      status: s.status,
-      linkedMissionIds,
-    };
-  });
+    sessions.push({ ...session, linkedMissionIds });
+  }
+  return createSuccess(sessions);
 }
 
 /**

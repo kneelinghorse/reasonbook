@@ -63,16 +63,19 @@ Capture organically. Don't interrupt the flow to announce that you're capturing 
 
 `rbook_review` and the session-start hook show the same bounded local digest: the project's
 stored name (or folder name), its Ledger level, the approved operator profile, rules, recent
-decisions and lessons. Empty sections are omitted; a new Ledger
-has no sprint or mission section and no fleet-feedback line. The digest is a preview, so read a
-record in full when its details matter. Use `rbook_agent_onboard` for the first cold start.
+decisions and lessons, and up to 5 open next steps. Empty sections are omitted; a new Ledger
+has no sprint or mission section and no fleet-feedback line. The local text core stays within
+4,000 characters. Use `rbook_agent_onboard` for the first cold start.
+
+Next steps rank by lease state (lapsing, warning, idle), then the current cycle, then newest.
+When next steps appear, the digest shows up to 6 recent decisions. The digest and
+`rbook_context(action="next_steps", nextStepAction="list")` provide a preview; read a row
+in full with `rbook_context(action="next_steps", nextStepAction="show", nextStepIds=[123])`,
+using the numeric part of its `n:123` label.
 
 ## How the Record Works
 
 The record accumulates through context. Every conversation adds to the picture. When a new conversation starts, `rbook_review()` gives you a preview of recent decisions and lessons. Where Reasonbook's hooks are installed, the same summary arrives on its own at the start of the conversation.
-
-Remembered next steps are kept separately from the Ledger digest. Retrieve them with
-`rbook_context(action="next_steps", nextStepAction="list")` when you need to revisit an open thread.
 
 Use this to reconnect:
 

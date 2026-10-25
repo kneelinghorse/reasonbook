@@ -26,6 +26,7 @@ import {
   approvalEcho,
   directRecordAnswers,
   evaluateDraft,
+  settlePendingDeclines,
   recordDraftOfKind,
   type ApprovalEcho,
   type RbookDraftRecordResult,
@@ -33,13 +34,19 @@ import {
 } from './draft-approval';
 import { clientRunner, draftLabel, markAnswered, markApproved } from './proposals';
 import { ANSWER_COVERAGE } from './draft-grammar';
-import { findExistingDecisionId, insertDecisionRow, followDecisionInsert } from './decision-write';
+import { insertDecisionRow, followDecisionInsert } from './decision-write';
+import {
+  prepareDecisionCorrection,
+  applyDecisionCorrection,
+  type SupersededEcho,
+} from './decision-correction';
+export type { SupersededEcho } from './decision-correction';
 import { applyLearningReaffirm, sanitizeLearningIds } from './learning-reaffirm';
 import type { SupersessionCandidate } from './supersession-detection';
 import { appendWarnings, appendWriteFailures, attachWarnings } from './format-warnings';
-import { checkWrite, type WriteFailure } from './write-guard';
+import type { WriteFailure } from './write-guard';
 import { isReplicaRefusal } from './replica-identity';
-import type { RbookToolResult } from './types';
+import type { RbookToolError, RbookToolResult } from './types';
 import { resolveCallerSession } from './session-owner';
 import { readProjectLevel } from './project-level';
 import type { ProjectLevel } from './rules-files';
@@ -48,7 +55,7 @@ import {
   reconcileStoreOnce,
   type ClosedSessionReceipt,
 } from './implicit-session-lifecycle';
-import { recordedExecute, recordedTransaction } from './record-changes';
+import { recordedTransaction } from './record-changes';
 
 /**
  * s91-m04 — policy 3 (decisions keep the ADR lifecycle), made writable. A decision is born
@@ -64,8 +71,10 @@ import { recordedExecute, recordedTransaction } from './record-changes';
  *
  * AUTHOR (s92-m03): the caller's session. The project's open explicit session, else this
  * process's own implicit session, opened if it has none, so every recorded row is attributed to the
- * process that wrote it. The dedup key is (text, author_session_id), so a lost-and-retried `record`
- * from the same process returns the row it already wrote instead of writing a second one.
+ * process that wrote it. Retries compare text, author_session_id and supplied reasoning fields;
+ * omitted fields match any value. Corrections with supersedes create a fresh row when fields
+ * differ, while no-supersedes field changes retain the warning/no-write behavior. Evidence and
+ * missionId do not participate in this comparison.
  */
 
 export interface RbookDecisionsRecordParams extends DecisionFieldsParams {
@@ -81,12 +90,6 @@ export interface RbookDecisionsRecordParams extends DecisionFieldsParams {
   projectRoot?: string;
 }
 
-export interface SupersededEcho {
-  id: number;
-  previousStatus: string;
-  newStatus: 'superseded';
-}
-
 export interface RbookDecisionsRecordResult {
   decisionId: number;
   /** `existing` when an identical decision by the same author was already recorded. */
@@ -96,6 +99,8 @@ export interface RbookDecisionsRecordResult {
   missionId?: string;
   authorSessionId: string | null;
   superseded: SupersededEcho[];
+  /** The end of a returned historical decision's existing successor chain. */
+  currentSuccessorId?: number;
   /** @deprecated s92-m04: no longer populated. The automatic supersession offer was retired (69 of 9,035 historical offers were true); a correction names what it replaces with rbook_decisions(action="record", supersedes=[...]). Kept declared so 3.2.0 removes no field. */
   supersessionCandidates?: SupersessionCandidate[];
   /** @deprecated s92-m04: no longer populated. The automatic supersession offer was retired (69 of 9,035 historical offers were true); a correction names what it replaces with rbook_decisions(action="record", supersedes=[...]). Kept declared so 3.2.0 removes no field. */
@@ -230,27 +235,6 @@ export async function rbookDecisionsRecord(
         );
       }
 
-      // Every supersedes target must exist before anything is written.
-      const targets = new Map<number, string>();
-      for (const id of supersedes) {
-        const target = client.getOne<{ status: string }>(
-          'SELECT status FROM strategic_decisions WHERE id = ?',
-          [id]
-        );
-        if (!target.success || !target.data) {
-          return createError<RbookDecisionsRecordResult>({
-            code: RBOOK_ERROR_CODES.INVALID_PARAMETER,
-            message: `supersedes names decision #${id}, which does not exist`,
-            field: 'supersedes',
-            providedValue: id,
-            suggestion:
-              'Each supersedes id must be an existing decision; nothing was written. Find the id ' +
-              'with rbook_decisions(action="list") and record again.',
-          });
-        }
-        targets.set(id, target.data.status);
-      }
-
       // s92-m03: the caller's session, never another process's implicit session.
       warnings.push(...(ensureImplicitSessionColumns(client).warnings ?? []));
       const caller = resolveCallerSession(client, { open: true });
@@ -267,59 +251,45 @@ export async function rbookDecisionsRecord(
       // s93-m06 (B12): a direct record inside the operator's turn answers the drafts it covers.
       const linkReady = prepareRecordLinkWrite(client, warnings);
       if (!linkReady.success) return createError<RbookDecisionsRecordResult>(linkReady.error!);
-      const direct = draft ? null : directRecordAnswers(client, content, process.env, Date.now());
-
-      const existingId = findExistingDecisionId(client, content, authorSessionId);
-      if (existingId !== undefined && targets.has(existingId)) {
-        return createError<RbookDecisionsRecordResult>({
-          code: RBOOK_ERROR_CODES.INVALID_PARAMETER,
-          message: `Decision #${existingId} cannot supersede itself`,
-          field: 'supersedes',
-          providedValue: existingId,
-          suggestion: `Remove #${existingId} from supersedes; this text is already recorded as #${existingId}.`,
-        });
-      }
+      let direct: ReturnType<typeof directRecordAnswers> = { answered: [], stillPending: [] };
 
       if (!draft && content.length > 600)
         warnings.push(
           `Decision headline is ${content.length} UTF-16 units (budget 600). Split it, move reasons and effects into context/consequences, or cite evidence for supporting detail. To change an existing decision, supersede it.`
         );
-      if (existingId !== undefined) {
-        const supplied = storedDecisionFields(fields);
-        const names = Object.keys(supplied);
-        if (names.length) {
-          const stored = client.getOne<Record<string, unknown>>(
-            `SELECT ${names.join(', ')} FROM strategic_decisions WHERE id = ?`,
-            [existingId]
-          );
-          if (!stored.success || !stored.data)
-            return createError(
-              stored.error ?? {
-                code: RBOOK_ERROR_CODES.DB_QUERY_FAILED,
-                message: 'Could not compare the existing decision fields.',
-                suggestion: 'Retry after resolving the database error.',
-              }
-            );
-          const changed = names.filter((name) => {
-            let original = stored.data![name];
-            if ((name === 'alternatives' || name === 'deciders') && typeof original === 'string') {
-              try {
-                original = JSON.stringify(JSON.parse(original));
-              } catch {
-                /* Malformed legacy data differs from a supplied valid array. */
-              }
-            }
-            return original !== supplied[name];
-          });
-          if (changed.length)
-            warnings.push(
-              `Decision #${existingId} already exists; changed fields ${changed.join(', ')} were not written. Record a superseding decision to change its reasoning or mode.`
-            );
-        }
-      }
       const now = new Date().toISOString();
       let draftRaced = false;
+      let existingId: number | undefined;
+      let successorId: number | undefined;
+      let correctionError: RbookToolError | undefined;
+      let superseded: SupersededEcho[] = [];
       const committed = recordedTransaction(client, () => {
+        settlePendingDeclines(client, process.env);
+        if (!draft) direct = directRecordAnswers(client, content, process.env, Date.now());
+        if (draft) {
+          const current = clientRunner(client).get<{ outcome: string }>(
+            'SELECT outcome FROM proposals WHERE id = ?',
+            [draft.draft.id]
+          );
+          if (current?.outcome !== 'pending') {
+            draftRaced = true;
+            throw new RecordRollback('proposals.approve');
+          }
+        }
+        const correction = prepareDecisionCorrection(
+          client,
+          content,
+          authorSessionId,
+          fields,
+          supersedes,
+          warnings
+        );
+        if (!correction.success || !correction.data) {
+          correctionError = correction.error;
+          throw new RecordRollback('strategic_decisions.correction');
+        }
+        existingId = correction.data.existingId;
+        successorId = correction.data.successorId;
         let decisionId = existingId;
         if (decisionId === undefined) {
           const written = insertDecisionRow(
@@ -365,20 +335,16 @@ export async function rbookDecisionsRecord(
         if (direct?.answered.length) {
           markAnswered(clientRunner(client), direct.answered, `d:${decisionId}`, now);
         }
-        for (const id of supersedes) {
-          const updated = recordedExecute(
-            client,
-            `UPDATE strategic_decisions SET status = 'superseded', superseded_by = ? WHERE id = ?`,
-            [decisionId, id]
-          );
-          if (!checkWrite(updated, writeSink, `strategic_decisions.supersede#${id}`)) {
-            throw new RecordRollback(`strategic_decisions.supersede#${id}`);
-          }
-          requireRecordLinks(client, 'decision', id);
-        }
+        superseded = applyDecisionCorrection(
+          client,
+          decisionId,
+          correction.data.targets,
+          writeSink
+        );
         return decisionId;
       });
 
+      if (!committed.success && correctionError) return createError(correctionError);
       if (draft && !committed.success && draftRaced) {
         return createError<RbookDecisionsRecordResult>({
           code: RBOOK_ERROR_CODES.DRAFT_NOT_PENDING,
@@ -405,11 +371,7 @@ export async function rbookDecisionsRecord(
         materialization: existingId === undefined ? 'materialized' : 'existing',
         sprintId,
         authorSessionId,
-        superseded: supersedes.map((id) => ({
-          id,
-          previousStatus: targets.get(id) ?? 'unknown',
-          newStatus: 'superseded' as const,
-        })),
+        superseded,
         writeFailures: writeSink.failures,
         message:
           existingId === undefined
@@ -426,6 +388,10 @@ export async function rbookDecisionsRecord(
         );
       if (draft && existingId !== undefined) {
         answer.message = `Decision #${decisionId} was already recorded directly with this text; draft ${draft.label} is marked answered by it.`;
+      }
+      if (successorId !== undefined) {
+        answer.currentSuccessorId = successorId;
+        answer.message += `; its current successor is decision #${successorId}`;
       }
       answer.projectLevel = projectLevel;
       if (direct?.answered.length) answer.answeredDrafts = direct.answered.map(draftLabel);
@@ -526,6 +492,8 @@ export function formatDecisionsRecordForLLM(
   if (level === 'builder') lines.push(`**Sprint**: ${d.sprintId ?? '(none — no open sprint)'}`);
   else if (level === 'planner' && d.sprintId) lines.push(`**Cycle**: ${d.sprintId}`);
   if (d.missionId) lines.push(`**${level === 'planner' ? 'Task' : 'Mission'}**: ${d.missionId}`);
+  if (d.currentSuccessorId !== undefined)
+    lines.push(`**Current successor**: #${d.currentSuccessorId}`);
   lines.push(...approvalLines(d.approval));
   if (d.approval === undefined && /marked answered/.test(d.message)) lines.push(d.message);
   if (d.answeredDrafts?.length)

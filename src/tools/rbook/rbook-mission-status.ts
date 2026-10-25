@@ -1,3 +1,5 @@
+// ABOUTME: Show the canonical mission queue and distinguish parked work from a closed sprint.
+// ABOUTME: Queue exhaustion is a recommendation to review; sprint status remains authoritative.
 /**
  * rbook_mission_status Tool
  *
@@ -28,6 +30,7 @@ import type { ProjectGraphRegistry } from '../../intelligence/project-graph-regi
 import { appendWarnings } from './format-warnings';
 import { sprintIdOrderSql } from './sprint-ordering';
 import { firstReady, orderByRequires } from './work-queue-order';
+import { parkedMissionNotice } from './mission-status-parked';
 
 /**
  * Mission item with sprint context for the status view.
@@ -337,6 +340,12 @@ export async function rbookMissionStatus(
       const blockedCount = blockedMissions?.length ?? null;
 
       // Determine next action recommendation
+      const parked = parkedMissionNotice(
+        client,
+        activeSprintInfo?.sprint ?? null,
+        getProjectId(client)
+      );
+      if (!parked.success) return createError<RbookMissionStatusResult>(parked.error!);
       const nextAction = determineNextAction(
         inProgress,
         current,
@@ -357,7 +366,7 @@ export async function rbookMissionStatus(
             activeCount,
             queuedCount,
             blockedCount,
-            nextAction,
+            nextAction: [nextAction, parked.data].filter(Boolean).join(' '),
           },
           localProjectId: getProjectId(client),
         },
@@ -529,7 +538,9 @@ function determineNextAction(
 
   // Sprint completion: active sprint has no remaining work
   if (activeSprintInfo?.isComplete) {
-    return `Sprint ${activeSprintInfo.sprint.id} complete. Sprint review recommended before starting next sprint.`;
+    return activeSprintInfo.sprint.status?.toLowerCase() === 'completed'
+      ? `Sprint ${activeSprintInfo.sprint.id} complete. Sprint review recommended before starting next sprint.`
+      : `Sprint ${activeSprintInfo.sprint.id} remains open (${activeSprintInfo.sprint.status ?? 'status unset'}). No runnable missions remain; review parked work and explicitly close the sprint when ready.`;
   }
 
   // If blocked missions exist and nothing else is available

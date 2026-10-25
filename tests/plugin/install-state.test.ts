@@ -67,11 +67,14 @@ describe('plugin installation readiness', () => {
     ).toEqual({ wrongVersion: false, noNative: false });
   });
 
+  // s102-m13: positive identity/alias fixtures must reach the child check. The real
+  // 400 ms budget expired during child startup under load; its dedicated tests below
+  // still use and assert the production budget.
   test('a validated PATH package must own its CLI and native dependency', () => {
     expect(
       run(`${packageCode('ctx.installRoot')} const bin=path.join(ctx.dataRoot,'bin'); fs.mkdirSync(bin);
       fs.symlinkSync(path.join(ctx.installRoot,'node_modules/@aquex/reasonbook/dist/bin.js'),path.join(bin,'reasonbook'));
-      const ready=findPathPackage(ctx,{PATH:bin});
+      const ready=findPathPackage(ctx,{PATH:bin},20000);
       console.log(JSON.stringify({ready:!!ready}));`)
     ).toEqual({ ready: true });
   });
@@ -89,7 +92,7 @@ describe('plugin installation readiness', () => {
       const bin=path.join(root,'bin');fs.mkdirSync(bin);fs.symlinkSync(path.join(pkg,'dist/bin.js'),path.join(bin,command));return bin;};
       const former=make(path.join(ctx.dataRoot,'former'),'@aquex/cmos-mcp','cmos-mcp');
       const current=make(path.join(ctx.dataRoot,'current'),'@aquex/reasonbook','reasonbook');
-      console.log(JSON.stringify({former:!!findPathPackage(ctx,{PATH:former}),current:!!findPathPackage(ctx,{PATH:current})}));`)
+      console.log(JSON.stringify({former:!!findPathPackage(ctx,{PATH:former},20000),current:!!findPathPackage(ctx,{PATH:current},20000)}));`)
     ).toEqual({ former: false, current: true });
   });
 
@@ -134,7 +137,7 @@ describe('plugin installation readiness', () => {
       const cli=path.join(bin,'node_modules/@aquex/reasonbook/dist/bin.js');const calls=path.join(ctx.dataRoot,'calls');
       fs.writeFileSync(cli,"require('node:fs').appendFileSync("+JSON.stringify(calls)+",'x');console.log('reasonbook 0.0.1')");
       fs.symlinkSync(cli,path.join(bin,'reasonbook'));fs.symlinkSync(bin,bin+'-alias','dir');
-      const ready=findPathPackage(ctx,{PATH:bin+path.delimiter+bin+'-alias'});
+      const ready=findPathPackage(ctx,{PATH:bin+path.delimiter+bin+'-alias'},20000);
       console.log(JSON.stringify({ready:!!ready,calls:fs.readFileSync(calls,'utf8').length}));`);
     expect(result).toEqual({ ready: false, calls: 1 });
   });

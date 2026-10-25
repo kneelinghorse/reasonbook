@@ -1,11 +1,12 @@
-// ABOUTME: Manages next-step state transitions without discarding a carried row's lease anchor.
-// ABOUTME: Reports affected, unmatched and failed IDs explicitly for each lifecycle action.
+// ABOUTME: Routes next-step previews, full lookup and lifecycle changes without losing lease anchors.
+// ABOUTME: Reports missing, unmatched and failed IDs explicitly while preserving historical pointers.
 
 /**
  * Next-Step Lifecycle Handler
  *
  * Manages structured next-steps with status tracking:
- * - list: View pending/all next-steps
+ * - list: Preview pending/all next-steps
+ * - show: Read named next-steps in full
  * - complete: Mark a next-step as completed
  * - carry: Carry open next-steps to a new sprint
  * - drop: Drop a next-step (no longer relevant)
@@ -16,12 +17,7 @@
  * @module tools/rbook/rbook-next-steps
  */
 
-import {
-  prepareSpinOutRead,
-  spinOutDetails,
-  spinOutPointerLines,
-  type SpinOutDetails,
-} from './spin-out-read';
+import type { SpinOutDetails } from './spin-out-read';
 import { withClient, type RbookDatabaseClient } from './client';
 import type { RbookToolResult } from './types';
 import { createError, createSuccess, RbookErrors } from './errors';
@@ -29,17 +25,9 @@ import { ensureNextStepsTable, type NextStepStatus } from './schema-migrations';
 import { appendWarnings, appendWriteFailures, attachWarnings } from './format-warnings';
 import { skipConflicted, skippedConflicts } from './record-conflict-skip';
 import { countWrite, type WriteFailure } from './write-guard';
-import {
-  CLOSES_SURVIVED_SQL,
-  LEASED_STATUS_SQL,
-  LEASE_AGE_DAYS_SQL,
-  LEASE_COUNTING_RULE,
-  LEASE_LAPSE_AT,
-  LEASE_WARN_AT,
-  leaseState,
-  type LeaseState,
-} from './next-step-lease';
+import type { LeaseState } from './next-step-lease';
 import { recordedExecute } from './record-changes';
+import { readNextSteps, renderNextStepsBody } from './next-steps-read';
 
 /**
  * A next-step record from the database.
@@ -47,6 +35,11 @@ import { recordedExecute } from './record-changes';
 export interface NextStepRecord extends SpinOutDetails {
   id: number;
   content: string;
+  /** List previews normalize whitespace and cap content at 300 characters; show returns original text. */
+  truncated?: boolean;
+  fullLength?: number;
+  /** Origin namespace; NULL for historical rows without a recorded origin. */
+  projectId?: string | null;
   status: NextStepStatus;
   sessionId: string | null;
   sprintId: string | null;
@@ -82,7 +75,7 @@ export interface NextStepRecord extends SpinOutDetails {
 const TRANSITIONABLE_STATUS = "status IN ('pending','carried')";
 
 /** Published next-step sub-actions, shared by the handler and rbook_context's two schemas. */
-export const NEXT_STEP_ACTIONS = ['list', 'complete', 'carry', 'drop', 'reopen'] as const;
+export const NEXT_STEP_ACTIONS = ['list', 'show', 'complete', 'carry', 'drop', 'reopen'] as const;
 export type NextStepAction = (typeof NEXT_STEP_ACTIONS)[number];
 
 /** Reopening is intentionally narrower than the ordinary pending/carried transition predicate. */
@@ -91,12 +84,16 @@ const REOPENABLE_STATUS = "status IN ('completed','dropped','carried')";
 export interface NextStepsResult {
   /** The sub-action that was performed */
   nextStepAction: string;
-  /** Next-steps returned (for list) */
+  /** Next-steps returned (for list and show) */
   items?: NextStepRecord[];
+  /** Requested show IDs with no stored row; distinct from failed or unmatched writes. */
+  missingIds?: number[];
+  /** Store identity used to distinguish returned local IDs from foreign-origin IDs. */
+  localProjectId?: string;
   /** Count of items affected */
   affected: number;
   /** s86-m02b — writes an action ATTEMPTED and the database REJECTED. Emitted by every write
-   *  action (complete/carry/drop/reopen), `[]` on the happy path; absent on `list`, which writes
+   *  action (complete/carry/drop/reopen), `[]` on the happy path; absent on `list` and `show`, which write
    *  nothing. `affected` above counts rows the UPDATE actually changed, so a non-empty array
    *  here is the difference between the intent and the outcome. A caller-supplied id that
    *  matched no row eligible for that action is NOT a failure — its WHERE matched nothing —
@@ -113,7 +110,7 @@ export interface NextStepsResult {
    * tell an operator a write failed when none did — the "say only what you know" violation this
    * fix exists to close, committed inside the fix.
    *
-   * Absent on `list`, which writes nothing. Empty when every requested id matched.
+   * Absent on `list` and `show`, which write nothing. Empty when every requested id matched.
    */
   unmatchedIds?: number[];
   /** Message */
@@ -121,13 +118,13 @@ export interface NextStepsResult {
 }
 
 export interface RbookNextStepsParams {
-  /** Sub-action: list | complete | carry | drop | reopen */
+  /** Sub-action: list | show | complete | carry | drop | reopen */
   nextStepAction: NextStepAction;
   /** Filter by status (for list; default: the open rows, pending and carried — s91-m06) */
   nextStepStatus?: NextStepStatus;
   /** s85-m04: filter list to next-steps stamped with this mission (#487 read surface) */
   missionId?: string;
-  /** Next-step IDs for historical list lookup or complete/carry/drop/reopen. Explicit list IDs bypass implicit open-status filtering. */
+  /** Next-step IDs for full show, historical list lookup or complete/carry/drop/reopen. Explicit list IDs bypass implicit open-status filtering. */
   nextStepIds?: number[];
   /** Target sprint for carry action */
   carryToSprint?: string;
@@ -149,6 +146,16 @@ export async function rbookNextSteps(
     });
   }
 
+  if (action === 'show') {
+    const ids = params.nextStepIds;
+    if (ids === undefined || (Array.isArray(ids) && ids.length === 0))
+      return createError(RbookErrors.missingParameter('nextStepIds'));
+    if (!Array.isArray(ids) || ids.some((id) => !Number.isSafeInteger(id) || id < 1))
+      return createError(
+        RbookErrors.invalidParameter('nextStepIds', ids, ['positive integer IDs'])
+      );
+  }
+
   const migrationWarnings: string[] = [];
   const result = await withClient(
     (client) => {
@@ -156,7 +163,14 @@ export async function rbookNextSteps(
 
       switch (action) {
         case 'list':
-          return listNextSteps(client, params.nextStepStatus, params.missionId, params.nextStepIds);
+        case 'show':
+          return readNextSteps(
+            client,
+            params.nextStepStatus,
+            params.missionId,
+            params.nextStepIds,
+            action
+          );
         case 'complete':
           return transitionNextSteps(client, params.nextStepIds ?? [], 'completed');
         case 'carry':
@@ -175,107 +189,6 @@ export async function rbookNextSteps(
     { projectRoot: params.projectRoot }
   );
   return attachWarnings(result, migrationWarnings);
-}
-
-interface NextStepRow {
-  id: number;
-  content: string;
-  status: string;
-  session_id: string | null;
-  sprint_id: string | null;
-  mission_id: string | null;
-  created_at: string;
-  resolved_at: string | null;
-  carried_to_sprint: string | null;
-}
-
-/**
- * s85-m04: restructured from two hardcoded, ternary-selected SQL literals into the
- * conditions-builder shape used by rbook-decisions-list.ts. The old form had no `conditions[]`
- * array at all, so adding the `missionId` filter to only one of the two branches would have
- * been an easy and invisible mistake — the pending branch inlined its status while the other
- * bound it. One query, one param list, both predicates applied uniformly.
- */
-function listNextSteps(
-  client: RbookDatabaseClient,
-  status: NextStepStatus | undefined,
-  missionId?: string,
-  ids?: number[]
-): RbookToolResult<NextStepsResult> {
-  // s91-m06: with no status filter the list is the lease view — every OPEN row, carried included.
-  // Carried rows used to be invisible to every surface but an explicit `carried` filter.
-  ids = ids ?? undefined;
-  if (
-    ids !== undefined &&
-    (!Array.isArray(ids) || ids.some((id) => !Number.isSafeInteger(id) || id < 1))
-  )
-    return createError(RbookErrors.invalidParameter('nextStepIds', ids, ['positive integer IDs']));
-  const visibility = prepareSpinOutRead(client);
-  const conditions =
-    status === undefined ? (ids === undefined ? [LEASED_STATUS_SQL] : ['1=1']) : ['n.status = ?'];
-  const queryParams: unknown[] = status === undefined ? [] : [status];
-  if (ids !== undefined) {
-    conditions.push(ids.length ? `n.id IN (${ids.map(() => '?').join(',')})` : '0');
-    queryParams.push(...ids);
-  } else {
-    const visible = visibility.predicate('next-step', 'n.id');
-    conditions.push(visible.sql);
-    queryParams.push(...visible.params);
-  }
-
-  if (missionId) {
-    conditions.push('n.mission_id = ?');
-    queryParams.push(missionId);
-  }
-
-  const query = `SELECT n.id, n.content, n.status, n.session_id, n.sprint_id, n.mission_id,
-            n.created_at, n.resolved_at, n.carried_to_sprint, ${CLOSES_SURVIVED_SQL} AS closes_survived,
-            ${LEASE_AGE_DAYS_SQL} AS age_days
-     FROM next_steps n WHERE ${conditions.join(' AND ')} ORDER BY julianday(n.created_at) ASC`;
-
-  const result = client.getMany<NextStepRow & { closes_survived: number; age_days: number | null }>(
-    query,
-    queryParams
-  );
-
-  if (!result.success || !result.data) {
-    return createError<NextStepsResult>({
-      code: 'DB_QUERY_FAILED',
-      message: 'Failed to query next-steps',
-    });
-  }
-
-  const items: NextStepRecord[] = result.data.map((row) => ({
-    ...spinOutDetails(visibility, 'next-step', row.id),
-    id: row.id,
-    content: row.content,
-    status: row.status as NextStepStatus,
-    sessionId: row.session_id,
-    sprintId: row.sprint_id,
-    missionId: row.mission_id,
-    createdAt: row.created_at,
-    resolvedAt: row.resolved_at,
-    carriedToSprint: row.carried_to_sprint,
-    ...(row.status === 'pending' || row.status === 'carried'
-      ? {
-          closesSurvived: row.closes_survived,
-          lease: leaseState(row.closes_survived, row.age_days),
-        }
-      : {}),
-  }));
-
-  return createSuccess<NextStepsResult>({
-    nextStepAction: 'list',
-    items,
-    affected: items.length,
-    message: `Found ${items.length} next-step(s) ${
-      status === undefined
-        ? ids === undefined
-          ? 'open (pending or carried)'
-          : 'by explicit IDs'
-        : `with status '${status}'`
-    }${missionId ? ` for mission '${missionId}'` : ''}`,
-  });
 }
 
 function transitionNextSteps(
@@ -462,50 +375,11 @@ export function formatNextStepsForLLM(result: RbookToolResult<NextStepsResult>):
     lines.push(`Not matched (${reason}): ${unmatched.map((id) => `#${id}`).join(', ')}`);
   }
 
+  if (result.data?.missingIds?.length)
+    lines.push('', `Not found: ${result.data.missingIds.map((id) => `#${id}`).join(', ')}`);
+
   appendWriteFailures(lines, result.data?.writeFailures);
   appendWarnings(lines, result);
 
   return lines.join('\n');
-}
-
-/**
- * The next-steps answer itself. Split out of formatNextStepsForLLM in s86-m02 so the envelope
- * warnings channel renders from one tail instead of once per action branch.
- */
-function renderNextStepsBody(result: RbookToolResult<NextStepsResult>): string {
-  if (!result.success || !result.data) {
-    const error = result.error;
-    const lines = [`Failed to manage next-steps: ${error?.message ?? 'Unknown error'}`];
-    if (error?.suggestion) lines.push(`Suggestion: ${error.suggestion}`);
-    return lines.join('\n');
-  }
-
-  const d = result.data;
-
-  if (d.nextStepAction === 'list' && d.items) {
-    if (d.items.length === 0) {
-      // Echo the filter that matched nothing, e.g. "No next-step(s) open (pending or carried)".
-      return `${d.message.replace(/^Found 0 /, 'No ')}.`;
-    }
-    const lines = [`**Next Steps (${d.items.length})**`, ''];
-    for (const item of d.items) {
-      const sprint = item.sprintId ? ` [${item.sprintId}]` : '';
-      const mission = item.missionId ? ` (${item.missionId})` : '';
-      const lease =
-        item.closesSurvived === undefined
-          ? ''
-          : ` {closes survived ${item.closesSurvived}${item.lease === 'ok' ? '' : `, ${item.lease}`}}`;
-      lines.push(`  #${item.id} [${item.status}]${lease}${sprint}${mission}: ${item.content}`);
-      lines.push(...spinOutPointerLines(item));
-    }
-    if (d.items.some((item) => item.closesSurvived !== undefined)) {
-      lines.push('');
-      lines.push(
-        `Lease: warn at ${LEASE_WARN_AT}, drop at ${LEASE_LAPSE_AT} unless carried. ${LEASE_COUNTING_RULE}.`
-      );
-    }
-    return lines.join('\n');
-  }
-
-  return d.message;
 }

@@ -770,11 +770,12 @@ describe('s93-m12 — the seed shows no call the server refuses', () => {
     // start step added two; the agents-file guide gained the step-up call and the init call that
     // takes the level. s95-m06: the Ledger and Planner READMEs each name their step-up call (+2
     // inline). s101-m04 adds the Ledger next-step retrieval call (+1 inline).
+    // s102-m06 adds Ledger show (+1), plus Planner and Builder list/show (+4 inline).
     // A change in the seed's calls changes this number on purpose.
     expect({ total: SEED_CALLS.length, fenced, inline: SEED_CALLS.length - fenced }).toEqual({
-      total: 145,
+      total: 150,
       fenced: 89,
-      inline: 56,
+      inline: 61,
     });
   });
 

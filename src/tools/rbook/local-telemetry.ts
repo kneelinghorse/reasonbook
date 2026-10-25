@@ -61,6 +61,8 @@ export interface TelemetryRecord {
   readonly idsInjected?: readonly string[];
   readonly idsCited?: readonly string[];
   readonly charsInjected?: number;
+  /** Session-start cause only; absent on legacy records or an unknown harness source. */
+  readonly source?: 'startup' | 'resume' | 'clear' | 'compact';
   readonly digestHash?: string;
   readonly procedurePatternIds?: readonly string[];
   readonly ceremony?: string | null;
@@ -223,6 +225,10 @@ function serializable(value: unknown): TelemetryRecord | null {
       ? { charsInjected: v.charsInjected }
       : {}),
     ...(bounded(v.digestHash, HASH) ? { digestHash: v.digestHash as string } : {}),
+    ...(v.tool === 'hook session-start' &&
+    ['startup', 'resume', 'clear', 'compact'].includes(v.source as string)
+      ? { source: v.source as TelemetryRecord['source'] }
+      : {}),
     ...(v.ceremony !== undefined
       ? { ceremony: bounded(v.ceremony, /^(?:C0[1-3]|\/[a-z0-9][\w-]{0,31}(?::[\w-]{1,31})?)$/i) }
       : {}),

@@ -375,7 +375,18 @@ export function startRefereeServer(config: RefereeServerConfig): Promise<{
 export async function main(configFile: string): Promise<void> {
   const config = JSON.parse(readFileSync(configFile, 'utf8')) as RefereeServerConfig;
   const { server, port, engine } = await startRefereeServer(config);
-  process.stdout.write(`${JSON.stringify({ port, engine })}\n`);
+  process.stdout.write(
+    `${JSON.stringify({
+      port,
+      engine,
+      readyAt: new Date().toISOString(),
+      runtime: {
+        nodeVersion: process.version,
+        v8Version: process.versions.v8,
+        execArgv: process.execArgv,
+      },
+    })}\n`
+  );
   const stop = () => server.close(() => process.exit(0));
   process.on('SIGTERM', stop);
   process.stdin.on('end', stop);

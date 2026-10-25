@@ -64,7 +64,7 @@ This creates:
 From your project folder, initialize the Builder level this guide uses:
 
 ```bash
-npx --prefer-offline -y @aquex/reasonbook@4.5.1 init --level builder
+npx --prefer-offline -y @aquex/reasonbook@4.6.0 init --level builder
 ```
 
 Commit the rest of `rbook/`, including `rbook/.gitignore`, and the root `AGENTS.md` and
@@ -107,7 +107,7 @@ rbook_mission_transition(action="complete", missionId="s01-m01", notes="What was
 | `rbook_status`             | _(no action — identity and dashboard diagnostics)_                                                                 |
 | `rbook_db`                 | health, snapshot, restore, backfill, reconcile, purge, identify_orphans, prune_snapshots, conflicts, settle        |
 | `rbook_mission`            | list, show, status, add, update, move, depends, undepends                                                          |
-| `rbook_mission_transition` | start, complete, block, unblock, drop, defer                                                                       |
+| `rbook_mission_transition` | start, complete, block, unblock, drop, defer, reopen                                                               |
 | `rbook_sprint`             | list, show, add, update, complete, retro, carry_forward, analytics                                                 |
 | `rbook_session`            | list, start, capture, complete, search                                                                             |
 | `rbook_context`            | view, update, condense, snapshot, history, next_steps, constraints, search                                         |
@@ -165,4 +165,4 @@ See `docs/` for complete documentation:
 ---
 
 **Schema Version**: 2.1
-**Last Updated**: 2026-10-23
+**Last Updated**: 2026-10-25

@@ -494,15 +494,25 @@ the project id and the store's native real path. It keeps:
 - the newest 200 counted session-start times and each session's start time;
 - offer counts per session and draft;
 - the operator's reply, at most 1,000 characters, its class, the number of drafts it answered and
-  the time it was received;
+  the time it was received and whether it answered a showing more than two hours old;
 - the draft ids shown by the last reply, with their time;
+- declined draft ids awaiting a store write, with the first decline time and no words;
 - the draft ids in an approval window, its open/closed state and its time;
 - transcript scan offsets and outside-content flags, keyed by hashes of transcript paths.
 
 Session keys are 16-character hashes; raw session ids and transcript paths are not stored there
 ([src/tools/rbook/draft-runtime.ts](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/draft-runtime.ts)).
-Replies, shown sets and windows stop being usable after two hours. That is an expiry check, not a
-background deletion timer: cross-store pruning runs only at a session start inside a Reasonbook project
+Replies and windows stop being usable after two hours. Shown and retained draft ids contain no
+operator words; they expire after three later starts in that store’s runtime or more than seven
+days from their showing. A non-compact start clears that session’s sets. A late answer opens no
+direct-record window: an approval is agent-judged, and a decline is persisted in the store. If a
+decline meets a busy store, its showing is retained and commit retries once after output delivery.
+An id-only decline marker survives session cleanup and expiry until the store confirms the draft
+is no longer pending; later prompt and Stop hooks retry it. Record transactions apply retained
+declines before settling related revisions, and leave marker cleanup to a later hook. Current readers refuse that draft
+even without a linked session. Older binaries do not understand this marker: their refusal is
+guaranteed only after the decline reaches the store. Session start still writes no project store.
+These are expiry checks, not background deletion timers: cross-store pruning runs only at a session start inside a Reasonbook project
 with a harness session id, visits at most 50 runtime files, and skips files it cannot open. Binding
 a new reply also prunes expired replies in that store. A successful session-end cleanup deletes
 that session's runtime rows; the bounded start-time history remains. A crash followed by no such
@@ -543,4 +553,4 @@ subagent type (e.g. the `Explore` agent) — that is a mitigation, not the machi
 
 ---
 
-_Last verified against the source for release 4.5.1._
+_Last verified against the source for release 4.6.0._

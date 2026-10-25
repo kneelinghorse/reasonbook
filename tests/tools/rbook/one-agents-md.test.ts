@@ -163,7 +163,9 @@ describe('s93-m12 — what init writes', () => {
     expect(agents.trimEnd().split('\n').length).toBeLessThanOrEqual(150);
     expect(agents).toContain('## Hard Operating Rules');
     const practices = agents.slice(agents.indexOf('## Learned Practices'));
-    expect(practices.match(/^\d+\. \*\*/gm)?.length).toBeGreaterThanOrEqual(12);
+    expect(practices.match(/^\d+\. \*\*/gm)?.length).toBe(14);
+    expect(agents).toContain('- **Name:** fresh');
+    expect(agents).not.toMatch(/\[[^\]]+\](?!\()/);
 
     // Exactly one Reasonbook line, and it names the level and the opt-out.
     expect(rbookLines(agents)).toEqual([rbookRulesLine('ledger')]);
@@ -185,14 +187,35 @@ describe('s93-m12 — what init writes', () => {
     ] as const) {
       const viaTool = folder(`tool-${level}`);
       const viaCli = folder(`cli-${level}`);
-      await rbookProjectInit({ projectRoot: viaTool, projectType: tier });
-      const ran = await cli(['init', '--level', level], viaCli);
+      await rbookProjectInit({
+        projectRoot: viaTool,
+        projectType: tier,
+        projectName: 'Shared project',
+      });
+      const ran = await cli(['init', '--level', level, '--name', 'Shared project'], viaCli);
       expect(ran.code).toBe(0);
       expect(ran.out).toContain('Reasonbook record started');
+      expect(ran.out).toContain('rbook_review()');
+      expect(ran.out).toContain('reasonbook init --no-hooks');
+      expect(ran.out).toContain('category="next-step"');
       const read = (root: string) => fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8');
       expect(read(viaCli)).toBe(read(viaTool));
       expect(storedTier(viaCli)).toBe(tier);
     }
+  });
+
+  it('keeps the explicit project in the first-run remedy, with shell-inert arguments', async () => {
+    const root = folder("Target's project");
+    const caller = folder('outside');
+    const ran = await cli(['init', '--project-root', root], caller);
+    expect(ran.code).toBe(0);
+    expect(ran.out).toContain(
+      `reasonbook init --no-hooks --project-root '${root.replace(/'/g, "'\\''")}'`
+    );
+    expect(ran.out).toContain(
+      'Adding the plugin later keeps the existing hook-less line and block.'
+    );
+    expect(fs.existsSync(path.join(caller, 'AGENTS.md'))).toBe(false);
   });
 
   it('--no-hooks appends the labelled hook-less block, of at most 15 lines, and says so in the Reasonbook line', async () => {

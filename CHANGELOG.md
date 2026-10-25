@@ -2,6 +2,95 @@
 
 All notable changes to Reasonbook (published as `@aquex/cmos-mcp` before 4.0.0) are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [4.6.0] — 2026-10-24
+
+### Changed
+
+- Shorter tool descriptions leave room for new actions while preserving cross-project
+  untrusted-data warnings; the digest size guidance now says “about 4 KB.”
+- Use measurement recognizes citations in reasoning fields and explicit evidence links.
+  Local statistics report unjoinable uses and cross-session references separately from
+  same-store, same-session cite-through; exports retain counts without item identities.
+  Digest costs separate startup/resume/clear, compact and unknown legacy sources. Stability
+  now compares consecutive emitted digest pairs with hashes and no observed successful write
+  between them: `stableDigestPairs` and `comparableDigestPairs` replace the session counters,
+  with write-separated and missing-hash pairs reported separately.
+- MCP refusal fields carrying caller input preserve up to 512 serialized JSON characters;
+  larger fields become previews of at most 160 characters, retaining ordinary remedies.
+  Oversized values disclose their original serialized length; oversized `validValues` retain
+  an array containing one preview. Refusal project stamps, unknown-tool errors, CLI feedback
+  errors and unexpected-argument echoes are bounded too. Success answers retain their values.
+- Mission status names parked work and distinguishes an empty queue from a closed sprint.
+  Sprint-close untagged-session warnings use the sprint window and state the counting rule.
+- Brief JSON adds `droppedDrafts` and `unreadableProjects`; `unreadable` keeps its original IDs.
+  Draft counts from reports older than seven days are omitted and disclosed; fresh aggregates
+  retain their counts because individual draft ages are unavailable. Unreadable projects use
+  their names in the brief header.
+- A repeated bulk feedback resolve now says nothing changed and the supplied note was not stored;
+  `RbookFeedbackBulkResult.resolutionNote` is null when no row stored the note.
+
+- The Builder digest shows up to three next steps beside its mission; Ledger and Planner show
+  up to five. Lease urgency, current sprint and creation time determine order, and visible next
+  steps reduce recent decisions to six. Solo records retain room for pending drafts.
+- Next-step lists now return 300-character content previews with `NextStepRecord.truncated` and
+  `fullLength`. `rbook_context` adds `nextStepAction="show"` to return named rows whole;
+  `NextStepsResult.missingIds` identifies requested rows that do not exist. Returned rows include
+  `projectId`, and list/show receipts include `localProjectId`, so explicit expansion counts only
+  local and NULL-origin rows as use.
+
+- An unexpired draft can receive an answer after two hours in the same live conversation. Late
+  approvals record as agent-judged; late declines persist across sessions and excerpt expiry.
+  Shown identifiers follow draft expiry, while words and direct-record windows retain two hours.
+  Busy-store declines retain their original showing and retry once after delivery.
+
+- Queued missions can be blocked before starting. Default unblock returns to Queued only with a
+  matching block-origin timestamp and no start timestamp; explicit targets take precedence.
+- Mission transitions add `reopen` with a required reason for Completed work in an active sprint.
+  Reopen clears `completed_at`, appends a shared note and local audit event, and preserves the old
+  completion time in domain metadata. Concurrent peer replacement can lose that metadata; local
+  events are not shared. A disconnected sprint close can still require reconciliation.
+  The new `MissionReopenResult` returns missionId, previousStatus, currentStatus, reason,
+  completedAt (nullable), reopenedAt and message; invalid mission state uses the existing
+  string form of `currentState`.
+
+- Decision recording adds optional `RbookDecisionsRecordResult.currentSuccessorId` when a repeat
+  names a superseded historical row. Correction refusals carry `decisionId` and `supersededBy`
+  in the existing object form of `RbookToolError.currentState`.
+- Superseding decisions can correct reasoning without changing the headline. Retries reuse
+  matching rows, reverts create new occurrences, and earlier successor links cannot be redirected.
+  Mission start and completion retain caller session links transactionally; retrospectives include
+  sessions linked to the sprint's missions even without a sprint tag. Keyless explicit sessions
+  remain unlinked.
+- CLI initialization explains the workflow without hooks and fills new AGENTS.md files with the
+  stored project name. CLI and MCP initialization produce the same content for the same name
+  and level; shipped templates retain their hard rules and learned practices without unfinished
+  project placeholders. Existing files and hookless guidance survive later plugin initialization.
+
+### Fixed
+
+- Shared one-line and SSH displays strip bidirectional controls and zero-width spaces while
+  preserving joiners and emoji tag sequences. Import field diffs show Unicode format characters
+  as escapes; stored values and structured reports remain unchanged.
+- Snapshot ages require an offset-bearing ISO timestamp or SQLite UTC timestamp; ambiguous
+  dates show unknown age. CLI feedback length refusals name `--content`, and bare init level
+  names suggest `--level`. Older sibling-store guidance now names executable session start and
+  completion calls at the registered project root to apply its missing schema migration.
+- Build freshness uses a manifest source-content hash when mtimes suggest stale code, so an
+  identical checkout or rewrite stays current. Changed bytes or paths still report stale on
+  that path; preserved-mtime changes, excluded assets and manifest-less projects retain their
+  existing limits. Loaded-server health still compares the compiled build hash.
+
+- The privacy page reflects the move to Render, its current recovery and log retention,
+  and confirmed nightly offsite copies to Cloudflare R2. Deletion controls are unchanged.
+
+### Development
+
+- Restored the bounded concurrent load check with audited process-group cleanup and retained
+  failure reports. Test fixtures avoid redundant compilation and publish child argument markers
+  atomically; fixture startup allowances leave product deadlines unchanged.
+
 ## [4.5.1] — 2026-10-23
 
 ### What's new since the demo
@@ -2549,6 +2638,7 @@ This is the section to read carefully if you've been tracking pre-1.0 internal b
 - **Custom `cmos_learnings(action="update")` callers** should pass at least one of `status` or `evergreen` per call (see Tool-surface changes above).
 
 [1.0.0]: https://www.npmjs.com/package/@aquex/cmos-mcp/v/1.0.0
+[4.6.0]: https://github.com/kneelinghorse/reasonbook/compare/v4.5.1...v4.6.0
 [4.5.1]: https://github.com/kneelinghorse/reasonbook/compare/v4.5.0...v4.5.1
 [4.5.0]: https://github.com/kneelinghorse/reasonbook/compare/v4.4.0...v4.5.0
 [4.4.0]: https://github.com/kneelinghorse/reasonbook/tree/v4.4.0

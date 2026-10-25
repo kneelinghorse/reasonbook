@@ -19,6 +19,8 @@ const EVIDENCE = [
   'no-relevance-manifest.json',
   'labels-v6-review/manifest.json',
   'labels-v6-review/labels.json',
+  'labels-v7-review/manifest.json',
+  'labels-v7-review/labels.json',
 ];
 const EVALUATORS = [
   'measure-retrieval-quality.js',
@@ -168,7 +170,7 @@ function readContract(root) {
     'current parser review fields'
   );
   if (
-    contract.currentParserReview.file !== 'labels-v7-review/manifest.json' ||
+    contract.currentParserReview.file !== 'labels-v8-review/manifest.json' ||
     !HASH.test(contract.currentParserReview.sha256 ?? '')
   )
     throw new Error('unsealed current parser review');
@@ -316,7 +318,7 @@ function verifyEvidence(root, contract) {
       .sort(),
     'source rename/current parser inventory'
   );
-  // V5/V6 retain historical parser provenance. V7 independently binds every current dependency;
+  // V5/V6/V7 retain historical parser provenance. V8 independently binds every current dependency;
   // its generated label bytes must still equal the frozen labels. Rename counts remain guarded.
   hashMap(root, current.extractorSources);
   for (const name of Object.keys(contract.parserHashes)) {
@@ -348,7 +350,7 @@ function verifyEvidence(root, contract) {
   }
   same(current.counts, labels.counts, 'current manifest denominator');
   hashed(
-    path.join(fixture, 'labels-v7-review/labels.json'),
+    path.join(fixture, 'labels-v8-review/labels.json'),
     contract.evidenceHashes['frozen-labels/labels.json']
   );
   hashed(

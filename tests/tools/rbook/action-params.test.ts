@@ -389,11 +389,12 @@ describe('ACTION_PARAMS vacuity floor (s86-m04)', () => {
       // join (8), members (2), remove (3) and sync (3).
       // s97-m11: 92 -> 93 actions and 448 -> 455 entries: share gains via and confirm, join via and
       // project, and rbook_project adds move (action, projectRoot, to).
-      expect(actionCount).toBe(93);
+      // s102-m04: separately audited reopen adds one action and four parameter entries.
+      expect(actionCount).toBe(94);
       // s94-m04: record adds context, alternatives, consequences, deciders and mode.
       // s97-m13: start adds targetStatus (Current promotes without starting).
       // s97-m07: rbook_feedback resolve adds feedbackIds (many rows in one call): 456 -> 457.
-      expect(entryCount).toBe(457);
+      expect(entryCount).toBe(461);
 
       // Floors, so a walker that silently stops producing branches fails here rather than passing
       // every applicability case with nothing to check.

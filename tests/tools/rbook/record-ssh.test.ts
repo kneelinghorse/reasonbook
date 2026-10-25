@@ -92,6 +92,20 @@ describe('a sync over SSH', () => {
     expect(fs.readFileSync(log, 'utf8').trim()).toBe('studio');
   }, 180000);
 
+  it('remote stderr cannot reorder its displayed error, while joined text survives', async () => {
+    const { ssh } = standinSsh(path.join(fixture.tmp, 'bidi-bin'));
+    const script = path.join(fixture.tmp, 'stderr.js');
+    const joined = '👩\u200d💻 می\u200cروم 🏴\u{e0067}\u{e007f}';
+    const controls = '\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069\u200b';
+    fs.writeFileSync(
+      script,
+      `process.stderr.write(${JSON.stringify(`left${controls}right ${joined}`)});`
+    );
+    await expect(
+      sshPeer({ host: 'studio', root: fixture.tmp, node: process.execPath, bin: script }, { ssh })
+    ).rejects.toThrow(`leftright ${joined}`);
+  }, 60000);
+
   it('a far end that is not a Reasonbook sync, or no ssh at all, is named rather than guessed at', async () => {
     const { ssh } = standinSsh(path.join(fixture.tmp, 'bin'));
     await expect(

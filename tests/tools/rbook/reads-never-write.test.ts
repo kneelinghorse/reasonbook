@@ -893,7 +893,9 @@ async function runRead(
         dbPath: prepared.dbPath,
         rawSessionId: cli.input.session_id,
         env: { RBOOK_CONFIG_DIR: prepared.configDir },
-        deadlineAtMs: Date.now() + 1000,
+        // s102-m13: setup must establish the prior prompt before snapshots begin.
+        // The former 1 s fixture limit expired under load; this is not a hook latency assertion.
+        deadlineAtMs: Date.now() + 30_000,
       },
       () => ({ text: '', returnedIds: [], items: [] }),
       () => ''

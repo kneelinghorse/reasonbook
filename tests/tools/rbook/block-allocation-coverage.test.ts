@@ -126,7 +126,8 @@ describe('block allocation coverage', () => {
 
 /**
  * Class E (rbook/research/2026-10-s96-probes/s96-m01-identity-build.md), published at the build
- * critics' fold: the same predicate over the nine shared tables, 23 lines at 32e4974 and now. A
+ * critics' fold: the same predicate over the nine shared tables, 23 matches at 32e4974, plus
+ * s100-m03's next-step insert and s102-m03's mission-session link (25 now). A
  * create takes the copy's next sequence through the genesis stamp, or by name for the two link
  * tables, which take no stamp. Left, each for its reason, beside class A's two:
  * - rbook-project-init.ts writes through a raw connection and seeds nothing into a shared copy;
@@ -158,8 +159,9 @@ describe('sequence coverage', () => {
   it('gives every production create of a shared table the next sequence', () => {
     const files = sources();
     const production = sites(files, SHARED_TABLES).filter((site) => !(site.file in SHARED_LEFT));
-    // 14 production sites, as published (13, and s100-m03's); a change must update the class.
-    expect(production).toHaveLength(14);
+    // 15 production sites: the prior 14 plus mission-session-link.ts's session_missions insert.
+    // The same sequence requirement applies to the new link; the unsequenced check stays intact.
+    expect(production).toHaveLength(15);
     expect(leftCounts(sites(files, SHARED_TABLES), SHARED_LEFT)).toEqual({
       'tools/rbook/sync-merge.ts': 6,
       'tools/rbook/genesis-columns.ts': 1,

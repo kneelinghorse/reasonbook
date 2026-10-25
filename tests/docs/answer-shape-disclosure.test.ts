@@ -266,14 +266,19 @@ const EXPECTED_TOTALS = {
   // plus two in-process OwnerResolutionResult safety-evidence fields used before sending.
   // s101-m10: registration-error adds a module, with no new answer type.
   // s101-m02: protocol-notice adds a module; RecordProtocolReview gains the additive stranded list.
-  files: 315,
-  roots: 148,
-  declarations: 347,
-  compositions: 347,
+  // s102-m03: correction/link helpers add two files; the record receipt adds currentSuccessorId.
+  // s102-m04: reopen adds one result root/declaration and seven additive receipt properties.
+  // s102-m05: two runtime helpers and the evaluation extraction add files, without changing answer shapes.
+  // s102-m06: three digest/read helpers; previews/show add three fields plus row/local provenance.
+  // s102-m07: refusal bounds and parked-status helpers add files; answer types stay unchanged.
+  files: 326,
+  roots: 149,
+  declarations: 348,
+  compositions: 348,
   // s98-m11: bulk feedback receipts name the project and list already resolved skips.
   // s98-m12: ProjectTypeFields gains optional build_freshness_check, disclosed in CHANGELOG.
   // s98-m13: sprint-close adds implicitSessionsAtClose beside the direct-membership list.
-  rows: 1944,
+  rows: 1957,
 } as const;
 const EXPLICIT_OPAQUE_LEDGER = [
   'RbookToolError.providedValue = ANY',
@@ -556,7 +561,7 @@ describe('answer-shape disclosure gate (Sprint 89 m04)', () => {
     expect(emitCensusFindings(censusCurrentState(CHECKED_EMIT_SOURCES))).toEqual([]);
   });
 
-  it('fails independently for a twenty-first direct currentState assignment', () => {
+  it('fails independently for a twenty-third direct currentState assignment', () => {
     const mutated = CANONICAL_EMIT_SOURCES.map((source, index) =>
       index === 0
         ? {
@@ -567,14 +572,14 @@ describe('answer-shape disclosure gate (Sprint 89 m04)', () => {
     );
     const census = censusCurrentState(mutated);
     const findings = emitCensusFindings(census);
-    expect(census.assignments).toBe(21);
-    expect(census.directObjectLiterals).toBe(6);
+    expect(census.assignments).toBe(23);
+    expect(census.directObjectLiterals).toBe(7);
     expect(findings).toHaveLength(1);
-    expect(findings[0]).toContain('Expected 20 direct currentState property assignments; found 21');
+    expect(findings[0]).toContain('Expected 22 direct currentState property assignments; found 23');
     for (const file of EXPECTED_INTERPOLATION_FILES) expect(findings[0]).toContain(file);
   });
 
-  it('fails independently for a seventh parenthesized currentState object literal', () => {
+  it('fails independently for an eighth parenthesized currentState object literal', () => {
     const mutated = CANONICAL_EMIT_SOURCES.map((source) =>
       source.relativePath === 'rbook-mission-block.ts'
         ? replaceExactlyOnce(
@@ -586,9 +591,9 @@ describe('answer-shape disclosure gate (Sprint 89 m04)', () => {
     );
     const census = censusCurrentState(mutated);
     const findings = emitCensusFindings(census);
-    expect(census.assignments).toBe(20);
-    expect(census.directObjectLiterals).toBe(7);
-    expect(findings.some((finding) => finding.includes('found 7'))).toBe(true);
+    expect(census.assignments).toBe(22);
+    expect(census.directObjectLiterals).toBe(8);
+    expect(findings.some((finding) => finding.includes('found 8'))).toBe(true);
     expect(findings.every((finding) => finding.includes('[object Object]'))).toBe(true);
     for (const file of EXPECTED_INTERPOLATION_FILES) {
       expect(findings.every((finding) => finding.includes(file))).toBe(true);

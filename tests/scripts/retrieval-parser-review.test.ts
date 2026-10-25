@@ -13,7 +13,7 @@ import {
 } from '../helpers/retrieval-quality-gate';
 const { runGate } = require('../../scripts/retrieval-quality-gate');
 
-const reviewFile = `${fixturePath}/labels-v7-review/manifest.json`;
+const reviewFile = `${fixturePath}/labels-v8-review/manifest.json`;
 function refreshed() {
   const fixture = setup();
   const historical = JSON.stringify(fixture.contract);
@@ -27,13 +27,13 @@ function refreshed() {
   };
   put(reviewFile, review);
   put(
-    `${fixturePath}/labels-v7-review/labels.json`,
+    `${fixturePath}/labels-v8-review/labels.json`,
     fs.readFileSync(path.join(root, `${fixturePath}/frozen-labels/labels.json`), 'utf8')
   );
   const contract = {
     ...fixture.contract,
     schemaVersion: 3,
-    currentParserReview: { file: 'labels-v7-review/manifest.json', sha256: hash(reviewFile) },
+    currentParserReview: { file: 'labels-v8-review/manifest.json', sha256: hash(reviewFile) },
   };
   const save = () => {
     put(reviewFile, review);
@@ -50,7 +50,7 @@ afterEach(() => {
   if (root) fs.rmSync(root, { recursive: true, force: true });
 });
 
-it('accepts reviewed new parser bytes without rewriting the baseline, labels or V5/V6 provenance', () => {
+it('accepts reviewed new parser bytes without rewriting the baseline, labels or V5/V6/V7 provenance', () => {
   const fixture = refreshed();
   expect(runGate({ root }).skipped).toBe(false);
   for (const [key, value] of Object.entries(JSON.parse(fixture.historical)))
@@ -68,13 +68,13 @@ it('accepts reviewed new parser bytes without rewriting the baseline, labels or 
 });
 
 it.each(['manifest.json', 'labels.json'])(
-  'rejects missing or changed V7 %s before running a child',
+  'rejects missing or changed V8 %s before running a child',
   (name) => {
     refreshed();
-    fs.unlinkSync(path.join(root, `${fixturePath}/labels-v7-review/${name}`));
+    fs.unlinkSync(path.join(root, `${fixturePath}/labels-v8-review/${name}`));
     expect(() => runGate({ root })).toThrow(/sealed hash/);
     expect(fs.existsSync(path.join(root, 'child-ran'))).toBe(false);
-    put(`${fixturePath}/labels-v7-review/${name}`, {});
+    put(`${fixturePath}/labels-v8-review/${name}`, {});
     expect(() => runGate({ root })).toThrow(/sealed hash/);
   }
 );
@@ -99,6 +99,31 @@ it.each(['manifest.json', 'labels.json'])(
   (name) => {
     setup();
     put('child-mutation.json', JSON.stringify(`${fixturePath}/labels-v6-review/${name}`));
+    expect(() => runGate({ root })).toThrow(/sealed hash/);
+    expect(fs.existsSync(path.join(root, 'child-ran'))).toBe(true);
+  }
+);
+
+it.each([
+  ['manifest.json', 'missing'],
+  ['manifest.json', 'changed'],
+  ['labels.json', 'missing'],
+  ['labels.json', 'changed'],
+])('rejects retained V7 %s when %s before running a child', (name, change) => {
+  setup();
+  const file = `${fixturePath}/labels-v7-review/${name}`;
+  if (change === 'missing') fs.unlinkSync(path.join(root, file));
+  else put(file, {});
+  // Advancing the current review must not make the previous review's evidence optional.
+  expect(() => runGate({ root })).toThrow(/sealed hash/);
+  expect(fs.existsSync(path.join(root, 'child-ran'))).toBe(false);
+});
+
+it.each(['manifest.json', 'labels.json'])(
+  'rejects retained V7 %s changed during the child',
+  (name) => {
+    setup();
+    put('child-mutation.json', JSON.stringify(`${fixturePath}/labels-v7-review/${name}`));
     expect(() => runGate({ root })).toThrow(/sealed hash/);
     expect(fs.existsSync(path.join(root, 'child-ran'))).toBe(true);
   }
@@ -131,7 +156,7 @@ it.each(['missing', 'extra'])(
 );
 
 it.each(['corpusSha256', 'labelsSha256', 'generatorSha256', 'counts'])(
-  'binds V7 %s to original evidence and the unchanged generator',
+  'binds V8 %s to original evidence and the unchanged generator',
   (key) => {
     const fixture = refreshed();
     fixture.review[key] = key === 'counts' ? { primary: 2, mission: 1, mixed: 1 } : 'a'.repeat(64);
@@ -142,7 +167,7 @@ it.each(['corpusSha256', 'labelsSha256', 'generatorSha256', 'counts'])(
   }
 );
 
-it.each(['src/parser.ts', reviewFile, `${fixturePath}/labels-v7-review/labels.json`])(
+it.each(['src/parser.ts', reviewFile, `${fixturePath}/labels-v8-review/labels.json`])(
   'rejects %s changed during the child',
   (name) => {
     refreshed();

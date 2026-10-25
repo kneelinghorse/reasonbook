@@ -30,6 +30,16 @@ jest.mock('../../../src/tools/rbook/rbook-mission-defer', () => ({
   formatMissionDeferForLLM: jest.fn(),
 }));
 
+jest.mock('../../../src/tools/rbook/rbook-mission-reopen', () => ({
+  rbookMissionReopen: jest.fn(),
+  formatMissionReopenForLLM: jest.fn(),
+}));
+
+import {
+  rbookMissionReopen,
+  formatMissionReopenForLLM,
+} from '../../../src/tools/rbook/rbook-mission-reopen';
+
 import {
   RBOOK_MISSION_TRANSITION_ACTIONS,
   rbookMissionTransition,
@@ -64,6 +74,33 @@ import {
 describe('rbook_mission_transition', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('routes reopen with its reason and uses the audit-aware formatter', async () => {
+    const expected = {
+      success: true,
+      data: { missionId: 's14-m01', currentStatus: 'In Progress' },
+    } as any;
+    (rbookMissionReopen as jest.MockedFunction<typeof rbookMissionReopen>).mockResolvedValueOnce(
+      expected
+    );
+    const result = await rbookMissionTransition({
+      action: 'reopen',
+      missionId: 's14-m01',
+      reason: 'Missed acceptance case',
+      projectRoot: '/tmp/project',
+    });
+    expect(rbookMissionReopen).toHaveBeenCalledWith({
+      missionId: 's14-m01',
+      reason: 'Missed acceptance case',
+      projectRoot: '/tmp/project',
+    });
+    expect(result).toBe(expected);
+    (
+      formatMissionReopenForLLM as jest.MockedFunction<typeof formatMissionReopenForLLM>
+    ).mockReturnValueOnce('Reopened with audit');
+    expect(formatMissionTransitionForLLM('reopen', result)).toBe('Reopened with audit');
+    expect(formatMissionReopenForLLM).toHaveBeenCalledWith(expected);
   });
 
   it('routes start action to the existing mission start handler', async () => {
@@ -245,8 +282,8 @@ describe('rbook_mission_transition', () => {
   });
 
   describe('RBOOK_MISSION_TRANSITION_ACTIONS', () => {
-    it('contains exactly 6 actions', () => {
-      expect(RBOOK_MISSION_TRANSITION_ACTIONS).toHaveLength(6);
+    it('publishes reopen separately from ordinary state changes', () => {
+      expect(RBOOK_MISSION_TRANSITION_ACTIONS).toHaveLength(7);
       expect([...RBOOK_MISSION_TRANSITION_ACTIONS]).toEqual([
         'start',
         'complete',
@@ -254,6 +291,7 @@ describe('rbook_mission_transition', () => {
         'unblock',
         'drop',
         'defer',
+        'reopen',
       ]);
     });
   });

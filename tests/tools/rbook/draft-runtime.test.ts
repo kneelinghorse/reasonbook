@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // ABOUTME: s93-m06 — the runtime half of a draft: the operator's words, offer counts, windows and session
-// ABOUTME: starts, kept outside every store and repository, keyed by hashes, and gone within two hours.
+// ABOUTME: starts, kept outside every store and repository, keyed by hashes, with words gone within two hours and shown identifiers lasting through draft expiry.
 
 import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
 import * as fs from 'fs';
@@ -18,6 +18,7 @@ import {
   offerCounts,
   openDraftRuntime,
   openWindow,
+  peekShown,
   pruneAllRuntimes,
   readExcerpt,
   recordSessionStart,
@@ -134,8 +135,8 @@ describe('drafts kept from an earlier reply (s97-m12, critic round 2)', () => {
     setShown(runtime, S1, [], shownAt + 1000);
     carryShown(runtime, S1, shownAt + EXCERPT_TTL_MS - 1000);
     setShown(runtime, S1, [], shownAt + EXCERPT_TTL_MS - 1000);
-    // Two hours after it was first shown it is gone, however many Stops carried it.
-    expect(takeKept(runtime, S1, shownAt + EXCERPT_TTL_MS + 1)).toEqual([]);
+    // The original showing survives two hours but is gone after seven days, never refreshed.
+    expect(takeKept(runtime, S1, shownAt + 7 * 86_400_000 + 1)).toEqual([]);
   });
 
   it("an operator message takes the kept drafts with the latest reply's, once", () => {
@@ -231,11 +232,11 @@ describe('what a reply showed', () => {
     expect(takeShown(runtime, S1, now)).toEqual([]);
   });
 
-  it('is forgotten after two hours and at a new start of the session', () => {
+  it('survives two hours but is forgotten at a new start of the session', () => {
     const runtime = open();
     const now = Date.now();
     setShown(runtime, S1, [3], now);
-    expect(takeShown(runtime, S1, now + EXCERPT_TTL_MS + 1)).toEqual([]);
+    expect(takeShown(runtime, S1, now + EXCERPT_TTL_MS + 1)).toEqual([3]);
     setShown(runtime, S1, [3], now);
     recordSessionStart(runtime, S1, now + 1);
     expect(takeShown(runtime, S1, now + 2)).toEqual([]);
@@ -301,5 +302,63 @@ describe('offers', () => {
       [5, 1],
     ]);
     expect(offerCounts(runtime, S2).size).toBe(0);
+  });
+});
+
+describe('shown identifiers retain no words and follow draft expiry (s102-m05)', () => {
+  it('survives a different store session-start prune after three hours while words and windows expire', () => {
+    const runtime = open();
+    const at = Date.now();
+    setShown(runtime, S1, [4], at);
+    carryShown(runtime, S1, at + 1);
+    setShown(runtime, S1, [7], at + 1);
+    bindWindow(runtime, S1, [7], 'yes', 'approval', at);
+    const later = at + 3 * 60 * 60 * 1000;
+    expect(pruneAllRuntimes(env, later)).toBe(1);
+    expect(peekShown(runtime, S1, later)).toEqual([7]);
+    expect(takeKept(runtime, S1, later)).toEqual([4]);
+    expect(runtime.db.prepare('SELECT * FROM excerpts').all()).toEqual([]);
+    expect(runtime.db.prepare('SELECT * FROM windows').all()).toEqual([]);
+  });
+
+  it.each(['peek', 'kept', 'carry', 'prune'])(
+    '%s expires on the third start strictly after showing',
+    (method) => {
+      const runtime = open();
+      const at = Date.now();
+      setShown(runtime, S1, [4], at);
+      carryShown(runtime, S1, at + 1);
+      recordSessionStart(runtime, S2, at);
+      recordSessionStart(runtime, S2, at + 1);
+      recordSessionStart(runtime, S2, at + 2);
+      expect(peekShown(runtime, S1, at + 3)).toEqual([4]);
+      recordSessionStart(runtime, S2, at + 3);
+      if (method === 'peek') expect(peekShown(runtime, S1, at + 4)).toEqual([]);
+      if (method === 'kept') expect(takeKept(runtime, S1, at + 4)).toEqual([]);
+      if (method === 'carry') {
+        carryShown(runtime, S1, at + 4);
+        expect(runtime.db.prepare('SELECT * FROM kept').all()).toEqual([]);
+      }
+      if (method === 'prune') {
+        pruneAllRuntimes(env, at + 4);
+        expect(runtime.db.prepare('SELECT * FROM shown').all()).toEqual([]);
+        expect(runtime.db.prepare('SELECT * FROM kept').all()).toEqual([]);
+      }
+    }
+  );
+
+  it('keeps identifiers at exactly seven days and expires after it, matching draft expiry', () => {
+    const runtime = open();
+    const at = Date.now();
+    setShown(runtime, S1, [4], at);
+    carryShown(runtime, S1, at + 1);
+    pruneAllRuntimes(env, at + 7 * 86_400_000);
+    expect(peekShown(runtime, S1, at + 7 * 86_400_000)).toEqual([4]);
+    expect(takeKept(runtime, S1, at + 7 * 86_400_000)).toEqual([4]);
+    carryShown(runtime, S1, at + 7 * 86_400_000 + 1);
+    expect(runtime.db.prepare('SELECT * FROM kept').all()).toEqual([]);
+    expect(peekShown(runtime, S1, at + 7 * 86_400_000 + 1)).toEqual([]);
+    pruneAllRuntimes(env, at + 7 * 86_400_000 + 1);
+    expect(runtime.db.prepare('SELECT * FROM shown').all()).toEqual([]);
   });
 });

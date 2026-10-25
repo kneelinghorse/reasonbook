@@ -331,7 +331,7 @@ export async function rbookMissionUpdate(
         // Query mission by ID
         const missionResult = client.getOne<Mission>(
           `
-        SELECT id, status, name
+        SELECT id, status, name, domain_fields
         FROM missions
         WHERE id = ?
       `,
@@ -370,6 +370,37 @@ export async function rbookMissionUpdate(
           }
           previousStatus = mission.status;
           newStatus = fields.status;
+        }
+
+        // The origin belongs to this blocking episode, never to caller-supplied JSON.
+        const blockMetadataChanges = newStatus === 'Blocked' || currentStatus === 'Blocked';
+        if (
+          blockMetadataChanges &&
+          (newStatus !== undefined || fields.domainFields !== undefined)
+        ) {
+          let existing: Record<string, unknown> = {};
+          try {
+            const parsed: unknown = JSON.parse(mission.domain_fields ?? '{}');
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+              existing = parsed as Record<string, unknown>;
+            }
+          } catch {
+            /* Legacy malformed fields have no trustworthy origin. */
+          }
+          const domainFields = { ...(fields.domainFields ?? existing) };
+          if (newStatus === 'Blocked') {
+            const blockedSince = new Date().toISOString();
+            domainFields.blockedSince = blockedSince;
+            domainFields.blockedFrom = { status: currentStatus, blockedSince };
+          } else if (newStatus !== undefined) {
+            domainFields.blockedSince = null;
+            domainFields.blockedFrom = null;
+          } else {
+            domainFields.blockedSince = existing.blockedSince ?? null;
+            domainFields.blockedFrom = existing.blockedFrom ?? null;
+          }
+          fields.domainFields = domainFields;
+          if (!fieldKeys.includes('domainFields')) fieldKeys.push('domainFields');
         }
 
         // Build dynamic UPDATE query
@@ -432,6 +463,24 @@ export async function rbookMissionUpdate(
             message: `Failed to update mission '${missionId}'`,
             suggestion: 'The mission may have been modified by another process',
           });
+        }
+
+        if (blockMetadataChanges && fields.domainFields !== undefined) {
+          const persisted = client.getOne<{ status: string; domain_fields: string }>(
+            'SELECT status,domain_fields FROM missions WHERE id = ?',
+            [missionId]
+          );
+          if (
+            !persisted.success ||
+            persisted.data?.status !== (newStatus ?? mission.status) ||
+            persisted.data.domain_fields !== JSON.stringify(fields.domainFields)
+          ) {
+            return createError<MissionUpdateResult>({
+              code: 'MISSION_TRANSITION_POSTCONDITION_FAILED',
+              message: `Mission '${missionId}' did not retain its requested blocking episode.`,
+              suggestion: 'Inspect database triggers and write failures, then retry after repair.',
+            });
+          }
         }
 
         // Log the state change to session_events if status changed

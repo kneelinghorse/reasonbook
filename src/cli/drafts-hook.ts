@@ -2,11 +2,22 @@
 // ABOUTME: s93-m06 — what the hooks do with drafts: Stop stores "Would record" lines silently and notes what the reply
 // ABOUTME: showed; the next message binds only to that; session start counts toward expiry; session end forgets.
 
-import Database from 'better-sqlite3';
-import * as fs from 'fs';
+import {
+  openStore,
+  storeTimeout,
+  checkDeadline,
+  withRuntime,
+  unexpired,
+} from './drafts-hook-runtime';
+export {
+  prepareOffer,
+  NO_OFFER,
+  OFFERS_PER_START,
+  OFFER_TEXT_MAX,
+  type PreparedOffer,
+} from './drafts-offer';
 
 import {
-  classifyReply,
   draftCoverage,
   keywordOverlap,
   proseLines,
@@ -15,39 +26,24 @@ import {
   REVISION_OVERLAP,
   SINGLE_REVISION_FLOOR,
   type DraftLine,
-  type ReplyClass,
 } from '../tools/rbook/draft-grammar';
 import {
-  bindWindow,
-  bumpOffers,
   closeWindow,
   endDraftSession,
-  offerCounts,
   openDraftRuntime,
   openWindow,
   carryShown,
   pruneAllRuntimes,
+  pendingDeclines,
   readExcerpt,
-  readScans,
   recordSessionStart,
-  saveScan,
-  sessionStartedAt,
   setShown,
-  startsSince,
-  takeKept,
-  takeShown,
-  type DraftRuntime,
-  type ScanState,
 } from '../tools/rbook/draft-runtime';
 import { harnessSessionHash } from '../tools/rbook/harness-session';
 import {
-  draftLabel,
   ensureProposalsTable,
   getDraft,
   insertDraft,
-  isExpired,
-  markDeclined,
-  markOffered,
   markReplaced,
   markRevisedAfterApproval,
   newestPending,
@@ -57,15 +53,11 @@ import {
   type DraftRow,
 } from '../tools/rbook/proposals';
 import { isReadOnlyAgentSession } from '../tools/rbook/read-only-agent-guard';
-import { processBusyTimeout } from '../tools/rbook/sqlite-busy';
-import { storedTimeMs } from '../tools/rbook/stored-time';
-import {
-  lastAssistantText,
-  scanFile,
-  SCAN_MAX_BYTES,
-  sessionTranscripts,
-  transcriptKey,
-} from './transcript-scan';
+import { lastAssistantText } from './transcript-scan';
+import { readScans } from '../tools/rbook/draft-runtime';
+import { scanSession, sessionOutside } from './drafts-scan';
+export { sessionOutside } from './drafts-scan';
+import { retryRetainedDeclines } from './drafts-decline';
 
 /**
  * THE FLOW (design doc s93 m06; decisions #1186–#1188; build plan B5–B8, B13, B16, with the plan
@@ -83,29 +75,8 @@ import {
  * Under the review role (RBOOK_AGENT_ROLE=review) the hooks store, bind and decline nothing.
  */
 
-export const OFFERS_PER_START = 3;
-export const OFFER_TEXT_MAX = 1000;
-const FULL_TEXT_MAX = 300;
-const COMPACT_TEXT_MAX = 80;
 /** Stop keeps this much of its budget for closing up after the scan. */
 const SCAN_MARGIN_MS = 60;
-
-function storeTimeout(): number {
-  return processBusyTimeout() ?? 250;
-}
-
-function openStore(dbPath: string, readonly: boolean): Database.Database {
-  return new Database(dbPath, { readonly, fileMustExist: true, timeout: storeTimeout() });
-}
-
-function checkDeadline(deadlineAtMs: number): void {
-  if (Date.now() >= deadlineAtMs) throw new Error('draft handling deadline exceeded');
-}
-
-function cut(text: string, max: number): string {
-  const flat = text.replace(/\s+/g, ' ').trim();
-  return flat.length <= max ? flat : `${flat.slice(0, max - 1).trimEnd()}…`;
-}
 
 function same(a: string, b: string): boolean {
   const norm = (text: string): string =>
@@ -115,27 +86,6 @@ function same(a: string, b: string): boolean {
       .replace(/[.!…\s]+$/, '')
       .trim();
   return norm(a) === norm(b);
-}
-
-function withRuntime<T>(
-  dbPath: string,
-  env: NodeJS.ProcessEnv,
-  fallback: T,
-  action: (runtime: DraftRuntime) => T
-): T {
-  const runtime = openDraftRuntime(dbPath, env, { timeoutMs: storeTimeout() });
-  if (!runtime) return fallback;
-  try {
-    return action(runtime);
-  } finally {
-    runtime.close();
-  }
-}
-
-function unexpired(runtime: DraftRuntime | null, rows: DraftRow[], now: number): DraftRow[] {
-  return rows.filter(
-    (row) => !isExpired(row, runtime ? startsSince(runtime, storedTimeMs(row.createdAt)) : 0, now)
-  );
 }
 
 /**
@@ -198,67 +148,6 @@ export interface StopOutcome {
   readonly created: number;
   readonly replaced: number;
   readonly elsewhere: number;
-}
-
-/** The session's outside-content flag over every file scanned: 1 seen, 0 none, null unknown. */
-export function sessionOutside(state: ScanState): number | null {
-  const values = [...state.files.values()].map((file) => file.outside);
-  if (values.includes(1)) return 1;
-  if (!values.length || values.includes(null)) return null;
-  return 0;
-}
-
-const MISSING_SUBAGENTS = 'subagents-missing';
-
-/** Scan what the session's transcripts gained, inside the time left; returns the session's flag. */
-function scanSession(
-  runtime: DraftRuntime,
-  session: string,
-  main: string,
-  deadlineAtMs: number
-): number | null {
-  const prior = readScans(runtime, session);
-  let budget = SCAN_MAX_BYTES;
-  const files = sessionTranscripts(main);
-  for (const file of files) {
-    const key = transcriptKey(file);
-    const before = prior.files.get(key);
-    if (Date.now() >= deadlineAtMs || budget <= 0) {
-      // Not read this time: a file that grew past its last scan is unknown, never "none" (the
-      // build critic, N2). A file already flagged stays flagged.
-      let grew = true;
-      try {
-        grew = fs.statSync(file).size > (before?.scanned ?? 0);
-      } catch {
-        // Unreadable: unknown.
-      }
-      if (!before || (grew && before.outside !== 1))
-        saveScan(runtime, session, key, {
-          scanned: before?.scanned ?? 0,
-          outside: before?.outside === 1 ? 1 : null,
-        });
-      continue;
-    }
-    try {
-      const result = scanFile(file, before?.scanned ?? 0, budget, deadlineAtMs);
-      budget -= result.bytes;
-      const outside =
-        result.outside || before?.outside === 1
-          ? 1
-          : !result.complete || (before !== undefined && before.outside === null)
-            ? null
-            : 0;
-      saveScan(runtime, session, key, { scanned: result.scanned, outside });
-      if (file === main && result.subagent && files.length === 1)
-        saveScan(runtime, session, MISSING_SUBAGENTS, { scanned: 0, outside: null });
-    } catch {
-      saveScan(runtime, session, key, {
-        scanned: before?.scanned ?? 0,
-        outside: before?.outside === 1 ? 1 : null,
-      });
-    }
-  }
-  return sessionOutside(readScans(runtime, session));
 }
 
 /**
@@ -359,6 +248,8 @@ export function onStop(options: {
   const session = harnessSessionHash(options.rawSessionId);
   const runtime = openDraftRuntime(options.dbPath, options.env, { timeoutMs: storeTimeout() });
   try {
+    if (runtime) retryRetainedDeclines(options.dbPath, runtime);
+    const declined = new Set(runtime ? pendingDeclines(runtime).map((entry) => entry.id) : []);
     const reply =
       options.reply ??
       (options.transcriptPath ? lastAssistantText(options.transcriptPath) : null) ??
@@ -379,7 +270,9 @@ export function onStop(options: {
         const update = (): void => {
           if (read.lines.length) ensureProposalsTable(run);
           else if (!proposalsTableExists(run)) return;
-          const live = unexpired(runtime, pendingDrafts(run), now);
+          const live = unexpired(runtime, pendingDrafts(run), now).filter(
+            (row) => !declined.has(row.id)
+          );
           const window = live.filter((row) => windowIds.includes(row.id));
           const fresh: DraftLine[] = [];
           for (const line of read.lines) {
@@ -395,8 +288,10 @@ export function onStop(options: {
           // so a revision never leaves what it revises pending. A draft the operator plainly
           // approved keeps that approval: its revision is linked, and it stays pending, to be
           // recorded only in its own words. Window drafts are matched first.
-          const approved = (row: DraftRow): boolean =>
-            runtime !== null && readExcerpt(runtime, session, row.id, now)?.reply === 'approval';
+          const approved = (row: DraftRow): boolean => {
+            const excerpt = runtime && readExcerpt(runtime, session, row.id, now);
+            return excerpt?.reply === 'approval' && !excerpt.late;
+          };
           const candidates = [
             ...window,
             ...live.filter((row) => row.sourceSession === session && !windowIds.includes(row.id)),
@@ -429,7 +324,10 @@ export function onStop(options: {
             else if (old && approved(old)) markRevisedAfterApproval(run, old.id, id);
             else if (old) replaced += markReplaced(run, old.id, id, at);
           });
-          for (const id of namedDrafts(reply, unexpired(runtime, pendingDrafts(run), now)))
+          for (const id of namedDrafts(
+            reply,
+            unexpired(runtime, pendingDrafts(run), now).filter((row) => !declined.has(row.id))
+          ))
             if (!shown.includes(id)) shown.push(id);
         };
         // s96-m11: draft lines are written after the pending drafts are read, so that transaction
@@ -465,187 +363,5 @@ export function onStop(options: {
     };
   } finally {
     runtime?.close();
-  }
-}
-
-export interface PreparedOffer {
-  /** The text to inject ahead of recall; empty when nothing is offered. */
-  readonly text: string;
-  readonly offered: number;
-  /** How the operator's message reads, when it answered drafts; else null. */
-  readonly reply: ReplyClass | null;
-  /** After the output is delivered: count the offers and stamp first offers. Never throws. */
-  commit(): void;
-}
-
-export const NO_OFFER: PreparedOffer = { text: '', offered: 0, reply: null, commit: () => {} };
-
-const KIND_NOTE: Readonly<Record<string, string>> = {
-  constraint: ' It is recorded as a constraint, and only on the operator’s approval.',
-  rule: ' It is recorded as a standing rule (an evergreen learning), and only on the operator’s approval.',
-  profile: ' It is a line for the operator profile, written only on the operator’s approval.',
-};
-
-function fullOffer(draft: DraftRow): string {
-  const label = draftLabel(draft.id);
-  let text = `Reasonbook draft ${label} (${draft.kind}), which your last reply put to the operator: "${cut(draft.text, FULL_TEXT_MAX)}".`;
-  text += KIND_NOTE[draft.kind] ?? '';
-  if (draft.evidence.length) text += ` It names ${draft.evidence.slice(0, 3).join(', ')}.`;
-  if (draft.outsideContent === 1)
-    text +=
-      ' This session read outside content (web pages or other projects’ records) before it was drafted.';
-  return text;
-}
-
-/**
- * s97-m12 (critic round 2): a draft shown before the latest reply. The operator's message answers
- * that reply, so a plain yes or no to it settles nothing here, and a record of this draft reads
- * agent-judged.
- */
-function earlierOffer(draft: DraftRow): string {
-  const label = draftLabel(draft.id);
-  return `Reasonbook draft ${label} (${draft.kind}) was shown before your last reply and not answered since: "${cut(draft.text, FULL_TEXT_MAX)}". Record it with fromDraft="${label}" only if the operator's message plainly speaks to it (it reads agent-judged); a yes or no to your last reply settles nothing about it.`;
-}
-
-function instruction(reply: ReplyClass, bound: readonly DraftRow[]): string {
-  const labels = bound.map((draft) => draftLabel(draft.id));
-  const one = labels.length === 1;
-  const standing = bound.some((draft) => draft.kind !== 'decision');
-  const call = (label: string) =>
-    `rbook_decisions(action="record", content=<${label}'s text as drafted>, fromDraft="${label}")`;
-  switch (reply) {
-    case 'approval':
-      return one
-        ? `The operator’s message is a plain approval of ${labels[0]}: record it now with ${call(labels[0])}. A record that adds to the draft reads agent-judged.`
-        : `The operator’s message approves ${labels.join(', ')} together: record each with ${call('P<n>')}; several at once read agent-judged. Ask if it is unclear which.`;
-    case 'question':
-      return `The operator’s message asks about ${labels.join(', ')}: answer, leave it unrecorded, and end with its Would record line again, revised if your answer changes it.`;
-    default:
-      return (
-        `Only if this message approves ${labels.join(', ')}, record it with ${call(one ? labels[0] : 'P<n>')} and the operator's nuance folded in (it reads agent-judged); ask first when the nuance is unclear or conflicts with a record. An amendment gets a revised Would record line; otherwise leave it pending.` +
-        (standing
-          ? ' A constraint, rule or profile line is recorded only on a plain approval: propose it again instead.'
-          : '')
-      );
-  }
-}
-
-function reminder(draft: DraftRow, later: boolean): string {
-  const head = `${draftLabel(draft.id)} (${draft.kind}) "${cut(draft.text, COMPACT_TEXT_MAX)}"`;
-  return later
-    ? `From an earlier session, awaiting the operator: ${head} — name it as "draft ${draftLabel(draft.id)}" with its subject.`
-    : `Still pending: ${head} — not answered; if it still matters, end a reply with its Would record line again.`;
-}
-
-/**
- * Bind the operator's message to what the reply before it showed, and remind the agent of other
- * eligible drafts (B6–B8, folded). Runs before any skip rule; the caller emits `text`, then calls
- * `commit`. Writes: the session's runtime words and window, and in the store a decline or a first
- * offer's time (the prompt hook's one store write, named in SECURITY.md).
- */
-export function prepareOffer(options: {
-  readonly dbPath: string;
-  readonly rawSessionId: string;
-  readonly message: string;
-  readonly env: NodeJS.ProcessEnv;
-  readonly deadlineAtMs: number;
-  readonly now?: number;
-}): PreparedOffer {
-  if (isReadOnlyAgentSession(options.env)) return NO_OFFER;
-  const now = options.now ?? Date.now();
-  const session = harnessSessionHash(options.rawSessionId);
-  const reader = openStore(options.dbPath, true);
-  let pending: DraftRow[];
-  try {
-    pending = pendingDrafts(rawRunner(reader));
-  } finally {
-    reader.close();
-  }
-  // With nothing pending there is nothing to bind or remind, and no runtime is touched: a shown
-  // set left behind names no pending draft, and expires with the session's other words.
-  if (!pending.length) return NO_OFFER;
-  checkDeadline(options.deadlineAtMs);
-  const runtime = openDraftRuntime(options.dbPath, options.env, { timeoutMs: storeTimeout() });
-  if (!runtime) return NO_OFFER;
-  try {
-    // One message answers one reply: what it showed is taken now, whether or not it binds. Drafts
-    // an earlier reply showed, kept when the harness opened a turn itself, are taken with it, and
-    // bind only as words the agent judges: this message answers the latest reply (s97-m12).
-    const shown = takeShown(runtime, session, now);
-    const earlier = takeKept(runtime, session, now).filter((id) => !shown.includes(id));
-    const startedAtMs = sessionStartedAt(runtime, session);
-    const counts = offerCounts(runtime, session);
-    const live = unexpired(runtime, pending, now);
-    const bound = live.filter((draft) => shown.includes(draft.id));
-    const carried = live.filter((draft) => earlier.includes(draft.id));
-    const reminders: Array<{ draft: DraftRow; later: boolean }> = [];
-    for (const draft of live) {
-      // A draft approved and then revised waits to be recorded in its own words, not for an answer.
-      if (bound.includes(draft) || carried.includes(draft) || draft.replacedBy !== null) continue;
-      const createdMs = storedTimeMs(draft.createdAt);
-      const count = counts.get(draft.id) ?? 0;
-      const thisStart =
-        draft.sourceSession === session && (startedAtMs === null || createdMs >= startedAtMs);
-      const later = startedAtMs !== null && startedAtMs > createdMs;
-      if ((thisStart && count < OFFERS_PER_START) || (later && count === 0))
-        reminders.push({ draft, later: !thisStart });
-    }
-    if (!bound.length && !carried.length && !reminders.length) return NO_OFFER;
-    checkDeadline(options.deadlineAtMs);
-    const boundIds = bound.map((draft) => draft.id);
-    const carriedIds = carried.map((draft) => draft.id);
-    const labels = bound.map((draft) => draftLabel(draft.id));
-    const reply = bound.length ? classifyReply(options.message) : carried.length ? 'other' : null;
-    const lines: string[] = [];
-    // Persist a decline before touching the store: a locked store must not leave an older
-    // approval usable after the shown set was consumed. The record path checks these words.
-    if (reply) bindWindow(runtime, session, boundIds, options.message, reply, now, carriedIds);
-    if (reply === 'decline') {
-      const writer = openStore(options.dbPath, false);
-      try {
-        markDeclined(rawRunner(writer), boundIds, new Date(now).toISOString());
-      } finally {
-        writer.close();
-      }
-      lines.push(
-        `The operator declined ${labels.join(', ')}; ${labels.length === 1 ? 'it is' : 'they are'} not recorded.`
-      );
-    } else if (reply && bound.length) {
-      // The instruction leads, so the 1,000-character cut can only shorten offers (the build
-      // critic, N5).
-      lines.push(instruction(reply, bound), ...bound.map(fullOffer));
-    }
-    lines.push(...carried.map(earlierOffer));
-    lines.push(...reminders.map((item) => reminder(item.draft, item.later)));
-    let text = lines.join('\n');
-    if (text.length > OFFER_TEXT_MAX) text = `${text.slice(0, OFFER_TEXT_MAX - 1).trimEnd()}…`;
-    const offeredIds = [
-      ...(reply === 'decline' ? [] : boundIds),
-      ...carriedIds,
-      ...reminders.map((item) => item.draft.id),
-    ];
-    return {
-      text,
-      offered: offeredIds.length,
-      reply,
-      commit: () => {
-        if (!offeredIds.length) return;
-        try {
-          withRuntime(options.dbPath, options.env, undefined, (later) =>
-            bumpOffers(later, session, offeredIds)
-          );
-          const writer = openStore(options.dbPath, false);
-          try {
-            markOffered(rawRunner(writer), offeredIds, new Date(now).toISOString());
-          } finally {
-            writer.close();
-          }
-        } catch {
-          // The output is already out; a missed count only lengthens the reminders by one message.
-        }
-      },
-    };
-  } finally {
-    runtime.close();
   }
 }

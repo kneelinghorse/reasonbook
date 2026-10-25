@@ -13,6 +13,7 @@ import {
 import { renderDigestV2 } from './digest-v2';
 import { personSignalsPhrase } from './portfolio-signals';
 import { readDigestV2 } from './digest-v2-store';
+import { boundErrorFields } from './error-bounds';
 import { createError } from './errors';
 import { appendWarnings } from './format-warnings';
 import type { RenderedContext } from './rendered-context';
@@ -65,7 +66,7 @@ export async function rbookReviewPresentation(
   params: RbookReviewParams,
   options: Parameters<typeof rbookReview>[1] = {}
 ): Promise<ReviewPresentation> {
-  const result = await rbookReview(params, options);
+  const result = boundErrorFields(await rbookReview(params, options));
   if (!result.success || !result.data)
     return { result, context: null, text: formatReviewForLLM(result) };
   try {
@@ -83,11 +84,13 @@ export async function rbookReviewPresentation(
     appendWarnings(lines, result);
     return { result, context, text: lines.join('\n') };
   } catch (error) {
-    const failed = createError<RbookReviewResult>({
-      code: 'DB_QUERY_FAILED',
-      message: error instanceof Error ? error.message : 'The local digest could not be read.',
-      suggestion: 'Check rbook_db(action="health") for this project, then retry the review.',
-    });
+    const failed = boundErrorFields(
+      createError<RbookReviewResult>({
+        code: 'DB_QUERY_FAILED',
+        message: error instanceof Error ? error.message : 'The local digest could not be read.',
+        suggestion: 'Check rbook_db(action="health") for this project, then retry the review.',
+      })
+    );
     return { result: failed, context: null, text: formatReviewForLLM(failed) };
   }
 }

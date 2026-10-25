@@ -72,13 +72,22 @@ describe('standalone feedback', () => {
         success: false,
         error: {
           code: 'INVALID_PARAMETER',
-          field: 'agentFeedback',
+          field: '--content',
+          message: expect.stringContaining('--content'),
           suggestion: expect.stringContaining('2000'),
         },
       });
+      expect(result.stdout).not.toContain('agentFeedback');
       expect(fs.readFileSync(dbPath)).toEqual(before);
     }
   );
+
+  it('names the CLI flag in a text length refusal', async () => {
+    const result = await run(['--content', 'x'.repeat(2001)]);
+    expect(result.code).toBe(1);
+    expect(result.stderr.join(' ')).toContain('--content');
+    expect(result.stderr.join(' ')).not.toContain('agentFeedback');
+  });
 
   it('still records feedback exactly at the shared bound', async () => {
     const content = 'x'.repeat(2000);

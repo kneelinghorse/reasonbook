@@ -217,10 +217,10 @@ const EXPECTED_SCHEMA_VERSION_LITERALS: readonly SourceSite[] = sortSourceSites(
   // s96-m02: down six more (the author-time stamp for a new store).
   // s101-m04: WAL import and atomic identity claim move label locations; label roles are unchanged.
   // The literal project_id claim replaces one generic-writer key site below.
-  { file: INIT_FILE, line: 853, role: 'rbookProjectInit' },
-  { file: INIT_FILE, line: 884, role: 'rbookProjectInit' },
-  { file: INIT_FILE, line: 884, role: 'rbookProjectInit' },
-  { file: INIT_FILE, line: 1058, role: 'rbookProjectInit' },
+  { file: INIT_FILE, line: 854, role: 'rbookProjectInit' },
+  { file: INIT_FILE, line: 885, role: 'rbookProjectInit' },
+  { file: INIT_FILE, line: 885, role: 'rbookProjectInit' },
+  { file: INIT_FILE, line: 1059, role: 'rbookProjectInit' },
   // s96-m02: down five lines (the author stamp's imports). s96-m03: one more (record-guards).
   { file: 'tools/rbook/genesis-columns.ts', line: 34, role: '<module>' },
   // s96-m03: the change log's column classes name schema_version among the recorded genesis
@@ -365,7 +365,7 @@ const EXPECTED_WRITER_KEYS: readonly WriterKeySite[] = sortSourceSites([
     // s96-m12: down 14 lines (relevant marks a row whose fields are in conflict).
     // s98-m09: down 12 lines (capture validates before its handler); writer and key unchanged.
     file: 'cli/commands.ts',
-    line: 387,
+    line: 388,
     role: 'ambient',
     callee: 'metadata.execute',
     key: 'AMBIENT_METADATA_KEY',
@@ -379,14 +379,14 @@ const EXPECTED_WRITER_KEYS: readonly WriterKeySite[] = sortSourceSites([
   },
   // s96-m01 (fold): down 35 lines, and s96-m02 six more, as above; the keys are unchanged.
   ...[
-    [833, "'project_name'"],
-    [850, "'tracelab_project_id'"],
-    [901, "'project_type'"],
-    [904, "'project_type'"],
+    [834, "'project_name'"],
+    [851, "'tracelab_project_id'"],
+    [902, "'project_type'"],
+    [905, "'project_type'"],
     // s93-m12: a store recreated beside an agents file takes back the level its Reasonbook line names.
-    [907, "'project_type'"],
+    [908, "'project_type'"],
     // s94-m11: recreated stores no longer adopt an ambient setting from the agents file.
-    [915, "'created_at'"],
+    [916, "'created_at'"],
   ].map(([line, key]) => ({
     file: INIT_FILE,
     line: Number(line),
@@ -659,7 +659,7 @@ function logicalSetterSites(sources: SourceMap): SourceSite[] {
 const EXPECTED_LOGICAL_SETTERS: readonly SourceSite[] = [
   // s96-m01: down one line (init imports rawGenesisColumns).
   // s96-m01 (fold): down 35 lines, and s96-m02 six more, as the init sites above.
-  { file: INIT_FILE, line: 865, role: 'prepared-run:rbookProjectInit:RBOOK_SCHEMA_VERSION' },
+  { file: INIT_FILE, line: 866, role: 'prepared-run:rbookProjectInit:RBOOK_SCHEMA_VERSION' },
   {
     file: MIGRATIONS_FILE,
     line: 326,
@@ -839,7 +839,7 @@ function auditSources(sources: SourceMap): string[] {
   });
   if (
     JSON.stringify(parameterizedInitReads) !==
-    JSON.stringify([{ file: INIT_FILE, line: 799, role: 'rbookProjectInit' }])
+    JSON.stringify([{ file: INIT_FILE, line: 800, role: 'rbookProjectInit' }])
   ) {
     findings.push(
       `parameterized init label read changed: ${JSON.stringify(parameterizedInitReads)}`

@@ -44,13 +44,18 @@ describe('feedback regex cost contract', () => {
 
   it('sends the bounded row through every rule and completes that row within 50 ms', () => {
     const text = ('Reasonbook ' + 'hosted connector '.repeat(4000)).slice(0, 4000);
+    // s102-m13: measure the product call alone. Jest's spies and deep-equality
+    // matcher were inside the old 50 ms sample (68.8 ms in the failed load run).
+    // Keep the same single-call wall-clock bound, then verify rule coverage separately.
+    const started = performance.now();
+    const result = classifyFeedback(text);
+    const elapsed = performance.now() - started;
+    expect(result).toEqual({ kind: 'unclassified', rule: null });
+    expect(elapsed).toBeLessThan(50);
     const spies = patterns.map(({ pattern }) => jest.spyOn(pattern, 'test'));
     try {
-      const started = performance.now();
       expect(classifyFeedback(text)).toEqual({ kind: 'unclassified', rule: null });
-      const elapsed = performance.now() - started;
       for (const spy of spies) expect(spy).toHaveBeenCalledWith(text);
-      expect(elapsed).toBeLessThan(50);
     } finally {
       for (const spy of spies) spy.mockRestore();
     }

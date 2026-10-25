@@ -151,9 +151,10 @@ const SRC_ROOT = path.resolve(__dirname, '../../../src');
 // s96-m13: 93 -> 94 and 83 -> 84 — formatSharedProjectForLLM (rbook-project-shared.ts), the shared
 // record's actions, a LEAF that calls appendWarnings on its success path; formatProjectForLLM stays
 // the dispatcher, so the dispatcher count stays 10.
-const EXPECTED_DECLARATIONS = 94;
+// s102-m04: reopen adds one warning-rendering leaf and one router delegation.
+const EXPECTED_DECLARATIONS = 95;
 const EXPECTED_DISPATCHERS = 10;
-const EXPECTED_LEAVES = 84;
+const EXPECTED_LEAVES = 85;
 /** The one leaf with no RbookToolResult parameter — reported by name, never skipped silently. */
 const STRUCTURAL_EXCLUSION = 'formatSyncHealthForLLM';
 
@@ -687,10 +688,10 @@ describe('s86-m02 Step 1 — the envelope warnings channel is universal', () => 
       // each, and the rbook_db dispatcher gains two delegated returns.
       // s96-m13: formatSharedProjectForLLM adds one error preamble and one render return, and the
       // rbook_project dispatcher gains one delegated return.
-      terminalReturns: 287,
+      terminalReturns: 289,
       errorPreambles: 98,
-      delegatedReturns: 78,
-      genuineRenderReturns: 111,
+      delegatedReturns: 79,
+      genuineRenderReturns: 112,
     });
     expect(
       uncoveredGenuineReturns.map(
@@ -739,7 +740,8 @@ describe('s86-m02 Step 1 — the envelope warnings channel is universal', () => 
       // warnings; neither declares a formatter, so the formatter counts remain unchanged.
       // s101-m01: review-presentation.ts no longer attaches a duplicate upload warning; the shared
       // digest owns that notice. Removing the attachment changes only the envelope-module count.
-    }).toEqual({ warningEnvelopeModules: 39, modulesWithFormatters: 29, formatters: 32 });
+      // s102-m04: reopen attaches migration warnings on every outcome and renders them.
+    }).toEqual({ warningEnvelopeModules: 40, modulesWithFormatters: 30, formatters: 33 });
     expect(
       [...new Set(looseErrorPreambles.map((row) => row.errorPreambleCondition))].sort()
     ).toEqual(['!result.success || !result.data']);

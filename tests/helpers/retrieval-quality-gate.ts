@@ -83,10 +83,16 @@ if(fs.existsSync(mutation)){const target=JSON.parse(fs.readFileSync(mutation,'ut
   put(`${fixturePath}/labels-v6-review/labels.json`, data['frozen-labels/labels.json']);
   put(`${fixturePath}/labels-v7-review/manifest.json`, labelManifest);
   put(`${fixturePath}/labels-v7-review/labels.json`, data['frozen-labels/labels.json']);
+  put(`${fixturePath}/labels-v8-review/manifest.json`, labelManifest);
+  put(`${fixturePath}/labels-v8-review/labels.json`, data['frozen-labels/labels.json']);
   const evidenceHashes = Object.fromEntries(
-    [...Object.keys(data), 'labels-v6-review/manifest.json', 'labels-v6-review/labels.json'].map(
-      (name) => [name, hash(`${fixturePath}/${name}`)]
-    )
+    [
+      ...Object.keys(data),
+      'labels-v6-review/manifest.json',
+      'labels-v6-review/labels.json',
+      'labels-v7-review/manifest.json',
+      'labels-v7-review/labels.json',
+    ].map((name) => [name, hash(`${fixturePath}/${name}`)])
   );
   const evaluatorHashes = Object.fromEntries(
     evaluatorNames.map((name) => [`scripts/${name}`, hash(`scripts/${name}`)])
@@ -174,8 +180,8 @@ if(fs.existsSync(mutation)){const target=JSON.parse(fs.readFileSync(mutation,'ut
       generatorSha256,
     },
     currentParserReview: {
-      file: 'labels-v7-review/manifest.json',
-      sha256: hash(`${fixturePath}/labels-v7-review/manifest.json`),
+      file: 'labels-v8-review/manifest.json',
+      sha256: hash(`${fixturePath}/labels-v8-review/manifest.json`),
     },
     evaluatorHashes,
     baselineConfig,

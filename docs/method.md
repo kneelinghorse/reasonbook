@@ -27,6 +27,41 @@ either connected to the owner's copy over SSH or sharing through reasonbook.ai. 
 collaboration and privacy experience remain unvalidated. Read the [sharing steps](getting-started.md#share-a-projects-record) and
 [trust boundary](trust.md#shared-copies) before inviting someone.
 
+## Corrections and work sessions
+
+To correct a decision, record the corrected choice with `supersedes=[<old id>]`. The headline may
+stay the same while its context, alternatives, consequences, deciders or mode changes. The old row
+keeps its history and points to the correction. Repeating the same call returns the existing row;
+returning to an older choice records a new occurrence instead of reviving the old row. A target
+already superseded by a different correction cannot be redirected. Two shared copies correcting
+the same target independently can still produce a `superseded_by` conflict when they sync; resolve
+that conflict through the existing shared-record conflict flow.
+
+Retry comparison uses only supplied decision fields; omission matches any stored value. Changing
+only `evidence` or `missionId` still counts as a repeat. Changing reasoning without naming a
+`supersedes` target preserves the existing row and warns that the changed fields were not written.
+
+A queued mission can be blocked before work starts. Unblock returns it to Queued only when the
+saved origin belongs to the current block and `started_at` is still empty; otherwise it resumes
+In Progress. An explicit unblock target wins. If a peer replaces the block metadata, the default
+falls back to In Progress.
+
+Use `rbook_mission_transition(action="reopen", missionId, reason)` to reopen completed work in an
+Active, In Progress or Current sprint. Reopen clears the completion timestamp and appends a
+`[Reopened]` note. For a completed sprint, create a successor mission in an open sprint and link
+it to the original with `rbook_mission(action="depends")`. The appended note is the shared audit:
+`domain_fields.reopened[]` can be replaced by a concurrent peer write, and `session_events` stays
+local. The open-sprint check is local and atomic. A disconnected peer can close the sprint at the
+same time; after exchange, `rbook_db(action="conflicts")` reports the completed sprint's open work
+for a person to reconcile.
+
+Starting or completing a mission links the caller's session when it has an owner key. The
+retrospective includes those links even when an implicit session has no sprint label, and counts
+each session once per sprint. A manually opened keyless session absorbs callers but creates no
+mission link. Codex's per-call helper creates a separate process-owned session for each call;
+these can be sub-second sessions rather than one continuous conversation. The separate analytics
+session count still uses explicitly sprint-tagged sessions.
+
 ## Three levels
 
 | Level       | What the project keeps                            | What Reasonbook does on its own, where hooks run                                                                                                                                                    |

@@ -138,6 +138,25 @@ it('hashes invalid client names and rejects arbitrary technical fields instead o
   });
   expect(JSON.stringify(stored)).not.toContain('private');
 });
+it('retains only known session-start sources and leaves legacy telemetry unspecified', () => {
+  for (const source of ['startup', 'resume', 'clear', 'compact', 'private source', undefined]) {
+    telemetry.appendTelemetry(
+      Object.assign(record({ tool: 'hook session-start' }), { source }),
+      target,
+      env
+    );
+  }
+  const rows = telemetry.readTelemetry(target, env) as Array<TelemetryRecord & { source?: string }>;
+  expect(rows.map((row) => row.source)).toEqual([
+    'startup',
+    'resume',
+    'clear',
+    'compact',
+    undefined,
+    undefined,
+  ]);
+  expect(JSON.stringify(rows)).not.toContain('private source');
+});
 it('retains the newest three months on every append, including backdated appends', () => {
   const dir = telemetry.telemetryDir(target, env);
   fs.mkdirSync(dir, { recursive: true });

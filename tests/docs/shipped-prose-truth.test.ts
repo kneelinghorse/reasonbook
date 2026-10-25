@@ -2147,3 +2147,23 @@ describe('the seed ships stamps that describe the seed (s87-m04 + s88-m03 + s88-
     for (const rel of SEED_MD) expect(fs.existsSync(r(rel))).toBe(true);
   });
 });
+
+// s102-m09: the four rules templates are usable without unresolved customization prompts.
+it('ships placeholder-free agent rules and honest copied-file guidance', () => {
+  for (const file of [
+    'rbook-seed/templates/AGENTS.md',
+    ...['ledger', 'planner', 'builder'].map((level) => `templates/${level}/AGENTS.md`),
+  ]) {
+    const text = fs.readFileSync(r(file), 'utf8');
+    expect(text).not.toMatch(/\[[^\]]+\](?!\()/);
+    expect(text).not.toContain('Replace the bracketed placeholders');
+    const practices = text.split('## Learned Practices')[1].split('## Project Overview')[0];
+    expect([...practices.matchAll(/^\d+\. /gm)]).toHaveLength(14);
+  }
+  for (const level of ['ledger', 'planner', 'builder']) {
+    const readme = fs.readFileSync(r(`templates/${level}/README.md`), 'utf8');
+    expect(readme).not.toContain('Replace the bracketed placeholders');
+    expect(readme).toContain("fills in the project's name");
+    expect(readme).toContain('keeps your copies as they are');
+  }
+});

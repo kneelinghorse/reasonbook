@@ -188,7 +188,8 @@ describe('the weekly brief (s97-m03)', () => {
     const text = renderBrief([stale], { now, windowDays: 7 });
     expect(text).toMatch(/stale.*report.*14 days old/);
     expect(text).toMatch(/30-day window.*brief.*7/);
-    expect(text).toContain('1 draft (P1)');
+    expect(text).not.toContain('1 draft (P1)');
+    expect(text).toContain('1 draft dropped');
     // Raw report provenance remains available to the dashboard and JSON consumers.
     expect(buildBrief([stale], { now, windowDays: 7 })).toMatchObject({
       reportCaveats: [{ projectId: 'stale', computedAt: stale.computedAt, windowDays: 30 }],

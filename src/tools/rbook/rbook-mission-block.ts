@@ -1,7 +1,9 @@
+// ABOUTME: Blocks queued or active work and binds its origin to the current blocking episode.
+// ABOUTME: Reads and verifies the transition under one write lock, preserving warning-only event logging.
 /**
  * rbook_mission_block Tool
  *
- * MCP tool for blocking a mission - transitions from Current/In Progress to Blocked.
+ * MCP tool for blocking a mission - transitions from Queued/Current/In Progress to Blocked.
  * Validates state transitions and returns actionable errors.
  *
  * @module tools/rbook/rbook-mission-block
@@ -82,7 +84,7 @@ export const rbookMissionBlockToolDefinition = {
   description:
     'Block a mission by transitioning it to Blocked status. ' +
     'Requires a reason for why the mission is blocked. ' +
-    'Valid from Current or In Progress status. ' +
+    'Valid from Queued, Current or In Progress status. ' +
     'Returns INVALID_STATE_TRANSITION error with current_state and valid_transitions if the mission cannot be blocked.',
   inputSchema: {
     type: 'object',
@@ -113,7 +115,7 @@ export const rbookMissionBlockToolDefinition = {
 /**
  * Execute the rbook_mission_block tool.
  *
- * Transitions a mission from Current or In Progress to Blocked.
+ * Transitions a mission from Queued, Current or In Progress to Blocked.
  * Requires a reason and optionally accepts blockers list.
  *
  * @param params - Tool parameters (missionId, reason, blockers, projectRoot)
@@ -154,90 +156,96 @@ export async function rbookMissionBlock(
   const targetStatus: MissionStatus = 'Blocked';
 
   const warnings: string[] = [];
-  const result = await withClientValidated(
+  const result = await withClientValidated<MissionBlockResult>(
     (client) => {
-      // Query mission by ID
-      const missionResult = client.getOne<Mission>(
-        `
-        SELECT id, status, name, domain_fields
+      const begin = client.execute('BEGIN IMMEDIATE', []);
+      if (!begin.success) return createError(begin.error!);
+      let transactionOpen = true;
+      try {
+        warnings.push(...(ensureMissionTimestamps(client).warnings ?? []));
+        // Query mission by ID
+        const missionResult = client.getOne<Mission>(
+          `
+        SELECT id, status, name, domain_fields, notes
         FROM missions
         WHERE id = ?
       `,
-        [missionId]
-      );
-
-      if (!missionResult.success) {
-        return createError<MissionBlockResult>(
-          missionResult.error ?? { code: 'DB_QUERY_FAILED', message: 'Failed to query mission' }
+          [missionId]
         );
-      }
 
-      if (!missionResult.data) {
-        return createError<MissionBlockResult>(RbookErrors.missionNotFound(missionId));
-      }
-
-      const mission = missionResult.data;
-      const currentStatus = normalizeMissionStatus(mission.status);
-
-      // Check if already blocked
-      if (currentStatus === targetStatus) {
-        return createError<MissionBlockResult>({
-          code: RBOOK_ERROR_CODES.MISSION_ALREADY_BLOCKED,
-          message: `Mission '${missionId}' is already Blocked`,
-          currentState: currentStatus,
-          suggestion:
-            'Use rbook_mission_transition(action="unblock") to unblock it first, or update the block reason',
-        });
-      }
-
-      // Validate state transition
-      // s87-m01: guarded through the ONE shared helper. `currentStatus` is read from the store,
-      // not validated by the type system, and an unrecognized value now yields a NAMED refusal
-      // instead of an unhandled TypeError the MCP boundary reports as "an internal error".
-      const validTransitions = transitionsFrom(currentStatus);
-      if (validTransitions === undefined) {
-        return createError<MissionBlockResult>(
-          RbookErrors.missionUnrecognizedStatus(missionId, currentStatus)
-        );
-      }
-      if (!validTransitions.includes(targetStatus)) {
-        return createError<MissionBlockResult>(
-          RbookErrors.missionInvalidTransition(missionId, currentStatus, targetStatus)
-        );
-      }
-
-      // Perform the update
-      const now = new Date().toISOString();
-
-      // Update domain_fields with blocker information
-      let existingDomainFields: Record<string, unknown> = {};
-      if (mission.domain_fields) {
-        try {
-          existingDomainFields = JSON.parse(mission.domain_fields);
-        } catch {
-          // If parsing fails, start fresh
-          existingDomainFields = {};
+        if (!missionResult.success) {
+          return createError<MissionBlockResult>(
+            missionResult.error ?? { code: 'DB_QUERY_FAILED', message: 'Failed to query mission' }
+          );
         }
-      }
 
-      const updatedDomainFields = {
-        ...existingDomainFields,
-        blocker: reason,
-        blockedSince: now,
-        blockers: cleanedBlockers ?? [],
-      };
+        if (!missionResult.data) {
+          return createError<MissionBlockResult>(RbookErrors.missionNotFound(missionId));
+        }
 
-      // Build note text
-      const blockNote = cleanedBlockers?.length
-        ? `[Blocked] ${reason}. Needs: ${cleanedBlockers.join(', ')}`
-        : `[Blocked] ${reason}`;
+        const mission = missionResult.data;
+        const currentStatus = normalizeMissionStatus(mission.status);
 
-      // Ensure timestamp columns exist (migration)
-      warnings.push(...(ensureMissionTimestamps(client).warnings ?? []));
+        // Check if already blocked
+        if (currentStatus === targetStatus) {
+          return createError<MissionBlockResult>({
+            code: RBOOK_ERROR_CODES.MISSION_ALREADY_BLOCKED,
+            message: `Mission '${missionId}' is already Blocked`,
+            currentState: currentStatus,
+            suggestion:
+              'Use rbook_mission_transition(action="unblock") to unblock it first, or update the block reason',
+          });
+        }
 
-      const updateResult = recordedExecute(
-        client,
-        `
+        // Validate state transition
+        // s87-m01: guarded through the ONE shared helper. `currentStatus` is read from the store,
+        // not validated by the type system, and an unrecognized value now yields a NAMED refusal
+        // instead of an unhandled TypeError the MCP boundary reports as "an internal error".
+        const validTransitions = transitionsFrom(currentStatus);
+        if (validTransitions === undefined) {
+          return createError<MissionBlockResult>(
+            RbookErrors.missionUnrecognizedStatus(missionId, currentStatus)
+          );
+        }
+        if (!validTransitions.includes(targetStatus)) {
+          return createError<MissionBlockResult>(
+            RbookErrors.missionInvalidTransition(missionId, currentStatus, targetStatus)
+          );
+        }
+
+        // Perform the update
+        const now = new Date().toISOString();
+
+        // Update domain_fields with blocker information
+        let existingDomainFields: Record<string, unknown> = {};
+        if (mission.domain_fields) {
+          try {
+            const parsed: unknown = JSON.parse(mission.domain_fields);
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+              existingDomainFields = parsed as Record<string, unknown>;
+            }
+          } catch {
+            // If parsing fails, start fresh
+            existingDomainFields = {};
+          }
+        }
+
+        const updatedDomainFields = {
+          ...existingDomainFields,
+          blocker: reason,
+          blockedSince: now,
+          blockedFrom: { status: currentStatus, blockedSince: now },
+          blockers: cleanedBlockers ?? [],
+        };
+
+        // Build note text
+        const blockNote = cleanedBlockers?.length
+          ? `[Blocked] ${reason}. Needs: ${cleanedBlockers.join(', ')}`
+          : `[Blocked] ${reason}`;
+
+        const updateResult = recordedExecute(
+          client,
+          `
         UPDATE missions
         SET status = ?,
             domain_fields = ?,
@@ -245,62 +253,89 @@ export async function rbookMissionBlock(
             updated_at = ?
         WHERE id = ?
       `,
-        [targetStatus, JSON.stringify(updatedDomainFields), blockNote, now, missionId]
-      );
-
-      if (!updateResult.success) {
-        return createError<MissionBlockResult>(
-          updateResult.error ?? { code: 'DB_QUERY_FAILED', message: 'Failed to update mission' }
+          [targetStatus, JSON.stringify(updatedDomainFields), blockNote, now, missionId]
         );
-      }
 
-      if (updateResult.data?.changes === 0) {
-        return createError<MissionBlockResult>({
-          code: RBOOK_ERROR_CODES.DB_QUERY_FAILED,
-          message: `Failed to update mission '${missionId}'`,
-          suggestion: 'The mission may have been modified by another process',
-        });
-      }
+        if (!updateResult.success) {
+          return createError<MissionBlockResult>(
+            updateResult.error ?? { code: 'DB_QUERY_FAILED', message: 'Failed to update mission' }
+          );
+        }
 
-      // Log the state change to session_events
-      const eventResult = client.execute(
-        `
+        if (updateResult.data?.changes === 0) {
+          return createError<MissionBlockResult>({
+            code: RBOOK_ERROR_CODES.DB_QUERY_FAILED,
+            message: `Failed to update mission '${missionId}'`,
+            suggestion: 'The mission may have been modified by another process',
+          });
+        }
+
+        // Log the state change to session_events
+        const eventResult = client.execute(
+          `
         INSERT INTO session_events (ts, agent, mission, action, status, summary, raw_event)
         VALUES (?, 'mcp-tool', ?, 'block', ?, ?, ?)
       `,
-        [
-          now,
-          missionId,
-          targetStatus,
-          reason,
-          JSON.stringify({
-            tool: 'rbook_mission_block',
+          [
+            now,
+            missionId,
+            targetStatus,
+            reason,
+            JSON.stringify({
+              tool: 'rbook_mission_block',
+              missionId,
+              previousStatus: currentStatus,
+              newStatus: targetStatus,
+              reason,
+              blockers: cleanedBlockers,
+            }),
+          ]
+        );
+
+        // Don't fail the operation if event logging fails (non-critical) — but say so.
+        if (!checkWrite(eventResult, warnings, 'mission block event logging')) {
+          console.warn('Failed to log mission block event:', eventResult.error);
+        }
+
+        const persisted = client.getOne<{
+          status: string;
+          domain_fields: string;
+          notes: string;
+          updated_at: string;
+        }>('SELECT status,domain_fields,notes,updated_at FROM missions WHERE id = ?', [missionId]);
+        if (
+          !persisted.success ||
+          persisted.data?.status !== targetStatus ||
+          persisted.data.domain_fields !== JSON.stringify(updatedDomainFields) ||
+          persisted.data.notes !==
+            (mission.notes == null ? '' : `${mission.notes} | `) + blockNote ||
+          persisted.data.updated_at !== now
+        ) {
+          return createError<MissionBlockResult>({
+            code: 'MISSION_TRANSITION_POSTCONDITION_FAILED',
+            message: `Mission '${missionId}' did not retain its requested transition.`,
+            suggestion: 'Inspect database triggers and write failures, then retry after repair.',
+          });
+        }
+
+        const committed = client.execute('COMMIT', []);
+        if (!committed.success) return createError(committed.error!);
+        transactionOpen = false;
+        return createSuccess<MissionBlockResult>(
+          {
             missionId,
             previousStatus: currentStatus,
-            newStatus: targetStatus,
+            currentStatus: targetStatus,
             reason,
-            blockers: cleanedBlockers,
-          }),
-        ]
-      );
-
-      // Don't fail the operation if event logging fails (non-critical) — but say so.
-      if (!checkWrite(eventResult, warnings, 'mission block event logging')) {
-        console.warn('Failed to log mission block event:', eventResult.error);
+            message: `Mission '${missionId}' has been blocked: ${reason}`,
+            blockedAt: now,
+          },
+          warnings,
+          inputSanitized
+        );
+      } finally {
+        if (transactionOpen) client.execute('ROLLBACK', []);
       }
-
-      return createSuccess<MissionBlockResult>(
-        {
-          missionId,
-          previousStatus: currentStatus,
-          currentStatus: targetStatus,
-          reason,
-          message: `Mission '${missionId}' has been blocked: ${reason}`,
-          blockedAt: now,
-        },
-        warnings,
-        inputSanitized
-      );
     },
     { projectRoot: params.projectRoot }
   );

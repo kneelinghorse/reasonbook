@@ -18,6 +18,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { LEGACY } from '../../intelligence/legacy-compat';
+import { oneLine } from '../../utils/one-line';
 
 /** The agents file's name at a project root: uppercase, the cross-agent convention. */
 export const AGENTS_FILE_NAME = 'AGENTS.md';
@@ -117,20 +118,24 @@ export function rbookRulesLine(
 }
 
 /**
- * The AGENTS.md init writes: the template with its Reasonbook line rendered for this project, and the
- * hook-less block appended when the harness has no hooks. Throws when the template has no Reasonbook
- * line, so a template edit that drops it fails loudly instead of shipping a file without one.
+ * The AGENTS.md init writes: the template with its project name and Reasonbook line filled in, and the
+ * hook-less block appended when the harness has no hooks. Throws when a required name or Reasonbook
+ * line is missing, so a template edit that drops it fails loudly instead of shipping without it.
  */
 export function renderAgentsMd(
   template: string,
   options: {
     readonly level: ProjectLevel;
+    readonly projectName: string;
     readonly hooks: boolean;
     readonly ambient?: RulesAmbient;
     readonly noHooksBlock?: string;
   }
 ): string {
   const lines = template.split('\n');
+  const nameAt = lines.indexOf('- **Name:** This project');
+  if (nameAt === -1) throw new Error('The AGENTS.md template has no project name to render.');
+  lines[nameAt] = `- **Name:** ${oneLine(options.projectName)}`;
   const at = lines.findIndex((line) => isOwnedRulesLine(line));
   if (at === -1) throw new Error('The AGENTS.md template has no Reasonbook line to render.');
   lines[at] = rbookRulesLine(options.level, { hooks: options.hooks, ambient: options.ambient });

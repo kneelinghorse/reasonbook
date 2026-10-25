@@ -108,11 +108,11 @@ export const VALID_MISSION_STATUSES: MissionStatus[] = [
  * Valid state transitions for missions.
  */
 export const VALID_STATE_TRANSITIONS: Record<MissionStatus, MissionStatus[]> = {
-  Queued: ['Current', 'In Progress', 'Dropped', 'Deferred'],
+  Queued: ['Current', 'In Progress', 'Blocked', 'Dropped', 'Deferred'],
   Current: ['In Progress', 'Blocked', 'Dropped', 'Deferred'],
   'In Progress': ['Completed', 'Blocked', 'Dropped', 'Deferred'],
   Completed: [], // Terminal state
-  Blocked: ['In Progress', 'Current', 'Dropped', 'Deferred'],
+  Blocked: ['In Progress', 'Current', 'Queued', 'Dropped', 'Deferred'],
   Dropped: [], // Terminal state — soft parked, cannot be re-activated
   Deferred: ['Queued', 'Current', 'Dropped'], // Temporarily parked — can re-queue or drop
 };
@@ -282,12 +282,9 @@ export const RbookErrors = {
       suggestion:
         validTransitions.length > 0
           ? `Valid transitions from '${currentStatus}': ${validTransitions.join(', ')}`
-          : // s87-m01: the old text read "Mission is in terminal state 'X' and cannot be CHANGED",
-            // which is measurably false — a Completed mission's `name` updates and reads back
-            // changed, because `rbook_mission(action="update")` only validates a transition when
-            // `fields.status` is the field being written. Say only what is true: the STATUS is
-            // settled. Everything else about the mission is still editable.
-            `'${currentStatus}' is a terminal status: no status transition out of it is permitted. Other fields can still be edited with rbook_mission(action="update").`,
+          : currentStatus === 'Completed'
+            ? `Completed cannot change through ordinary status updates. To correct a mistaken completion in an open sprint, use rbook_mission_transition(action="reopen", missionId="${missionId}", reason="why the completion was mistaken"). Other fields remain editable.`
+            : `'${currentStatus}' is a terminal status: no status transition out of it is permitted. Other fields can still be edited with rbook_mission(action="update").`,
     };
   },
 

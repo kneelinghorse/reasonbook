@@ -95,7 +95,10 @@ function start(workingDir = cwd, args: string[] = []): RawStdioServer {
       RBOOK_CHECKPOINT_SYNC: 'off',
       RBOOK_AGENT_ROLE: 'review',
     },
-    args
+    args,
+    // s102-m13: the fixture's old 10 s RPC watchdog expired during loaded startup.
+    // Protocol behavior is asserted below; this is not a product latency promise.
+    30_000
   );
   children.push(child);
   return child;

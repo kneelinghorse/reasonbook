@@ -80,7 +80,7 @@ rbook_mission_transition(action="start", missionId="s01-m01")  # Begin work
 ```
 yourproject/                    # Project root
 ├── README.md                   # About YOUR PROJECT
-├── AGENTS.md                   # Repository-wide AI rules, written by init; fill in its placeholders
+├── AGENTS.md                   # Repository-wide AI rules, written by init with the project name
 │
 ├── src/                        # YOUR APPLICATION CODE
 ├── tests/                      # YOUR APPLICATION TESTS
@@ -165,5 +165,5 @@ It creates a snapshot only when it changes `master_context`; it is not a routine
 
 ---
 
-**Last Updated**: 2026-10-22
+**Last Updated**: 2026-10-25
 **Schema Version**: 2.1

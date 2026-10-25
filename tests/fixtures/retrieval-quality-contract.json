@@ -17,7 +17,9 @@
     "no-relevance-controls.json": "680ecf6427b7116941a0f952350719c48f1490ebec3eb071283471d987bafbf8",
     "no-relevance-manifest.json": "8186688a4744a5c79bc38c4279c2c4a4e94a4cb1fa87bbf93815de13bdadebdb",
     "labels-v6-review/manifest.json": "e0dbe8c24fec352f8cf860afa8cfff48df9b7178e0289504fdb33a3cd2a8629a",
-    "labels-v6-review/labels.json": "29b07b9ed7c323d0f48c5bc630b88c1beb61a28cd1be45b7f8f3bcc17ee44cda"
+    "labels-v6-review/labels.json": "29b07b9ed7c323d0f48c5bc630b88c1beb61a28cd1be45b7f8f3bcc17ee44cda",
+    "labels-v7-review/manifest.json": "3173a6dbe4a8cf8f1aef21440e193ab05d3fdfcdfd9a7d51bfadbc713810b691",
+    "labels-v7-review/labels.json": "29b07b9ed7c323d0f48c5bc630b88c1beb61a28cd1be45b7f8f3bcc17ee44cda"
   },
   "parserHashes": {
     "src/tools/cmos/record-link-extractor.ts": "c1469d35c4cbff77c6e8ce45a78940a68aa94f213ff994f6ed64d661044620ab",
@@ -323,7 +325,7 @@
     }
   },
   "currentParserReview": {
-    "file": "labels-v7-review/manifest.json",
-    "sha256": "3173a6dbe4a8cf8f1aef21440e193ab05d3fdfcdfd9a7d51bfadbc713810b691"
+    "file": "labels-v8-review/manifest.json",
+    "sha256": "7e49bd34567e95fa48f30c18bc0119e02d6458bf80bc70c6dec8dddb496bf0e6"
   }
 }

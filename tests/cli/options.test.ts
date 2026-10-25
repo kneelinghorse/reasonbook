@@ -279,6 +279,10 @@ describe('F9 public option boundary', () => {
 describe('first-hour positional mistakes fail before side effects', () => {
   it.each([
     ['init', ['My project'], '--name'],
+    ['init', ['builder'], '--level'],
+    ['init', ['planner'], '--level'],
+    ['init', ['ledger'], '--level'],
+    ['init', ['--name', 'My', 'builder'], '--name'],
     ['init', ['MyProject', '--project-root', '/tmp/example'], '--name'],
     ['init', ['--name', 'My', 'Project', '--project-root', '/tmp/example'], '--name'],
     ['init', ['--project-root', '/tmp/example', '--no-hooks', 'MyProject'], '--name'],

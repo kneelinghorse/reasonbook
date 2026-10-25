@@ -2,6 +2,7 @@
 // ABOUTME: Files standalone friction through the shared feedback writer without creating a session.
 // ABOUTME: Preserves project resolution, sanitized receipts, write failures and local telemetry.
 
+import { boundErrorFields } from '../tools/rbook/error-bounds';
 import { oneLine, parseArgs, resolveCliProject, type CliIo } from './core';
 import { sanitizeContentField } from '../intelligence/content-sanitizer';
 import { observeCliResult } from './telemetry';
@@ -23,6 +24,7 @@ export async function runFeedback(argv: readonly string[], io: CliIo): Promise<n
   const { flags } = parseArgs(argv);
   const dryRun = flags['dry-run'] === 'true';
   const finish = (result: FeedbackReceipt): number => {
+    result = boundErrorFields(result);
     observeCliResult(io, 'feedback', {}, result);
     if (flags.format === 'json') {
       io.stdout(`${JSON.stringify(result)}\n`);
@@ -63,7 +65,14 @@ export async function runFeedback(argv: readonly string[], io: CliIo): Promise<n
   const checked = validateRbookArguments(rbookSessionSchema.pick({ agentFeedback: true }), {
     agentFeedback: content,
   });
-  if (!checked.success) return finish(createError(checked.error!));
+  if (!checked.success) {
+    const error = checked.error!;
+    const fields: Readonly<Record<string, string>> = { agentFeedback: '--content' };
+    const field = error.field && fields[error.field];
+    return finish(
+      createError(field ? { ...error, field, message: `Invalid value for ${field}.` } : error)
+    );
+  }
   if (!dryRun && isReadOnlyAgentSession(io.env)) {
     return finish(
       createError({

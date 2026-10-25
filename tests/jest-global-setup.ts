@@ -1,11 +1,15 @@
-// ABOUTME: Jest globalSetup — provisions the per-run root used for test-file Reasonbook config dirs.
-// ABOUTME: Test-file isolation is completed in jest-setup-after-env.ts; teardown removes the root.
+// ABOUTME: Jest globalSetup provisions run-owned config and compiled-source roots before workers.
+// ABOUTME: Application fixtures share compiled bytes only; teardown removes these run-owned roots.
 
 import { promises as fs } from 'fs';
 import os from 'os';
 import path from 'path';
 import { getSetting } from '../src/intelligence/legacy-compat';
 import { captureRunControls, restoreRunControls, RUN_ENV_KEY } from './helpers/test-env-isolation';
+import {
+  prepareUploadServerRunCache,
+  UPLOAD_SOURCE_CACHE_ENV,
+} from './helpers/upload-server-source';
 
 import {
   DIST_MANIFEST_FINGERPRINT_ENV,
@@ -49,18 +53,28 @@ export default async function globalSetup(): Promise<void> {
   process.env[RUN_ENV_KEY] = JSON.stringify(runControls);
   restoreRunControls(process.env, runControls);
 
-  const explicitConfigDir = getSetting('CONFIG_DIR');
-  if (explicitConfigDir) {
-    // An operator-supplied dir wins, but the guard still needs to know what
-    // "correct" means for this run — so stamp the canonical copy on this branch too.
-    process.env[JEST_RECORD_CONFIG_DIR_CANONICAL] = explicitConfigDir;
-    return;
+  // Owned separately from RBOOK_CONFIG_DIR, including when the operator supplied that directory.
+  const sourceCache = prepareUploadServerRunCache(path.resolve(__dirname, '..'));
+  try {
+    const explicitConfigDir = getSetting('CONFIG_DIR');
+    if (explicitConfigDir) {
+      // An operator-supplied dir wins, but the guard still needs its canonical copy.
+      process.env[JEST_RECORD_CONFIG_DIR_CANONICAL] = explicitConfigDir;
+    } else {
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'rbook-jest-'));
+      process.env[RBOOK_CONFIG_DIR_ENV] = dir;
+      process.env[JEST_RECORD_CONFIG_DIR_CANONICAL] = dir;
+      (globalThis as unknown as { __RBOOK_JEST_CONFIG_DIR__?: string }).__RBOOK_JEST_CONFIG_DIR__ =
+        dir;
+    }
+
+    process.env[UPLOAD_SOURCE_CACHE_ENV] = sourceCache;
+    (
+      globalThis as unknown as { __RBOOK_JEST_SOURCE_CACHE__?: string }
+    ).__RBOOK_JEST_SOURCE_CACHE__ = sourceCache;
+  } catch (error) {
+    // globalTeardown is not guaranteed after a later setup failure either.
+    await fs.rm(sourceCache, { recursive: true, force: true });
+    throw error;
   }
-
-  const prefix = path.join(os.tmpdir(), 'rbook-jest-');
-  const dir = await fs.mkdtemp(prefix);
-
-  process.env[RBOOK_CONFIG_DIR_ENV] = dir;
-  process.env[JEST_RECORD_CONFIG_DIR_CANONICAL] = dir;
-  (globalThis as unknown as { __RBOOK_JEST_CONFIG_DIR__?: string }).__RBOOK_JEST_CONFIG_DIR__ = dir;
 }

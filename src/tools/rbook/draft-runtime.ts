@@ -6,6 +6,7 @@ import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { ensureLateColumn } from './draft-runtime-excerpts';
 import { runtimeDir } from './harness-session';
 import { safeDestination, targetForStore, type TelemetryTarget } from './local-telemetry';
 import { draftRuntimeFile, draftStoreKey, plainSqliteFile, sqliteFileSet } from './store-key';
@@ -37,12 +38,11 @@ export { draftStoreKey };
  * nothing and records `agent-attested`.
  */
 
-export const EXCERPT_TTL_MS = 2 * 60 * 60 * 1000;
-export const EXCERPT_MAX = 1000;
 export const STARTS_KEPT = 200;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS starts (at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS pending_declines (draft_id INTEGER PRIMARY KEY, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS session_state (session TEXT PRIMARY KEY, started_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS offers (session TEXT NOT NULL, draft_id INTEGER NOT NULL,
   count INTEGER NOT NULL, PRIMARY KEY (session, draft_id));
@@ -98,10 +98,25 @@ export function openDraftRuntime(
   env: NodeJS.ProcessEnv = process.env,
   options: { readonly readonly?: boolean; readonly timeoutMs?: number } = {}
 ): DraftRuntime | null {
+  let directory: string | undefined;
+  if (options.readonly) {
+    try {
+      directory = draftRuntimeDir(env);
+      fs.statSync(directory);
+    } catch (error) {
+      // No runtime can exist here yet. Recheck on every call so a later hook is visible.
+      if (directory !== undefined && (error as NodeJS.ErrnoException | null)?.code === 'ENOENT')
+        return null;
+      // Preserve the original identity-first handling of config and other filesystem errors.
+    }
+  }
   const target = targetForStore(dbPath);
   if (!target) return null;
   const storeKey = draftStoreKey(target);
-  const file = draftRuntimePath(storeKey, env);
+  const file =
+    directory === undefined
+      ? draftRuntimePath(storeKey, env)
+      : draftRuntimeFile(directory, storeKey);
   if (!requireSafe(file, target)) return null;
   const timeout = options.timeoutMs ?? 100;
   let db: Database.Database;
@@ -112,7 +127,15 @@ export function openDraftRuntime(
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
     if (!requireSafe(file, target)) return null;
     db = new Database(file, { timeout });
-    db.exec(SCHEMA);
+    try {
+      db.transaction(() => {
+        db.exec(SCHEMA);
+        ensureLateColumn(db);
+      }).immediate();
+    } catch (error) {
+      db.close();
+      throw error;
+    }
   }
   return { db, storeKey, path: file, close: () => db.close() };
 }
@@ -147,6 +170,33 @@ export function recordSessionStart(runtime: DraftRuntime, session: string, now: 
         'INSERT INTO session_state (session, started_at) VALUES (?, ?) ON CONFLICT(session) DO UPDATE SET started_at = excluded.started_at'
       )
       .run(session, now);
+  })();
+}
+
+/** Retain a decline until the store settles it; never keep its words or renew its first time. */
+export function retainDeclines(runtime: DraftRuntime, ids: readonly number[], at: number): void {
+  const retain = runtime.db.prepare(`INSERT INTO pending_declines (draft_id, at) VALUES (?, ?)
+    ON CONFLICT(draft_id) DO NOTHING`);
+  runtime.db.transaction(() => {
+    for (const id of ids) retain.run(id, at);
+  })();
+}
+
+/** Store-local decline protection survives session cleanup; old read-only runtimes have none. */
+export function pendingDeclines(
+  runtime: DraftRuntime
+): Array<{ readonly id: number; readonly at: number }> {
+  if (!has(runtime, 'pending_declines')) return [];
+  return runtime.db
+    .prepare('SELECT draft_id AS id, at FROM pending_declines ORDER BY draft_id')
+    .all() as Array<{ readonly id: number; readonly at: number }>;
+}
+
+/** Call only once the store durably declined the draft or authoritatively ended its pending state. */
+export function clearPendingDeclines(runtime: DraftRuntime, ids: readonly number[]): void {
+  const clear = runtime.db.prepare('DELETE FROM pending_declines WHERE draft_id = ?');
+  runtime.db.transaction(() => {
+    for (const id of ids) clear.run(id);
   })();
 }
 
@@ -213,84 +263,6 @@ export function bumpOffers(runtime: DraftRuntime, session: string, ids: readonly
   })();
 }
 
-/**
- * Bind the operator's message to the drafts it answers: their words (cut to 1,000 characters),
- * its class and the window's size per draft, and the window itself, open until the turn ends.
- * Older words of every session are pruned here.
- */
-export function bindWindow(
-  runtime: DraftRuntime,
-  session: string,
-  ids: readonly number[],
-  message: string,
-  reply: string,
-  now: number,
-  /** s97-m12: drafts shown before the latest reply: the words bind them only as 'other'. */
-  earlier: readonly number[] = []
-): void {
-  const words = message.slice(0, EXCERPT_MAX);
-  const keep = runtime.db.prepare(
-    `INSERT INTO excerpts (session, draft_id, message, reply, window_size, at) VALUES (?, ?, ?, ?, ?, ?)
-     ON CONFLICT(session, draft_id) DO UPDATE SET message = excluded.message, reply = excluded.reply,
-       window_size = excluded.window_size, at = excluded.at`
-  );
-  runtime.db.transaction(() => {
-    runtime.db.prepare('DELETE FROM excerpts WHERE at <= ?').run(now - EXCERPT_TTL_MS);
-    for (const id of ids) keep.run(session, id, words, reply, ids.length, now);
-    for (const id of earlier)
-      keep.run(session, id, words, 'other', ids.length + earlier.length, now);
-    runtime.db
-      .prepare(
-        `INSERT INTO windows (session, draft_ids, open, at) VALUES (?, ?, 1, ?)
-         ON CONFLICT(session) DO UPDATE SET draft_ids = excluded.draft_ids, open = 1, at = excluded.at`
-      )
-      .run(session, JSON.stringify(ids), now);
-  })();
-}
-
-/** The turn ended (Stop): the window no longer takes records without fromDraft as answers. */
-export function closeWindow(runtime: DraftRuntime, session: string): void {
-  runtime.db.prepare('UPDATE windows SET open = 0 WHERE session = ?').run(session);
-}
-
-/** The drafts the session's latest message was bound to, while its turn runs and within the TTL. */
-export function openWindow(runtime: DraftRuntime, session: string, now: number): number[] {
-  if (!has(runtime, 'windows')) return [];
-  const row = runtime.db
-    .prepare('SELECT draft_ids, open, at FROM windows WHERE session = ?')
-    .get(session) as { draft_ids: string; open: number; at: number } | undefined;
-  if (!row || row.open !== 1 || row.at <= now - EXCERPT_TTL_MS) return [];
-  try {
-    const ids = JSON.parse(row.draft_ids) as unknown;
-    return Array.isArray(ids) ? ids.filter((id): id is number => Number.isInteger(id)) : [];
-  } catch {
-    return [];
-  }
-}
-
-export interface StoredExcerpt {
-  readonly message: string;
-  readonly reply: string;
-  readonly windowSize: number;
-  readonly at: number;
-}
-
-/** The operator's words for a draft in a session, if younger than the TTL. */
-export function readExcerpt(
-  runtime: DraftRuntime,
-  session: string,
-  draftId: number,
-  now: number
-): StoredExcerpt | null {
-  if (!has(runtime, 'excerpts')) return null;
-  const row = runtime.db
-    .prepare(
-      'SELECT message, reply, window_size AS windowSize, at FROM excerpts WHERE session = ? AND draft_id = ?'
-    )
-    .get(session, draftId) as StoredExcerpt | undefined;
-  return row && row.at > now - EXCERPT_TTL_MS ? row : null;
-}
-
 export interface ScanState {
   /** Per file (a hash of its path, never the path: it carries the raw session id). */
   readonly files: ReadonlyMap<
@@ -323,109 +295,26 @@ export function saveScan(
     .run(session, file, state.scanned, state.outside);
 }
 
-/** The drafts the session's latest reply put to the operator (Stop), replacing the previous set. */
-export function setShown(
-  runtime: DraftRuntime,
-  session: string,
-  ids: readonly number[],
-  now: number
-): void {
-  runtime.db
-    .prepare(
-      `INSERT INTO shown (session, draft_ids, at) VALUES (?, ?, ?)
-       ON CONFLICT(session) DO UPDATE SET draft_ids = excluded.draft_ids, at = excluded.at`
-    )
-    .run(session, JSON.stringify(ids), now);
-}
+export {
+  carryShown,
+  peekShown,
+  readShown,
+  restoreShown,
+  setShown,
+  takeShown,
+  takeKept,
+  takeKeptWithTimes,
+  pruneAllRuntimes,
+  PRUNE_FILES_MAX,
+} from './draft-runtime-shown';
 
-/** Take (read and clear) what the latest reply showed: one message answers one reply. */
-export function takeShown(runtime: DraftRuntime, session: string, now: number): number[] {
-  const ids = peekShown(runtime, session, now);
-  if (has(runtime, 'shown')) runtime.db.prepare('DELETE FROM shown WHERE session = ?').run(session);
-  return ids;
-}
-
-/**
- * s97-m12 (learning #481; critic round 2): a reply's drafts that no operator message took, as when
- * the harness's own prompt opened the next turn, are kept, each with the time it was first shown,
- * when the next reply's Stop replaces the shown set. They expire with that time, never refreshed.
- */
-export function carryShown(runtime: DraftRuntime, session: string, now: number): void {
-  if (!has(runtime, 'shown') || !has(runtime, 'kept')) return;
-  const row = runtime.db.prepare('SELECT at FROM shown WHERE session = ?').get(session) as
-    | { at: number }
-    | undefined;
-  const keep = runtime.db.prepare(
-    'INSERT INTO kept (session, draft_id, at) VALUES (?, ?, ?) ON CONFLICT(session, draft_id) DO NOTHING'
-  );
-  runtime.db.transaction(() => {
-    runtime.db.prepare('DELETE FROM kept WHERE at <= ?').run(now - EXCERPT_TTL_MS);
-    if (row) for (const id of peekShown(runtime, session, now)) keep.run(session, id, row.at);
-  })();
-}
-
-/** Take (read and clear) the drafts kept from earlier replies, while their first showing is young. */
-export function takeKept(runtime: DraftRuntime, session: string, now: number): number[] {
-  if (!has(runtime, 'kept')) return [];
-  const rows = runtime.db
-    .prepare('SELECT draft_id, at FROM kept WHERE session = ?')
-    .all(session) as Array<{ draft_id: number; at: number }>;
-  runtime.db.prepare('DELETE FROM kept WHERE session = ?').run(session);
-  return rows.filter((row) => row.at > now - EXCERPT_TTL_MS).map((row) => row.draft_id);
-}
-
-/** What the latest reply showed, read without taking it. */
-export function peekShown(runtime: DraftRuntime, session: string, now: number): number[] {
-  if (!has(runtime, 'shown')) return [];
-  const row = runtime.db
-    .prepare('SELECT draft_ids, at FROM shown WHERE session = ?')
-    .get(session) as { draft_ids: string; at: number } | undefined;
-  if (!row || row.at <= now - EXCERPT_TTL_MS) return [];
-  try {
-    const ids = JSON.parse(row.draft_ids) as unknown;
-    return Array.isArray(ids) ? ids.filter((id): id is number => Number.isInteger(id)) : [];
-  } catch {
-    return [];
-  }
-}
-
-/** How many store files a session start prunes, at most. */
-export const PRUNE_FILES_MAX = 50;
-
-/**
- * Drop the operator's words, windows and shown sets older than the TTL in every store's draft
- * runtime, so a crash leaves nothing past two hours once any session starts anywhere (the plan
- * critic, N6). Best effort: a file that cannot be opened is skipped. Returns the files pruned.
- */
-export function pruneAllRuntimes(env: NodeJS.ProcessEnv, now: number): number {
-  const dir = path.join(runtimeDir(env), 'drafts');
-  let names: string[];
-  try {
-    names = fs.readdirSync(dir).filter((name) => /^[a-f0-9]{32}\.sqlite$/.test(name));
-  } catch {
-    return 0;
-  }
-  let pruned = 0;
-  for (const name of names.slice(0, PRUNE_FILES_MAX)) {
-    const file = path.join(dir, name);
-    let db: Database.Database | undefined;
-    try {
-      const stat = fs.lstatSync(file);
-      if (!stat.isFile() || stat.nlink !== 1 || !safeDestination(file)) continue;
-      db = new Database(file, { fileMustExist: true, timeout: 50 });
-      const cutoff = now - EXCERPT_TTL_MS;
-      for (const table of ['excerpts', 'windows', 'shown', 'kept']) {
-        const present = db
-          .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
-          .get(table);
-        if (present) db.prepare(`DELETE FROM ${table} WHERE at <= ?`).run(cutoff);
-      }
-      pruned++;
-    } catch {
-      // A held or damaged file is left for the next start.
-    } finally {
-      db?.close();
-    }
-  }
-  return pruned;
-}
+export {
+  bindExcerpt,
+  bindWindow,
+  closeWindow,
+  openWindow,
+  readExcerpt,
+  EXCERPT_TTL_MS,
+  EXCERPT_MAX,
+  type StoredExcerpt,
+} from './draft-runtime-excerpts';

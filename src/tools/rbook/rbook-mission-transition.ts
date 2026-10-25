@@ -1,8 +1,10 @@
+// ABOUTME: Routes mission state changes through each action's published contract.
+// ABOUTME: Reopen is a separately audited action, outside ordinary state-machine transitions.
 /**
  * rbook_mission_transition Tool
  *
  * Consolidated mission state-machine tool with action parameter support.
- * Actions: start, complete, block, unblock.
+ * Actions: start, complete, block, unblock, drop, defer, reopen.
  * Kept separate from rbook_mission per architectural decision to reduce
  * parameter hallucination risk around state transitions.
  *
@@ -50,6 +52,12 @@ import {
   type RbookMissionDeferParams,
   type MissionDeferResult,
 } from './rbook-mission-defer';
+import {
+  rbookMissionReopen,
+  formatMissionReopenForLLM,
+  type RbookMissionReopenParams,
+  type MissionReopenResult,
+} from './rbook-mission-reopen';
 import { maybePropagateMissionStatus, maybePropagateSprintStatus } from './sync-locks';
 
 export const RBOOK_MISSION_TRANSITION_ACTIONS = [
@@ -59,6 +67,7 @@ export const RBOOK_MISSION_TRANSITION_ACTIONS = [
   'unblock',
   'drop',
   'defer',
+  'reopen',
 ] as const;
 
 export type RbookMissionTransitionAction = (typeof RBOOK_MISSION_TRANSITION_ACTIONS)[number];
@@ -74,6 +83,7 @@ export const RBOOK_MISSION_TRANSITION_ACTION_PARAMS: ActionParamMap<
   unblock: ['action', 'missionId', 'resolution', 'targetStatus', 'projectRoot'],
   drop: ['action', 'missionId', 'reason', 'projectRoot'],
   defer: ['action', 'missionId', 'reason', 'deferUntil', 'projectRoot'],
+  reopen: ['action', 'missionId', 'reason', 'projectRoot'],
 };
 
 export type RbookMissionTransitionResult =
@@ -82,19 +92,20 @@ export type RbookMissionTransitionResult =
   | MissionBlockResult
   | MissionUnblockResult
   | MissionDropResult
-  | MissionDeferResult;
+  | MissionDeferResult
+  | MissionReopenResult;
 
 export const rbookMissionTransitionSchema = z
   .object({
     action: z
       .enum(RBOOK_MISSION_TRANSITION_ACTIONS)
-      .describe('Transition action: start | complete | block | unblock | drop | defer'),
+      .describe('Transition action: start | complete | block | unblock | drop | defer | reopen'),
     missionId: z.string().describe('The mission ID to transition'),
     notes: z.string().optional().describe('Notes for start/complete actions'),
     reason: z
       .string()
       .optional()
-      .describe('Reason for block/drop/defer actions (required for block)'),
+      .describe('Reason for block/drop/defer/reopen (required for block/reopen)'),
     blockers: z.array(z.string()).optional().describe('List of blockers for block action'),
     decisions: z
       .array(z.string())
@@ -105,7 +116,7 @@ export const rbookMissionTransitionSchema = z
       .enum(['In Progress', 'Current'])
       .optional()
       .describe(
-        'unblock: the status after it (default In Progress); start: Current promotes without starting'
+        'unblock: override inferred Queued/In Progress; start: Current promotes without starting'
       ),
     deferUntil: z
       .string()
@@ -131,7 +142,7 @@ export const rbookMissionTransitionToolDefinition = {
   name: 'rbook_mission_transition',
   description:
     'Consolidated mission state-machine tool with action parameter support. ' +
-    'Actions: start, complete, block, unblock, drop, defer. ' +
+    'Actions: start, complete, block, unblock, drop, defer, reopen. ' +
     'Enforces state-machine rules and logs transition events.',
   inputSchema: {
     type: 'object',
@@ -139,7 +150,8 @@ export const rbookMissionTransitionToolDefinition = {
       action: {
         type: 'string',
         enum: [...RBOOK_MISSION_TRANSITION_ACTIONS],
-        description: 'Transition action: start | complete | block | unblock | drop | defer',
+        description:
+          'Transition action: start | complete | block | unblock | drop | defer | reopen',
       },
       missionId: {
         type: 'string',
@@ -151,7 +163,7 @@ export const rbookMissionTransitionToolDefinition = {
       },
       reason: {
         type: 'string',
-        description: 'Reason for block/drop/defer actions (required for block)',
+        description: 'Reason for block/drop/defer/reopen (required for block/reopen)',
       },
       blockers: {
         type: 'array',
@@ -174,7 +186,7 @@ export const rbookMissionTransitionToolDefinition = {
         type: 'string',
         enum: ['In Progress', 'Current'],
         description:
-          'unblock: the status after it (default In Progress); start: Current promotes without starting',
+          'unblock: override inferred Queued/In Progress; start: Current promotes without starting',
       },
       deferUntil: {
         type: 'string',
@@ -284,6 +296,16 @@ export async function rbookMissionTransition(
         params.missionId,
         params.projectRoot
       );
+    case 'reopen':
+      return maybePropagateMissionStatus(
+        await rbookMissionReopen({
+          missionId: params.missionId,
+          reason: params.reason ?? '',
+          projectRoot: params.projectRoot,
+        } satisfies RbookMissionReopenParams),
+        params.missionId,
+        params.projectRoot
+      );
     case 'drop':
       return maybePropagateMissionStatus(
         await rbookMissionDrop({
@@ -347,6 +369,8 @@ export function formatMissionTransitionForLLM(
       return formatMissionBlockForLLM(result as RbookToolResult<MissionBlockResult>);
     case 'unblock':
       return formatMissionUnblockForLLM(result as RbookToolResult<MissionUnblockResult>);
+    case 'reopen':
+      return formatMissionReopenForLLM(result as RbookToolResult<MissionReopenResult>);
     case 'drop':
       return formatMissionDropForLLM(result as RbookToolResult<MissionDropResult>);
     case 'defer':

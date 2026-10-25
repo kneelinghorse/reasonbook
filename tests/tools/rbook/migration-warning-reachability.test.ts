@@ -1265,7 +1265,10 @@ describe('s88-m09 MigrationResult warning reachability census', () => {
     // for late-created tables. Each is a separately named residual below.
     // s100-m03: 85 -> 87 — a next-step capture prepares next_steps and, with a missionId,
     // session_missions before its write lock; both reach the capture's attachWarnings.
-    expect(census.sites.length).toBe(87);
+    // s102-m03: +5 — start prepares implicit sessions, junction and firehose; complete adds
+    // junction and firehose preparations. Its existing implicit preparation only moves.
+    // s102-m04: reopen adds one migration read at its outer answer boundary.
+    expect(census.sites.length).toBe(93);
   });
 
   it('carries every reachable producer through its exact answer boundary', () => {
@@ -1297,7 +1300,8 @@ describe('s88-m09 MigrationResult warning reachability census', () => {
     // s96-m08: -5 — the removed backfill migration and pull/clone's two migrations each.
     // The exact-boundary and forwarding assertions above still cover every remaining call.
     // s100-m03: +2 — the next-step capture's two preparations, at its attachWarnings boundary.
-    expect(directlyBounded).toHaveLength(52);
+    // s102-m03: +5 direct transition preparations; every warning reaches attachWarnings.
+    expect(directlyBounded).toHaveLength(58);
     expect(forwarded.map(siteKey).sort()).toEqual([...expectedForwarders.keys()].sort());
   });
 
@@ -1416,8 +1420,8 @@ describe('s88-m09 MigrationResult warning reachability census', () => {
     // s96-m14: +2, the import's two direct migrations, at its attachWarnings boundary.
     // s96-m08: 50 direct + 27 verified forwarded reads after five retired direct calls leave.
     // s96-m09: all three late-table recovery calls remain separately named, making eight residuals.
-    // s100-m03: 52 direct + 27 verified forwarded reads; the residuals are unchanged.
-    expect(consumed).toHaveLength(79);
+    // s102-m04: 58 direct + 27 verified forwarded reads; the residuals are unchanged.
+    expect(consumed).toHaveLength(85);
     expect(unconsumed).toHaveLength(STRUCTURAL_RESIDUALS.length);
   });
 });

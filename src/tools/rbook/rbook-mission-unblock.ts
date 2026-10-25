@@ -1,12 +1,5 @@
-/**
- * rbook_mission_unblock Tool
- *
- * MCP tool for unblocking a mission - transitions from Blocked to In Progress or Current.
- * Validates state transitions and returns actionable errors.
- *
- * @module tools/rbook/rbook-mission-unblock
- */
-
+// ABOUTME: Unblocks work to its explicit target or a fresh, unstarted queue origin.
+// ABOUTME: Reads and verifies the transition under one write lock, preserving warning-only event logging.
 import { normalizeMissionStatus } from './terminal-status';
 import { z } from 'zod';
 import { withClientValidated } from './client';
@@ -46,7 +39,7 @@ export interface MissionUnblockResult {
   unblockedAt: string;
 }
 
-/** What an unblock leaves a mission as (default In Progress). */
+/** Explicit targets; an omitted target may restore a fresh, unstarted Queued origin. */
 const UNBLOCK_TARGETS = ['In Progress', 'Current'] as const;
 
 /**
@@ -62,11 +55,11 @@ export const rbookMissionUnblockSchema = z.object({
     .optional()
     .describe('Optional notes explaining how the blocker was resolved'),
 
-  /** Target status after unblock (default: 'In Progress') */
+  /** Explicit target; omission infers Queued only for a fresh, unstarted queue origin. */
   targetStatus: z
     .enum(UNBLOCK_TARGETS)
     .optional()
-    .describe('Target status after unblocking (default: "In Progress")'),
+    .describe('Explicit target; otherwise restore an unstarted queue origin or use In Progress'),
 
   /** Optional: explicit project root to search from */
   projectRoot: z
@@ -85,7 +78,7 @@ export type RbookMissionUnblockParams = z.infer<typeof rbookMissionUnblockSchema
 export const rbookMissionUnblockToolDefinition = {
   name: 'rbook_mission_unblock',
   description:
-    'Unblock a mission by transitioning it from Blocked to In Progress or Current status. ' +
+    'Unblock a mission by transitioning it from Blocked to its queued origin, In Progress or Current status. ' +
     'Only valid from Blocked status. ' +
     'Optionally include resolution notes to document how the blocker was resolved. ' +
     'Returns INVALID_STATE_TRANSITION error if the mission is not blocked.',
@@ -103,7 +96,8 @@ export const rbookMissionUnblockToolDefinition = {
       targetStatus: {
         type: 'string',
         enum: ['In Progress', 'Current'],
-        description: 'Target status after unblocking (default: "In Progress")',
+        description:
+          'Explicit target; otherwise restore an unstarted queue origin or use In Progress',
       },
       projectRoot: {
         type: 'string',
@@ -115,15 +109,6 @@ export const rbookMissionUnblockToolDefinition = {
   },
 } as const;
 
-/**
- * s87-m01 — the remedy `unblock` offers when the mission is not blocked, derived from the status
- * it is actually answering rather than prescribed uniformly.
- *
- * Each arm was checked by EXECUTING the remedy from the state it is offered in
- * (`tests/tools/rbook/remedy-reachability.test.ts`, TIER 2). Where the remedy only works after
- * another step, the string says so — a conditional remedy stated as unconditional is the same
- * defect as a remedy that crashes, one notch quieter.
- */
 function unblockNotBlockedSuggestion(missionId: string, currentStatus: string): string {
   const startCall = `rbook_mission_transition(action="start", missionId="${missionId}")`;
   const requeueCall = `rbook_mission(action="update", missionId="${missionId}", fields={"status":"Queued"})`;
@@ -135,7 +120,7 @@ function unblockNotBlockedSuggestion(missionId: string, currentStatus: string): 
     case 'In Progress':
       return `The mission is already In Progress — there is no blocker to clear and nothing to restart.`;
     case 'Completed':
-      return `A completed mission has no blocker to clear; its status is settled. Other fields can still be edited with rbook_mission(action="update").`;
+      return `A completed mission has no blocker to clear. A mistaken completion in an open sprint can be corrected with the separate reopen action; other fields remain editable with rbook_mission(action="update").`;
     case 'Dropped':
       return `Dropped is a terminal status: no status transition out of it is permitted, so there is nothing to unblock and it cannot be restarted.`;
     case 'Deferred':
@@ -147,15 +132,6 @@ function unblockNotBlockedSuggestion(missionId: string, currentStatus: string): 
   }
 }
 
-/**
- * Execute the rbook_mission_unblock tool.
- *
- * Transitions a mission from Blocked to In Progress (default) or Current.
- * Clears blocker information and optionally records resolution notes.
- *
- * @param params - Tool parameters (missionId, resolution, targetStatus, projectRoot)
- * @returns RbookToolResult with unblock result or actionable error
- */
 export async function rbookMissionUnblock(
   params: RbookMissionUnblockParams
 ): Promise<RbookToolResult<MissionUnblockResult>> {
@@ -172,99 +148,110 @@ export async function rbookMissionUnblock(
       RbookErrors.invalidParameter('targetStatus', params.targetStatus, [...UNBLOCK_TARGETS])
     );
   }
-  const targetStatus: MissionStatus = params.targetStatus ?? 'In Progress';
 
   const warnings: string[] = [];
-  const result = await withClientValidated(
+  const result = await withClientValidated<MissionUnblockResult>(
     (client) => {
-      // Query mission by ID
-      const missionResult = client.getOne<Mission>(
-        `
-        SELECT id, status, name, domain_fields
+      const begin = client.execute('BEGIN IMMEDIATE', []);
+      if (!begin.success) return createError(begin.error!);
+      let transactionOpen = true;
+      try {
+        warnings.push(...(ensureMissionTimestamps(client).warnings ?? []));
+        // Query mission by ID
+        const missionResult = client.getOne<Mission & { started_at: string | null }>(
+          `
+        SELECT id, status, name, domain_fields, notes, started_at
         FROM missions
         WHERE id = ?
       `,
-        [missionId]
-      );
-
-      if (!missionResult.success) {
-        return createError<MissionUnblockResult>(
-          missionResult.error ?? { code: 'DB_QUERY_FAILED', message: 'Failed to query mission' }
+          [missionId]
         );
-      }
 
-      if (!missionResult.data) {
-        return createError<MissionUnblockResult>(RbookErrors.missionNotFound(missionId));
-      }
-
-      const mission = missionResult.data;
-      const currentStatus = normalizeMissionStatus(mission.status);
-
-      // Check if mission is blocked
-      if (currentStatus !== 'Blocked') {
-        // s87-m01, TIER 2 (disclosed remedies). The old text prescribed
-        // `rbook_mission_transition(action="start")` for EVERY non-Completed status. Measured
-        // against the real router: `start` REFUSES from 'In Progress' (already there),
-        // from 'Dropped' (terminal, empty transition list) and from 'Deferred' (which reaches
-        // Queued/Current/Dropped, never 'In Progress' directly). Three of the six states it was
-        // offered in. A remedy prescribed where it cannot run is the defect this sprint is named
-        // for, so the string is now derived from the status it is answering — and where a remedy
-        // is genuinely conditional, it says so rather than being quietly dropped.
-        return createError<MissionUnblockResult>({
-          code: RBOOK_ERROR_CODES.MISSION_INVALID_STATE,
-          message: `Mission '${missionId}' is not blocked (current status: ${currentStatus})`,
-          currentState: currentStatus,
-          suggestion: unblockNotBlockedSuggestion(missionId, currentStatus),
-        });
-      }
-
-      // Validate target status is a valid transition from Blocked
-      const validTransitions = VALID_STATE_TRANSITIONS['Blocked'];
-      if (!validTransitions.includes(targetStatus)) {
-        return createError<MissionUnblockResult>(
-          RbookErrors.missionInvalidTransition(missionId, currentStatus, targetStatus)
-        );
-      }
-
-      // Perform the update
-      const now = new Date().toISOString();
-
-      // Update domain_fields to clear blocker information but preserve history
-      let existingDomainFields: Record<string, unknown> = {};
-      if (mission.domain_fields) {
-        try {
-          existingDomainFields = JSON.parse(mission.domain_fields);
-        } catch {
-          existingDomainFields = {};
+        if (!missionResult.success) {
+          return createError<MissionUnblockResult>(
+            missionResult.error ?? { code: 'DB_QUERY_FAILED', message: 'Failed to query mission' }
+          );
         }
-      }
 
-      // Preserve previous blocker info for history, clear active blocker
-      const previousBlocker = existingDomainFields.blocker;
-      const previousBlockedSince = existingDomainFields.blockedSince;
+        if (!missionResult.data) {
+          return createError<MissionUnblockResult>(RbookErrors.missionNotFound(missionId));
+        }
 
-      const updatedDomainFields = {
-        ...existingDomainFields,
-        blocker: null,
-        blockedSince: null,
-        blockers: null,
-        unblockedAt: now,
-        previousBlocker,
-        previousBlockedSince,
-        resolution: params.resolution ?? null,
-      };
+        const mission = missionResult.data;
+        const currentStatus = normalizeMissionStatus(mission.status);
 
-      // Build note text
-      const unblockNote = params.resolution
-        ? `[Unblocked] ${params.resolution}`
-        : `[Unblocked] Blocker resolved`;
+        // Check if mission is blocked
+        if (currentStatus !== 'Blocked') {
+          // A non-blocked mission needs a remedy matched to its actual status.
+          return createError<MissionUnblockResult>({
+            code: RBOOK_ERROR_CODES.MISSION_INVALID_STATE,
+            message: `Mission '${missionId}' is not blocked (current status: ${currentStatus})`,
+            currentState: currentStatus,
+            suggestion: unblockNotBlockedSuggestion(missionId, currentStatus),
+          });
+        }
 
-      // Ensure timestamp columns exist (migration)
-      warnings.push(...(ensureMissionTimestamps(client).warnings ?? []));
+        // Perform the update
+        const now = new Date().toISOString();
 
-      const updateResult = recordedExecute(
-        client,
-        `
+        // Update domain_fields to clear blocker information but preserve history
+        let existingDomainFields: Record<string, unknown> = {};
+        if (mission.domain_fields) {
+          try {
+            const parsed: unknown = JSON.parse(mission.domain_fields);
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+              existingDomainFields = parsed as Record<string, unknown>;
+            }
+          } catch {
+            existingDomainFields = {};
+          }
+        }
+
+        const origin = existingDomainFields.blockedFrom;
+        const queuedOrigin =
+          origin !== null &&
+          typeof origin === 'object' &&
+          !Array.isArray(origin) &&
+          (origin as Record<string, unknown>).status === 'Queued' &&
+          typeof existingDomainFields.blockedSince === 'string' &&
+          existingDomainFields.blockedSince.length > 0 &&
+          (origin as Record<string, unknown>).blockedSince === existingDomainFields.blockedSince &&
+          mission.started_at === null;
+        const targetStatus: MissionStatus =
+          params.targetStatus ?? (queuedOrigin ? 'Queued' : 'In Progress');
+
+        // Validate target status is a valid transition from Blocked
+        const validTransitions = VALID_STATE_TRANSITIONS['Blocked'];
+        if (!validTransitions.includes(targetStatus)) {
+          return createError<MissionUnblockResult>(
+            RbookErrors.missionInvalidTransition(missionId, currentStatus, targetStatus)
+          );
+        }
+
+        // Preserve previous blocker info for history, clear active blocker
+        const previousBlocker = existingDomainFields.blocker;
+        const previousBlockedSince = existingDomainFields.blockedSince;
+
+        const updatedDomainFields = {
+          ...existingDomainFields,
+          blocker: null,
+          blockedSince: null,
+          blockedFrom: null,
+          blockers: null,
+          unblockedAt: now,
+          previousBlocker,
+          previousBlockedSince,
+          resolution: params.resolution ?? null,
+        };
+
+        // Build note text
+        const unblockNote = params.resolution
+          ? `[Unblocked] ${params.resolution}`
+          : `[Unblocked] Blocker resolved`;
+
+        const updateResult = recordedExecute(
+          client,
+          `
         UPDATE missions
         SET status = ?,
             domain_fields = ?,
@@ -272,61 +259,88 @@ export async function rbookMissionUnblock(
             updated_at = ?
         WHERE id = ?
       `,
-        [targetStatus, JSON.stringify(updatedDomainFields), unblockNote, now, missionId]
-      );
-
-      if (!updateResult.success) {
-        return createError<MissionUnblockResult>(
-          updateResult.error ?? { code: 'DB_QUERY_FAILED', message: 'Failed to update mission' }
+          [targetStatus, JSON.stringify(updatedDomainFields), unblockNote, now, missionId]
         );
-      }
 
-      if (updateResult.data?.changes === 0) {
-        return createError<MissionUnblockResult>({
-          code: RBOOK_ERROR_CODES.DB_QUERY_FAILED,
-          message: `Failed to update mission '${missionId}'`,
-          suggestion: 'The mission may have been modified by another process',
-        });
-      }
+        if (!updateResult.success) {
+          return createError<MissionUnblockResult>(
+            updateResult.error ?? { code: 'DB_QUERY_FAILED', message: 'Failed to update mission' }
+          );
+        }
 
-      // Log the state change to session_events
-      const eventResult = client.execute(
-        `
+        if (updateResult.data?.changes === 0) {
+          return createError<MissionUnblockResult>({
+            code: RBOOK_ERROR_CODES.DB_QUERY_FAILED,
+            message: `Failed to update mission '${missionId}'`,
+            suggestion: 'The mission may have been modified by another process',
+          });
+        }
+
+        // Log the state change to session_events
+        const eventResult = client.execute(
+          `
         INSERT INTO session_events (ts, agent, mission, action, status, summary, raw_event)
         VALUES (?, 'mcp-tool', ?, 'unblock', ?, ?, ?)
       `,
-        [
-          now,
-          missionId,
-          targetStatus,
-          params.resolution ?? `Unblocked mission ${missionId}`,
-          JSON.stringify({
-            tool: 'rbook_mission_unblock',
+          [
+            now,
+            missionId,
+            targetStatus,
+            params.resolution ?? `Unblocked mission ${missionId}`,
+            JSON.stringify({
+              tool: 'rbook_mission_unblock',
+              missionId,
+              previousStatus: currentStatus,
+              newStatus: targetStatus,
+              resolution: params.resolution,
+              previousBlocker,
+            }),
+          ]
+        );
+
+        // Don't fail the operation if event logging fails (non-critical) — but say so.
+        if (!checkWrite(eventResult, warnings, 'mission unblock event logging')) {
+          console.warn('Failed to log mission unblock event:', eventResult.error);
+        }
+
+        const persisted = client.getOne<{
+          status: string;
+          domain_fields: string;
+          notes: string;
+          updated_at: string;
+        }>('SELECT status,domain_fields,notes,updated_at FROM missions WHERE id = ?', [missionId]);
+        if (
+          !persisted.success ||
+          persisted.data?.status !== targetStatus ||
+          persisted.data.domain_fields !== JSON.stringify(updatedDomainFields) ||
+          persisted.data.notes !==
+            (mission.notes == null ? '' : `${mission.notes} | `) + unblockNote ||
+          persisted.data.updated_at !== now
+        ) {
+          return createError<MissionUnblockResult>({
+            code: 'MISSION_TRANSITION_POSTCONDITION_FAILED',
+            message: `Mission '${missionId}' did not retain its requested transition.`,
+            suggestion: 'Inspect database triggers and write failures, then retry after repair.',
+          });
+        }
+
+        const committed = client.execute('COMMIT', []);
+        if (!committed.success) return createError(committed.error!);
+        transactionOpen = false;
+        return createSuccess<MissionUnblockResult>(
+          {
             missionId,
             previousStatus: currentStatus,
-            newStatus: targetStatus,
-            resolution: params.resolution,
-            previousBlocker,
-          }),
-        ]
-      );
-
-      // Don't fail the operation if event logging fails (non-critical) — but say so.
-      if (!checkWrite(eventResult, warnings, 'mission unblock event logging')) {
-        console.warn('Failed to log mission unblock event:', eventResult.error);
+            currentStatus: targetStatus,
+            resolution: params.resolution ?? null,
+            message: `Mission '${missionId}' has been unblocked`,
+            unblockedAt: now,
+          },
+          warnings
+        );
+      } finally {
+        if (transactionOpen) client.execute('ROLLBACK', []);
       }
-
-      return createSuccess<MissionUnblockResult>(
-        {
-          missionId,
-          previousStatus: currentStatus,
-          currentStatus: targetStatus,
-          resolution: params.resolution ?? null,
-          message: `Mission '${missionId}' has been unblocked`,
-          unblockedAt: now,
-        },
-        warnings
-      );
     },
     { projectRoot: params.projectRoot }
   );

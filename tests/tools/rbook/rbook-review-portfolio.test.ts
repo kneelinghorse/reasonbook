@@ -158,11 +158,12 @@ describe('rbook_review portfolio section (Sprint 79 m06)', () => {
     expect(p!.silent).toBe(0);
     expect(p!.unmigrated).toBe(1);
     expect(p!.unreadable).toBe(0);
-    // Drift lists the un-migrated store with a backfill hint.
+    // Drift lists the un-migrated store with an explicit session upkeep hint.
     expect(p!.drift).not.toBeNull();
     const badDrift = p!.drift!.stale.find((s) => s.projectId === 'proj-bad');
     expect(badDrift).toBeDefined();
-    expect(badDrift!.hint).toMatch(/backfill/i);
+    expect(badDrift!.hint).toContain('rbook_session(action="start"');
+    expect(badDrift!.hint).toContain('rbook_session(action="complete"');
     // Only active missions, each attributed to its source project.
     expect(p!.activeMissions.count).toBe(2);
     expect(p!.activeMissions.top.map((m) => m.id).sort()).toEqual(['a-ip', 'b-cur']);

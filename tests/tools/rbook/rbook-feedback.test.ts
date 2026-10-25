@@ -537,6 +537,27 @@ describe('rbook_feedback by kind and bulk resolve (s97-m07)', () => {
     expect(after[2].status).toBe('open');
   });
 
+  it('a repeated bulk resolve says nothing changed and never claims its new note was stored', async () => {
+    await rbookFeedback({
+      action: 'resolve',
+      feedbackIds: ids,
+      resolutionNote: 'First fix.',
+      projectRoot: t.tempDir,
+    });
+    const before = rows();
+    const result = await rbookFeedback({
+      action: 'resolve',
+      feedbackIds: ids,
+      resolutionNote: 'Unstored second note.',
+      projectRoot: t.tempDir,
+    });
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({ resolved: [], skipped: ids, resolutionNote: null });
+    expect((result.data as { message: string }).message).toMatch(/nothing was resolved/i);
+    expect((result.data as { message: string }).message).toMatch(/note was not stored/i);
+    expect(rows()).toEqual(before);
+  });
+
   it('refuses the whole call when any id is unknown, naming it, and changes nothing', async () => {
     // All or nothing: a typo in one id must not leave the others half-resolved.
     const before = rows();

@@ -1,5 +1,5 @@
-// ABOUTME: Jest globalTeardown — removes the per-run RBOOK_CONFIG_DIR tmpdir provisioned by globalSetup.
-// ABOUTME: Ignores cleanup errors, and fails the run if a test rewrote the real build manifest.
+// ABOUTME: Jest globalTeardown removes only config and source-cache roots owned by this run.
+// ABOUTME: Ignores config cleanup errors and fails if compiled-cache cleanup or build identity changes.
 
 import { promises as fs } from 'fs';
 
@@ -10,6 +10,9 @@ import {
 } from './helpers/dist-manifest-fingerprint';
 
 export default async function globalTeardown(): Promise<void> {
+  const sourceCache = (globalThis as unknown as { __RBOOK_JEST_SOURCE_CACHE__?: string })
+    .__RBOOK_JEST_SOURCE_CACHE__;
+  if (sourceCache) await fs.rm(sourceCache, { recursive: true, force: true });
   const dir = (globalThis as unknown as { __RBOOK_JEST_CONFIG_DIR__?: string })
     .__RBOOK_JEST_CONFIG_DIR__;
   if (dir) {

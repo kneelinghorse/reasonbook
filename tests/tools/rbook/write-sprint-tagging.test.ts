@@ -337,16 +337,21 @@ describe('s85-m03 write-side sprint tagging (real store)', () => {
   });
 
   it('untagged advisories fire on sprint retro and sprint complete', async () => {
+    const now = Date.now();
+    const date = (days: number) => new Date(now + days * 86_400_000).toISOString();
     const root = await makeStore([
-      { id: 'sp-done', status: 'Completed', startDate: '2026-01-01', endDate: '2026-01-14' },
-      { id: 'sp-close', status: 'Active', startDate: '2026-03-01' },
+      { id: 'sp-done', status: 'Completed', startDate: date(-40), endDate: date(-30) },
+      { id: 'sp-close', status: 'Active', startDate: date(-2) },
     ]);
     // Create an UNTAGGED session directly: the resolver would tag it to sp-close otherwise.
     const db = new Database(path.join(root, 'rbook', 'db', 'rbook.sqlite'));
     db.prepare(
       `INSERT INTO sessions (id, type, title, sprint_id, started_at, agent, status, captures)
-       VALUES ('PS-UNTAGGED-001', 'planning', 'untagged', NULL, '2026-03-02T00:00:00Z', 'a', 'completed', '[]')`
-    ).run();
+       VALUES ('PS-UNTAGGED-001', 'planning', 'untagged', NULL, ?, 'a', 'completed', '[]')`
+    ).run(date(-1));
+    db.prepare(
+      `INSERT INTO sessions (id, type, title, sprint_id, started_at, agent, status, captures) VALUES ('PS-OLDER', 'planning', 'older', NULL, ?, 'a', 'completed', '[]')`
+    ).run(date(-20));
     db.close();
 
     const retro = await rbookSprint({ action: 'retro', sprintId: 'sp-close', projectRoot: root });
@@ -360,6 +365,9 @@ describe('s85-m03 write-side sprint tagging (real store)', () => {
       projectRoot: root,
     });
     expect(close.success).toBe(true);
-    expect((close.warnings ?? []).some((w) => /carry no sprint tag/.test(w))).toBe(true);
+    expect((close.warnings ?? []).find((w) => /carry no sprint tag/.test(w))).toMatch(
+      /^1 explicit session\(s\).*sprint's window/
+    );
+    expect((close.warnings ?? []).join(' ')).not.toContain('nor are the decisions');
   });
 });

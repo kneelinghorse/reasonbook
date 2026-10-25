@@ -144,7 +144,7 @@ export interface PortfolioDriftItem {
   reason: string;
   /** Store mtime age in whole days (0 when the store could not be stat'd). */
   ageDays: number;
-  /** Optional operator action, e.g. "run rbook_db backfill/rebuild" for un-migrated stores. */
+  /** Optional operator action, including explicit session upkeep for un-migrated stores. */
   hint?: string;
 }
 
@@ -1155,7 +1155,12 @@ export function deriveDrift(
           name,
           reason: 'un-migrated (missions table predates the per-row rebuild)',
           ageDays: Math.round(storeAgeDays(store.store_path, statFn, nowMs) ?? 0),
-          hint: 'run rbook_db backfill/rebuild',
+          hint:
+            'In this project, update its schema with ' +
+            'rbook_session(action="start", type="custom", title="Update this record schema", ' +
+            `autoRefreshMasterContext=false, projectRoot=${JSON.stringify(store.store_path)}), then ` +
+            'rbook_session(action="complete", sessionId="<returned sessionId>", ' +
+            `summary="Updated the local record schema.", projectRoot=${JSON.stringify(store.store_path)}).`,
         });
       } else {
         // moved / locked / I/O / unknown → transient, classified defensively.

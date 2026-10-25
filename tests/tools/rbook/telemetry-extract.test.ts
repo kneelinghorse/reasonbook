@@ -5,6 +5,12 @@
 import { returnedIds, citedIds, usedIds } from '../../../src/tools/rbook/telemetry-extract';
 
 describe('typed telemetry extraction', () => {
+  it('counts a cited decision only after reopen actually writes its reason', () => {
+    const args = { action: 'reopen', missionId: 'finished', reason: 'Apply decision #21.' };
+    expect(usedIds('rbook_mission_transition', args, 'write', { success: true })).toEqual(['d:21']);
+    expect(usedIds('rbook_mission_transition', args, 'write', { success: false })).toEqual([]);
+  });
+
   it('keeps pulled foreign records out of the local typed namespace on every response shape', () => {
     const remote = { id: 7, projectId: 'another-project' };
     expect(returnedIds('rbook_decisions', { action: 'show' }, remote)).toEqual([]);
@@ -147,6 +153,33 @@ describe('typed telemetry extraction', () => {
     ).toEqual([]);
     expect(
       usedIds('rbook_decisions', { action: 'search', query: '#7' }, 'read', { success: true })
+    ).toEqual([]);
+  });
+
+  it('counts reasoning and typed evidence while keeping incidental numbers out of use', () => {
+    expect(
+      citedIds({
+        context: 'Apply decision #21.',
+        consequences: 'Retains learning #22.',
+        alternatives: ['Rejected next-step #23.', { ignored: '#99' }],
+        evidence: [
+          { type: 'decision', id: '24' },
+          { type: 'learning', id: '25' },
+          { type: 'next-step', id: '26' },
+          { type: 'mission', id: '27' },
+          { type: 'url', id: 'https://example.com/#28' },
+          { type: 'decision', id: '-1' },
+          { type: 'decision', id: '2.5' },
+          { type: 'decision', id: 'private #29' },
+        ],
+        deciders: ['person #30'],
+        objective: 'Outside the ratified citation fields #31',
+      })
+    ).toEqual(['d:24', 'l:25', 'n:26', 'd:21', 'l:22', 'n:23']);
+    expect(
+      usedIds('rbook_decisions', { action: 'record', context: '#21' }, 'write', {
+        success: false,
+      })
     ).toEqual([]);
   });
 

@@ -38,7 +38,9 @@
  *    transition landed while its event row did not. Drop instead requires its audit, refuses and rolls back.
  *
  * NEGATIVE CONTROL, per case: the identical scenario with NO trigger must produce exactly one
- * `session_events` row and NO event-logging warning. Without it, a store broken for some unrelated
+ * mission-scoped `session_events` row with the expected action/status and NO event-logging warning.
+ * Opening the caller's implicit session may produce a separate session-start event. Without the
+ * mission-scoped control, a store broken for some unrelated
  * reason (missing table, wrong path, mission not found) would still look like a successful
  * reproduction — and a test that passes because everything is broken is worse than no test.
  *
@@ -144,6 +146,20 @@ function countSessionEvents(dbPath: string): number {
   return withDb(
     dbPath,
     (db) => (db.prepare('SELECT COUNT(*) AS c FROM session_events').get() as { c: number }).c
+  );
+}
+
+function readMissionEvents(
+  dbPath: string,
+  missionId: string
+): { action: string; status: string }[] {
+  return withDb(
+    dbPath,
+    (db) =>
+      db.prepare('SELECT action, status FROM session_events WHERE mission = ?').all(missionId) as {
+        action: string;
+        status: string;
+      }[]
   );
 }
 
@@ -377,9 +393,11 @@ describe('s86-m02b: a lost session_events row is named in the answer, not only o
 
         expect(result.success).toBe(true);
         expect(readMissionStatus(dbPath, missionId)).toBe(site.toStatus);
-        // The row the failing case loses. If this is 0 the handler is not writing session_events
-        // at all, and the failing case above would be green for the wrong reason.
-        expect(countSessionEvents(dbPath)).toBe(1);
+        // The exact mission row the failing case loses. A caller-session start is separate
+        // provenance and cannot stand in for this transition's action and resulting status.
+        expect(readMissionEvents(dbPath, missionId)).toEqual([
+          { action: label, status: site.toStatus },
+        ]);
 
         expect((result.warnings ?? []).filter((w) => /event logging/i.test(w))).toEqual([]);
         expect(text).not.toContain('event logging failed');
@@ -495,7 +513,9 @@ describe('s86-m02b: the already-correct site stays pinned', () => {
     const text = transitionFormatter('complete')(result);
 
     expect(result.success).toBe(true);
-    expect(countSessionEvents(dbPath)).toBe(1);
+    expect(readMissionEvents(dbPath, missionId)).toEqual([
+      { action: 'complete', status: 'Completed' },
+    ]);
     expect(result.warnings ?? []).not.toContain('Mission completion event logging failed.');
     expect(text).not.toContain('Mission completion event logging failed.');
   });

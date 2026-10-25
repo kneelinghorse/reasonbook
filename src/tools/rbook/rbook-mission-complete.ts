@@ -1,4 +1,4 @@
-// ABOUTME: Completes missions while keeping each optional decision and its citation links atomic.
+// ABOUTME: Completes missions atomically with caller-session links, then captures optional decisions.
 // ABOUTME: Failed optional decision units remain explicit warnings and are excluded from committed counts.
 /**
  * rbook_mission_complete Tool
@@ -9,7 +9,12 @@
  * @module tools/rbook/rbook-mission-complete
  */
 
-import { ensureDecisionShapeColumns } from './schema-migrations';
+import {
+  ensureDecisionShapeColumns,
+  ensureFirehoseEventColumns,
+  ensureSessionMissionsTable,
+} from './schema-migrations';
+import { linkCallerMission } from './mission-session-link';
 import { prepareRecordLinkWrite, requireRecordLinks } from './record-link-write';
 import { normalizeMissionStatus } from './terminal-status';
 import { missionCompletedSql } from './terminal-status';
@@ -254,7 +259,7 @@ export async function rbookMissionComplete(
   }
 
   const warnings: string[] = [];
-  // s92-m03: set when this completion attributes decisions to the caller's session.
+  // Reconcile this store after a transition resolves the caller's session.
   let storePath: string | null = null;
   const result = await withClientAsync(
     async (client) => {
@@ -358,19 +363,24 @@ export async function rbookMissionComplete(
         if (!ready.success) return createError<MissionCompleteResult>(ready.error!);
       }
 
-      const updateResult = recordedExecute(client, updateQuery, updateParams);
-
-      if (!updateResult.success) {
-        return createError<MissionCompleteResult>(
-          updateResult.error ?? { code: 'DB_QUERY_FAILED', message: 'Failed to update mission' }
-        );
-      }
-
-      if (updateResult.data?.changes === 0) {
+      warnings.push(...(ensureImplicitSessionColumns(client).warnings ?? []));
+      warnings.push(...(ensureSessionMissionsTable(client).warnings ?? []));
+      warnings.push(...(ensureFirehoseEventColumns(client).warnings ?? []));
+      storePath = client.path;
+      // The mission status and caller link commit together, including on unshared stores.
+      const transition = recordedTransaction(client, () => {
+        const updated = recordedExecute(client, updateQuery, updateParams);
+        if (!updated.success || updated.data?.changes === 0)
+          throw new Error(updated.error?.message ?? `Failed to update mission '${missionId}'`);
+        const linked = linkCallerMission(client, missionId, 'complete', now, warnings);
+        if (!linked.success) throw new Error(linked.error!.message);
+      });
+      if (!transition.success) {
         return createError<MissionCompleteResult>({
-          code: RBOOK_ERROR_CODES.DB_QUERY_FAILED,
-          message: `Failed to update mission '${missionId}'`,
-          suggestion: 'The mission may have been modified by another process',
+          code: transition.error?.code ?? RBOOK_ERROR_CODES.DB_QUERY_FAILED,
+          message: transition.error?.message ?? `Failed to complete mission '${missionId}'`,
+          suggestion:
+            'Check the sessions and session_missions schema or write permissions, then retry the transition.',
         });
       }
 
@@ -415,13 +425,6 @@ export async function rbookMissionComplete(
           aggregationResult.errorMessage ??
             'Context aggregation hook failed after mission completion update.'
         );
-      }
-
-      // s92-m03: decisions[] are attributed to the caller's session, which may be an implicit
-      // session opened for them; its columns are ensured here, at the answer boundary.
-      if ((cleanDecisions?.length ?? 0) > 0) {
-        warnings.push(...(ensureImplicitSessionColumns(client).warnings ?? []));
-        storePath = client.path;
       }
 
       // Decision capture soft gate

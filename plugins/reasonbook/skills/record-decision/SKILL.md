@@ -88,11 +88,14 @@ The record says how the approval was known: `approved` requires a plain approval
 alone in this session and, for a decision, content that stays within the draft's wording check.
 That check requires the same text after trimming and collapsing whitespace; case, word order and
 punctuation remain significant. `agent-judged` means the operator's words were nuance, covered
-several drafts, or the decision changed any wording beyond whitespace; the words are attached.
+several drafts, arrived more than two hours after the showing, or the decision changed any wording
+beyond whitespace; the words are attached. Late answers open no direct-record window: use fromDraft
+only when those words approve that decision. A late decline persists after its excerpt expires.
 `agent-attested` is available only for decisions from a server without a harness session.
 A linked server refuses a draft when no words younger than two hours
 exist for this draft in this conversation, including when words exist only in another session.
-Constraint, rule and profile drafts require a plain approval and never record as agent-attested.
+Constraint, rule and profile drafts require a timely plain approval and never record as agent-attested.
+After a late answer, propose them again for approval.
 Without a draft id, record the operator's approved choice directly.
 
 Write a one- or two-sentence headline in `content`. Put the reasons and constraints in `context`,

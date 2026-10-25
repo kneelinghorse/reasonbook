@@ -4,6 +4,7 @@
 
 import { promises as fs } from 'fs';
 import * as path from 'path';
+import { collectSrcMtimes, hashSrcFiles, SRC_WALK_CAP } from '../../utils/build-source';
 
 /** Only an explicit project preference disables the advisory; missing/old identities keep it. */
 export function projectChecksBuildFreshness(
@@ -49,10 +50,7 @@ export function isBlockingStaleness(report: BuildFreshnessReport): boolean {
   );
 }
 
-const SRC_EXTENSIONS = new Set(['.ts', '.tsx', '.js']);
-const SKIP_DIRS = new Set(['node_modules', 'dist', '.git', 'coverage', '.next']);
 const STALE_FILES_CAP = 5;
-const SRC_WALK_CAP = 5000;
 const BUILD_MANIFEST_RELATIVE = path.join('dist', '.build-manifest.json');
 const BUILD_MANIFEST_BASENAME = '.build-manifest.json';
 
@@ -70,66 +68,10 @@ const BUILD_WALK_CAP = SRC_WALK_CAP;
 const NEXT_BUILD_SKIP_DIRS: ReadonlySet<string> = new Set(['cache']);
 const NO_SKIP_DIRS: ReadonlySet<string> = new Set();
 
-interface SrcFileMtime {
-  relativePath: string;
-  mtimeMs: number;
-}
-
-/**
- * Walk src/ collecting (relativePath, mtime) for .ts/.tsx/.js files. Skips
- * node_modules / dist / .git / coverage / .next. Caps at SRC_WALK_CAP files
- * to avoid pathological repos. Returns [] when src/ is missing.
- */
-async function collectSrcMtimes(projectRoot: string): Promise<SrcFileMtime[]> {
-  const srcDir = path.join(projectRoot, 'src');
-  let exists = false;
-  try {
-    const stat = await fs.stat(srcDir);
-    exists = stat.isDirectory();
-  } catch {
-    return [];
-  }
-  if (!exists) return [];
-
-  const results: SrcFileMtime[] = [];
-  const stack: string[] = [srcDir];
-  while (stack.length > 0 && results.length < SRC_WALK_CAP) {
-    const dir = stack.pop()!;
-    let entries: string[];
-    try {
-      entries = await fs.readdir(dir);
-    } catch {
-      continue;
-    }
-    for (const name of entries) {
-      if (results.length >= SRC_WALK_CAP) break;
-      const fullPath = path.join(dir, name);
-      let stat: Awaited<ReturnType<typeof fs.stat>>;
-      try {
-        stat = await fs.stat(fullPath);
-      } catch {
-        // Permission error / symlink to nowhere — skip rather than crash.
-        continue;
-      }
-      if (stat.isDirectory()) {
-        if (SKIP_DIRS.has(name)) continue;
-        stack.push(fullPath);
-      } else if (stat.isFile()) {
-        const ext = path.extname(name);
-        if (!SRC_EXTENSIONS.has(ext)) continue;
-        results.push({
-          relativePath: path.relative(projectRoot, fullPath),
-          mtimeMs: stat.mtimeMs,
-        });
-      }
-    }
-  }
-  return results;
-}
-
 interface DistBuildInfo {
   buildTimeMs: number | null;
   source: 'manifest' | 'build-dir-mtime' | 'missing';
+  srcHash?: string;
 }
 
 /**
@@ -190,11 +132,17 @@ async function readDistBuildInfo(projectRoot: string): Promise<DistBuildInfo> {
   const manifestPath = path.join(projectRoot, BUILD_MANIFEST_RELATIVE);
   try {
     const raw = await fs.readFile(manifestPath, 'utf-8');
-    const parsed = JSON.parse(raw) as { buildTime?: string };
+    const parsed = JSON.parse(raw) as { buildTime?: string; srcHash?: unknown };
     if (parsed && typeof parsed.buildTime === 'string') {
       const ms = Date.parse(parsed.buildTime);
       if (!Number.isNaN(ms)) {
-        return { buildTimeMs: ms, source: 'manifest' };
+        return {
+          buildTimeMs: ms,
+          source: 'manifest',
+          ...(typeof parsed.srcHash === 'string' && /^[a-f0-9]{64}$/.test(parsed.srcHash)
+            ? { srcHash: parsed.srcHash }
+            : {}),
+        };
       }
     }
   } catch {
@@ -258,7 +206,11 @@ export async function checkBuildFreshness(projectRoot: string): Promise<BuildFre
 
     const distMs = distInfo.buildTimeMs as number;
     const newer = srcFiles.filter((f) => f.mtimeMs > distMs);
-    if (newer.length === 0) {
+    // Hash only after mtimes would warn. Legacy manifests keep their existing behavior.
+    if (
+      newer.length === 0 ||
+      (distInfo.srcHash && (await hashSrcFiles(projectRoot, srcFiles)) === distInfo.srcHash)
+    ) {
       const latestSrc = srcFiles.reduce((max, f) => (f.mtimeMs > max ? f.mtimeMs : max), 0);
       return {
         stale: false,

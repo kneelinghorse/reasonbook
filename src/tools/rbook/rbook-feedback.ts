@@ -107,7 +107,7 @@ export interface RbookFeedbackBulkResult {
     previousStatus: AgentFeedbackStatus;
     currentStatus: AgentFeedbackStatus;
   }>;
-  /** The note given, or null when each row kept its own. */
+  /** The note stored on newly resolved rows, or null when no note was stored. */
   resolutionNote: string | null;
   message: string;
 }
@@ -358,12 +358,15 @@ function resolveMany(
     projectName,
     skipped: data.skipped,
     resolved: data.resolved,
-    resolutionNote: given,
-    message: `Project ${JSON.stringify(projectName ?? projectId)} (${JSON.stringify(projectId)}). Resolved ${data.resolved.length} feedback row${data.resolved.length === 1 ? '' : 's'}: ${data.resolved
-      .map((row) => `#${row.feedbackId} (${row.previousStatus} → resolved)`)
-      .join(
-        ', '
-      )}${data.skipped.length ? `. Skipped already resolved: ${data.skipped.map((id) => `#${id}`).join(', ')}` : ''}`,
+    resolutionNote: data.resolved.length ? given : null,
+    message:
+      data.resolved.length === 0
+        ? `Project ${JSON.stringify(projectName ?? projectId)} (${JSON.stringify(projectId)}). Nothing was resolved. Skipped already resolved: ${data.skipped.map((id) => `#${id}`).join(', ')}.${given ? ' The supplied note was not stored.' : ''}`
+        : `Project ${JSON.stringify(projectName ?? projectId)} (${JSON.stringify(projectId)}). Resolved ${data.resolved.length} feedback row${data.resolved.length === 1 ? '' : 's'}: ${data.resolved
+            .map((row) => `#${row.feedbackId} (${row.previousStatus} → resolved)`)
+            .join(
+              ', '
+            )}${data.skipped.length ? `. Skipped already resolved: ${data.skipped.map((id) => `#${id}`).join(', ')}` : ''}`,
   });
 }
 

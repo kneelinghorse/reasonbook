@@ -4,7 +4,148 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
 import { copiedPlugin, fixture, packageCode, version } from './fixtures';
+import { cleanupFixture, watchFixture } from './detached-install-diagnostics';
+
+describe('detached fixture diagnostics', () => {
+  let root: string;
+  let child: ReturnType<typeof spawn>;
+  let watch: ReturnType<typeof watchFixture>;
+  beforeEach(() => {
+    jest.useFakeTimers();
+    root = fixture();
+    child = Object.assign(new EventEmitter(), {
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+      stdin: new PassThrough(),
+      pid: 123,
+      kill: jest.fn(),
+      exitCode: null,
+      signalCode: null,
+    }) as unknown as ReturnType<typeof spawn>;
+    watch = watchFixture(child, root, path.join(root, 'data', 'install'));
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  test.each(['installing', 'npmCalled'])(
+    'identifies withheld %s at the 30s startup guard',
+    async (missing) => {
+      const result = watch
+        .waitFor('startup', () => ({
+          installing: missing !== 'installing',
+          npmCalled: missing !== 'npmCalled',
+        }))
+        .catch((error: Error) => error);
+      await jest.advanceTimersByTimeAsync(30000);
+      const error = (await result) as Error;
+      expect(error?.message).toContain('startup');
+      expect(error.message).toContain('budget 30000 ms');
+      expect(error?.message).toContain('"' + missing + '": false');
+      expect(error?.message).toContain('firstObservedMs');
+    }
+  );
+  test.each(['error', 'exit'])(
+    'retains early child %s evidence without an unhandled event',
+    async (event) => {
+      child.stdout!.emit('data', 'x'.repeat(5000));
+      child.stderr!.emit('data', 'npm launch detail');
+      if (event === 'error') child.emit('error', new Error('spawn failed'));
+      else child.emit('exit', 7, null);
+      const result = watch
+        .waitFor('startup', () => ({ installing: false }))
+        .catch((error: Error) => error);
+      await jest.advanceTimersByTimeAsync(30000);
+      expect(((await result) as Error).message).toContain(
+        event === 'error' ? 'spawn failed' : '"exitCode": 7'
+      );
+      expect(((await result) as Error).message).toContain('npm launch detail');
+      expect(((await result) as Error).message).toContain('"stdoutTruncated": true');
+      expect(JSON.parse(watch.snapshot()).stdout).toHaveLength(4096);
+    }
+  );
+  test('publication still waits for the detached worker after the expected parent kill', async () => {
+    child.emit('exit', null, 'SIGKILL');
+    let ready = false;
+    const result = watch.waitFor('publication', () => ({ ready }));
+    setTimeout(() => {
+      ready = true;
+    }, 40);
+    await jest.advanceTimersByTimeAsync(40);
+    await expect(result).resolves.toBeUndefined();
+  });
+  test('startup readiness after 10s succeeds because the loaded fixture became healthy at 10983ms', async () => {
+    let ready = false;
+    const result = watch
+      .waitFor('startup', () => ({ installing: ready }))
+      .catch((error: Error) => error);
+    setTimeout(() => {
+      ready = true;
+    }, 15000);
+    await jest.advanceTimersByTimeAsync(15000);
+    await expect(result).resolves.toBeUndefined();
+  });
+  test.each([
+    ['startup', 30000],
+    ['publication', 10000],
+  ] as const)(
+    '%s never-ready guard expires at %ims and malformed JSON stays evidence',
+    async (phase, budget) => {
+      const lock = path.join(root, 'data', 'install.lock');
+      fs.mkdirSync(path.dirname(lock));
+      fs.writeFileSync(lock, '{broken');
+      let settled = false;
+      const result = watch
+        .waitFor(phase, () => ({ ready: false }))
+        .catch((error: Error) => {
+          settled = true;
+          return error;
+        });
+      await jest.advanceTimersByTimeAsync(budget - 20);
+      expect(settled).toBe(false);
+      await jest.advanceTimersByTimeAsync(20);
+      const error = (await result) as Error;
+      expect(settled).toBe(true);
+      expect(error.message).toContain(`${phase} readiness timed out (budget ${budget} ms)`);
+      expect(error.message).toContain(`"phaseElapsedMs": ${budget}`);
+      expect(error.message).toContain('SyntaxError');
+    }
+  );
+  test.each([false, true])(
+    'malformed lock cleanup fails loudly and preserves an existing failure: %s',
+    (hasPrimary) => {
+      const installRoot = path.join(root, 'data', 'install');
+      fs.mkdirSync(path.dirname(installRoot));
+      fs.writeFileSync(installRoot + '.lock', '{broken');
+      const primary = hasPrimary ? new Error('original startup failure') : undefined;
+      const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        expect(() => {
+          try {
+            if (primary) throw primary;
+          } finally {
+            cleanupFixture(child, root, installRoot, primary);
+          }
+        }).toThrow(primary ?? /cleanup failed/);
+        if (primary) expect(log).toHaveBeenCalledWith(expect.stringContaining('SyntaxError'));
+      } finally {
+        log.mockRestore();
+      }
+    }
+  );
+  test('fixture read errors do not replace the readiness failure', async () => {
+    fs.mkdirSync(path.join(root, 'calls'));
+    const result = watch
+      .waitFor('startup', () => ({ installing: false }))
+      .catch((error: Error) => error);
+    await jest.advanceTimersByTimeAsync(30000);
+    expect(((await result) as Error).message).toContain('budget 30000 ms');
+    expect(((await result) as Error).message).toContain('readError');
+  });
+});
 
 test('cold SessionStart detaches one worker, then the next session uses its fully marked install', async () => {
   const root = fixture();
@@ -93,6 +234,8 @@ test('shared hook and MCP starters install once even after the MCP process group
     `${version}-${process.platform}-${process.arch}-abi${process.versions.modules}`
   );
   let server: ReturnType<typeof spawn> | undefined;
+  let watch: ReturnType<typeof watchFixture> | undefined;
+  let failure: Error | undefined;
   try {
     const plugin = copiedPlugin(root);
     const localNode = path.join(root, process.platform === 'win32' ? 'node.exe' : 'node');
@@ -129,10 +272,8 @@ test('shared hook and MCP starters install once even after the MCP process group
       detached: true,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
-    let output = '';
-    server.stdout!.on('data', (chunk) => {
-      output += String(chunk);
-    });
+    // Capture all child events before the request can fail or produce output.
+    watch = watchFixture(server, root, installRoot);
     server.stdin!.write(
       JSON.stringify({
         jsonrpc: '2.0',
@@ -145,13 +286,10 @@ test('shared hook and MCP starters install once even after the MCP process group
         },
       }) + '\n'
     );
-    const waitFor = async (predicate: () => boolean) => {
-      const deadline = Date.now() + 10000;
-      while (!predicate() && Date.now() < deadline)
-        await new Promise((resolve) => setTimeout(resolve, 20));
-      expect(predicate()).toBe(true);
-    };
-    await waitFor(() => output.includes('rbook-installing') && fs.existsSync(calls));
+    await watch.waitFor('startup', () => ({
+      installing: watch!.hasInstalling(),
+      npmCalled: fs.existsSync(calls),
+    }));
     const hookArgs = [
       script,
       'hook',
@@ -165,26 +303,37 @@ test('shared hook and MCP starters install once even after the MCP process group
       env,
       input: '{}',
       encoding: 'utf8',
-      timeout: 2000,
+      // s102-m13: the old 2 s child watchdog expired under load before this fixture
+      // answered; installation behavior, not subprocess startup speed, is asserted here.
+      timeout: 30_000,
     });
-    expect(hook.status).toBe(0);
+    expect({ status: hook.status, signal: hook.signal, error: hook.error }).toEqual({
+      status: 0,
+      signal: null,
+      error: undefined,
+    });
     expect(hook.stdout).toContain('Reasonbook is installing');
     if (process.platform === 'win32') server.kill('SIGKILL');
     else process.kill(-server.pid!, 'SIGKILL');
     // The install the ended process group started finishes on its own.
     fs.writeFileSync(release, '');
-    await waitFor(
-      () =>
-        fs.existsSync(path.join(installRoot, '.rbook-ready.json')) &&
-        !fs.existsSync(installRoot + '.lock')
-    );
+    await watch.waitFor('publication', () => ({
+      ready: fs.existsSync(path.join(installRoot, '.rbook-ready.json')),
+      lockReleased: !fs.existsSync(installRoot + '.lock'),
+    }));
     const ready = spawnSync(localNode, hookArgs, {
       env,
       input: '{}',
       encoding: 'utf8',
-      timeout: 2000,
+      // s102-m13: the old 2 s child watchdog expired under load before this fixture
+      // answered; installation behavior, not subprocess startup speed, is asserted here.
+      timeout: 30_000,
     });
-    expect(ready.status).toBe(0);
+    expect({ status: ready.status, signal: ready.signal, error: ready.error }).toEqual({
+      status: 0,
+      signal: null,
+      error: undefined,
+    });
     expect(JSON.parse(ready.stdout).args).toEqual(['hook', 'session-start', '--harness', 'codex']);
     expect(fs.readFileSync(calls, 'utf8').trim().split('\n')).toHaveLength(1);
     expect(fs.existsSync(path.join(root, '.codex'))).toBe(false);
@@ -192,16 +341,15 @@ test('shared hook and MCP starters install once even after the MCP process group
       JSON.parse(fs.readFileSync(path.join(data, 'runtime/plugin-install.json'), 'utf8'))
         .installRoot
     ).toBe(installRoot);
+  } catch (error) {
+    // Snapshot before cleanup and retain the original assertion stack.
+    failure = new Error(
+      [error instanceof Error ? error.stack : String(error), watch?.snapshot()]
+        .filter(Boolean)
+        .join('\n')
+    );
+    throw failure;
   } finally {
-    if (server?.exitCode === null) server.kill('SIGKILL');
-    if (fs.existsSync(installRoot + '.lock')) {
-      const owner = JSON.parse(fs.readFileSync(installRoot + '.lock', 'utf8'));
-      try {
-        process.kill(owner.pid, 'SIGKILL');
-      } catch {
-        /* This isolated worker already exited. */
-      }
-    }
-    fs.rmSync(root, { recursive: true, force: true });
+    cleanupFixture(server, root, installRoot, failure);
   }
 });

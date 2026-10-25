@@ -23,9 +23,14 @@ test('a failed or stalled background install ends with an actionable error', () 
           startInstaller:()=>{${mode === 'worker-error' ? "setTimeout(()=>worker.emit('exit',1),5);" : ''}return worker;}
         });`,
       ],
-      { encoding: 'utf8', timeout: 2000 }
+      // A cold child start under load is not the install deadline; the fixture keeps that at 50 ms.
+      { encoding: 'utf8', timeout: 30_000 }
     );
-    expect(result.status).toBe(1);
+    expect({ status: result.status, signal: result.signal, error: result.error }).toEqual({
+      status: 1,
+      signal: null,
+      error: undefined,
+    });
     expect(result.stderr).toContain(
       mode === 'timeout' ? 'installation timed out' : 'installer exited 1'
     );

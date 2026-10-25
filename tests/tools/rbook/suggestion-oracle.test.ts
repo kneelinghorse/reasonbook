@@ -55,7 +55,7 @@
  *     ledger below: a real loopback HTTP server plus synthetic credential/config state reaches 24,
  *     while 2 are named construction-masked residuals. UNTYPED 1 remains at
  *     `sprint-summary-read.ts:45`, whose helper has zero production callers and inherits an
- *     arbitrary error code. `errors.ts:386` has a bounded resolver-code family, proven STATE
+ *     arbitrary error code. `errors.ts:383` has a bounded resolver-code family, proven STATE
  *     below, and its explicit-projectRoot remedy is exercised over stdio. The EXTERNAL arm uses mirrored routers,
  *     no operator credential and no MCP stdio wire; it therefore takes no credit for the first-run
  *     wire matrix in `tests/e2e/wire-preflight.e2e.ts`.
@@ -147,6 +147,7 @@ import { rbookReview } from '../../../src/tools/rbook/rbook-review';
 import { RbookErrors } from '../../../src/tools/rbook/errors';
 import { processOwnerKey } from '../../../src/tools/rbook/session-owner';
 import { PROPOSALS_TABLE_SQL } from '../../../src/tools/rbook/proposals';
+import { openDraftRuntime, retainDeclines } from '../../../src/tools/rbook/draft-runtime';
 
 import {
   buildSuggestionMirror,
@@ -738,8 +739,34 @@ const SITES_BY_MISSION = {
   // s101-m03: the confirmed owner-copy remedy inherits its code through a spread (UNTYPED).
   // Its loopback/CLI/dispatch tests confer no examined-site or wire credit on this matrix.
   's101-m03': ['src/tools/rbook/record-dashboard-share-state.ts:147'],
+  // s102-m04: three blocking-episode postcondition refusals and reopen's failure/eligibility
+  // sites. The shared failure helper has a shorthand code, so remains UNTYPED; the three
+  // postcondition sites are fault-shaped STATE residuals under the unchanged code rule.
+  // Reopen's two eligibility sites are driven below, including its sequential successor remedy.
+  's102-m04': [
+    'src/tools/rbook/rbook-mission-block.ts:317',
+    'src/tools/rbook/rbook-mission-unblock.ts:323',
+    'src/tools/rbook/rbook-mission-update.ts:481',
+    'src/tools/rbook/rbook-mission-reopen.ts:50',
+    'src/tools/rbook/rbook-mission-reopen.ts:121',
+    'src/tools/rbook/rbook-mission-reopen.ts:138',
+  ],
+  // s102-m05: an operator decline awaiting its store write blocks records across sessions.
+  // The marker is identifier-only, and the existing row-presence axis drives this refusal.
+  's102-m05': ['src/tools/rbook/draft-evaluation.ts:156'],
+  // s102-m06: unreadable next-step provenance refuses instead of silently counting foreign use.
+  // DB_QUERY_FAILED is FAULT; the real-store API suite injects the schema-inspection failure.
+  's102-m06': ['src/tools/rbook/next-steps-read.ts:80'],
+  // s102-m07: failure to inspect parked work refuses instead of claiming an exhausted queue.
+  's102-m07': ['src/tools/rbook/mission-status-parked.ts:23'],
 } as const satisfies Readonly<Record<string, readonly string[]>>;
 const RATIFIED_SITE_ADDS = Object.values(SITES_BY_MISSION).flat();
+// Warning propagation moved reopen's eligibility sites after their initial addition.
+const CURRENT_S102_M04_SITES = [
+  ...SITES_BY_MISSION['s102-m04'].slice(0, 4),
+  'src/tools/rbook/rbook-mission-reopen.ts:124',
+  'src/tools/rbook/rbook-mission-reopen.ts:141',
+];
 // Keep mission history above fixed; these retained refusals moved in s101-m02 and s101-m03.
 const CURRENT_S98_M13_SITES = [
   ...SITES_BY_MISSION['s98-m13'].slice(0, 2),
@@ -843,7 +870,7 @@ const EXTERNAL_PREFIXES = ['DASHBOARD_', 'DEVICE_CODE_', 'CREDENTIAL_'];
  * forwards `updateResult.suggestion` verbatim. The census arm PROVES that single-consumer premise
  * rather than trusting this comment.
  *
- * `errors.ts:386` is produced by `senderUnresolvable`. Its production code now varies between
+ * `errors.ts:383` is produced by `senderUnresolvable`. Its production code now varies between
  * the resolver's default and its explicit Codex/address refusals. The proof below enumerates
  * every constructor code and proves all belong to STATE; `<expr>` names this nonliteral code.
  * `sprint-summary-read.ts:45` remains
@@ -854,7 +881,7 @@ const CONSUMER_RESOLVED_CODES: Readonly<Record<string, string>> = {
   'src/tools/rbook/rbook-context-update.ts:790': 'INVALID_PARAMETER',
   'src/tools/rbook/rbook-context-update.ts:799': 'INVALID_PARAMETER',
   'src/tools/rbook/rbook-context-update.ts:818': 'INVALID_PARAMETER',
-  'src/tools/rbook/errors.ts:386': '<expr>',
+  'src/tools/rbook/errors.ts:383': '<expr>',
   // These objects spread dashboardError before overriding its suggestion; proven below.
   'src/tools/rbook/rbook-db-backfill.ts:518': 'DASHBOARD_ERROR',
   'src/tools/rbook/rbook-db-backfill.ts:600': 'DASHBOARD_ERROR',
@@ -1221,10 +1248,24 @@ interface MatrixCase {
   reachable: string;
   setup?: (ctx: CaseContext) => void;
   calls: (ctx: CaseContext) => Array<{ tool: string; params: Record<string, unknown> }>;
+  /** Preserve a remedy's concrete target and any prescribed prerequisite call during replay. */
+  remedyParams?: (
+    tool: string,
+    action: string | undefined,
+    ctx: CaseContext
+  ) => Promise<Record<string, unknown>>;
 }
 
-/** The seven driven mission actions: the six transitions plus the update-status path. */
-const DRIVEN_TRANSITIONS = ['start', 'complete', 'block', 'unblock', 'drop', 'defer'] as const;
+/** The seven driven transitions, plus the update and move paths below. */
+const DRIVEN_TRANSITIONS = [
+  'start',
+  'complete',
+  'block',
+  'unblock',
+  'drop',
+  'defer',
+  'reopen',
+] as const;
 
 /**
  * AXIS 1 — mission status. Seven published values plus `Archived` (WITNESSED LIVE in this repo's
@@ -1315,7 +1356,7 @@ const S91_M04_SELF_TEXT = 's91-m04 axis-2 probe: a decision that names itself in
 let s91M04SelfId = 0;
 
 const MATRIX: MatrixCase[] = [
-  // ── AXIS 1 — mission status × the seven driven actions ────────────────────────────────────────
+  // ── AXIS 1 — mission status × the driven actions ────────────────────────────────────────
   ...MISSION_STATUSES.map(
     ({ status, reachable }): MatrixCase => ({
       axis: '1 mission-status',
@@ -1695,6 +1736,33 @@ const MATRIX: MatrixCase[] = [
   },
   {
     axis: '2 row-presence',
+    name: 's102-m05: the operator decline is waiting for its store write',
+    reachable:
+      'ordinary: the hook retained a decline before a locked store write, then a sessionless server tries to record it; this setup retains the same identifier-only marker in the isolated runtime',
+    setup: (ctx) => {
+      seedDraft(ctx.dbPath, S93_M06_PENDING, 'decision', 0, 'pending');
+      const runtime = openDraftRuntime(ctx.dbPath);
+      if (!runtime) throw new Error('precondition not established: isolated draft runtime missing');
+      try {
+        retainDeclines(runtime, [draftIdOf(ctx.dbPath, S93_M06_PENDING)], Date.now());
+      } finally {
+        runtime.close();
+      }
+    },
+    calls: (ctx) => [
+      {
+        tool: 'rbook_decisions',
+        params: {
+          action: 'record',
+          content: S93_M06_PENDING,
+          fromDraft: `P${draftIdOf(ctx.dbPath, S93_M06_PENDING)}`,
+          projectRoot: ctx.projectRoot,
+        },
+      },
+    ],
+  },
+  {
+    axis: '2 row-presence',
     name: 's93-m06: the draft expired unanswered',
     reachable: 'ordinary: nobody answered a draft for over a week, then an agent records it',
     setup: (ctx) => seedDraft(ctx.dbPath, S93_M06_EXPIRED, 'decision', 8, 'pending'),
@@ -2033,6 +2101,68 @@ const MATRIX: MatrixCase[] = [
   },
 
   // ── AXIS 4 — sprint lifecycle ─────────────────────────────────────────────────────────────────
+  ...(['Planned', 'Completed'] as const).map(
+    (status): MatrixCase => ({
+      axis: '4 sprint-lifecycle',
+      name: `reopen a Completed mission in a ${status} sprint`,
+      reachable:
+        status === 'Planned'
+          ? 'ordinary: complete a mission, then activate a different sprint and demote this one'
+          : 'ordinary: complete a mission, then complete its sprint',
+      setup: (ctx) => {
+        withDb(ctx.dbPath, (db) => {
+          db.prepare('UPDATE sprints SET status = ? WHERE id = ?').run(status, ctx.closedSprintId);
+          db.prepare("UPDATE sprints SET status = 'Active' WHERE id = ?").run(ctx.sprintId);
+          db.prepare(
+            "UPDATE missions SET status = 'Completed', sprint_id = ?, completed_at = ? WHERE id = ?"
+          ).run(ctx.closedSprintId, new Date(Date.now() - 60_000).toISOString(), ctx.missionId);
+        });
+      },
+      calls: (ctx) => [
+        {
+          tool: 'rbook_mission_transition',
+          params: {
+            action: 'reopen',
+            missionId: ctx.missionId,
+            reason: 'oracle eligibility probe',
+            projectRoot: ctx.projectRoot,
+          },
+        },
+      ],
+      remedyParams: async (tool, action, ctx) => {
+        if (status === 'Planned') {
+          expect([tool, action]).toEqual(['rbook_sprint', 'update']);
+          return {
+            action,
+            sprintId: ctx.closedSprintId,
+            fields: { status: 'Active' },
+            projectRoot: ctx.projectRoot,
+          };
+        }
+        expect(tool).toBe('rbook_mission');
+        const successor = {
+          action: 'add',
+          missionId: 'S102M04-SUCCESSOR',
+          name: 'Reopened work successor',
+          sprintId: ctx.sprintId,
+          projectRoot: ctx.projectRoot,
+        };
+        if (action === 'add') return successor;
+        expect(action).toBe('depends');
+        // The authored remedy says "then link it": establish its first call through the same
+        // mirrored router, rather than silently giving depends a nonexistent or self-linked id.
+        const added = (await mirrorRouters.rbook_mission(successor)) as { success: boolean };
+        expect(added.success).toBe(true);
+        return {
+          action,
+          fromId: successor.missionId,
+          toId: ctx.missionId,
+          type: 'Requires',
+          projectRoot: ctx.projectRoot,
+        };
+      },
+    })
+  ),
   {
     axis: '4 sprint-lifecycle',
     name: 'the sprint is already Completed',
@@ -2770,12 +2900,12 @@ const HTTP_EXTERNAL_SITES = new Set([
   'src/tools/rbook/rbook-auth.ts:1231',
   'src/tools/rbook/rbook-auth.ts:1239',
   'src/tools/rbook/rbook-message.ts:1094',
-  'src/tools/rbook/errors.ts:430',
-  'src/tools/rbook/errors.ts:446',
-  'src/tools/rbook/errors.ts:465',
-  'src/tools/rbook/errors.ts:477',
-  'src/tools/rbook/errors.ts:485',
-  'src/tools/rbook/errors.ts:505',
+  'src/tools/rbook/errors.ts:427',
+  'src/tools/rbook/errors.ts:443',
+  'src/tools/rbook/errors.ts:462',
+  'src/tools/rbook/errors.ts:474',
+  'src/tools/rbook/errors.ts:482',
+  'src/tools/rbook/errors.ts:502',
 ]);
 const SYNTHETIC_EXTERNAL_SITES = new Set([
   'src/tools/rbook/rbook-db-backfill.ts:175',
@@ -2789,7 +2919,7 @@ const SYNTHETIC_EXTERNAL_SITES = new Set([
   'src/tools/rbook/rbook-auth.ts:1159',
   'src/tools/rbook/rbook-auth.ts:1168',
   'src/tools/rbook/dashboard-client.ts:284',
-  'src/tools/rbook/errors.ts:495',
+  'src/tools/rbook/errors.ts:492',
 ]);
 
 /** Shared with the private T7 ledger; the replay fence remains private and unchanged. */
@@ -2884,6 +3014,20 @@ describe('s89-m08 CENSUS — the universe re-derives at build time, never from a
       'STATE',
       'STATE',
     ]);
+  });
+
+  it('classifies every s102-m04 addition without widening the fault-code rules', () => {
+    expect(
+      CURRENT_S102_M04_SITES.map((site) => CENSUS.find((row) => row.site === site)?.triggerClass)
+    ).toEqual(['STATE', 'STATE', 'STATE', 'UNTYPED', 'STATE', 'STATE']);
+  });
+
+  it('classifies the s102-m05 pending-decline refusal under the unchanged STATE rule', () => {
+    expect(
+      SITES_BY_MISSION['s102-m05'].map(
+        (site) => CENSUS.find((row) => row.site === site)?.triggerClass
+      )
+    ).toEqual(['STATE']);
   });
 
   it('finds no shorthand suggestion property, which this census cannot read (profile 9)', () => {
@@ -3104,11 +3248,11 @@ describe('s89-m08 T5 — every authored suggestion naming a shipped tool yields 
     // kindCounts left the file for feedback-fleet.ts; s98-m09 moved it to :484 by removing the
     // unpublished feedbackIds minimum from the schema. The text is unchanged.
     expect(narrowOffenders).toEqual([
-      'src/tools/rbook/errors.ts:402',
-      'src/tools/rbook/errors.ts:411',
+      'src/tools/rbook/errors.ts:399',
+      'src/tools/rbook/errors.ts:408',
       'src/tools/rbook/rbook-db-backfill.ts:234',
       'src/tools/rbook/rbook-decisions-update.ts:81',
-      'src/tools/rbook/rbook-feedback.ts:506',
+      'src/tools/rbook/rbook-feedback.ts:509',
       'src/tools/rbook/rbook-learnings-reaffirm.ts:91',
       'src/tools/rbook/rbook-learnings-update.ts:104',
       'src/tools/rbook/rbook-sprint-complete.ts:585',
@@ -5550,7 +5694,7 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     'An exact owner/name collision refuses detached first registration, including archived names and concurrent stores. This synchronous router-refusal matrix does not await close uploads; the separate real-store loopback and MCP-close suite grants no oracle-site credit.',
   'src/tools/rbook/dashboard-client.ts:2426':
     'The create-only server incorrectly returns a re-registration success. The router matrix does not drive background first registration or synthesize that unsafe response; the focused client test verifies refusal without granting oracle-site credit.',
-  'src/tools/rbook/rbook-project-init.ts:822':
+  'src/tools/rbook/rbook-project-init.ts:823':
     'A second initializer wins the id claim after the first read, with an id that conflicts with this caller explicit projectId. This single-call router matrix has no competing connection at that boundary; deterministic real-SQLite claim tests and two-process probes confer no oracle-site credit.',
   'src/tools/rbook/record-context.ts:52':
     'The shared CLI merge boundary sees an unshared store. MCP project sync/move refuse earlier in rbook-project-shared, and MCP has no set-aside action, so this router-only matrix cannot reach that CLI boundary. Real-store CLI tests execute its share remedy separately and confer no oracle-site credit.',
@@ -5831,19 +5975,29 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     'Database read/write/transaction failure branch; the healthy-store axis cannot cause it. Fault cases live in lifecycle-decoupling.test.ts and the integration failure suites.',
   'src/tools/rbook/rbook-mission-add.ts:303':
     'Database read/write/transaction failure branch; the healthy-store axis cannot cause it. Fault cases live in lifecycle-decoupling.test.ts and the integration failure suites.',
-  // s97-m13: start's promotion moved its two branches down 19 lines, and status's queue order 6.
-  'src/tools/rbook/rbook-mission-start.ts:285':
+  // s102-m03: session-link setup moves start's two database-fault branches; status is unchanged.
+  'src/tools/rbook/rbook-mission-start.ts:300':
     'Database read/write/transaction failure branch; the healthy-store axis cannot cause it. Fault cases live in lifecycle-decoupling.test.ts and the integration failure suites.',
-  'src/tools/rbook/rbook-mission-start.ts:299':
+  'src/tools/rbook/rbook-mission-start.ts:314':
     'Database read/write/transaction failure branch; the healthy-store axis cannot cause it. Fault cases live in lifecycle-decoupling.test.ts and the integration failure suites.',
-  'src/tools/rbook/rbook-mission-status.ts:267':
+  'src/tools/rbook/mission-status-parked.ts:23':
+    'Database read failure while checking parked work; the healthy-store axis cannot cause it. status-advisory-truth.test.ts covers the failure boundary.',
+  'src/tools/rbook/rbook-mission-status.ts:270':
     'Database read/write/transaction failure branch; the healthy-store axis cannot cause it. Fault cases live in lifecycle-decoupling.test.ts and the integration failure suites.',
   'src/tools/rbook/rbook-mission-update.ts:327':
     'Database read/write/transaction failure branch; the healthy-store axis cannot cause it. Fault cases live in lifecycle-decoupling.test.ts and the integration failure suites.',
-  'src/tools/rbook/rbook-mission-update.ts:467':
+  'src/tools/rbook/rbook-mission-update.ts:516':
     'Database read/write/transaction failure branch; the healthy-store axis cannot cause it. Fault cases live in lifecycle-decoupling.test.ts and the integration failure suites.',
-  'src/tools/rbook/rbook-mission-update.ts:479':
+  'src/tools/rbook/rbook-mission-update.ts:528':
     'Database read/write/transaction failure branch; the healthy-store axis cannot cause it. Fault cases live in lifecycle-decoupling.test.ts and the integration failure suites.',
+
+  // s102-m04: healthy-store calls cannot produce a trigger-altered transition postcondition.
+  'src/tools/rbook/rbook-mission-block.ts:317':
+    'A trigger changed the committed blocking episode or note. queued-block-lifecycle.test.ts injects transition corruption and proves rollback; this healthy-store matrix cannot reach it.',
+  'src/tools/rbook/rbook-mission-unblock.ts:323':
+    'A trigger changed the unblocking status or metadata. queued-block-lifecycle.test.ts injects transition corruption and proves rollback; this healthy-store matrix cannot reach it.',
+  'src/tools/rbook/rbook-mission-update.ts:481':
+    'A trigger changed the update blocking episode. queued-block-lifecycle.test.ts injects transition corruption and proves rollback; this healthy-store matrix cannot reach it.',
 
   // s94-m08: mandatory drop schema/audit/postcondition failures require fault injection.
   'src/tools/rbook/rbook-mission-drop.ts:70':
@@ -5861,24 +6015,25 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     'CLI-only spin-out core, dispatched directly by src/cli.ts before ambient routing. Explicit-root, conflict, trigger and retry refusals are driven in the spin-out API/process/durability suites; no rbook_* prescription.',
 
   // ── s93-m06: draft refusals that need a harness session or a race ────────────────────────────
+  // s102-m05 extracted evaluation; these are current locations, unlike the mission history above.
   // The matrix drives routers in process with no harness link, so the server writes as a process
   // and no operator words can be bound to it; these are driven by name in draft-approval.test.ts.
-  'src/tools/rbook/draft-approval.ts:201':
+  'src/tools/rbook/draft-evaluation.ts:182':
     "A fromDraft record, in other words than the draft's, of a draft revised after the operator approved it. The record path only; draft-approval.test.ts records a declined revision's text under the earlier approval.",
-  'src/tools/rbook/draft-approval.ts:227':
+  'src/tools/rbook/draft-evaluation.ts:208':
     'The operator plainly declined but the prompt hook could not write the decline, so only the ' +
     'runtime words say so. Needs a harness-linked server and hook runtime words; driven in ' +
     'draft-approval.test.ts ("refuses a decline the hook could not write to the store").',
-  'src/tools/rbook/draft-approval.ts:379':
+  'src/tools/rbook/draft-approval.ts:176':
     'Two records of one constraint, rule or profile draft at once: the guarded claim lets one ' +
     'through. A race needs the operator words bound in a harness session; driven in ' +
     'draft-approval.test.ts ("claims a constraint draft once when two records race").',
-  'src/tools/rbook/draft-approval.ts:450':
+  'src/tools/rbook/draft-approval.ts:247':
     'An approved profile draft whose line cannot be written (past the profile cap) releases its ' +
     'claim. Needs the operator words bound in a harness session; driven in draft-approval.test.ts ' +
     '("releases the claim when an approved profile line cannot be written").',
-  // s96-m01 (fold): down one line (the replica refusal import).
-  'src/tools/rbook/rbook-decisions-record.ts:386':
+  // s102-m05: pending-decline settlement moves the unchanged draft-race refusal again.
+  'src/tools/rbook/rbook-decisions-record.ts:352':
     'Two records of one decision draft at once: the in-transaction guard approves it once and ' +
     'rolls the other back. Driven in draft-approval.test.ts ("records a draft once").',
   // ── s96-m01: the shared record's refusals of a copy, which need a second copy or a restore ─────
@@ -6120,6 +6275,10 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
 };
 
 const FAULT_SHAPED_DRIVEABLE_RESIDUALS = new Set([
+  // s102-m04: mandatory blocking-episode postcondition checks require trigger faults.
+  'src/tools/rbook/rbook-mission-block.ts:317',
+  'src/tools/rbook/rbook-mission-unblock.ts:323',
+  'src/tools/rbook/rbook-mission-update.ts:481',
   // s98-m17: unreadable stored observation, STATE only by the sibling-expression rule.
   'src/referee/set-aside.ts:49',
   'src/tools/rbook/rbook-mission-drop.ts:70',
@@ -6128,12 +6287,13 @@ const FAULT_SHAPED_DRIVEABLE_RESIDUALS = new Set([
   'src/tools/rbook/rbook-mission-drop.ts:260',
   'src/tools/rbook/rbook-mission-add.ts:287',
   'src/tools/rbook/rbook-mission-add.ts:303',
-  'src/tools/rbook/rbook-mission-start.ts:285',
-  'src/tools/rbook/rbook-mission-start.ts:299',
-  'src/tools/rbook/rbook-mission-status.ts:267',
+  'src/tools/rbook/rbook-mission-start.ts:300',
+  'src/tools/rbook/rbook-mission-start.ts:314',
+  'src/tools/rbook/rbook-mission-status.ts:270',
+  'src/tools/rbook/mission-status-parked.ts:23',
   'src/tools/rbook/rbook-mission-update.ts:327',
-  'src/tools/rbook/rbook-mission-update.ts:467',
-  'src/tools/rbook/rbook-mission-update.ts:479',
+  'src/tools/rbook/rbook-mission-update.ts:516',
+  'src/tools/rbook/rbook-mission-update.ts:528',
 
   'src/tools/rbook/client.ts:876',
   'src/tools/rbook/client.ts:887',
@@ -6240,7 +6400,9 @@ PRIVATE.describe(
           call.caseName,
           call.axis,
           prescription.tool,
-          synthesizePrescriptionParams(prescription.tool, prescription.action, ctx)
+          matrixCase.remedyParams
+            ? await matrixCase.remedyParams(prescription.tool, prescription.action, ctx)
+            : synthesizePrescriptionParams(prescription.tool, prescription.action, ctx)
         );
         replays.push({
           site,
@@ -6328,6 +6490,39 @@ PRIVATE.describe(
       ).toEqual([]);
     });
 
+    it('reopen eligibility executes activation and the successor-then-link remedy successfully', () => {
+      const eligibility = replays.filter((replay) =>
+        replay.caseName.startsWith('reopen a Completed mission in a ')
+      );
+      expect(
+        eligibility.map(({ caseName, tool, action, outcome }) => ({
+          caseName,
+          tool,
+          action,
+          outcome,
+        }))
+      ).toEqual([
+        {
+          caseName: 'reopen a Completed mission in a Planned sprint',
+          tool: 'rbook_sprint',
+          action: 'update',
+          outcome: 'SUCCEEDS',
+        },
+        {
+          caseName: 'reopen a Completed mission in a Completed sprint',
+          tool: 'rbook_mission',
+          action: 'add',
+          outcome: 'SUCCEEDS',
+        },
+        {
+          caseName: 'reopen a Completed mission in a Completed sprint',
+          tool: 'rbook_mission',
+          action: 'depends',
+          outcome: 'SUCCEEDS',
+        },
+      ]);
+    });
+
     it('T4 (DISCLOSED) — a remedy that REFUSES from that state says it is conditional', () => {
       const undisclosed = replays.filter(
         (r) => r.outcome === 'REFUSES' && !disclosesCondition(r.suggestion)
@@ -6390,6 +6585,7 @@ PRIVATE.describe(
       // The equality, and — the part that makes it non-vacuous — a stated reason for every residual.
       expect(examinedDriveable.length + residualDriveable.length).toBe(DRIVEABLE.length);
       expect(residualDriveable.filter((site) => !RESIDUAL_REASONS[site])).toEqual([]);
+      expect(examinedDriveable).toContain(SITES_BY_MISSION['s102-m05'][0]);
       // Guard the other direction: a reason for a site that is NOT residual is stale bookkeeping.
       expect(
         Object.keys(RESIDUAL_REASONS).filter((site) => !residualDriveable.includes(site))

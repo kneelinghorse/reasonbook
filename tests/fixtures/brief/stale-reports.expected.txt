@@ -2,14 +2,15 @@
 
 3 projects.
 
+3 drafts dropped: their reports are older than 7 days, so every reported draft has expired. Fresher reports retain their aggregate counts; individual draft ages are unavailable.
+
 Report ages and windows:
 - Atlas (atlas): report 9 days old.
 - Birch Notes (birch-7f3a): report 9 days old.
 - cedar: report 9 days old.
 
 ## Needs a decision
-- Birch Notes (birch-7f3a): 1 draft (P3); 2 unsettled conflicts (strategic\_decisions:01M5DFZ6D0KA3PG18VTXK3TRPR/status, missions:s2-m1/name), oldest 2026-10-10
-- Atlas (atlas): 2 drafts (P14, P15), oldest 2026-10-14
+- Birch Notes (birch-7f3a): 2 unsettled conflicts (strategic\_decisions:01M5DFZ6D0KA3PG18VTXK3TRPR/status, missions:s2-m1/name), oldest 2026-10-10
 
 ## Stuck
 - cedar: 2 next steps about to lapse (n:5, n:6), 2 at the next close, oldest 2026-05-20

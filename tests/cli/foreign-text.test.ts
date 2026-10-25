@@ -61,6 +61,12 @@ it('the common one-line renderer strips C0/C1, flattens whitespace and caps each
   expect(rendered).toContain('name FORGED LINE');
 });
 
+it('removes directional overrides and zero-width spaces without breaking joined text', () => {
+  const controls = '\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069\u200b';
+  const joined = '👩\u200d💻 می\u200cروم 🏴\u{e0067}\u{e0062}\u{e007f}';
+  expect(core.oneLine(`left${controls}right ${joined}`)).toBe(`leftright ${joined}`);
+});
+
 it('confirmation and exchange text cannot be rewritten by peer identifiers or summaries', () => {
   noForgedLine(
     confirmedText({
@@ -191,6 +197,20 @@ it('import row references and copy paths cannot forge lines in the dry-run repor
   } as unknown as ImportReport;
   noForgedLine(importText(report));
   expect(report.from).toBe(hostile);
+  const hidden = 'a\u202eb\u200bc\u200dd\u200ce\u{e0067}';
+  table.copyChanged.push({
+    table: 'missions',
+    id: 'm\u2066',
+    field: 'notes',
+    copy: hidden,
+    owner: 'plain',
+  } as never);
+  const before = JSON.stringify(report);
+  const diff = importText(report);
+  expect(diff).toContain('m\\u2066');
+  expect(diff).toContain('a\\u202eb\\u200bc\\u200dd\\u200ce\\udb40\\udc67');
+  expect(diff).not.toContain(hidden);
+  expect(JSON.stringify(report)).toBe(before);
 });
 
 it.each([undefined, `reasonbook import --from ${hostile} --include missions:${hostile} --apply`])(

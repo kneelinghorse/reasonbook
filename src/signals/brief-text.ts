@@ -6,6 +6,7 @@ import { oneLine } from '../utils/one-line';
 import { compareStoredTimes, storedTimeMs } from '../tools/rbook/stored-time';
 import type { SignalsReport } from './report';
 import type { Brief } from './brief';
+import { DRAFT_EXPIRY_DAYS } from '../tools/rbook/proposals';
 
 /** Items a section lists before "and N more" (settled item 12). */
 export const BRIEF_SECTION_ITEMS = 5;
@@ -107,13 +108,21 @@ export function renderBriefText(brief: Brief): string {
     '',
     `${`${brief.projects} ${brief.projects === 1 ? 'project' : 'projects'}`}` +
       (brief.unreadable.length
-        ? `; ${brief.unreadable.length} could not be read (${brief.unreadable.map((id) => plain(id)).join(', ')})`
+        ? `; ${brief.unreadable.length} could not be read (${(brief.unreadableProjects
+            ? brief.unreadableProjects.map((project) => projectLabel({ project }))
+            : brief.unreadable.map((id) => plain(id))
+          ).join(', ')})`
         : '') +
       (brief.partly.length
         ? `; ${brief.partly.length} had a signal that could not be read (${brief.partly.map((id) => plain(id)).join(', ')})`
         : '') +
       '.',
   ];
+  if (brief.droppedDrafts)
+    lines.push(
+      '',
+      `${brief.droppedDrafts} ${brief.droppedDrafts === 1 ? 'draft' : 'drafts'} dropped: their reports are older than 7 days, so every reported draft has expired. Fresher reports retain their aggregate counts; individual draft ages are unavailable.`
+    );
   if (brief.reportCaveats.length) {
     lines.push('', 'Report ages and windows:');
     for (const caveat of brief.reportCaveats.slice(0, BRIEF_SECTION_ITEMS))
@@ -136,4 +145,12 @@ export function renderBriefText(brief: Brief): string {
       '- Brief cut at the line limit; see the structured brief.'
     );
   return `${lines.join('\n')}\n`;
+}
+
+/** Every draft counted by a report already existed at computedAt; older reports prove expiry. */
+export function expiredDraftCount(report: SignalsReport, now: number): number {
+  const computed = storedTimeMs(report.computedAt);
+  if (!Number.isFinite(computed) || now - computed <= DRAFT_EXPIRY_DAYS * 86_400_000) return 0;
+  const drafts = report.signals.find((signal) => signal.kind === 'drafts_pending');
+  return drafts?.available ? Math.max(0, drafts.count ?? 0) : 0;
 }

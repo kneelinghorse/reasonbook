@@ -358,14 +358,21 @@ describe('Integration: Full Mission Lifecycle', () => {
       expect(result.error?.code).toBe('MISSION_INVALID_STATE');
     });
 
-    it('should prevent blocking a Queued mission', async () => {
+    it('should return a blocked Queued mission to the queue without starting it', async () => {
       const result = await callMissionBlock(testDb.dbPath, {
         missionId: 'int-m01',
-        reason: 'Cannot block queued',
+        reason: 'Waiting for a prerequisite before starting',
       });
 
-      expect(result.success).toBe(false);
-      expect(result.error?.code).toBe('MISSION_INVALID_TRANSITION');
+      expect(result.success).toBe(true);
+      expect(result.data?.previousStatus).toBe('Queued');
+      expect(result.data?.currentStatus).toBe('Blocked');
+      const unblocked = await callMissionUnblock(testDb.dbPath, { missionId: 'int-m01' });
+      expect(unblocked.success).toBe(true);
+      expect(unblocked.data?.currentStatus).toBe('Queued');
+      expect(
+        testDb.db.prepare('SELECT started_at FROM missions WHERE id = ?').get('int-m01')
+      ).toEqual({ started_at: null });
     });
 
     it('should prevent unblocking a non-blocked mission', async () => {

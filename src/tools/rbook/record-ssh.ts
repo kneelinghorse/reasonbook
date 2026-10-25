@@ -63,7 +63,12 @@ export function sshArgs(route: SshRoute, verb: readonly string[]): string[] {
   ];
 }
 
-const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim().slice(0, 500);
+const oneLine = (text: string): string =>
+  text
+    .replace(/\s+/g, ' ')
+    .replace(/[\u202a-\u202e\u2066-\u2069\u200b]/g, '')
+    .trim()
+    .slice(0, 500);
 
 /**
  * Open the far end of a route over SSH and wait for its banner. `ssh` names the client binary; a

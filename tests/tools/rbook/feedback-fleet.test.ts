@@ -305,7 +305,13 @@ it('keeps local feedback visible when it is the project’s only durable record'
   seedRbookDb(local, { projectId: 'local' });
   store('local');
   insert(local, 1);
-  const model = await readDigestV2(local, { RBOOK_CONFIG_DIR: process.env.RBOOK_CONFIG_DIR });
+  // This asserts local-feedback visibility; the dedicated deadline test below owns the 100 ms.
+  const model = await readDigestV2(
+    local,
+    { RBOOK_CONFIG_DIR: process.env.RBOOK_CONFIG_DIR },
+    Infinity,
+    FLEET_ROOM_MS
+  );
   expect(model.emptyRecord).toBe(false);
   expect(model.feedback).toContain('Fleet feedback: 1 open; 1/1 stores');
 });
