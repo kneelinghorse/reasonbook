@@ -11,12 +11,16 @@
 # Usage:
 #   DRY_RUN=1 scripts/mirror-to-public.sh v1.1.0      # stage + leak-check + commit, NO push (verify first)
 #   scripts/mirror-to-public.sh v1.1.0                # real mirror: atomically push main + tag
+#   DOCS_ONLY=1 scripts/mirror-to-public.sh v1.1.0    # after a release: push a docs-only change to main
 #
 # Env overrides:
 #   PUBLIC_REMOTE   default git@github.com:kneelinghorse/reasonbook.git (point at a local --bare repo to test)
 #   PUBLIC_BRANCH   default main
 #   DRY_RUN=1       stage, leak-check, commit locally, print the staged tree, then stop before push
 #   DRY_RUN_KEEP=1  with DRY_RUN=1 only, retain the sanitized checkout and print DRY_RUN_TREE=<path>
+#   DOCS_ONLY=1     the release tag already exists: refuse unless every public path changed since it is
+#                   one no install runs (docs/, top-level *.md, plugins/*/README.md, tests/, scripts/),
+#                   then push main only and leave the tag where npm shipped it
 set -euo pipefail
 
 PUBLIC_REMOTE="${PUBLIC_REMOTE:-git@github.com:kneelinghorse/reasonbook.git}"
@@ -52,6 +56,22 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"; cd "$REPO_ROOT"
 [[ -z "$(git status --porcelain)" ]] || { echo "ERROR: working tree is dirty — commit the release first (the mirror ships git archive HEAD)"; exit 1; }
 PKG_VERSION="$(node -p "require('./package.json').version")"
 [[ "$SEMVER" == "$PKG_VERSION" ]] || { echo "ERROR: tag $VERSION != package.json version $PKG_VERSION"; exit 1; }
+
+if [[ "${DOCS_ONLY:-0}" == "1" ]]; then
+  git rev-parse --verify --quiet "$VERSION^{commit}" >/dev/null || { echo "ERROR: DOCS_ONLY needs the released tag $VERSION in this repository"; exit 1; }
+  while IFS= read -r changed; do
+    excluded=0
+    for p in "${PRIVATE_PATHS[@]}" "${DOCS_EXCLUDES[@]}"; do
+      [[ "$changed" == "$p" || "$changed" == "$p/"* ]] && { excluded=1; break; }
+    done
+    # Nothing an install runs: docs, top-level and plugin READMEs, tests, and repository scripts.
+    [[ "$excluded" == "1" || "$changed" == docs/* || "$changed" == tests/* || "$changed" == scripts/* ]] && continue
+    [[ "$changed" != */* && "$changed" == *.md ]] && continue
+    [[ "$changed" == plugins/*/README.md && "$changed" != plugins/*/*/* ]] && continue
+    echo "ERROR: DOCS_ONLY: $changed changed since $VERSION and installs run it; release it instead"
+    exit 1
+  done < <(git diff --name-only "$VERSION" HEAD)
+fi
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/rbook-mirror.XXXXXXXX")"
 RETAINED_ROOT=""
@@ -171,14 +191,18 @@ if git diff --cached --quiet; then
   echo "no source changes to mirror — public already matches this HEAD; checking release tag"
 else
   PRIVATE_SHA="$(cd "$REPO_ROOT" && git rev-parse --short HEAD)"
-  git commit --quiet -m "release $VERSION
+  if [[ "${DOCS_ONLY:-0}" == "1" ]]; then SUBJECT="docs: update the $VERSION public tree"; else SUBJECT="release $VERSION"; fi
+  git commit --quiet -m "$SUBJECT
 
 Mirrored from the private @aquex/reasonbook source at $PRIVATE_SHA.
 Excludes private paths (rbook/, analysis/, artifacts/, …) and nested private-source files."
 fi
 
 PUBLIC_COMMIT="$(git rev-parse HEAD)"
-if git show-ref --verify --quiet "refs/tags/$VERSION"; then
+if [[ "${DOCS_ONLY:-0}" == "1" ]]; then
+  git show-ref --verify --quiet "refs/tags/$VERSION" || { echo "ERROR: DOCS_ONLY: public tag $VERSION does not exist; release it instead"; exit 1; }
+  git merge-base --is-ancestor "$VERSION^{commit}" "$PUBLIC_COMMIT" || { echo "ERROR: DOCS_ONLY: public tag $VERSION is not an ancestor of public $PUBLIC_BRANCH"; exit 1; }
+elif git show-ref --verify --quiet "refs/tags/$VERSION"; then
   TAG_COMMIT="$(git rev-parse "$VERSION^{commit}")"
   [[ "$TAG_COMMIT" == "$PUBLIC_COMMIT" ]] || {
     echo "ERROR: public tag $VERSION resolves to $TAG_COMMIT, expected $PUBLIC_COMMIT"
@@ -209,6 +233,12 @@ if [[ "${DRY_RUN:-0}" == "1" ]]; then
   exit 0
 fi
 
+if [[ "${DOCS_ONLY:-0}" == "1" ]]; then
+  echo "→ pushing $PUBLIC_BRANCH to $PUBLIC_REMOTE; tag $VERSION stays put"
+  git push origin "HEAD:refs/heads/$PUBLIC_BRANCH"
+  echo "✓ mirrored the $VERSION docs update to public at $PUBLIC_COMMIT"
+  exit 0
+fi
 echo "→ atomically pushing $PUBLIC_BRANCH + tag $VERSION to $PUBLIC_REMOTE"
 git push --atomic origin "HEAD:refs/heads/$PUBLIC_BRANCH" "refs/tags/$VERSION"
 echo "✓ mirrored $VERSION to public at $PUBLIC_COMMIT"

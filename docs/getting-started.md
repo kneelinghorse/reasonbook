@@ -8,7 +8,7 @@ For an existing CMOS installation, follow [the migration guide](migrating-from-c
 
 [<img src="https://raw.githubusercontent.com/kneelinghorse/reasonbook/main/docs/demo/reasonbook-handoff.gif" width="480" alt="A recorded handoff between Claude Code and Codex">](https://github.com/kneelinghorse/reasonbook/blob/main/docs/demo/reasonbook-handoff.mp4)
 
-The [demo receipts](https://github.com/kneelinghorse/reasonbook/blob/main/docs/demo/README.md) describe the recorded runs behind this 75-second replay.
+The [demo receipts](https://github.com/kneelinghorse/reasonbook/blob/main/docs/demo/README.md) describe the recorded runs behind this 65-second replay.
 
 ## Prerequisites
 

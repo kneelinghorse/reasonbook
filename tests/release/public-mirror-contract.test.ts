@@ -738,9 +738,16 @@ describe('public mirror routed-test class gate', () => {
     expect(script).toContain('git show-ref --verify --quiet "refs/tags/$VERSION"');
     expect(tagIndex).toBeGreaterThan(noDiffEnd);
     expect(pushIndex).toBeGreaterThan(tagIndex);
-    expect(pushCommands).toEqual([
+    // The one tag-free push is DOCS_ONLY's, which leaves an existing release tag where npm shipped
+    // it; tests/release/mirror-docs-only.test.ts drives it.
+    expect(pushCommands.map((command) => command.trim())).toEqual([
+      'git push origin "HEAD:refs/heads/$PUBLIC_BRANCH"',
       'git push --atomic origin "HEAD:refs/heads/$PUBLIC_BRANCH" "refs/tags/$VERSION"',
     ]);
+    const docsOnlyPush = script.indexOf('git push origin "HEAD:refs/heads/$PUBLIC_BRANCH"');
+    expect(
+      script.lastIndexOf('if [[ "${DOCS_ONLY:-0}" == "1" ]]; then', docsOnlyPush)
+    ).toBeGreaterThan(tagIndex);
     expect(script).toContain('at $PUBLIC_COMMIT');
   });
 

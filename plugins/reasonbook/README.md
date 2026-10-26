@@ -8,7 +8,7 @@ agent records its own routine choices directly; a choice that is yours, it draft
 
 [<img src="https://raw.githubusercontent.com/kneelinghorse/reasonbook/main/docs/demo/reasonbook-handoff.gif" width="480" alt="A recorded handoff between Claude Code and Codex">](https://github.com/kneelinghorse/reasonbook/blob/main/docs/demo/reasonbook-handoff.mp4)
 
-A 75-second replay of recorded runs; [the receipts](https://github.com/kneelinghorse/reasonbook/blob/main/docs/demo/README.md) explain what was checked.
+A 65-second replay of recorded runs; [the receipts](https://github.com/kneelinghorse/reasonbook/blob/main/docs/demo/README.md) explain what was checked.
 [Your first ten minutes](https://github.com/kneelinghorse/reasonbook/blob/main/docs/first-ten-minutes.md) walks through installation, a first choice and its retrieval.
 
 ## Install

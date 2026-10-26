@@ -1,48 +1,51 @@
 # The handoff demo
 
-A 75-second replay of three recorded runs from 2026-10-12 on the Reasonbook 4.0.0 candidate.
-Claude Code saves a choice, Codex retrieves and corrects it before implementing the tool,
-and the chat plugin explains the result from the saved record. The final frame shows a live
-dashboard API readback of that same disposable project.
+A 65-second replay of three real sessions recorded on 2026-10-25 with the released Reasonbook
+4.6.0. Claude Code saves a choice and the next step. A new Codex session opens on that next step,
+meets a changed requirement, records a correction that supersedes the first decision, then builds
+and tests to it. A fresh Claude Code session asks why, and answers from the record.
 
-[![Reasonbook: a decision carried from Claude Code to Codex and recalled in chat. Play the 75-second video.](reasonbook-handoff-title.png)](reasonbook-handoff.mp4)
+[![Reasonbook: a decision corrected across Claude Code and Codex, then explained from the record. Play the 65-second video.](reasonbook-handoff-title.png)](reasonbook-handoff.mp4)
 
-- [Video](reasonbook-handoff.mp4): MP4, 75 seconds, 1280×720, with visible captions.
-- [Animated preview](reasonbook-handoff.gif): GIF, 75 seconds, 960×540. It loops; use the video to pause.
+- [Video](reasonbook-handoff.mp4): MP4, 65 seconds, 1280×720.
+- [Animated preview](reasonbook-handoff.gif): GIF, 65 seconds, 960×540. It loops; use the video to pause.
 
 ## What was verified
 
-The candidate build is `a3ef21af9080c27243ea866266d574a1ffd6b3b20e4651b0145abc53abbdf52a`.
-Claude Code 2.0.76 selected `claude-opus-4-5-20251101`; both Codex CLI 0.160.1 runs selected
-`gpt-6-astra`. The developer and chat plugins were installed separately from the same candidate.
-All three runs made successful `rbook_*` calls using the client's working directory to select
-the record. The reading-log tests passed all six cases, with no failures or skips, including an
-independent rerun after implementation.
+- **Package:** `@aquex/reasonbook@4.6.0` from npm, installed through the published Claude Code
+  and Codex plugins (`reasonbook@reasonbook`) into a scratch home. No manual MCP server.
+- **Harnesses and models:** Claude Code 2.1.287 selected `claude-opus-5-5` in both Claude runs
+  (from each run's init receipt). Codex CLI 0.164.0 ran `gpt-6-astra` at reasoning effort `high`
+  (from its session log).
+- **The project:** a new, disposable reading-log project initialized with `reasonbook init --level
+builder`. Nothing was seeded into its record.
+- **The record:** decision #1 (Claude Code) is superseded by decision #2 (Codex). The supersede
+  receipt reads `#1: active → superseded`, and next step #1 was completed by Codex.
+- **The code:** Codex's `node --test` passed 8 tests with 0 skipped, including simultaneous adds.
+  An independent rerun after the session also passed 8 of 8.
+- **Every line on screen** is a verbatim excerpt of a run receipt, checked by the build script
+  before rendering. Ellipses mark cuts. Captions describe the receipts; they are not model output.
 
-The dashboard API returned matching project and record identifiers, decision text and creation
-time, the completed implementation session, and an exact full-content match for the saved
-follow-up. Its decision author linkage was unavailable. Harness attribution is verified by the
-local tool receipts; this frame is API evidence, not a screenshot of the dashboard interface.
+## Limits
 
-This is an excerpted replay. Displayed text comes from sealed tool/model/test/API receipts;
-ellipses mark cuts, and the captions describe those receipts. The transcript below includes the
-same excerpts. Five model starts were logged for this mission: one earlier Claude run, one
-stopped developer attempt, and the three successful runs shown here. The earlier attempt is
-preserved and supplies no frames in this recording.
+- This is an excerpted replay, not a screen recording.
+- The two lines labelled "The person" are the prompts given to the runs, typed by the demo
+  coordinator on the operator's behalf. In the second session, the new requirement and the approval
+  to correct the decision both came in that prompt.
+- An earlier attempt in a separate project is kept with the receipts and supplies no frames. Its
+  correction was refused, because that attempt's proposal became a pending draft that its approval
+  never bound to.
+- There is no dashboard frame. These runs used a local-only record.
 
 ## Stills
 
-![Claude Code records the newline-delimited plain-text choice as decision 1.](reasonbook-handoff-step1.png)
+![Claude Code records a JSON-array format as decision 1 and leaves the next step.](reasonbook-handoff-step1.png)
 
-![Codex retrieves decision 1 and records decision 2 with input validation and explicit persistence limits.](reasonbook-handoff-step2.png)
+![Codex finds the format loses titles under concurrent adds and records decision 2, superseding 1.](reasonbook-handoff-step2.png)
 
-![The chat plugin explains the saved rationale and cites the corrected decision and pending follow-up.](reasonbook-handoff-step3.png)
-
-![The dashboard API returns the decision and completed implementation session, with one exact follow-up match. Remote author linkage is unavailable.](reasonbook-handoff-dashboard.png)
+![A fresh Claude Code session explains the superseded choice and its replacement from the record.](reasonbook-handoff-step3.png)
 
 ## Embedding
-
-Use controls and omit autoplay so the video can be paused:
 
 ```html
 <video
@@ -52,132 +55,78 @@ Use controls and omit autoplay so the video can be paused:
   preload="metadata"
   width="1280"
 >
-  A 75-second recorded handoff. The transcript is at docs/demo/README.md.
+  A 65-second recorded handoff. The transcript is at docs/demo/README.md.
 </video>
 ```
 
-GIF alt text: "A 75-second replay: Claude Code saves a choice, Codex corrects and implements it,
-and the chat plugin recalls the saved reasons and follow-up; dashboard API readback confirms the records."
+GIF alt text: "A 65-second replay: Claude Code records a choice, Codex corrects it with a superseding
+decision and passes its tests, and a fresh session explains why from the record."
 
 ## Transcript
 
-## A decision, ready for the next session
+### 1 / 3 · Claude Code records the choice
 
-A real handoff in a disposable reading-log project.
-
-## Claude Code records the choice
-
-Claude chooses a plain text file and saves the reason in the project record.
-
-rbook_decisions · recorded decision text
+rbook_decisions · record
 
 ```text
-Use newline-delimited plain text (.txt) for the reading-log persistence format.
+Persist the reading log as a single JSON file containing an array of title strings, read and rewritten in full on each add.
 ```
 
-Saved tool response
+rbook_session · next step
 
 ```text
-Recorded decision #1
+… Done when those tests pass (`node --test`).
 ```
 
-## The constraints stay with the choice
+### 2 / 3 · Codex picks up, and the requirement changes
 
-The saved record carries the constraints and a format limitation into the next session.
-
-Recorded constraints
+Codex, its first line, quoting the opening digest
 
 ```text
-The CLI must be dependency-free, preserve insertion order, and handle titles with spaces. …
+“n:1 Implement the dependency-free Node.js reading-log CLI per decision #1:…”
 ```
 
-Recorded limitation
+The person
 
 ```text
-… Trade-off: embedded newlines in titles would corrupt the file …
+I often add books from two terminals at the same moment, and an add must never lose another add's title.
 ```
 
-## Codex retrieves and refines the decision
-
-Codex keeps the format, records a correction as d:2, and preserves d:1 in the history.
-
-rbook_decisions · retrieved d:1
+Codex
 
 ```text
-Use newline-delimited plain text (.txt) for the reading-log persistence format.
+Decision #1 explicitly has no concurrent-writer protection: two adds could read the same array and overwrite each other.
 ```
 
-rbook_decisions · new correction d:2
+rbook_decisions · record · supersedes [1]
 
 ```text
-Keep d:1's newline-delimited UTF-8 .txt format, but reject empty or whitespace-only titles and titles containing CR or LF before appending. Treat persistence as sequential single-user storage, without record-level atomicity or crash-recovery guarantees.
+Keep the JSON array of title strings, but serialize every add with an exclusive adjacent lock directory covering the entire read–modify–write operation, and atomically rename a temporary JSON file over the store.
 ```
 
-Saved tool response
+Reasonbook
 
 ```text
-Recorded decision #2
+#1: active → superseded
 ```
 
-## Implementation, checks, and a follow-up
-
-Six tests pass with none skipped. A proposed next step is saved for later review.
-
-Final developer test run
+Codex, closing lines
 
 ```text
-… ℹ pass 6
-ℹ fail 0
-ℹ cancelled 0
-ℹ skipped 0 …
+Record: reading-log-2 decision #2 supersedes #1; next step #1 completed.
+Tests: `node --test` — 8 passed, 0 skipped, including simultaneous adds.
 ```
 
-rbook_session · saved proposed follow-up
+### 3 / 3 · A fresh session asks why
+
+The person
 
 ```text
-Proposed follow-up, pending operator scope approval: add an optional --file PATH argument so the same reading log can be used from different working directories, retaining reading-log.txt in the current directory as the default. …
+Why does the reading log store its titles the way it does?
 ```
 
-## Chat recalls the reasons with sources
-
-A fresh chat session retrieves the same record and cites the decision history and follow-up.
-
-Recorded rationale, recalled in chat
+Claude Code
 
 ```text
-… Newline-delimited text keeps a flat add/list tool simple: appends avoid reading and rewriting the whole list, order follows naturally, and the file is easy to inspect. …
-```
-
-Decision citation
-
-```text
-… **Source: `d:1`, superseded by active decision `d:2`.** …
-```
-
-Follow-up status and citation
-
-```text
-… This remains pending scope approval. **Source: `PS-2026-10-12-002`, next-step capture; also surfaced as draft P1.** …
-```
-
-## Dashboard API readback confirms the records
-
-Remote records and the follow-up are present. Authorship is verified locally; remote author linkage is unavailable.
-
-Remote decision #1 · exact text and creation time verified
-
-```text
-Use newline-delimited plain text (.txt) for the reading-log persistence format.
-```
-
-Remote implementation session · completed
-
-```text
-PS-2026-10-12-002
-```
-
-Exact full-content matches · one expected follow-up
-
-```text
-1
+Decision d:1 (now superseded) picked a single JSON file holding an array of title strings, which the app reads and rewrites in full on every add. Decision d:2 replaced it because two terminals adding at once could both read the same old array, and the last write would drop the other's title. …
 ```

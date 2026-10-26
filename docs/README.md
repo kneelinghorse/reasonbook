@@ -4,7 +4,7 @@ Reasonbook is the project record your agents keep: what was decided, why, what w
 learned, and what remains. It lives in the project, in `rbook/db/rbook.sqlite`, so the next session
 can pick up from it, even in another tool. No dashboard account is required.
 
-[See it work](https://github.com/kneelinghorse/reasonbook/blob/main/docs/demo/README.md): a 75-second replay of recorded runs in Claude Code and Codex.
+[See it work](https://github.com/kneelinghorse/reasonbook/blob/main/docs/demo/README.md): a 65-second replay of recorded runs in Claude Code and Codex.
 
 ## Install
 

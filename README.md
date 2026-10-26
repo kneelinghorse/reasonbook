@@ -8,7 +8,7 @@ You make the decisions; agents handle the bookkeeping. No dashboard account is r
 
 [<img src="https://raw.githubusercontent.com/kneelinghorse/reasonbook/main/docs/demo/reasonbook-handoff.gif" width="480" alt="A recorded handoff between Claude Code and Codex">](https://github.com/kneelinghorse/reasonbook/blob/main/docs/demo/reasonbook-handoff.mp4)
 
-A 75-second replay of recorded runs. [Read the demo's receipts](https://github.com/kneelinghorse/reasonbook/blob/main/docs/demo/README.md)
+A 65-second replay of recorded runs. [Read the demo's receipts](https://github.com/kneelinghorse/reasonbook/blob/main/docs/demo/README.md)
 and [what Reasonbook sends and stores](docs/trust.md).
 
 ## Try it
@@ -569,7 +569,7 @@ Every tool returns a uniform envelope:
 ## Documentation
 
 - [Documentation home](docs/README.md) — what it is, how to install it, the levels and where to read more.
-- [The handoff demo](https://github.com/kneelinghorse/reasonbook/blob/main/docs/demo/README.md) — a 75-second replay of recorded runs, with a transcript.
+- [The handoff demo](https://github.com/kneelinghorse/reasonbook/blob/main/docs/demo/README.md) — a 65-second replay of recorded runs, with a transcript.
 - [Trust](docs/trust.md) — what leaves your machine, what the hooks read, and how to turn each part off.
 - [Privacy](docs/privacy.md) — collection, dashboard visibility, retention and removal.
 - [The method](docs/method.md) — the five lines, the three levels and how to move up.
