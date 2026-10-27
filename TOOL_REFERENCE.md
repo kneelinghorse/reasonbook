@@ -911,7 +911,7 @@ Review agent feedback: list (status and tool filters, counts by kind, optional r
 
 ## rbook_auth
 
-Agent-callable credential lifecycle. Actions: login_init (non-blocking — starts RFC 8628 device-code flow, returns userCode + verificationUri immediately; agent renders them for user approval) + login_complete (polls within a bounded window; returns status 'approved'\|'pending'\|'expired'\|'denied'). Prefer login_init + login_complete for agent-driven auth in chat — a single blocking login is invisible in IDE MCP hosts. login (legacy single-call blocking flow; kept for terminal callers where stderr is visible). logout (symmetric to login — revokes the current user-scoped key on the dashboard + clears the local row). rotate (mint new project key with grace window), revoke (hard-revoke a keyId), list (view credential tree, mine-only by default), reissue (recover a lost project key). All writes persist atomically to the local credential store; agents can call these directly without human intervention.
+Agent-callable credential lifecycle. Actions: login_init (non-blocking — starts RFC 8628 device-code flow, returns userCode + verificationUri immediately; agent renders them for user approval) + login_complete (polls within a bounded window; returns status 'approved'\|'pending'\|'expired'\|'denied'). Prefer login_init + login_complete for agent-driven auth in chat — a single blocking login is invisible in IDE MCP hosts. login (legacy single-call blocking flow; kept for terminal callers where stderr is visible). logout (symmetric to login — revokes the current user-scoped key on the dashboard + clears the local row). rotate (mint new project key with grace window), revoke (hard-revoke a keyId), list (view credential tree, mine-only by default), reissue (recover a lost project key). All writes persist atomically to the local credential store. Agents initiate sign-in; the user must approve it in the browser before login_complete can succeed.
 
 **Actions:** `rotate`, `revoke`, `list`, `reissue`, `login`, `login_init`, `login_complete`, `logout`
 
@@ -1066,7 +1066,7 @@ Return a structured status payload for the current project: rbook_address, dashb
 
 ## rbook_review
 
-Bundled session-opener digest (≤4KB). Replaces the older three-step opener (rbook_agent_onboard + rbook_context(action="view") + rbook_mission(action="status")) with one payload. Top-3 next_actions are promoted to a flat top-level field. Includes an always-on cross-store `portfolio` rollup (active missions and signals needing a person across your registered projects) built on the graph-backed queryAcrossStores; it degrades to null for a single-project setup.
+Start Reasonbook project work with this bundled digest (about 4 KB). Replaces the older three-step opener (rbook_agent_onboard + rbook_context(action="view") + rbook_mission(action="status")) with one payload. Top-3 next_actions are promoted to a flat top-level field. Includes an always-on cross-store `portfolio` rollup (active missions and signals needing a person across your registered projects) built on the graph-backed queryAcrossStores; it degrades to null for a single-project setup.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |

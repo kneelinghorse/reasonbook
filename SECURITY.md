@@ -553,4 +553,4 @@ subagent type (e.g. the `Explore` agent) — that is a mitigation, not the machi
 
 ---
 
-_Last verified against the source for release 4.6.0._
+_Last verified against the source for release 4.6.1._

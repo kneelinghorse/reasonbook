@@ -382,7 +382,7 @@ export type RbookReviewParams = z.infer<typeof rbookReviewSchema>;
 export const rbookReviewToolDefinition = {
   name: 'rbook_review',
   description:
-    'Bundled session-opener digest (≤4KB). Replaces the older three-step opener (rbook_agent_onboard + rbook_context(action="view") + rbook_mission(action="status")) with one payload. Top-3 next_actions are promoted to a flat top-level field. Includes an always-on cross-store `portfolio` rollup (active missions and signals needing a person across your registered projects) built on the graph-backed queryAcrossStores; it degrades to null for a single-project setup.',
+    'Start Reasonbook project work with this bundled digest (about 4 KB). Replaces the older three-step opener (rbook_agent_onboard + rbook_context(action="view") + rbook_mission(action="status")) with one payload. Top-3 next_actions are promoted to a flat top-level field. Includes an always-on cross-store `portfolio` rollup (active missions and signals needing a person across your registered projects) built on the graph-backed queryAcrossStores; it degrades to null for a single-project setup.',
   inputSchema: {
     type: 'object',
     properties: {

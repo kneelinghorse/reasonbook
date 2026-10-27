@@ -19,6 +19,21 @@ const cases: Record<string, { args: Record<string, unknown>; code: string; remed
     code: 'MISSING_PARAMETER',
     remedy: /content/,
   },
+  'rbook_context /nextStepIds#description desc-required': {
+    args: { action: 'next_steps', nextStepAction: 'show' },
+    code: 'MISSING_PARAMETER',
+    remedy: /nextStepIds/,
+  },
+  'rbook_db /snapshotId#description desc-required': {
+    args: { action: 'restore', confirm: true },
+    code: 'MISSING_PARAMETER',
+    remedy: /snapshotId/,
+  },
+  'rbook_project /project#description desc-required': {
+    args: { action: 'join', via: 'dashboard' },
+    code: 'INVALID_PARAMETER',
+    remedy: /project.*rbook:\/\//,
+  },
   'rbook_decisions /decisionIds#description desc-bound': {
     args: {
       action: 'batch_update',
@@ -60,7 +75,7 @@ afterEach(async () => {
 });
 
 it('covers every description promise exactly once', () => {
-  expect(rows).toHaveLength(7);
+  expect(rows).toHaveLength(10);
   expect(rows.map(constraintKey).sort()).toEqual(Object.keys(cases).sort());
 });
 

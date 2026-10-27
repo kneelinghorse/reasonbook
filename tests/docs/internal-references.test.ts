@@ -108,6 +108,8 @@ const SHIPPED_FILES = [
   'docs/privacy.md',
   // s95-m01: the documentation home, public on GitHub like the trust page.
   'docs/README.md',
+  'docs/reviewer/README.md',
+  'docs/reviewer/cases.json',
   // s95-m05: the method page and the starter templates.
   'docs/method.md',
   'templates/ledger/README.md',

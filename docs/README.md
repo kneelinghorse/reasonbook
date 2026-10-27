@@ -41,3 +41,4 @@ reports go through [SECURITY.md](../SECURITY.md).
 - [Harness coverage](harnesses.md): the plugins, the adapters and the fallback without hooks.
 - [Tool reference](../TOOL_REFERENCE.md): every tool, action and parameter.
 - [Changelog](../CHANGELOG.md): release notes and tool-surface changes.
+- [Local reviewer sample](https://github.com/kneelinghorse/reasonbook/tree/main/docs/reviewer): isolated fictional data, reset steps and eight workflow cases.

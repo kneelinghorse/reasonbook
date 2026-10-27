@@ -28,6 +28,18 @@ Reasonbook keeps a local log of tool and hook use in
 patterns a prompt matches and the slash command it starts with, never the text of your prompts or
 your record. It keeps the three newest months and is never uploaded.
 
+Reasonbook also returns tool results to your AI client and adds hook digests, previews and operator
+profile text to its context. The client's and model provider's own data policies govern what they
+receive. Drafts stored in project SQLite include assistant excerpts and profile-draft text before
+approval. Whole-store uploads and initial shared copies include them; later record exchanges
+exclude proposals but can carry approval words recorded in decisions.
+
+Dashboard diagnostic errors can contain record field values. A failed backfill summary samples up
+to three error strings, each truncated to 200 characters; that limit does not cover all diagnostic
+logging or responses. Hosting logs have their own retention and are not removed by a local delete
+or dashboard purge. [Privacy](privacy.md#the-dashboard-optional) distinguishes these logs from local
+usage telemetry and gives the retention and deletion exceptions.
+
 ## Shared copies
 
 Sharing is supported in the measured setup: two accounts operated by one person, on two machines,
@@ -111,8 +123,9 @@ started: with `ps` on macOS, from `/proc` on Linux.
   without a record, it offers to start one until you decline, which runs `ambient off` there.
 - **Prompt submit** may add up to 1,500 characters: previews of related past decisions, drafts
   waiting for you, and reminders. When a reply has shown you a draft, Reasonbook keeps your next message,
-  whatever it says, up to 1,000 characters, outside the record for up to two hours; a decision
-  recorded from the draft carries your words. An answer after two hours can still address an
+  whatever it says, up to 1,000 characters, outside the record with two-hour approval validity.
+  Later binding or session cleanup removes expired excerpts; expiry itself does not erase them.
+  A decision recorded from the draft carries your words. An answer after two hours can still address an
   unexpired draft in the same conversation: an approval reads agent-judged; a decline remains
   declined after its words expire. A busy write keeps an id-only refusal for retry; older binaries
   see it only once saved in the store. Constraint, rule and profile drafts need a new plain approval.
@@ -131,7 +144,7 @@ The hooks keep their own state in `~/.config/rbook/runtime/`:
 - the folders and repositories you worked in;
 - each session's Git note (the commit and the changed file names), deleted when the session-end hook
   completes, and otherwise kept until you delete it;
-- your messages after a draft, until they expire;
+- your messages after a draft, until later binding or session cleanup removes them;
 - which records' previews you have already been shown, with no expiry.
 
 The conversation-focused plugin, `reasonbook-chat`, has no hooks.
@@ -152,7 +165,7 @@ tree and why.
 
 ## Turning parts off
 
-- **The hooks in one project:** `npx --prefer-offline -y @aquex/reasonbook@4.6.0 ambient off`, run in that project,
+- **The hooks in one project:** `npx --prefer-offline -y @aquex/reasonbook@4.6.1 ambient off`, run in that project,
   with the version the plugin installed if it differs. The hooks still start and log their use locally, but add
   nothing. The command also updates the Reasonbook line in that project's `AGENTS.md`. `ambient on` turns
   them back on.

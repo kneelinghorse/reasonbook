@@ -12,7 +12,7 @@ and tests to it. A fresh Claude Code session asks why, and answers from the reco
 
 ## What was verified
 
-- **Package:** `@aquex/reasonbook@4.6.0` from npm, installed through the published Claude Code
+- **Package:** `@aquex/reasonbook`, version 4.6.0 from npm, installed through the published Claude Code
   and Codex plugins (`reasonbook@reasonbook`) into a scratch home. No manual MCP server.
 - **Harnesses and models:** Claude Code 2.1.287 selected `claude-opus-5-5` in both Claude runs
   (from each run's init receipt). Codex CLI 0.164.0 ran `gpt-6-astra` at reasoning effort `high`

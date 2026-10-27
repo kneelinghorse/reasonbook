@@ -20,9 +20,10 @@ test('a failed or stalled background install ends with an actionable error', () 
         process.exitCode=await installingServer({version:'0.0.1'}, {
           input:new PassThrough(), resolveReady:()=>undefined, pollMs:10,
           installTimeoutMs:50,
-          startInstaller:()=>{${mode === 'worker-error' ? "setTimeout(()=>worker.emit('exit',1),5);" : ''}return worker;}
+          startInstaller:()=>{${mode === 'worker-error' ? "queueMicrotask(()=>worker.emit('exit',1));" : ''}return worker;}
         });`,
       ],
+      // The failure event follows listener registration without racing the separate timeout case.
       // A cold child start under load is not the install deadline; the fixture keeps that at 50 ms.
       { encoding: 'utf8', timeout: 30_000 }
     );

@@ -323,8 +323,8 @@ export const rbookAuthToolDefinition = {
     'logout (symmetric to login — revokes the current user-scoped key on the dashboard + clears the local row). ' +
     'rotate (mint new project key with grace window), revoke (hard-revoke a keyId), ' +
     'list (view credential tree, mine-only by default), reissue (recover a lost project key). ' +
-    'All writes persist atomically to the local credential store; agents can call these ' +
-    'directly without human intervention.',
+    'All writes persist atomically to the local credential store. Agents initiate sign-in; ' +
+    'the user must approve it in the browser before login_complete can succeed.',
   inputSchema: {
     type: 'object',
     properties: {

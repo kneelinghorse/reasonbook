@@ -32,6 +32,15 @@ The hooks read your prompt and the agent's last reply. Claude Code hooks also re
 of its transcript; the Codex transcript path is discarded. Reasonbook's MCP tools return the
 requested project information to your AI client. The local usage log is never uploaded.
 
+Draft capture stores up to three proposed lines of 1,000 characters each and up to 600 characters
+of the preceding assistant reply in the project's SQLite file, before approval. This includes
+profile drafts; pending, declined and expired drafts remain stored until the record is removed.
+These excerpts can travel in whole-store dashboard uploads and initial shared copies. Later
+shared-record exchanges exclude proposals, but include approval words copied into a decision.
+Those words follow the decision's retention, not the runtime excerpt's two-hour validity.
+The operator profile file itself stays outside project uploads; hooks can add its text to the AI
+client's context in later projects. Client and model-provider retention follows their own policies.
+
 **What it is used for.** To give your agents the project's record and keep the hooks working.
 
 **How long it is kept.** Until you delete it, with these exceptions:
@@ -39,7 +48,10 @@ requested project information to your AI client. The local usage log is never up
 - The usage log keeps its three newest months.
 - A session's Git note is deleted when the session-end hook completes; otherwise it remains until
   you delete it.
-- Your message after a draft is deleted at session end or expires after two hours.
+- Your message after a draft is valid for approval binding for two hours. Validity expiry is not
+  immediate physical erasure: later binding operations or session cleanup remove stored excerpts.
+  Without that cleanup, they can remain until you delete the runtime store. Approval words already
+  copied into a decision remain with that record.
 - A decline awaiting a busy store keeps only its draft id and first decline time until the store
   confirms the draft is no longer pending. This retry marker survives session cleanup.
 - Shown draft references contain ids and times, without your words. They expire after three later
@@ -232,6 +244,13 @@ their own policies apply. Reasonbook's dashboard receives no install report.
 A device sign-in request also records its IP address and user agent, whether or not you have an
 account. Reasonbook's user agent includes your computer's name. Sign-in rate limits temporarily
 keep IP addresses in memory.
+
+When importing an uploaded database, database errors can quote record field values. A failed
+backfill's diagnostic summary includes project identifiers, an error count and up to three error
+strings, each truncated to 200 characters. This is not a bound on all diagnostic logging or a
+redaction guarantee; other errors and responses can include more text. These console messages
+follow hosting-log retention below, separately from the database's sync-request and activity logs.
+Deleting or purging a project does not retroactively erase hosting logs or backups.
 
 **What it is used for.** To display and sync project records, support collaboration and deliver
 messages. The dashboard does not connect to or read your email inbox; the email address is an

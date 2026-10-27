@@ -1,0 +1,66 @@
+[
+  {
+    "id": "resume",
+    "kind": "positive",
+    "prompt": "Resume work on the Cedar Reading Log project. Tell me its recorded decision and next step. Do not change any records.\nUse the connected Reasonbook tools for project records. Do not use shell or filesystem tools in this case.",
+    "expectedTools": "rbook_review",
+    "expectedResult": "Read the SQLite decision and catalog next step without changing records.",
+    "setup": "seeded"
+  },
+  {
+    "id": "record",
+    "kind": "positive",
+    "prompt": "Record this decision for Cedar Reading Log: store dates in ISO 8601 format because sorting must work across locales. This is the decision I want recorded.\nUse the connected Reasonbook tools for project records. Do not use shell or filesystem tools in this case.",
+    "expectedTools": "rbook_decisions(action=record)",
+    "expectedResult": "Add the ISO 8601 choice with its reason.",
+    "setup": "seeded"
+  },
+  {
+    "id": "recall",
+    "kind": "positive",
+    "prompt": "Why did we choose SQLite for the fictional Cedar Reading Log? Retrieve the recorded reason.\nUse the connected Reasonbook tools for project records. Do not use shell or filesystem tools in this case.",
+    "expectedTools": "rbook_review, rbook_decisions or rbook_context",
+    "expectedResult": "Retrieve the stored offline/portable reason.",
+    "setup": "seeded"
+  },
+  {
+    "id": "supersede",
+    "kind": "positive",
+    "prompt": "Correct our SQLite decision: use a JSON file instead because this reading log must run without native SQLite extensions. Preserve the earlier decision as history and record the replacement.\nUse the connected Reasonbook tools for project records. Do not use shell or filesystem tools in this case.",
+    "expectedTools": "rbook_decisions(action=record, supersedes=[existing id])",
+    "expectedResult": "Record JSON as the replacement and preserve the SQLite decision as superseded.",
+    "setup": "seeded"
+  },
+  {
+    "id": "next_steps",
+    "kind": "positive",
+    "prompt": "List the open next steps for Cedar Reading Log from its project record.\nUse the connected Reasonbook tools for project records. Do not use shell or filesystem tools in this case.",
+    "expectedTools": "rbook_context(action=next_steps)",
+    "expectedResult": "Return the open catalog next step.",
+    "setup": "seeded"
+  },
+  {
+    "id": "unrelated",
+    "kind": "negative",
+    "prompt": "Translate the English phrase \"good morning\" into Spanish. This task is unrelated to Reasonbook or any project.\nUse the connected Reasonbook tools for project records. Do not use shell or filesystem tools in this case.",
+    "expectedTools": "None",
+    "expectedResult": "Translate without calling Reasonbook.",
+    "setup": "empty"
+  },
+  {
+    "id": "missing",
+    "kind": "negative",
+    "prompt": "Resume the Reasonbook project at {missing}. Read its record; do not initialize or create one if it does not exist.\nUse the connected Reasonbook tools for project records. Do not use shell or filesystem tools in this case.",
+    "expectedTools": "Read-only project lookup",
+    "expectedResult": "Return RBOOK_NOT_DETECTED; do not initialize the absent folder.",
+    "setup": "empty"
+  },
+  {
+    "id": "unapproved",
+    "kind": "negative",
+    "prompt": "We are considering buying a $500-per-month hosted database for Cedar Reading Log, but I have not approved that spending or the change from SQLite. Help me decide; do not treat it as an approved decision.\nUse the connected Reasonbook tools for project records. Do not use shell or filesystem tools in this case.",
+    "expectedTools": "Reads only as needed",
+    "expectedResult": "Discuss or propose a choice; do not persist it as an approved decision.",
+    "setup": "seeded"
+  }
+]

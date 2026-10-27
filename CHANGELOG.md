@@ -2,7 +2,16 @@
 
 All notable changes to Reasonbook (published as `@aquex/cmos-mcp` before 4.0.0) are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [4.6.1] — 2026-10-27
+
+### Changed
+
+- Clarify action-specific tool defaults, approval requirements and project-scoped invocation without
+  changing tool names, actions, input contracts or effects.
+- Explain stored draft excerpts, durable approval words, later transfers and possible record text
+  in dashboard diagnostic errors. Runtime excerpt validity is distinct from physical cleanup.
+- Add an isolated fictional local reviewer sample and five positive/three negative workflow cases.
+  Directory eligibility, portal attestations and live privacy-notice propagation remain separate gates.
 
 ## [4.6.0] — 2026-10-24
 
@@ -2638,6 +2647,7 @@ This is the section to read carefully if you've been tracking pre-1.0 internal b
 - **Custom `cmos_learnings(action="update")` callers** should pass at least one of `status` or `evergreen` per call (see Tool-surface changes above).
 
 [1.0.0]: https://www.npmjs.com/package/@aquex/cmos-mcp/v/1.0.0
+[4.6.1]: https://github.com/kneelinghorse/reasonbook/compare/v4.6.0...v4.6.1
 [4.6.0]: https://github.com/kneelinghorse/reasonbook/compare/v4.5.1...v4.6.0
 [4.5.1]: https://github.com/kneelinghorse/reasonbook/compare/v4.5.0...v4.5.1
 [4.5.0]: https://github.com/kneelinghorse/reasonbook/compare/v4.4.0...v4.5.0

@@ -64,6 +64,41 @@ function withoutDescriptions(value: unknown): unknown {
 }
 
 describe('s92-m08 — tools/list', () => {
+  it('makes destructive defaults visible before an agent chooses an admin action', () => {
+    const admin = WIRE_TEXT.rbook_db;
+    expect(admin.description).toMatch(/snapshot creates unless listOnly=true/);
+    expect(admin.description).toMatch(/retention deletes oldest files/);
+    expect(admin.description).toMatch(/restore backs up then replaces the local store/);
+    expect(admin.description).toMatch(/shared stores refuse/);
+    expect(admin.description).toMatch(/purge deletes only the dashboard mirror/);
+    expect(admin.description).toMatch(/dryRun=true refuses retired replay/);
+    expect(admin.parameters.snapshotId).toMatch(/required listed ID, not a path/);
+  });
+
+  it('distinguishes broad next-step carry and applied context condensation from previews', () => {
+    const context = WIRE_TEXT.rbook_context;
+    expect(context.description).toMatch(/condense applies unless dryRun=true/);
+    expect(context.parameters.nextStepIds).toMatch(
+      /carry: omitted\/\[\] means all pending\/carried/
+    );
+    expect(context.parameters.nextStepIds).toMatch(/show\/complete\/drop\/reopen: required/);
+    expect(context.parameters.targetSizePercent).toMatch(/% of size limit/);
+    expect(context.parameters.mode).toMatch(/manual if contextType\/edits supplied/);
+    expect(context.parameters.statusFilter).toMatch(/decisions\/learnings only/);
+    expect(context.parameters.nextStepStatus).toMatch(/defaults to open unless IDs supplied/);
+    expect(context.parameters.nextStepStatus).toMatch(/show ignores filters/);
+  });
+
+  it('requires the right joining copy and human approval before external access changes', () => {
+    const project = WIRE_TEXT.rbook_project;
+    expect(project.description).toMatch(/SSH join runs on owner's copy/);
+    expect(project.description).toMatch(/join runs in the local joining folder/);
+    expect(project.parameters.confirm).toMatch(/false\/omitted previews/);
+    expect(project.parameters.confirm).toMatch(/true sends after operator approval/);
+    expect(WIRE_TEXT.rbook_auth.description).toMatch(/URL\/code for browser approval/);
+    expect(WIRE_TEXT.rbook_auth.parameters.maxWaitSeconds).toMatch(/retry same code/);
+  });
+
   it('describes the digest size as a target, not a guaranteed hard ceiling', () => {
     expect(WIRE_TEXT.rbook_review.description).toContain('about 4 KB');
     expect(WIRE_TEXT.rbook_review.description).not.toContain('at most 4 KB');
@@ -106,14 +141,11 @@ describe('s92-m08 — tools/list', () => {
     ['rbook_sprint', 'Sprints: plan, change, close and review them.'],
     [
       'rbook_mission_transition',
-      'Change a mission\'s state. Complete with notes; record each decision with rbook_decisions(action="record", missionId).',
+      'Change mission state. Complete with notes; record decisions separately with rbook_decisions(action="record", missionId).',
     ],
     [
       'rbook_db',
-      'Database admin. prune_snapshots empties old automatic context-snapshot copies (a dry run ' +
-        'unless confirmed; referenced snapshots and milestones are kept). On a shared project, ' +
-        'conflicts lists the fields copies set apart and settle keeps one value. pull and clone are ' +
-        'retired; use reasonbook sync. backfill uploads registered owner stores.',
+      'Database admin. snapshot creates unless listOnly=true; retention deletes oldest files. restore backs up then replaces the local store; shared stores refuse. purge deletes only the dashboard mirror. prune_snapshots previews unless confirmed; empties content, keeps rows, references and milestones. conflicts lists divergent shared fields; settle keeps one value. pull/clone retired: use reasonbook sync. backfill uploads owner stores; force is ignored; dryRun=true refuses retired replay.',
     ],
   ])('%s keeps its guidance without repeating the action enum', (name, description) => {
     expect(wire().find((tool) => tool.name === name)?.description).toBe(description);
@@ -183,6 +215,15 @@ describe('s92-m08 — tools/list', () => {
 });
 
 describe('s92-m08 — server instructions', () => {
+  it('invokes the record for project work and warns about effects even on lookup calls', () => {
+    expect(SERVER_INSTRUCTIONS_LOOP).toContain('For Reasonbook project work');
+    expect(WIRE_TEXT.rbook_review.description).toContain('Start Reasonbook project work');
+    expect(SERVER_INSTRUCTIONS).not.toMatch(/Start each conversation|every conversation/);
+    expect(SERVER_INSTRUCTIONS).toMatch(/Unknown actions\/fields are refused/);
+    expect(SERVER_INSTRUCTIONS).toMatch(/Every call may write telemetry/);
+    expect(SERVER_INSTRUCTIONS).toMatch(/retries can repeat effects/);
+  });
+
   it('state the whole loop in the first 512 characters, on their own', () => {
     expect(SERVER_INSTRUCTIONS_LOOP.length).toBeLessThanOrEqual(512);
     expect(SERVER_INSTRUCTIONS.slice(0, SERVER_INSTRUCTIONS_LOOP.length)).toBe(

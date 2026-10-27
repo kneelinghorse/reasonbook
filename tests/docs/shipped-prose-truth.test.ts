@@ -123,6 +123,9 @@ const PUBLIC_TARGETS = [
   // s95-m01: the documentation home and the demo page, which the landing content links to.
   'docs/README.md',
   'docs/demo/README.md',
+  // Public reviewer instructions and exact case descriptions live in the repository only.
+  'docs/reviewer/README.md',
+  'docs/reviewer/cases.json',
   // s95-m05: the method page and the starter templates, public in the repository.
   'docs/method.md',
   'templates/ledger/README.md',
@@ -718,6 +721,8 @@ const TOOL_ACTION_CLAIM_FLOORS: Readonly<Record<string, number>> = {
   'plugins/reasonbook/README.md': 0,
   'docs/README.md': 0,
   'docs/demo/README.md': 0,
+  'docs/reviewer/README.md': 0,
+  'docs/reviewer/cases.json': 0,
   'docs/method.md': 1,
   'templates/ledger/README.md': 0,
   'templates/ledger/AGENTS.md': 0,

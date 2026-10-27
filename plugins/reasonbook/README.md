@@ -62,7 +62,9 @@ It needs Node.js 20 or newer on your machine.
   server; other requested dashboard calls and shared-record exchanges remain available.
   The developer plugin requests forwarding of this setting and the sharing controls;
   the portable chat plugin uses the environment inherited from its host. Forwarding through
-  every client loader is unverified. There is no remote telemetry.
+  every client loader is unverified. The local usage log is never uploaded. Whole-store transfers
+  can include stored draft text and assistant excerpts; dashboard diagnostic errors can quote record
+  values. The privacy policy explains these separate data flows and their retention.
 
 [Trust](https://github.com/kneelinghorse/reasonbook/blob/main/docs/trust.md) has the full list and how
 to turn each part off. [Privacy](https://github.com/kneelinghorse/reasonbook/blob/main/docs/privacy.md)
@@ -73,12 +75,12 @@ explains collection, dashboard account visibility, retention and removal.
 | Hook          | What it does                                                                                                                                                                  |
 | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Session start | Adds a digest of the project's record, your operator profile and the drafts waiting for you; in a Git repository, notes the commit and the changed file names for session end |
-| Prompt submit | May add previews of related past decisions and drafts waiting for you; after a reply shows you a draft, keeps your next message for up to two hours                           |
-| Stop          | Keeps up to three closing `Would record:` lines as drafts for you to approve                                                                                                  |
+| Prompt submit | May add previews of related decisions and drafts; keeps your next message with two-hour approval validity, removed on later binding or session cleanup                        |
+| Stop          | Keeps up to three closing `Would record:` lines and preceding assistant excerpts as drafts before approval; expiry does not delete stored drafts                              |
 | Pre-compact   | Adds nothing; the next session start adds the digest again                                                                                                                    |
 | Session end   | Closes the sessions the conversation opened                                                                                                                                   |
 
-To turn the hooks off in one project, run `npx --prefer-offline -y @aquex/reasonbook@4.6.0 ambient off` in that
+To turn the hooks off in one project, run `npx --prefer-offline -y @aquex/reasonbook@4.6.1 ambient off` in that
 project, with the version this plugin installed; `ambient on` turns them back on. To turn everything
 off, disable or uninstall the plugin.
 

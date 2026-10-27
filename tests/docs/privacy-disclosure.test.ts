@@ -168,4 +168,32 @@ describe('public privacy disclosure', () => {
       expect(read(file)).toMatch(/\[Privacy\]\([^\n)]*privacy\.md\)/);
     }
   });
+
+  it('discloses stored conversation excerpts before approval and their later transfer', () => {
+    const text = privacy();
+    expect(text).toContain('up to 600 characters of the preceding assistant reply');
+    expect(text).toContain('pending, declined and expired drafts remain stored');
+    expect(text).toContain('approval words copied into a decision');
+    expect(text).toContain('whole-store dashboard uploads and initial shared copies');
+    expect(text).toContain('Validity expiry is not immediate physical erasure');
+    expect(text).not.toContain(
+      'Your message after a draft is deleted at session end or expires after two hours'
+    );
+  });
+
+  it('distinguishes sampled record-bearing hosting errors from content-free local telemetry', () => {
+    const text = privacy();
+    expect(text).toContain('up to three error strings, each truncated to 200 characters');
+    expect(text).toContain('database errors can quote record field values');
+    expect(text).toContain('not a bound on all diagnostic logging');
+    expect(text).toContain('14 days of log retention');
+    expect(text).toContain('does not retroactively erase hosting logs or backups');
+    const trust = read('docs/trust.md').replace(/\s+/g, ' ');
+    expect(trust).toContain('tool results to your AI client');
+    expect(trust).toContain('record field values');
+    const plugin = read('plugins/reasonbook/README.md').replace(/\s+/g, ' ');
+    expect(plugin).not.toContain('There is no remote telemetry.');
+    expect(plugin).toContain('local usage log is never uploaded');
+    expect(plugin).toContain('assistant excerpts');
+  });
 });
