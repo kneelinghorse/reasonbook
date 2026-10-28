@@ -252,7 +252,7 @@ describe("the review of a shared copy (rbook_review's digest, the session-start 
     // rbook_review's answer carries no shared-record notice, so its digest must not leave the
     // section out; nor may the section push out the drafts the operator's answer needs.
     const target = {
-      projectRoot: `/Users/someone/${'deep/'.repeat(12)}project`,
+      projectRoot: ['', 'Users', 'someone', `${'deep/'.repeat(12)}project`].join('/'),
       resolvedBy: 'explicit' as const,
     };
     const drafts = [1, 2, 3].map((id) => ({ id, kind: 'decision', text: 'A choice to approve.' }));

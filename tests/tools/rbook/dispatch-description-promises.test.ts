@@ -9,6 +9,11 @@ import { constraintKey, dispatchConstraints } from '../../helpers/dispatch-const
 import { createSeededRbookProject, type SeededRbookProject } from '../../helpers/seedRbookDb';
 
 const cases: Record<string, { args: Record<string, unknown>; code: string; remedy: RegExp }> = {
+  'rbook_sprint /summary#description desc-required': {
+    args: { action: 'complete', sprintId: 'sprint' },
+    code: 'MISSING_PARAMETER',
+    remedy: /summary/,
+  },
   'rbook_mission_transition /reason#description desc-required': {
     args: { action: 'block', missionId: 'm' },
     code: 'MISSING_PARAMETER',
@@ -75,7 +80,7 @@ afterEach(async () => {
 });
 
 it('covers every description promise exactly once', () => {
-  expect(rows).toHaveLength(10);
+  expect(rows).toHaveLength(11);
   expect(rows.map(constraintKey).sort()).toEqual(Object.keys(cases).sort());
 });
 

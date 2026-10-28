@@ -10,7 +10,7 @@ The Codex plugin below installs its own pinned runtime. For the other adapters,
 install the CLI before enabling hooks:
 
 ```sh
-npm install -g @aquex/reasonbook@4.6.1
+npm install -g @aquex/reasonbook@4.7.0
 reasonbook --version
 npm root -g
 ```
@@ -115,6 +115,16 @@ model recorded that draft through MCP with `approval_mode=approved` and
 conversation, and SessionEnd completed it. The run used actual plugin hooks, with
 no manually supplied hook events. This establishes the tested Codex boundary;
 VS Code extension-host and Claude Desktop linkage remain unverified.
+
+Keep the conversation running while proposing and approving a draft. A live two-turn Codex
+app-server probe on `codex-cli 0.164.0` again stored the literal `yes` as verified approval.
+Separate `codex exec` and `codex exec resume` invocations have a different lifecycle: the first
+emits SessionEnd and the resumed invocation emits SessionStart, even with the same thread ID.
+Reasonbook clears transient approval evidence at those boundaries. An approval in the resumed
+invocation therefore receives `APPROVAL_REQUIRED`; repeating separate exec/resume calls does
+not restore that evidence. Re-propose the draft and approve it in one continuously running
+conversation, such as two turns in the same running Codex app-server thread. The refusal names
+this remedy. Session-end cleanup remains in force; approval words are not retained across it.
 
 For an ordinary call without `projectRoot`, Codex supplies the client folder and
 Reasonbook reports `resolvedBy=client-cwd`. Approval linkage additionally requires hook

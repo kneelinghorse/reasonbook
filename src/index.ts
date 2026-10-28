@@ -12,6 +12,7 @@
  * @module index
  */
 
+import { isDirectoryEdition, directoryCallError } from './edition';
 import { getSetting, settingIsOff } from './intelligence/legacy-compat';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -35,8 +36,9 @@ installStderrPipeGuard();
 // setting's empty value is an explicit clear and must survive the .env loader.
 const __projectRoot = getSetting('RBOOK_PROJECT_ROOT') ?? path.resolve(__dirname, '..');
 const envPath = path.join(__projectRoot, '.env');
+const directoryEdition = isDirectoryEdition();
 try {
-  if (fs.existsSync(envPath)) {
+  if (!directoryEdition && fs.existsSync(envPath)) {
     const lines = fs.readFileSync(envPath, 'utf-8').split('\n');
     let loaded = 0;
     for (const line of lines) {
@@ -45,6 +47,7 @@ try {
       const eqIdx = trimmed.indexOf('=');
       if (eqIdx === -1) continue;
       const key = trimmed.slice(0, eqIdx).trim();
+      if (key === 'RBOOK_EDITION') continue;
       let value = trimmed.slice(eqIdx + 1).trim();
       if (
         (value.startsWith('"') && value.endsWith('"')) ||
@@ -60,7 +63,7 @@ try {
     // s92-m07: diagnostics, behind RBOOK_DEBUG (checked after loading, so the .env can set it).
     if (debugEnabled())
       process.stderr.write(`[env-loader] loaded ${loaded} vars from ${envPath}\n`);
-  } else if (debugEnabled()) {
+  } else if (!directoryEdition && debugEnabled()) {
     process.stderr.write(`[env-loader] .env not found at ${envPath}\n`);
   }
 } catch (err) {
@@ -205,8 +208,9 @@ import type {
 } from './tools/rbook';
 import { findWrongTypedStringParam } from './tools/rbook/param-type-guard';
 import { classifySenderResolutionError } from './tools/rbook/sender-refusal';
+import { directoryWire } from './tools/rbook/directory-wire';
 import { toWireDefinition } from './tools/rbook/wire-definition';
-import { SERVER_INSTRUCTIONS } from './server-instructions';
+import { getServerInstructions } from './server-instructions';
 import { registerRbookPromptHandlers } from './server-prompts';
 import { closeOwnImplicitSessions } from './tools/rbook/implicit-session-lifecycle';
 import { findUnknownTopLevelParam } from './tools/rbook/unknown-param-guard';
@@ -248,7 +252,7 @@ function createProtocolServer(): Server {
         experimental: { 'codex/sandbox-state-meta': {} },
       },
       // s92-m08: the loop, for every client, without a rules file.
-      instructions: SERVER_INSTRUCTIONS,
+      instructions: getServerInstructions(),
       cacheHints: { 'tools/list': { ttlMs: 60_000, cacheScope: 'private' } },
     }
   );
@@ -291,10 +295,12 @@ export interface ToolDefinition {
  * wire text (s92-m08). The full text stays on RBOOK_TOOL_DEFINITIONS and in TOOL_REFERENCE.md.
  */
 export function getToolDefinitions(): ToolDefinition[] {
-  return (RBOOK_TOOL_DEFINITIONS as unknown as ToolDefinition[]).map((definition) => ({
+  const local = isDirectoryEdition();
+  const definitions = (RBOOK_TOOL_DEFINITIONS as unknown as ToolDefinition[]).map((definition) => ({
     ...toWireDefinition(definition),
     ...toolEffectMetadata(definition.name),
   }));
+  return local ? directoryWire(definitions) : definitions;
 }
 
 /**
@@ -315,9 +321,11 @@ interface PublishedToolSchema {
 
 /** Return a known, schema-derived refusal before sender resolution; unknown tools pass through. */
 function preflightMissionProtocolTool(name: string, args: unknown): RbookToolError | null {
-  const definition = (RBOOK_TOOL_DEFINITIONS as readonly ToolDefinition[]).find(
-    (candidate) => candidate.name === name
-  );
+  const definition = (
+    isDirectoryEdition()
+      ? getToolDefinitions()
+      : (RBOOK_TOOL_DEFINITIONS as readonly ToolDefinition[])
+  ).find((candidate) => candidate.name === name);
   if (!definition) return null;
 
   const actionProperty = (definition.inputSchema as PublishedToolSchema).properties?.['action'];
@@ -952,6 +960,8 @@ export async function executeMissionProtocolTool(
   args: unknown,
   _context: MissionProtocolContext
 ): Promise<CallToolResult> {
+  const editionError = directoryCallError(name, args);
+  if (editionError) return buildKnownToolErrorResult(editionError);
   // s88-m08: establish one concurrency-safe request context before resolution or DB open. The
   // recursive call sees the active context and executes the existing switch unchanged; keeping
   // the switch in this exported function preserves the static router-param audit's reach.
@@ -1551,7 +1561,7 @@ async function initializeServer(): Promise<MissionProtocolContext> {
       `[INFO] Sender attribution diagnostics: Server install root: ${SERVER_INSTALL_ROOT}. ` +
         `${RBOOK_PROJECT_ROOT_ENV} env: ${envProjectRoot ?? 'unset'}. Roots support: probed on first call.`
     );
-    if (envProjectRoot) {
+    if (envProjectRoot && !isDirectoryEdition()) {
       console.error(
         `[WARN] ${RBOOK_PROJECT_ROOT_ENV}=${envProjectRoot} is set. It does not select a project for ` +
           `tool calls; the server reads it only to find its own .env. If you relied on ` +
@@ -1559,7 +1569,7 @@ async function initializeServer(): Promise<MissionProtocolContext> {
           `roots. Every outbound send will fail-closed rather than silently attribute to the server's ` +
           `own project.`
       );
-    } else {
+    } else if (!envProjectRoot) {
       debugLog(`[INFO] ${RBOOK_PROJECT_ROOT_ENV} env: unset (it does not select a project).`);
     }
     const registryPrune = await startupRegistryPruneRunner();
@@ -1617,54 +1627,55 @@ async function initializeServer(): Promise<MissionProtocolContext> {
       console.error(`[P0] Sender attribution self-test warning: ${attributionSelfTest.warning}`);
     }
 
-    // Sprint 57 m02: partial-failure recovery for projects registered on the
-    // dashboard but with no local project key. Non-fatal — startup continues
-    // regardless of the outcome.
-    try {
-      const recoveryRoot = attributionSelfTest.projectRoot ?? undefined;
-      const recovery = await startupProjectKeyRecoveryRunner({
-        ...(recoveryRoot ? { projectRoot: recoveryRoot } : {}),
-      });
-      if (recovery.status === 'recovered') {
-        debugLog(`[INFO] Project key recovery: ${recovery.message}`);
-      } else if (recovery.status === 'error') {
-        console.error(`[WARN] Project key recovery: ${recovery.message}`);
-      } else if (
-        // s86-m06: both attribution-failure statuses are WARN, not INFO. In either
-        // one, auto-recovery is structurally impossible until the operator acts —
-        // that is not information. The single status they replaced was logged at
-        // INFO and named a cause ("run device code") that is false in one of them.
-        recovery.status === 'skipped-no-user-scoped-key' ||
-        recovery.status === 'skipped-unattributable-credential'
-        // s87-m07 — VERIFIED, NOT CHANGED. This mission's critic pass proposed adding `'error'`
-        // here, on the belief that the internal-inconsistency status fell through to [INFO]. It
-        // does not: `error` is already routed to [WARN] by the branch above, so the new producer
-        // this mission adds (the typed-unreachable null-client branch) is correctly logged. The
-        // check is recorded rather than the non-change being silent.
-      ) {
-        console.error(`[WARN] Project key recovery: ${recovery.status} — ${recovery.message}`);
-      } else {
-        debugLog(`[INFO] Project key recovery: ${recovery.status} — ${recovery.message}`);
+    if (!isDirectoryEdition()) {
+      // Sprint 57 m02: partial-failure recovery for projects registered on the
+      // dashboard but with no local project key. Non-fatal — startup continues
+      // regardless of the outcome.
+      try {
+        const recoveryRoot = attributionSelfTest.projectRoot ?? undefined;
+        const recovery = await startupProjectKeyRecoveryRunner({
+          ...(recoveryRoot ? { projectRoot: recoveryRoot } : {}),
+        });
+        if (recovery.status === 'recovered') {
+          debugLog(`[INFO] Project key recovery: ${recovery.message}`);
+        } else if (recovery.status === 'error') {
+          console.error(`[WARN] Project key recovery: ${recovery.message}`);
+        } else if (
+          // s86-m06: both attribution-failure statuses are WARN, not INFO. In either
+          // one, auto-recovery is structurally impossible until the operator acts —
+          // that is not information. The single status they replaced was logged at
+          // INFO and named a cause ("run device code") that is false in one of them.
+          recovery.status === 'skipped-no-user-scoped-key' ||
+          recovery.status === 'skipped-unattributable-credential'
+          // s87-m07 — VERIFIED, NOT CHANGED. This mission's critic pass proposed adding `'error'`
+          // here, on the belief that the internal-inconsistency status fell through to [INFO]. It
+          // does not: `error` is already routed to [WARN] by the branch above, so the new producer
+          // this mission adds (the typed-unreachable null-client branch) is correctly logged. The
+          // check is recorded rather than the non-change being silent.
+        ) {
+          console.error(`[WARN] Project key recovery: ${recovery.status} — ${recovery.message}`);
+        } else {
+          debugLog(`[INFO] Project key recovery: ${recovery.status} — ${recovery.message}`);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'unknown error';
+        console.error(
+          `[WARN] Project key recovery hook threw (non-fatal): ${message}. Continuing startup.`
+        );
       }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'unknown error';
-      console.error(
-        `[WARN] Project key recovery hook threw (non-fatal): ${message}. Continuing startup.`
-      );
-    }
 
-    // Sprint 58 m02: surface an empty credential store with a one-line
-    // [WARN] pointing at rbook_auth(action="login_init"). Makes the "just nothing
-    // happens" first-run state audible. Non-fatal.
-    try {
-      await startupCredentialCheckRunner();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'unknown error';
-      console.error(
-        `[WARN] Startup credential check threw (non-fatal): ${message}. Continuing startup.`
-      );
+      // Sprint 58 m02: surface an empty credential store with a one-line
+      // [WARN] pointing at rbook_auth(action="login_init"). Makes the "just nothing
+      // happens" first-run state audible. Non-fatal.
+      try {
+        await startupCredentialCheckRunner();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'unknown error';
+        console.error(
+          `[WARN] Startup credential check threw (non-fatal): ${message}. Continuing startup.`
+        );
+      }
     }
-
     // Sprint 78 m06: topology diagnostic. WARN only in the ambiguous-attribution
     // config — RBOOK_PROJECT_ROOT pinned while >1 project is registered. Non-fatal.
     try {
@@ -1672,7 +1683,7 @@ async function initializeServer(): Promise<MissionProtocolContext> {
         getSetting(RBOOK_PROJECT_ROOT_ENV),
         registryPrune.remaining ?? 0
       );
-      if (topology.warned) {
+      if (topology.warned && !isDirectoryEdition()) {
         console.error(
           `[WARN] reasonbook: ${RBOOK_PROJECT_ROOT_ENV}=${getSetting(RBOOK_PROJECT_ROOT_ENV)} is pinned ` +
             `while ${topology.registryProjectCount} projects are registered. A single global MCP entry ` +
@@ -1689,24 +1700,26 @@ async function initializeServer(): Promise<MissionProtocolContext> {
       );
     }
 
-    // Sprint 62 m02: detect a .env file accidentally bundled inside the npm
-    // package — protects against accidental credential leaks to the registry.
-    // Non-fatal; only fires when running from a node_modules install.
-    try {
-      const bundledEnv = startupBundledEnvCheckRunner();
-      if (bundledEnv.envFileBundled && bundledEnv.envFilePath) {
+    if (!isDirectoryEdition()) {
+      // Sprint 62 m02: detect a .env file accidentally bundled inside the npm
+      // package — protects against accidental credential leaks to the registry.
+      // Non-fatal; only fires when running from a node_modules install.
+      try {
+        const bundledEnv = startupBundledEnvCheckRunner();
+        if (bundledEnv.envFileBundled && bundledEnv.envFilePath) {
+          console.error(
+            `[WARN] reasonbook: a .env file was found inside the installed package at ${bundledEnv.envFilePath}. ` +
+              `This may contain credentials that should not have been published. ` +
+              `Inspect the file, treat any contained secrets as compromised, and report the issue at ` +
+              `https://github.com/kneelinghorse/reasonbook/issues. The server will continue running.`
+          );
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'unknown error';
         console.error(
-          `[WARN] reasonbook: a .env file was found inside the installed package at ${bundledEnv.envFilePath}. ` +
-            `This may contain credentials that should not have been published. ` +
-            `Inspect the file, treat any contained secrets as compromised, and report the issue at ` +
-            `https://github.com/kneelinghorse/reasonbook/issues. The server will continue running.`
+          `[WARN] Startup bundled-env check threw (non-fatal): ${message}. Continuing startup.`
         );
       }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'unknown error';
-      console.error(
-        `[WARN] Startup bundled-env check threw (non-fatal): ${message}. Continuing startup.`
-      );
     }
 
     // s77-m03: the boot-time tokenizer preload + health log was removed. The

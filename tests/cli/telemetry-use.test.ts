@@ -36,15 +36,43 @@ afterEach(() => {
 });
 
 async function inject(source?: string): Promise<void> {
-  expect(
-    await runCli(['hook', 'session-start'], {
-      env,
-      cwd: root,
-      readStdin: async () => JSON.stringify({ session_id: 'citation-session', source }),
-      stdout: () => {},
-      stderr: () => {},
-    })
-  ).toBe(0);
+  // This suite tests source filtering and citation attribution, not the hook's real-time
+  // deadline. Keep real I/O and digest work; deadline behavior has its own clock-driven tests.
+  jest.useFakeTimers({
+    doNotFake: [
+      'hrtime',
+      'performance',
+      'nextTick',
+      'queueMicrotask',
+      'setImmediate',
+      'clearImmediate',
+    ],
+  });
+  let stdout = '';
+  let stderr = '';
+  try {
+    expect(
+      await runCli(['hook', 'session-start'], {
+        env,
+        cwd: root,
+        readStdin: async () => JSON.stringify({ session_id: 'citation-session', source }),
+        stdout: (text) => {
+          stdout += text;
+        },
+        stderr: (text) => {
+          stderr += text;
+        },
+      })
+    ).toBe(0);
+    expect(stderr).toBe('');
+    expect(JSON.parse(stdout).hookSpecificOutput).toMatchObject({
+      hookEventName: 'SessionStart',
+      additionalContext: expect.any(String),
+    });
+    expect(JSON.parse(stdout).hookSpecificOutput.additionalContext.length).toBeGreaterThan(0);
+  } finally {
+    jest.useRealTimers();
+  }
 }
 
 it.each(['startup', 'resume', 'clear', 'compact', undefined, 'private source'])(
@@ -53,7 +81,8 @@ it.each(['startup', 'resume', 'clear', 'compact', undefined, 'private source'])(
     await inject(source);
     const rows = readTelemetry(targetForStore(dbPath)!, env);
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ tool: 'hook session-start', ok: true });
+    expect(rows[0]).toMatchObject({ tool: 'hook session-start', ok: true, failOpen: null });
+    expect(rows[0].charsInjected).toBeGreaterThan(0);
     expect((rows[0] as unknown as { source?: string }).source).toBe(
       source === 'private source' ? undefined : source
     );

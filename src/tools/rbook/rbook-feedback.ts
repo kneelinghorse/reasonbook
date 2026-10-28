@@ -1,6 +1,7 @@
 // ABOUTME: rbook_feedback — review surface for agent_feedback rows written by the Sprint 56 m03 standing channel.
 // ABOUTME: Consolidated tool with list | triage | resolve | archive actions.
 
+import { directoryCallError } from '../../edition';
 import { z } from 'zod';
 import { withClientValidated, type RbookDatabaseClient } from './client';
 import type { ActionParamMap, RbookToolResult } from './types';
@@ -373,6 +374,8 @@ function resolveMany(
 export async function rbookFeedback(
   params: RbookFeedbackParams
 ): Promise<RbookToolResult<RbookFeedbackResult>> {
+  const editionError = directoryCallError('rbook_feedback', params);
+  if (editionError) return createError(editionError);
   const action = params.action;
 
   // s89-m08 — ONE schema-driven boundary guard for the whole tool, placed at the router entry so

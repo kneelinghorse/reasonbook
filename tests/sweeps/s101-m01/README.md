@@ -5,7 +5,10 @@ status410 with `node tests/sweeps/s101-m01/sweep.cjs . upload` (or `status410`).
 AST predicate covers tracked TypeScript source: 31 upload/exit sites and 10 fetch sites. It
 misses aliased starters, generated code, non-TypeScript code and dynamic calls. The independent
 whole-tracked-tree physical-line predicates in `text-before.json` retain their literal regexes
-and every match, including documentation and tests; their source subset is listed separately.
+and every match's provenance, including documentation and tests; their source subset is listed separately.
+Private-root quotations in the text and auth receipts are replaced by SHA-256 and byte lengths
+(51 and 40 objects respectively, using each receipt's `privateExcerptOmission` predicate).
+Original counts and public-source quotations remain; originals are retained in private sprint-104 evidence.
 Replay those counts with `node tests/sweeps/s101-m01/text-sweep.cjs . d429a4b4`; omit the
 revision for the current tracked tree, or append `--detail` to print every matched line.
 U4 is one silent claim return; U5's production reader is the scheduler (two matching lines),

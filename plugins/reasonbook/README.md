@@ -61,7 +61,7 @@ It needs Node.js 20 or newer on your machine.
   `RBOOK_CHECKPOINT_SYNC=off` stops automatic uploads and manual backfill when supplied to the
   server; other requested dashboard calls and shared-record exchanges remain available.
   The developer plugin requests forwarding of this setting and the sharing controls;
-  the portable chat plugin uses the environment inherited from its host. Forwarding through
+  the local directory edition separately disables these transfers. Forwarding through
   every client loader is unverified. The local usage log is never uploaded. Whole-store transfers
   can include stored draft text and assistant excerpts; dashboard diagnostic errors can quote record
   values. The privacy policy explains these separate data flows and their retention.
@@ -70,17 +70,33 @@ It needs Node.js 20 or newer on your machine.
 to turn each part off. [Privacy](https://github.com/kneelinghorse/reasonbook/blob/main/docs/privacy.md)
 explains collection, dashboard account visibility, retention and removal.
 
+[Reviewer setup and exact cases](https://github.com/kneelinghorse/reasonbook/blob/main/docs/reviewer/README.md)
+use fictional records and explain reset and observed coverage.
+
 ## The five hooks
+
+On prompt submit, Claude Code prompt classification can read up to a 4 MiB tail of the main
+transcript. Stop scans main and selected subagent transcripts within a shared 4 MiB read budget
+for outside-content markers; when no assistant text is supplied, it can also read the newest
+256 KiB for the last reply. These reads distinguish user prompts from harness notices and find proposals. Prompt classification happens before the
+project's ambient-off check. Codex transcript paths are discarded. Harness attribution also reads
+process metadata with `ps` to link a child process to its parent conversation; it does not read
+other processes' memory. Session-start and session-end hooks can start shared-record synchronization
+for a configured shared copy, independently of the server's timer. `RBOOK_SHARED_SYNC=off` in the
+hook environment stops those automatic exchanges.
 
 | Hook          | What it does                                                                                                                                                                  |
 | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Session start | Adds a digest of the project's record, your operator profile and the drafts waiting for you; in a Git repository, notes the commit and the changed file names for session end |
-| Prompt submit | May add previews of related decisions and drafts; keeps your next message with two-hour approval validity, removed on later binding or session cleanup                        |
+| Prompt submit | May add previews of related decisions and drafts; keeps your next message with two-hour approval validity; later binding or session cleanup deletes its row                   |
 | Stop          | Keeps up to three closing `Would record:` lines and preceding assistant excerpts as drafts before approval; expiry does not delete stored drafts                              |
 | Pre-compact   | Adds nothing; the next session start adds the digest again                                                                                                                    |
 | Session end   | Closes the sessions the conversation opened                                                                                                                                   |
 
-To turn the hooks off in one project, run `npx --prefer-offline -y @aquex/reasonbook@4.6.1 ambient off` in that
+Deleting an excerpt row can leave its text in SQLite free pages in the user-only runtime file.
+This cleanup does not guarantee physical erasure.
+
+To turn the hooks off in one project, run `npx --prefer-offline -y @aquex/reasonbook@4.7.0 ambient off` in that
 project, with the version this plugin installed; `ambient on` turns them back on. To turn everything
 off, disable or uninstall the plugin.
 

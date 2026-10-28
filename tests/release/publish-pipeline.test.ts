@@ -580,6 +580,20 @@ describe('release-version class', () => {
         /npm test -- --runInBand\nnpm run clean\nnpm run build\nnpm run test:e2e-firstrun\n\n# `test:e2e-firstrun` drives dist\/index\.js and does not build it\.[\s\S]*?npm run clean\nnpm run build\nnpm run verify:dist/
       );
     });
+
+    test('checks outgoing history against a freshly fetched boundary before expensive branch gates', () => {
+      const runbook = fs.readFileSync(PRIVATE.paths.releaseRunbook, 'utf8');
+      const gates = runbook.split('## 2. Run the branch gates')[1].split('## 2a.')[0];
+      const ordered = (text: string): boolean =>
+        /git fetch origin main\nnode scripts\/check-outgoing-blobs\.js --boundary refs\/remotes\/origin\/main --candidate HEAD[\s\S]*npm run lint[\s\S]*npm test -- --runInBand/.test(
+          text
+        );
+      expect(ordered(gates)).toBe(true);
+      expect(ordered(gates.replace('git fetch origin main\n', ''))).toBe(false);
+      expect(ordered(gates.replace('--boundary refs/remotes/origin/main', '--boundary HEAD'))).toBe(
+        false
+      );
+    });
   });
 });
 

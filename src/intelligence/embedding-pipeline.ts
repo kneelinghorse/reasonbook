@@ -2,6 +2,7 @@
 // per-type embedding-input composition, and recordEmbedding() — the write-path hook that hash-compares against
 // last_embedded_hash, embeds on change, and upserts into <type>_vec. Architecture per rbook/planning/adr/s66-vector-retrieval.md.
 
+import { isDirectoryEdition } from '../edition';
 import { composeDecisionText, type DecisionTextRow } from '../tools/rbook/decision-fields';
 import * as crypto from 'crypto';
 import { debugLog } from '../debug-log';
@@ -122,6 +123,12 @@ export interface SemanticSearchStatus {
 
 /** The current semantic-search state. Never loads the package or the model. */
 export function semanticSearchStatus(): SemanticSearchStatus {
+  if (isDirectoryEdition())
+    return {
+      enabled: false,
+      state: 'not-installed',
+      detail: 'Directory edition: keyword search only; no model is loaded or downloaded.',
+    };
   const notInstalled: SemanticSearchStatus = {
     enabled: false,
     state: 'not-installed',
@@ -155,6 +162,7 @@ export function semanticSearchStatus(): SemanticSearchStatus {
 
 /** True when the real loader has run in this process and left no embedder behind. */
 export function isEmbedderUnavailable(): boolean {
+  if (isDirectoryEdition()) return true;
   return (
     testEmbedder === null &&
     (availability.state === 'not-installed' || availability.state === 'failed')
@@ -188,6 +196,10 @@ export function setEmbedderForTesting(embedder: Embedder | null): void {
  * A concurrent burst shares the one in-flight load via `embedderLoadPromise`.
  */
 export async function getEmbedder(): Promise<Embedder> {
+  if (isDirectoryEdition())
+    throw new Error(
+      'Semantic models are disabled in the directory edition; search is keyword-only.'
+    );
   if (testEmbedder) return testEmbedder;
   if (cachedEmbedder) return cachedEmbedder;
   if (!embedderLoadPromise) {
@@ -334,6 +346,7 @@ export async function recordEmbedding(
   client: RbookDatabaseClient,
   target: RecordEmbeddingTarget
 ): Promise<RecordEmbeddingResult> {
+  if (isDirectoryEdition()) return { action: 'skipped-unavailable' };
   const warnings: string[] = [];
   try {
     const hash = crypto.createHash('sha256').update(target.inputText).digest('hex');

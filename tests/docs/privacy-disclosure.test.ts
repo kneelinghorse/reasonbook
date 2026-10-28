@@ -72,7 +72,9 @@ describe('public privacy disclosure', () => {
     expect(text).toContain('It does not stop shared-record exchanges');
     expect(text).toContain('a fresh copy holding only the shared record');
     expect(text).toContain("each change's author name");
-    expect(text).toContain('snapshotted daily and each snapshot is kept 7 days');
+    // Recovery retains the earlier copies; ordinary snapshot expiry must not promise their erasure.
+    expect(text).toContain('Ordinary daily snapshots are pruned after 7 days');
+    expect(text).toContain('no longer follow ordinary seven-day snapshot pruning');
     // A pending invitation must not be mistaken for access to the shared record.
     expect(text).toContain('read-only shares included');
     expect(text).toContain('A waiting invitation grants no access');

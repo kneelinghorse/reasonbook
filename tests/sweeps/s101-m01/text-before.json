@@ -6,7 +6,8 @@
       {
         "file": "rbook/research/2026-10-s101-probes/fixes-design.md",
         "line": 75,
-        "text": "| **U2** `grep -n \"this.cachedToken = null\"` | **4** | `dashboard-client.ts:1270`, `2323`, `2424` (API-key clients) | `:1143` (password login) |"
+        "lineSha256": "ed90565125a1a9fd590d8384276afcbf4fc69a6b4f0c8462a2e635ca5f332679",
+        "lineUtf8Bytes": 144
       },
       {
         "file": "src/tools/rbook/dashboard-client.ts",
@@ -115,252 +116,302 @@
       {
         "file": "rbook/research/2026-10-s101-probes/fixes-design.md",
         "line": 49,
-        "text": "- The status line prints `lastOutcome` without checking the lease (`dashboard-upload-scheduler.ts:88-95`)."
+        "lineSha256": "193bc1cd78ad84641948792363092b228ac4c984c74ece4aba3ff03bb9d6cd69",
+        "lineUtf8Bytes": 106
       },
       {
         "file": "rbook/research/2026-10-s101-probes/fixes-design.md",
         "line": 78,
-        "text": "| **U5** `grep -nE \"lastOutcome\\|upload_last_outcome\"` outside the state module | **1 reader** (`dashboard-upload-scheduler.ts:83, 91`) | That reader | |"
+        "lineSha256": "6d624f1d0a46a1ecd276dd070b0ac9f80e3e1723b255bb2c2c7d7dc45cebf5b6",
+        "lineUtf8Bytes": 153
       },
       {
         "file": "rbook/research/2026-10-s94-m09/upload-clean-git.cjs",
         "line": 137,
-        "text": "assert.equal(duringState.lastOutcome, 'uploading');"
+        "lineSha256": "c72c779f0d38e4387ef7d232df70db54d01a709dbd2be9fa02cb2e4b186ceedd",
+        "lineUtf8Bytes": 51
       },
       {
         "file": "rbook/research/2026-10-s94-m09/upload-clean-git.cjs",
         "line": 155,
-        "text": "assert.equal(afterState.lastOutcome, 'success');"
+        "lineSha256": "a8c74c588f6c87c5727984892a79505dba4d525321f8359d42bb59315402b93e",
+        "lineUtf8Bytes": 48
       },
       {
         "file": "rbook/research/2026-10-s94-m09/upload-clean-git.json",
         "line": 114,
-        "text": "\"lastOutcome\": null,"
+        "lineSha256": "86ed8f93854f66f1e9847c70f32451baca18a771e8240dc7b6aa2a03c771639b",
+        "lineUtf8Bytes": 20
       },
       {
         "file": "rbook/research/2026-10-s94-m09/upload-clean-git.json",
         "line": 126,
-        "text": "\"lastOutcome\": \"uploading\","
+        "lineSha256": "18d4c6a596eb4b31d107db2466e2947c77e2ae5c939a1476c49a0b9b931dbbfb",
+        "lineUtf8Bytes": 27
       },
       {
         "file": "rbook/research/2026-10-s94-m09/upload-clean-git.json",
         "line": 138,
-        "text": "\"lastOutcome\": \"success\","
+        "lineSha256": "43bc0f6856af70be394a95942835d8189881ce3d33c4670b520ec5369665888e",
+        "lineUtf8Bytes": 25
       },
       {
         "file": "rbook/research/2026-10-s94-m10/live-helper-close.json",
         "line": 28,
-        "text": "\"upload_last_outcome\": \"uploading\","
+        "lineSha256": "b4725531d51beda1441cfa067327c45de7d203bc752b6f1425d1a62071263007",
+        "lineUtf8Bytes": 35
       },
       {
         "file": "rbook/research/2026-10-s94-m10/live-helper-close.json",
         "line": 38,
-        "text": "\"upload_last_outcome\": \"success\","
+        "lineSha256": "56d2d5f238cdc6f30ef107d1979103a1a7ca4ca0ea6e0d0215c7d1eb2a91c51c",
+        "lineUtf8Bytes": 33
       },
       {
         "file": "rbook/research/2026-10-s94-m10/live-ordinary-write.json",
         "line": 28,
-        "text": "\"upload_last_outcome\": null,"
+        "lineSha256": "7d256e9ac98567d536f15b7515aea32787675191ff63d3567e351b5dbb49b6b3",
+        "lineUtf8Bytes": 28
       },
       {
         "file": "rbook/research/2026-10-s94-m10/live-ordinary-write.json",
         "line": 38,
-        "text": "\"upload_last_outcome\": \"success\","
+        "lineSha256": "56d2d5f238cdc6f30ef107d1979103a1a7ca4ca0ea6e0d0215c7d1eb2a91c51c",
+        "lineUtf8Bytes": 33
       },
       {
         "file": "rbook/research/2026-10-s94-m10/live-witness.cjs",
         "line": 26,
-        "text": "upload_last_attempt_at, upload_last_outcome, upload_last_error,"
+        "lineSha256": "5a2cca54177c78b8817bffab2d654a24e3a19c6144ac6b2df655afc43a56dee0",
+        "lineUtf8Bytes": 63
       },
       {
         "file": "rbook/research/2026-10-s94-m10/live-witness.cjs",
         "line": 51,
-        "text": "if (current.last_synced_at > (initial.last_synced_at ?? 0) && current.upload_last_outcome === 'success') {"
+        "lineSha256": "4a73c3d59655d02995cfcefa9229fa61a857b503e57083652b497b08a836b1d3",
+        "lineUtf8Bytes": 106
       },
       {
         "file": "rbook/research/2026-10-s94-m10/live-witness.cjs",
         "line": 83,
-        "text": "if (current.upload_last_outcome === 'failed' && current.upload_last_attempt_at > (initial.upload_last_attempt_at ?? 0)) {"
+        "lineSha256": "e4d3cc7588e2b62aebdcd84a4250607218c5bdbb28883cc52e3f79384e852705",
+        "lineUtf8Bytes": 121
       },
       {
         "file": "rbook/research/2026-10-s95-probes/build/close-handoff-demo.cjs",
         "line": 56,
-        "text": "upload_last_outcome, upload_last_error IS NOT NULL AS has_upload_error,"
+        "lineSha256": "86a20dd1e1efe1eb707267b399bcadc6c6dddfe33abc7199135f091eb3a4d9dd",
+        "lineUtf8Bytes": 71
       },
       {
         "file": "rbook/research/2026-10-s95-probes/build/close-handoff-demo.cjs",
         "line": 184,
-        "text": "state.upload_last_outcome === 'success' && state.last_synced_at > baseline) break;"
+        "lineSha256": "84758fcf73ce9c59807255e784c8c8675269e5c0ad2597241afde11a55b5cf2b",
+        "lineUtf8Bytes": 82
       },
       {
         "file": "rbook/research/2026-10-s95-probes/build/close-handoff-demo.cjs",
         "line": 186,
-        "text": "['failed', 'blocked'].includes(state.upload_last_outcome))"
+        "lineSha256": "64d91487331f6183b7ee7877466017bc88339f28c17e7638b69994910f92a993",
+        "lineUtf8Bytes": 58
       },
       {
         "file": "rbook/research/2026-10-s95-probes/build/close-handoff-demo.cjs",
         "line": 192,
-        "text": "receipt.finalUpload.upload_last_outcome === 'success' && receipt.finalUpload.last_synced_at > baseline))"
+        "lineSha256": "c6ed4dabadce825cd3d82a5cffd0c31c0f8cbfed154f396187772951c301a9c2",
+        "lineUtf8Bytes": 104
       },
       {
         "file": "rbook/research/2026-10-s95-probes/build/m03-close-dashboard-audit-1791692384968.json",
         "line": 118,
-        "text": "\"upload_last_outcome\": null,"
+        "lineSha256": "7d256e9ac98567d536f15b7515aea32787675191ff63d3567e351b5dbb49b6b3",
+        "lineUtf8Bytes": 28
       },
       {
         "file": "rbook/research/2026-10-s95-probes/build/m03-close-dashboard-audit-1791692384968.json",
         "line": 149,
-        "text": "\"upload_last_outcome\": \"success\","
+        "lineSha256": "56d2d5f238cdc6f30ef107d1979103a1a7ca4ca0ea6e0d0215c7d1eb2a91c51c",
+        "lineUtf8Bytes": 33
       },
       {
         "file": "rbook/research/2026-10-s95-probes/build/m03-close-dashboard-audit-1791692904098.json",
         "line": 138,
-        "text": "\"upload_last_outcome\": null,"
+        "lineSha256": "7d256e9ac98567d536f15b7515aea32787675191ff63d3567e351b5dbb49b6b3",
+        "lineUtf8Bytes": 28
       },
       {
         "file": "rbook/research/2026-10-s95-probes/build/m03-close-dashboard-audit-1791692904098.json",
         "line": 169,
-        "text": "\"upload_last_outcome\": \"success\","
+        "lineSha256": "56d2d5f238cdc6f30ef107d1979103a1a7ca4ca0ea6e0d0215c7d1eb2a91c51c",
+        "lineUtf8Bytes": 33
       },
       {
         "file": "rbook/research/2026-10-s95-probes/build/m03-close-dashboard.json",
         "line": 139,
-        "text": "\"upload_last_outcome\": null,"
+        "lineSha256": "7d256e9ac98567d536f15b7515aea32787675191ff63d3567e351b5dbb49b6b3",
+        "lineUtf8Bytes": 28
       },
       {
         "file": "rbook/research/2026-10-s95-probes/build/m03-close-dashboard.json",
         "line": 169,
-        "text": "\"upload_last_outcome\": \"success\","
+        "lineSha256": "56d2d5f238cdc6f30ef107d1979103a1a7ca4ca0ea6e0d0215c7d1eb2a91c51c",
+        "lineUtf8Bytes": 33
       },
       {
         "file": "rbook/research/2026-10-s95-probes/build/release/final-close/s95-final-session-close.json",
         "line": 53,
-        "text": "\"upload_last_outcome\": \"uploading\","
+        "lineSha256": "b4725531d51beda1441cfa067327c45de7d203bc752b6f1425d1a62071263007",
+        "lineUtf8Bytes": 35
       },
       {
         "file": "rbook/research/2026-10-s95-probes/build/release/final-close/s95-final-session-close.json",
         "line": 108,
-        "text": "\"upload_last_outcome\": \"uploading\","
+        "lineSha256": "b4725531d51beda1441cfa067327c45de7d203bc752b6f1425d1a62071263007",
+        "lineUtf8Bytes": 35
       },
       {
         "file": "rbook/research/2026-10-s95-probes/build/release/final-close/s95-normal-upload-observer.json",
         "line": 23,
-        "text": "\"upload_last_outcome\": \"uploading\","
+        "lineSha256": "b4725531d51beda1441cfa067327c45de7d203bc752b6f1425d1a62071263007",
+        "lineUtf8Bytes": 35
       },
       {
         "file": "rbook/research/2026-10-s95-probes/build/release/final-close/s95-normal-upload-observer.json",
         "line": 35,
-        "text": "\"upload_last_outcome\": \"uploading\","
+        "lineSha256": "b4725531d51beda1441cfa067327c45de7d203bc752b6f1425d1a62071263007",
+        "lineUtf8Bytes": 35
       },
       {
         "file": "rbook/research/2026-10-s95-probes/build/release/final-close/s95-normal-upload-observer.json",
         "line": 47,
-        "text": "\"upload_last_outcome\": \"success\","
+        "lineSha256": "56d2d5f238cdc6f30ef107d1979103a1a7ca4ca0ea6e0d0215c7d1eb2a91c51c",
+        "lineUtf8Bytes": 33
       },
       {
         "file": "rbook/research/2026-10-s95-probes/build/release/final-close/s95-normal-upload-observer.json",
         "line": 72,
-        "text": "\"upload_last_outcome\": \"uploading\","
+        "lineSha256": "b4725531d51beda1441cfa067327c45de7d203bc752b6f1425d1a62071263007",
+        "lineUtf8Bytes": 35
       },
       {
         "file": "rbook/research/2026-10-s95-probes/build/release/final-close/s95-normal-upload-observer.json",
         "line": 98,
-        "text": "\"upload_last_outcome\": \"success\","
+        "lineSha256": "56d2d5f238cdc6f30ef107d1979103a1a7ca4ca0ea6e0d0215c7d1eb2a91c51c",
+        "lineUtf8Bytes": 33
       },
       {
         "file": "rbook/research/2026-10-s95-probes/build/release/final-close/s95-normal-upload-observer.result.jsonl",
         "line": 4,
-        "text": "{\"success\":true,\"status\":\"normal-upload-success-observed\",\"receiptPath\":\"/tmp/s95-normal-upload-observer.json\",\"finalUpload\":{\"project_id\":\"cmos-mcp-pro\",\"upload_last_attempt_at\":1791699238784,\"upload_last_outcome\":\"success\",\"has_upload_error\":0,\"upload_first_owed_at\":null,\"upload_lease_expires_at\":null,\"last_synced_at\":1791699260178},\"alreadyCompletedSessionMustNotBeRetried\":true}"
+        "lineSha256": "b4f2747bebe657d7c6f1feb5fdae60b8c93c5608dea8817d93ba05ae7f19353d",
+        "lineUtf8Bytes": 384
       },
       {
         "file": "rbook/research/2026-10-s95-probes/build/release/final-close/s95-observe-normal-upload.cjs",
         "line": 80,
-        "text": "upload_last_attempt_at, upload_last_outcome, upload_last_error IS NOT NULL AS has_upload_error,"
+        "lineSha256": "88f0a86582f9f48896db20055c219c8623f4e9d33da585644c34532338aeefce",
+        "lineUtf8Bytes": 95
       },
       {
         "file": "rbook/research/2026-10-s95-probes/build/release/final-close/s95-observe-normal-upload.cjs",
         "line": 124,
-        "text": "process.stdout.write(JSON.stringify({ status: receipt.status, observedAt: now(), outcome: row.upload_last_outcome,"
+        "lineSha256": "31cac6747699c97f1a3fc359648e11f9534404d0165208d6b519e1acd5f96e00",
+        "lineUtf8Bytes": 114
       },
       {
         "file": "rbook/research/2026-10-s95-probes/build/release/final-close/s95-observe-normal-upload.cjs",
         "line": 128,
-        "text": "if (row.upload_last_attempt_at >= Date.parse(COMPLETED_AT) && row.upload_last_outcome === 'success' &&"
+        "lineSha256": "b281b0902ad18e122e0825926fab67e7cf6a7b353790ca110c0c6f5dccfec47d",
+        "lineUtf8Bytes": 102
       },
       {
         "file": "rbook/research/2026-10-s95-probes/build/release/helpers/s95-final-close.cjs",
         "line": 159,
-        "text": "upload_last_outcome, upload_last_error IS NOT NULL AS has_upload_error,"
+        "lineSha256": "86a20dd1e1efe1eb707267b399bcadc6c6dddfe33abc7199135f091eb3a4d9dd",
+        "lineUtf8Bytes": 71
       },
       {
         "file": "rbook/research/2026-10-s95-probes/build/release/helpers/s95-final-close.cjs",
         "line": 242,
-        "text": "if (row?.upload_last_attempt_at >= since && row.upload_last_outcome === 'success' && row.last_synced_at > baseline) break;"
+        "lineSha256": "769391ad3c0d68d5d4de89c3a4fe8c3a61d249eb209e05eeb264a9cfc755c619",
+        "lineUtf8Bytes": 122
       },
       {
         "file": "rbook/research/2026-10-s95-probes/build/release/helpers/s95-final-close.cjs",
         "line": 243,
-        "text": "requireFact(!(row?.upload_last_attempt_at >= since && ['failed', 'blocked'].includes(row.upload_last_outcome)), 'NORMAL_UPLOAD_FAILED_CLOSE_ALREADY_COMPLETED');"
+        "lineSha256": "21c6dfa5d670de7067780c309a57b695e59077706582501f677931d08e007059",
+        "lineUtf8Bytes": 160
       },
       {
         "file": "rbook/research/2026-10-s95-probes/build/release/helpers/s95-final-close.cjs",
         "line": 247,
-        "text": "requireFact(receipt.finalUpload?.upload_last_attempt_at >= since && receipt.finalUpload.upload_last_outcome === 'success' &&"
+        "lineSha256": "6d29bd001c06aa2cd2dcd29fc4a83c51249653601b05dd402f29744cc2c462f3",
+        "lineUtf8Bytes": 124
       },
       {
         "file": "rbook/research/2026-10-s98-review/repros/upload/assert-upload-defects.js",
         "line": 21,
-        "text": "assert.strictEqual(ra.registry[0].upload_last_outcome, 'uploading', '(a) outcome');"
+        "lineSha256": "e660b990a8ffc93f24818a232f3ef615d5c3add62802897166ba0ba14875d9a0",
+        "lineUtf8Bytes": 83
       },
       {
         "file": "rbook/research/2026-10-s98-review/repros/upload/close-exit.js",
         "line": 99,
-        "text": "const row = reg.prepare('SELECT name, upload_last_outcome, upload_last_error, upload_blocked, upload_first_owed_at, upload_lease_token IS NOT NULL AS leased, upload_lease_expires_at, upload_last_attempt_at, last_synced_at FROM projects').all();"
+        "lineSha256": "30fa4ded33b563dbaea90e4e08ad861144cb492a05f04929e9ba1d1d804dae53",
+        "lineUtf8Bytes": 244
       },
       {
         "file": "rbook/research/2026-10-s98-review/repros/upload/resume.js",
         "line": 19,
-        "text": "const readRow = () => { const r = new BS(regPath, { readonly: true }); try { return r.prepare('SELECT upload_last_outcome AS outcome, upload_last_error AS error, upload_blocked AS blocked, upload_first_owed_at IS NOT NULL AS owed, upload_lease_token IS NOT NULL AS leased, last_synced_at FROM projects').get(); } finally { r.close(); } };"
+        "lineSha256": "306bcbea76c3cd63718334ec0defe7582d36656f6fe932c24c4f1f3a43462514",
+        "lineUtf8Bytes": 338
       },
       {
         "file": "rbook/research/2026-10-s98-review/repros/upload/steps.js",
         "line": 20,
-        "text": "const readRow = () => { const r = new BS(regPath, { readonly: true }); try { return r.prepare('SELECT upload_last_outcome AS outcome, upload_last_error AS error, upload_blocked AS blocked, upload_first_owed_at IS NOT NULL AS owed, upload_lease_token IS NOT NULL AS leased, last_synced_at FROM projects').get(); } finally { r.close(); } };"
+        "lineSha256": "306bcbea76c3cd63718334ec0defe7582d36656f6fe932c24c4f1f3a43462514",
+        "lineUtf8Bytes": 338
       },
       {
         "file": "rbook/research/2026-10-s99-probes/s99-m08-attempt-2-evidence.json",
         "line": 171,
-        "text": "\"text\": \"{\\n  \\\"success\\\": false,\\n  \\\"project\\\": \\\"/private/var/folders/gd/rty3217130vdbr9_q713nvg80000gn/T/reasonbook-s99-m08-r274log4/reading-log\\\",\\n  \\\"candidate\\\": {\\n    \\\"version\\\": \\\"4.0.0\\\",\\n    \\\"tarball\\\": \\\"/tmp/s99-m07-candidate-pack-2/aquex-reasonbook-4.0.0.tgz\\\",\\n    \\\"tarballSha256\\\": \\\"7f8d8beea0602064163783d35a1969013b2381269f949bef36df98bbee0d0f8a\\\",\\n    \\\"buildHash\\\": \\\"a3ef21af9080c27243ea866266d574a1ffd6b3b20e4651b0145abc53abbdf52a\\\",\\n    \\\"installProof\\\": \\\"/Users/systemsystems/portfolio/cmos-mcp-pro/cmos/research/2026-10-s99-probes/s99-m07-install-receipt-4.json\\\",\\n    \\\"installProofSha256\\\": \\\"1b3ac1b3e62d2534906d164df7235eaf8dee6c4a4a66af9e51d1d6fdc14d76af\\\"\\n  },\\n  \\\"inputHash\\\": \\\"cd18a57d47b38aae3b43007bb327c956168b4e89aec72c0f017a6edbd4d8c592\\\",\\n  \\\"auditOnly\\\": false,\\n  \\\"startedAt\\\": \\\"2026-10-12T08:13:26.499Z\\\",\\n  \\\"close\\\": {\\n    \\\"attempted\\\": true,\\n    \\\"sessionId\\\": \\\"PS-2026-10-12-003\\\",\\n    \\\"startedAt\\\": 1791792811333,\\n    \\\"result\\\": {\\n      \\\"sessionId\\\": \\\"PS-2026-10-12-003\\\",\\n      \\\"completedAt\\\": \\\"2026-10-12T08:13:31.345Z\\\",\\n      \\\"durationMinutes\\\": 0,\\n      \\\"captureCount\\\": 0,\\n      \\\"nextStepsExtracted\\\": 0\\n    },\\n    \\\"writeFailures\\\": []\\n  },\\n  \\\"http\\\": [\\n    {\\n      \\\"method\\\": \\\"GET\\\",\\n      \\\"path\\\": \\\"/api/projects/me\\\",\\n      \\\"status\\\": 200\\n    },\\n    {\\n      \\\"method\\\": \\\"GET\\\",\\n      \\\"path\\\": \\\"/api/sync/projects/reasonbook-handoff-demo/state\\\",\\n      \\\"status\\\": 200\\n    }\\n  ],\\n  \\\"registryScope\\\": \\\"Only the existing disposable scratch registry and its demo row; no real operator registry is opened.\\\",\\n  \\\"limitations\\\": [\\n    \\\"Remote state exposes decision text/author-session and session IDs/status/times, not decision reasoning fields, session agent names or implementation context capture bodies. Local authors and capture hashes are recorded; remote equality is claimed only for exposed fields.\\\",\\n    \\\"This API proof is not a dashboard screenshot or a claim of public directory visibility.\\\"\\n  ],\\n  \\\"phase\\\": \\\"readback\\\",\\n  \\\"localProof\\\": {\\n    \\\"decision\\\": {\\n      \\\"id\\\": 1,\\n      \\\"decision_text\\\": \\\"Use newline-delimited plain text (.txt) for the reading-log persistence format.\\\",\\n      \\\"author_session_id\\\": \\\"PS-2026-10-12-001\\\",\\n      \\\"context_text\\\": \\\"The CLI must be dependency-free, preserve insertion order, and handle titles with spaces. Newline-delimited text allows atomic appends via fs.appendFileSync without reading the file, preserves order naturally, and requires no parsing beyond splitting on newlines. Titles with embedded newlines would break the format, but book titles practically never contain them.\\\",\\n      \\\"alternatives\\\": \\\"[\\\\\\\"JSON array: requires reading the entire file to append and risks corruption on partial writes; overkill for a flat list.\\\\\\\",\\\\\\\"SQLite: adds a native dependency, violating the dependency-free requirement.\\\\\\\",\\\\\\\"CSV: adds quoting and escaping complexity for no benefit when storing single values per line.\\\\\\\"]\\\",\\n      \\\"consequences\\\": \\\"Simple append-only writes. Easy to inspect and debug. Trade-off: embedded newlines in titles would corrupt the file, but this edge case is acceptable for book titles.\\\"\\n    },\\n    \\\"claudeSession\\\": {\\n      \\\"id\\\": \\\"PS-2026-10-12-001\\\",\\n      \\\"agent\\\": \\\"assistant\\\"\\n    },\\n    \\\"developerSession\\\": {\\n      \\\"id\\\": \\\"PS-2026-10-12-002\\\",\\n      \\\"agent\\\": \\\"assistant\\\"\\n    },\\n    \\\"captures\\\": [\\n      {\\n        \\\"timestamp\\\": \\\"2026-10-12T08:07:19.900Z\\\",\\n        \\\"category\\\": \\\"context\\\",\\n        \\\"content\\\": \\\"Implemented the reading-log CLI in reading-log.js for Reasonbook Handoff Demo, following d:1's newline-delimited plain-text format as corrected by d:2. Commands: add exactly one quoted title, list, and --help. Uses UTF-8 reading-log.txt in the caller's current directory; preserves insertion order, spaces, Unicode and duplicates across separate processes. Blank/whitespace-only and CR/LF titles fail before writing. Missing stores list as empty; other filesystem errors and bad arguments exit 1 with stderr. README.md documents usage and limits; AGENTS.md placeholders now describe this project while retaining its hard rules and learned practices.\\\",\\n        \\\"context\\\": \\\"Verified locally on Node v24.6.0: node --test tests/reading-log.test.cjs passed all 6 top-level node:test cases, with 0 failures and 0 skipped; node --check passed for reading-log.js, tests/seal.cjs and tests/reading-log.test.cjs. Tests exercise separate CLI processes, ordered persistence, title fidelity, invalid inputs, usage, filesystem errors and the test guard. Subprocesses have restricted filesystem permissions and a module/network guard; its boundary probes use disposable canary data. Test temp directories are cleaned and no real reading-log store/build output is created. Checks do not cover concurrent writers, interrupted writes or power loss, per d:2. No Git commit was possible because this disposable folder is not a Git repository. No explicit session/sprint close was performed.\\\",\\n        \\\"sha256\\\": \\\"fa18531b445f5c3836309b360ba9b22e1db58b8fdf7bf35c186d12f19296fd0c\\\"\\n      },\\n      {\\n        \\\"timestamp\\\": \\\"2026-10-12T08:07:32.196Z\\\",\\n        \\\"category\\\": \\\"next-step\\\",\\n        \\\"content\\\": \\\"Proposed follow-up, pending operator scope approval: add an optional --file PATH argument so the same reading log can be used from different working directories, retaining reading-log.txt in the current directory as the default. Add a separate-process test that adds from one temporary working directory and lists from another against the same explicit path. Keep d:1's newline-delimited text format and d:2's validation and sequential-use limitations.\\\",\\n        \\\"sha256\\\": \\\"533b15258432404679fd0d04c3b76cdf58072c7e59d0b129485cca9020e6082f\\\"\\n      }\\n    ]\\n  },\\n  \\\"initialMetadata\\\": {\\n    \\\"project_id\\\": \\\"525d7ebc-b87d-49dc-ab4f-d44ef530fe3a\\\",\\n    \\\"project_name\\\": \\\"Reasonbook Handoff Demo\\\"\\n  },\\n  \\\"initialUpload\\\": {\\n    \\\"project_id\\\": \\\"525d7ebc-b87d-49dc-ab4f-d44ef530fe3a\\\",\\n    \\\"upload_last_attempt_at\\\": null,\\n    \\\"upload_last_outcome\\\": null,\\n    \\\"last_synced_at\\\": null\\n  },\\n  \\\"keySource\\\": \\\"user-scoped\\\",\\n  \\\"warningCount\\\": 2,\\n  \\\"health\\\": {\\n    \\\"pid\\\": 85514,\\n    \\\"startedAt\\\": \\\"2026-10-12T08:13:28.853Z\\\",\\n    \\\"nodeVersion\\\": \\\"v24.6.0\\\",\\n    \\\"codeIsCurrent\\\": true,\\n    \\\"startupBuild\\\": {\\n      \\\"buildHash\\\": \\\"a3ef21af9080c27243ea866266d574a1ffd6b3b20e4651b0145abc53abbdf52a\\\",\\n      \\\"buildTime\\\": \\\"2026-10-12T07:15:48.143Z\\\",\\n      \\\"fileCount\\\": 272\\n    },\\n    \\\"currentBuild\\\": {\\n      \\\"buildHash\\\": \\\"a3ef21af9080c27243ea866266d574a1ffd6b3b20e4651b0145abc53abbdf52a\\\",\\n      \\\"buildTime\\\": \\\"2026-10-12T07:15:48.143Z\\\",\\n      \\\"fileCount\\\": 272\\n    }\\n  },\\n  \\\"startAttempted\\\": true,\\n  \\\"finalUpload\\\": {\\n    \\\"project_id\\\": \\\"525d7ebc-b87d-49dc-ab4f-d44ef530fe3a\\\",\\n    \\\"upload_last_attempt_at\\\": 1791792811354,\\n    \\\"upload_last_outcome\\\": \\\"success\\\",\\n    \\\"last_synced_at\\\": 1791792814820\\n  },\\n  \\\"registeredMetadata\\\": {\\n    \\\"dashboard_project_id\\\": \\\"eb9b743a-6c07-4e58-a227-61c7fee0406d\\\",\\n    \\\"dashboard_registered\\\": \\\"true\\\",\\n    \\\"dashboard_slug\\\": \\\"reasonbook-handoff-demo\\\",\\n    \\\"project_id\\\": \\\"525d7ebc-b87d-49dc-ab4f-d44ef530fe3a\\\",\\n    \\\"project_name\\\": \\\"Reasonbook Handoff Demo\\\"\\n  },\\n  \\\"error\\\": {\\n    \\\"code\\\": \\\"ERR_ASSERTION\\\",\\n    \\\"detail\\\": \\\"Check the bounded receipt and local expectations. Raw errors are withheld to avoid credential disclosure; never repeat a dispatched close.\\\"\\n  },\\n  \\\"finishedAt\\\": \\\"2026-10-12T08:13:36.338Z\\\"\\n}\\n\""
+        "lineSha256": "44916449a021367842bd20d78976f8b5de963d16cfefb4299467f18eada3550a",
+        "lineUtf8Bytes": 7664
       },
       {
         "file": "rbook/research/2026-10-s99-probes/s99-m08-attempt-2-evidence.json",
         "line": 177,
-        "text": "\"text\": \"{\\n  \\\"success\\\": true,\\n  \\\"project\\\": \\\"/private/var/folders/gd/rty3217130vdbr9_q713nvg80000gn/T/reasonbook-s99-m08-r274log4/reading-log\\\",\\n  \\\"candidate\\\": {\\n    \\\"version\\\": \\\"4.0.0\\\",\\n    \\\"tarball\\\": \\\"/tmp/s99-m07-candidate-pack-2/aquex-reasonbook-4.0.0.tgz\\\",\\n    \\\"tarballSha256\\\": \\\"7f8d8beea0602064163783d35a1969013b2381269f949bef36df98bbee0d0f8a\\\",\\n    \\\"buildHash\\\": \\\"a3ef21af9080c27243ea866266d574a1ffd6b3b20e4651b0145abc53abbdf52a\\\",\\n    \\\"installProof\\\": \\\"/Users/systemsystems/portfolio/cmos-mcp-pro/cmos/research/2026-10-s99-probes/s99-m07-install-receipt-4.json\\\",\\n    \\\"installProofSha256\\\": \\\"1b3ac1b3e62d2534906d164df7235eaf8dee6c4a4a66af9e51d1d6fdc14d76af\\\"\\n  },\\n  \\\"inputHash\\\": \\\"cd18a57d47b38aae3b43007bb327c956168b4e89aec72c0f017a6edbd4d8c592\\\",\\n  \\\"auditOnly\\\": true,\\n  \\\"startedAt\\\": \\\"2026-10-12T08:19:11.867Z\\\",\\n  \\\"close\\\": {\\n    \\\"attempted\\\": true,\\n    \\\"sessionId\\\": \\\"PS-2026-10-12-003\\\",\\n    \\\"startedAt\\\": 1791792811333,\\n    \\\"result\\\": {\\n      \\\"sessionId\\\": \\\"PS-2026-10-12-003\\\",\\n      \\\"completedAt\\\": \\\"2026-10-12T08:13:31.345Z\\\",\\n      \\\"durationMinutes\\\": 0,\\n      \\\"captureCount\\\": 0,\\n      \\\"nextStepsExtracted\\\": 0\\n    },\\n    \\\"writeFailures\\\": []\\n  },\\n  \\\"http\\\": [\\n    {\\n      \\\"method\\\": \\\"GET\\\",\\n      \\\"path\\\": \\\"/api/sync/projects/reasonbook-handoff-demo/state\\\",\\n      \\\"status\\\": 200\\n    },\\n    {\\n      \\\"method\\\": \\\"GET\\\",\\n      \\\"path\\\": \\\"/api/intel/now\\\",\\n      \\\"status\\\": 200\\n    }\\n  ],\\n  \\\"registryScope\\\": \\\"Only the existing disposable scratch registry and its demo row; no real operator registry is opened.\\\",\\n  \\\"limitations\\\": [\\n    \\\"Remote state exposes decision text/author-session and session IDs/status/times, not decision reasoning fields, session agent names or implementation context capture bodies. Local authors and capture hashes are recorded; remote equality is claimed only for exposed fields.\\\",\\n    \\\"This API proof is not a dashboard screenshot or a claim of public directory visibility.\\\",\\n    \\\"The deployed SQLite-upload mirror returns null decision sessionId because its importer reads session_id while this candidate writes author_session_id. Record presence is verified by returned project linkage plus ID, exact text and creation time. Authorship comes from the local MCP transcript and stored record; remote authorship is not claimed.\\\"\\n  ],\\n  \\\"phase\\\": \\\"complete\\\",\\n  \\\"localProof\\\": {\\n    \\\"decision\\\": {\\n      \\\"id\\\": 1,\\n      \\\"decision_text\\\": \\\"Use newline-delimited plain text (.txt) for the reading-log persistence format.\\\",\\n      \\\"author_session_id\\\": \\\"PS-2026-10-12-001\\\",\\n      \\\"context_text\\\": \\\"The CLI must be dependency-free, preserve insertion order, and handle titles with spaces. Newline-delimited text allows atomic appends via fs.appendFileSync without reading the file, preserves order naturally, and requires no parsing beyond splitting on newlines. Titles with embedded newlines would break the format, but book titles practically never contain them.\\\",\\n      \\\"alternatives\\\": \\\"[\\\\\\\"JSON array: requires reading the entire file to append and risks corruption on partial writes; overkill for a flat list.\\\\\\\",\\\\\\\"SQLite: adds a native dependency, violating the dependency-free requirement.\\\\\\\",\\\\\\\"CSV: adds quoting and escaping complexity for no benefit when storing single values per line.\\\\\\\"]\\\",\\n      \\\"consequences\\\": \\\"Simple append-only writes. Easy to inspect and debug. Trade-off: embedded newlines in titles would corrupt the file, but this edge case is acceptable for book titles.\\\",\\n      \\\"created_at\\\": \\\"2026-10-12T07:59:42.883Z\\\"\\n    },\\n    \\\"claudeSession\\\": {\\n      \\\"id\\\": \\\"PS-2026-10-12-001\\\",\\n      \\\"agent\\\": \\\"assistant\\\"\\n    },\\n    \\\"developerSession\\\": {\\n      \\\"id\\\": \\\"PS-2026-10-12-002\\\",\\n      \\\"agent\\\": \\\"assistant\\\"\\n    },\\n    \\\"captures\\\": [\\n      {\\n        \\\"timestamp\\\": \\\"2026-10-12T08:07:19.900Z\\\",\\n        \\\"category\\\": \\\"context\\\",\\n        \\\"content\\\": \\\"Implemented the reading-log CLI in reading-log.js for Reasonbook Handoff Demo, following d:1's newline-delimited plain-text format as corrected by d:2. Commands: add exactly one quoted title, list, and --help. Uses UTF-8 reading-log.txt in the caller's current directory; preserves insertion order, spaces, Unicode and duplicates across separate processes. Blank/whitespace-only and CR/LF titles fail before writing. Missing stores list as empty; other filesystem errors and bad arguments exit 1 with stderr. README.md documents usage and limits; AGENTS.md placeholders now describe this project while retaining its hard rules and learned practices.\\\",\\n        \\\"context\\\": \\\"Verified locally on Node v24.6.0: node --test tests/reading-log.test.cjs passed all 6 top-level node:test cases, with 0 failures and 0 skipped; node --check passed for reading-log.js, tests/seal.cjs and tests/reading-log.test.cjs. Tests exercise separate CLI processes, ordered persistence, title fidelity, invalid inputs, usage, filesystem errors and the test guard. Subprocesses have restricted filesystem permissions and a module/network guard; its boundary probes use disposable canary data. Test temp directories are cleaned and no real reading-log store/build output is created. Checks do not cover concurrent writers, interrupted writes or power loss, per d:2. No Git commit was possible because this disposable folder is not a Git repository. No explicit session/sprint close was performed.\\\",\\n        \\\"sha256\\\": \\\"fa18531b445f5c3836309b360ba9b22e1db58b8fdf7bf35c186d12f19296fd0c\\\"\\n      },\\n      {\\n        \\\"timestamp\\\": \\\"2026-10-12T08:07:32.196Z\\\",\\n        \\\"category\\\": \\\"next-step\\\",\\n        \\\"content\\\": \\\"Proposed follow-up, pending operator scope approval: add an optional --file PATH argument so the same reading log can be used from different working directories, retaining reading-log.txt in the current directory as the default. Add a separate-process test that adds from one temporary working directory and lists from another against the same explicit path. Keep d:1's newline-delimited text format and d:2's validation and sequential-use limitations.\\\",\\n        \\\"sha256\\\": \\\"533b15258432404679fd0d04c3b76cdf58072c7e59d0b129485cca9020e6082f\\\"\\n      }\\n    ]\\n  },\\n  \\\"initialMetadata\\\": {\\n    \\\"project_id\\\": \\\"525d7ebc-b87d-49dc-ab4f-d44ef530fe3a\\\",\\n    \\\"project_name\\\": \\\"Reasonbook Handoff Demo\\\"\\n  },\\n  \\\"initialUpload\\\": {\\n    \\\"project_id\\\": \\\"525d7ebc-b87d-49dc-ab4f-d44ef530fe3a\\\",\\n    \\\"upload_last_attempt_at\\\": null,\\n    \\\"upload_last_outcome\\\": null,\\n    \\\"last_synced_at\\\": null\\n  },\\n  \\\"health\\\": {\\n    \\\"pid\\\": 85514,\\n    \\\"startedAt\\\": \\\"2026-10-12T08:13:28.853Z\\\",\\n    \\\"nodeVersion\\\": \\\"v24.6.0\\\",\\n    \\\"codeIsCurrent\\\": true,\\n    \\\"startupBuild\\\": {\\n      \\\"buildHash\\\": \\\"a3ef21af9080c27243ea866266d574a1ffd6b3b20e4651b0145abc53abbdf52a\\\",\\n      \\\"buildTime\\\": \\\"2026-10-12T07:15:48.143Z\\\",\\n      \\\"fileCount\\\": 272\\n    },\\n    \\\"currentBuild\\\": {\\n      \\\"buildHash\\\": \\\"a3ef21af9080c27243ea866266d574a1ffd6b3b20e4651b0145abc53abbdf52a\\\",\\n      \\\"buildTime\\\": \\\"2026-10-12T07:15:48.143Z\\\",\\n      \\\"fileCount\\\": 272\\n    }\\n  },\\n  \\\"keySource\\\": \\\"project-scoped\\\",\\n  \\\"finalUpload\\\": {\\n    \\\"project_id\\\": \\\"525d7ebc-b87d-49dc-ab4f-d44ef530fe3a\\\",\\n    \\\"upload_last_attempt_at\\\": 1791792811354,\\n    \\\"upload_last_outcome\\\": \\\"success\\\",\\n    \\\"last_synced_at\\\": 1791792814820\\n  },\\n  \\\"registeredMetadata\\\": {\\n    \\\"dashboard_project_id\\\": \\\"eb9b743a-6c07-4e58-a227-61c7fee0406d\\\",\\n    \\\"dashboard_registered\\\": \\\"true\\\",\\n    \\\"dashboard_slug\\\": \\\"reasonbook-handoff-demo\\\",\\n    \\\"project_id\\\": \\\"525d7ebc-b87d-49dc-ab4f-d44ef530fe3a\\\",\\n    \\\"project_name\\\": \\\"Reasonbook Handoff Demo\\\"\\n  },\\n  \\\"remoteProof\\\": {\\n    \\\"sourceProjectId\\\": \\\"525d7ebc-b87d-49dc-ab4f-d44ef530fe3a\\\",\\n    \\\"mirrorProjectId\\\": \\\"7eed93a2-b37e-4b15-8ffe-ba81ada53b38\\\",\\n    \\\"registeredProjectId\\\": \\\"eb9b743a-6c07-4e58-a227-61c7fee0406d\\\",\\n    \\\"slug\\\": \\\"reasonbook-handoff-demo\\\",\\n    \\\"decision\\\": {\\n      \\\"id\\\": 1,\\n      \\\"decisionText\\\": \\\"Use newline-delimited plain text (.txt) for the reading-log persistence format.\\\",\\n      \\\"category\\\": null,\\n      \\\"sprintId\\\": null,\\n      \\\"sessionId\\\": null,\\n      \\\"missionId\\\": null,\\n      \\\"createdAt\\\": \\\"2026-10-12T07:59:42.883Z\\\",\\n      \\\"syncedAt\\\": \\\"2026-10-12T08:13:34.711Z\\\",\\n      \\\"stableEventId\\\": null,\\n      \\\"occurredAt\\\": null,\\n      \\\"originSeq\\\": null,\\n      \\\"schemaVersion\\\": null\\n    },\\n    \\\"developerSession\\\": {\\n      \\\"id\\\": \\\"PS-2026-10-12-002\\\",\\n      \\\"type\\\": \\\"custom\\\",\\n      \\\"title\\\": \\\"Implicit session (process 81741)\\\",\\n      \\\"status\\\": \\\"completed\\\",\\n      \\\"startedAt\\\": \\\"2026-10-12T08:03:54.116Z\\\",\\n      \\\"completedAt\\\": \\\"2026-10-12T08:07:50.736Z\\\",\\n      \\\"syncedAt\\\": \\\"2026-10-12T08:13:34.705Z\\\",\\n      \\\"stableEventId\\\": null,\\n      \\\"occurredAt\\\": null,\\n      \\\"originSeq\\\": null,\\n      \\\"schemaVersion\\\": null\\n    },\\n    \\\"remoteDecisionAuthorship\\\": \\\"unavailable\\\",\\n    \\\"nextSteps\\\": [\\n      {\\n        \\\"contentSha256\\\": \\\"533b15258432404679fd0d04c3b76cdf58072c7e59d0b129485cca9020e6082f\\\",\\n        \\\"remoteId\\\": 1,\\n        \\\"exactMatchCount\\\": 1\\n      }\\n    ],\\n    \\\"countingRule\\\": \\\"Exactly one remote decision ID+text+creation-time match in the returned source project, one implementation session ID+status+completion-time match, and one full-content match per expected follow-up; null remote authorship remains explicitly unavailable.\\\"\\n  },\\n  \\\"finishedAt\\\": \\\"2026-10-12T08:19:14.128Z\\\"\\n}\\n\""
+        "lineSha256": "fa29094b8993d318d281d31b8d3b3e68ca03ec0b6ba124d4f2b5ef19b48f94f2",
+        "lineUtf8Bytes": 9581
       },
       {
         "file": "rbook/research/2026-10-s99-probes/s99-m08-attempt-2-evidence.json",
         "line": 249,
-        "text": "\"text\": \"// SPDX-License-Identifier: Apache-2.0\\n// ABOUTME: Closes one accepted disposable handoff through the candidate MCP path, then audits its dashboard readback.\\n// ABOUTME: Close intent is durable before dispatch; audit-only never starts a server, closes, registers or uploads.\\nconst fs = require('node:fs');\\nconst path = require('node:path');\\nconst os = require('node:os');\\nconst assert = require('node:assert/strict');\\nconst crypto = require('node:crypto');\\nconst hash = value => crypto.createHash('sha256').update(value).digest('hex');\\nconst json = file => JSON.parse(fs.readFileSync(file, 'utf8'));\\nconst inside = (root, file) => path.isAbsolute(file) && path.resolve(file).startsWith(path.resolve(root) + path.sep);\\nfunction validateScope(setup, accepted, expected) {\\n  assert(inside(setup.scratchRoot, setup.project), 'Project must remain within scratch');\\n  assert.equal(expected.projectRoot, setup.project, 'Expected project must equal the accepted scratch project');\\n  assert(/^[a-f0-9]{64}$/.test(expected.inputHash), 'Expected input seal is required');\\n  for (const stage of ['claude', 'developer', 'chat']) {\\n    const rows = accepted.filter(row => row.stage === stage);\\n    assert.equal(rows.length, 1, 'Exactly one acceptance per stage');\\n    assert.equal(rows[0].accepted, true, 'All stages must be accepted');\\n    assert.equal(rows[0].inputHash, expected.inputHash, 'Every stage must share the accepted input seal');\\n  }\\n}\\nfunction bindRemoteRecords(remote, registered, localProof, localSession) {\\n  assert.equal(remote.project.slug, registered.dashboard_slug);\\n  const identity = {};\\n  for (const key of ['project_id', 'dashboard_project_id', 'dashboard_slug']) {\\n    const rows = remote.metadata.filter(row => row.key === key);\\n    assert.equal(rows.length, 1, 'Exactly one returned ' + key + ' is required');\\n    assert.equal(rows[0].value, registered[key], 'Returned ' + key + ' differs from the accepted record');\\n    identity[key] = rows[0].value;\\n  }\\n  assert(localProof.decision.created_at, 'Local decision creation time is required');\\n  const decisions = remote.decisions.filter(row => row.id === localProof.decision.id && row.decisionText === localProof.decision.decision_text && row.createdAt === localProof.decision.created_at);\\n  assert.equal(decisions.length, 1, 'Exactly one returned decision ID/text/creation-time match is required');\\n  assert(decisions[0].sessionId == null || decisions[0].sessionId === localProof.decision.author_session_id, 'Remote decision author conflicts with local provenance');\\n  const sessions = remote.sessions.filter(row => row.id === localSession.id && row.status === localSession.status && row.completedAt === localSession.completed_at);\\n  assert.equal(sessions.length, 1, 'Exactly one returned implementation session ID/status/time match is required');\\n  return { sourceProjectId: identity.project_id, mirrorProjectId: remote.project.id,\\n    registeredProjectId: identity.dashboard_project_id, slug: identity.dashboard_slug,\\n    decision: decisions[0], developerSession: sessions[0],\\n    remoteDecisionAuthorship: decisions[0].sessionId == null ? 'unavailable' : 'matched' };\\n}\\nfunction validateClose(done, sessionId, stored) {\\n  assert.equal(done.sessionId, sessionId, 'Close receipt must name the dispatched session');\\n  assert(done.completedAt && Array.isArray(done.writeFailures) && done.writeFailures.length === 0, 'Unauditable close: stop; never retry');\\n  assert.equal(stored?.status, 'completed', 'Dispatched session must be durably completed');\\n  assert.equal(stored.completed_at, done.completedAt, 'Durable completion must equal the close receipt');\\n}\\nasync function main(argv) {\\n  if (!['--execute', '--audit-only'].includes(argv[0]) || argv.length !== 3)\\n    return { preparedOnly: true, usage: '--execute SETUP EXPECTED | --audit-only SETUP EXPECTED', outwardCalls: 0 };\\n  const [mode, setupPath, expectedPath] = argv;\\n  const auditOnly = mode === '--audit-only', setup = json(setupPath), expected = json(expectedPath);\\n  const accepted = ['claude', 'developer', 'chat'].map(stage => json(path.join(setup.receipts, stage + '-accepted.json')));\\n  validateScope(setup, accepted, expected);\\n  const current = JSON.parse(require('node:child_process').execFileSync(process.execPath,\\n    [path.join(__dirname, 's99-m08-run.cjs'), 'validate', setupPath], { encoding: 'utf8', timeout: 60000 }));\\n  assert.equal(current.inputHash, expected.inputHash, 'Current preparation differs from the accepted input seal');\\n  assert(inside(fs.realpathSync(os.tmpdir()), fs.realpathSync(setup.scratchRoot)) && /^reasonbook-s99-m08-/.test(path.basename(setup.scratchRoot)));\\n  for (const file of [setup.project, setup.processHome, setup.configDir, setup.receipts, setup.arms.developer.packageRoot])\\n    assert(inside(setup.scratchRoot, fs.realpathSync(file)), 'Resolved path escaped scratch');\\n  assert.equal(setup.configDir, path.join(setup.processHome, '.config/rbook'));\\n  const preflight = json(path.join(setup.receipts, 'launcher-preflight.json'));\\n  assert(preflight.success && preflight.inputHash === expected.inputHash, 'Matching preflight required');\\n  const { packedCandidate, verifyRuntimeBuild, verifyTranscriptReceipt } = require('./s99-m08-integrity.cjs');\\n  const packed = packedCandidate(setup.candidate.tarball, setup.candidate.tarballSha256);\\n  const packageRoot = setup.arms.developer.packageRoot;\\n  verifyRuntimeBuild(packageRoot, packed.build);\\n  assert.deepEqual(json(path.join(packageRoot, 'package.json')), packed.package);\\n  const ledger = fs.readFileSync(path.join(__dirname, 's99-m08-model-runs.jsonl'), 'utf8').trim().split('\\\\n').map(JSON.parse);\\n  const scenarios = json(path.join(__dirname, 's99-m08-scenarios.json'));\\n  for (const row of accepted) {\\n    assert(inside(setup.receipts, fs.realpathSync(row.transcript)));\\n    verifyTranscriptReceipt(row, ledger.find(x => x.event === 'start' && x.number === row.runNumber), ledger.find(x => x.event === 'exit' && x.number === row.runNumber), hash(fs.readFileSync(row.transcript)));\\n    for (const check of scenarios.stages[row.stage].acceptance) assert.equal(row.checks[check], true);\\n  }\\n  const env = { PATH: process.env.PATH, HOME: setup.processHome, RBOOK_CONFIG_DIR: setup.configDir,\\n    RBOOK_CHECKPOINT_SYNC: 'on', RBOOK_OFFLINE_EMBEDDINGS: '1', RBOOK_DASHBOARD_URL: 'https://reasonbook.ai', DO_NOT_TRACK: '1' };\\n  for (const name of Object.keys(process.env)) if (/^(?:CMOS_|RBOOK_)/.test(name)) delete process.env[name];\\n  Object.assign(process.env, env);\\n  const candidateRequire = require('node:module').createRequire(path.join(packageRoot, 'package.json'));\\n  const Database = candidateRequire('better-sqlite3');\\n  const dbPath = path.join(setup.project, 'rbook/db/rbook.sqlite');\\n  function read(file, fn) { const db = new Database(file, { readonly: true, fileMustExist: true }); try { return fn(db); } finally { db.close(); } }\\n  const metadata = () => Object.fromEntries(read(dbPath, db => db.prepare(\\\"SELECT key,value FROM metadata WHERE key IN ('project_id','project_name','dashboard_registered','dashboard_slug','dashboard_project_id')\\\").all()).map(row => [row.key, row.value]));\\n  const registryFile = path.join(setup.configDir, 'project-graph.sqlite');\\n  const upload = () => read(registryFile, db => db.prepare('SELECT project_id,upload_last_attempt_at,upload_last_outcome,last_synced_at FROM projects WHERE store_path=? AND archived_at IS NULL').get(setup.project));\\n  const session = id => read(dbPath, db => db.prepare('SELECT id,agent,status,completed_at,captures FROM sessions WHERE id=?').get(id));\\n  const primary = path.join(setup.receipts, 'dashboard-close.json');\\n  const receiptPath = auditOnly ? path.join(setup.receipts, 'dashboard-audit-' + Date.now() + '.json') : primary;\\n  const receipt = { success: false, project: setup.project, candidate: setup.candidate, inputHash: expected.inputHash,\\n    auditOnly, startedAt: new Date().toISOString(), close: { attempted: false }, http: [],\\n    registryScope: 'Only the existing disposable scratch registry and its demo row; no real operator registry is opened.',\\n    limitations: ['Remote state exposes decision text/author-session and session IDs/status/times, not decision reasoning fields, session agent names or implementation context capture bodies. Local authors and capture hashes are recorded; remote equality is claimed only for exposed fields.', 'This API proof is not a dashboard screenshot or a claim of public directory visibility.'] };\\n  fs.writeFileSync(receiptPath, JSON.stringify(receipt, null, 2) + '\\\\n', { flag: 'wx', mode: 0o600 });\\n  const save = () => { const tmp = receiptPath + '.tmp'; fs.writeFileSync(tmp, JSON.stringify(receipt, null, 2) + '\\\\n', { mode: 0o600 }); fs.renameSync(tmp, receiptPath); };\\n  let transport, currentSlug, originalFetch;\\n  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 240000);\\n  try {\\n    receipt.phase = 'preconditions';\\n    if (auditOnly) {\\n      const prior = json(primary);\\n      assert.equal(prior.project, setup.project); assert.equal(prior.inputHash, expected.inputHash);\\n      assert(prior.close.attempted, 'Prior close must be audited; never repeat an uncertain close');\\n      validateClose({ ...prior.close.result, writeFailures: prior.close.writeFailures }, prior.close.sessionId, session(prior.close.sessionId));\\n      for (const key of ['localProof', 'initialMetadata', 'initialUpload', 'health', 'close']) receipt[key] = prior[key];\\n    } else {\\n      assert.equal(expected.claudeDecisionId, 1, 'Use the actual Claude decision, not a fabricated second decision');\\n      const decision = read(dbPath, db => db.prepare('SELECT id,decision_text,author_session_id,created_at,context_text,alternatives,consequences FROM strategic_decisions WHERE id=?').get(expected.claudeDecisionId));\\n      assert(decision && decision.author_session_id === expected.claudeSessionId);\\n      const claude = session(expected.claudeSessionId), developer = session(expected.developerSessionId);\\n      assert(claude && developer && claude.id !== developer.id);\\n      assert.equal(claude.agent, expected.claudeAgent); assert.equal(developer.agent, expected.developerAgent);\\n      const captures = JSON.parse(developer.captures);\\n      const selected = expected.captures.map(wanted => {\\n        const rows = captures.filter(row => row.category === wanted.category && hash(row.content) === wanted.sha256);\\n        assert.equal(rows.length, 1, 'Each expected real capture must match exactly once'); return rows[0];\\n      });\\n      assert(selected.some(row => row.category === 'context') && selected.some(row => row.category === 'next-step'));\\n      receipt.localProof = { decision, claudeSession: { id: claude.id, agent: claude.agent },\\n        developerSession: { id: developer.id, agent: developer.agent }, captures: selected.map(row => ({ ...row, sha256: hash(row.content) })) };\\n      receipt.initialMetadata = metadata(); receipt.initialUpload = upload();\\n      assert(receipt.initialUpload?.project_id === receipt.initialMetadata.project_id);\\n      assert.notEqual(receipt.initialMetadata.dashboard_registered, 'true', 'Use audit-only for an already registered proof');\\n    }\\n    // Preserve the first failed readback receipt; read its actual creation time for audit-only.\\n    const storedDecision = read(dbPath, db => db.prepare('SELECT id,decision_text,author_session_id,created_at FROM strategic_decisions WHERE id=?').get(receipt.localProof.decision.id));\\n    for (const key of ['id', 'decision_text', 'author_session_id']) assert.equal(storedDecision[key], receipt.localProof.decision[key]);\\n    receipt.localProof.decision.created_at = storedDecision.created_at;\\n    receipt.limitations.push('The deployed SQLite-upload mirror returns null decision sessionId because its importer reads session_id while this candidate writes author_session_id. Record presence is verified by returned project linkage plus ID, exact text and creation time. Authorship comes from the local MCP transcript and stored record; remote authorship is not claimed.');\\n    currentSlug = metadata().dashboard_slug;\\n    const { DashboardClient } = require(path.join(packageRoot, 'dist/tools/rbook/dashboard-client.js'));\\n    const resolved = await DashboardClient.fromEnvForProject(setup.project, { timeoutMs: 15000 });\\n    assert(resolved.success && (auditOnly ? ['user-scoped', 'project-scoped'].includes(resolved.data.keySource) : resolved.data.keySource === 'user-scoped'), 'Coordinator must prepare a user-scoped key in the scratch credential store first');\\n    receipt.keySource = resolved.data.keySource;\\n    originalFetch = globalThis.fetch;\\n    globalThis.fetch = async (input, init = {}) => {\\n      const url = new URL(typeof input === 'string' ? input : input.url ?? input.toString());\\n      assert.equal(url.origin, 'https://reasonbook.ai'); assert.equal(init.method ?? 'GET', 'GET');\\n      const allowed = ['/api/projects/me', `/api/sync/projects/${encodeURIComponent(currentSlug)}/state`, '/api/intel/now'];\\n      assert(allowed.includes(url.pathname), 'Read route refused');\\n      if (url.pathname === '/api/intel/now') assert(url.searchParams.get('scope') === 'project' && url.searchParams.get('project') === currentSlug);\\n      const response = await originalFetch(input, { ...init, redirect: 'error' });\\n      receipt.http.push({ method: 'GET', path: url.pathname, status: response.status }); return response;\\n    };\\n    if (!auditOnly) {\\n      const mine = await resolved.data.client.getMyProjects(); assert(mine.success);\\n      const name = receipt.initialMetadata.project_name, slug = name.trim().toLowerCase().replace(/\\\\s+/g, '-');\\n      assert(!mine.data.projects.some(row => row.slug === slug || row.name === name), 'A dashboard project already uses this demo identity; refuse before close');\\n      const { Client } = require('@modelcontextprotocol/client');\\n      const { StdioClientTransport } = require('@modelcontextprotocol/client/stdio');\\n      transport = new StdioClientTransport({ command: process.execPath, args: [path.join(packageRoot, 'dist/index.js')], cwd: setup.project, env, stderr: 'pipe' });\\n      transport.stderr?.on('data', () => {}); // Never retain token-bearing runtime logs.\\n      const client = new Client({ name: 's99-disposable-dashboard-proof', version: '1' }, { capabilities: {}, supportedProtocolVersions: ['2025-11-25'], versionNegotiation: { mode: 'legacy' } });\\n      await client.connect(transport, { signal: controller.signal });\\n      const call = async (name, arguments_) => {\\n        const result = await client.callTool({ name, arguments: { ...arguments_, projectRoot: setup.project } }, { signal: controller.signal });\\n        assert(!result.isError && result.structuredContent?.success, 'Candidate MCP tool refused');\\n        receipt.warningCount = (receipt.warningCount || 0) + (result.structuredContent.warnings?.length || 0);\\n        return result.structuredContent.data;\\n      };\\n      const health = (await call('rbook_agent_onboard', {})).serverHealth;\\n      assert(health?.codeIsCurrent === true && health.pid === transport.pid && health.startupBuild?.buildHash === packed.build.buildHash && health.currentBuild?.buildHash === packed.build.buildHash && health.startupBuild?.buildTime === packed.build.buildTime && health.currentBuild?.buildTime === packed.build.buildTime);\\n      receipt.health = Object.fromEntries(['pid', 'startedAt', 'nodeVersion', 'codeIsCurrent', 'startupBuild', 'currentBuild'].map(key => [key, health[key]]));\\n      let sessionId = receipt.localProof.developerSession.id;\\n      if (session(sessionId).status === 'completed') {\\n        receipt.startAttempted = true; save();\\n        sessionId = (await call('rbook_session', { action: 'start', type: 'review', title: 'Reasonbook handoff dashboard verification', autoRefreshMasterContext: false })).sessionId;\\n      } else assert.equal(session(sessionId).status, 'active');\\n      verifyRuntimeBuild(packageRoot, packed.build);\\n      receipt.phase = 'close'; receipt.close = { attempted: true, sessionId, startedAt: Date.now() }; save();\\n      const done = await call('rbook_session', { action: 'complete', sessionId,\\n        summary: 'Verified the disposable handoff: Claude saved the persistence decision, Codex implemented it and recorded a follow-up, and chat recalled the saved record. This explicit close requests its dashboard checkpoint.' });\\n      receipt.close.result = Object.fromEntries(['sessionId', 'completedAt', 'durationMinutes', 'captureCount', 'nextStepsExtracted'].map(key => [key, done[key]]));\\n      receipt.close.writeFailures = Array.isArray(done.writeFailures) ? done.writeFailures.map(row => ({ op: row.op, code: row.code })) : null;\\n      save(); validateClose(done, sessionId, session(sessionId));\\n    }\\n    receipt.phase = 'upload'; save();\\n    const limit = Date.now() + 120000, baseline = receipt.initialUpload.last_synced_at || 0;\\n    do {\\n      receipt.finalUpload = upload();\\n      if (receipt.finalUpload?.upload_last_attempt_at >= receipt.close.startedAt) {\\n        if (receipt.finalUpload.upload_last_outcome === 'success' && receipt.finalUpload.last_synced_at > baseline) break;\\n        assert(!['failed', 'blocked'].includes(receipt.finalUpload.upload_last_outcome), 'Upload failed after close; audit only');\\n      }\\n      assert(!controller.signal.aborted); await new Promise(resolve => setTimeout(resolve, 1000));\\n    } while (Date.now() < limit);\\n    assert(receipt.finalUpload?.upload_last_attempt_at >= receipt.close.startedAt && receipt.finalUpload.upload_last_outcome === 'success' && receipt.finalUpload.last_synced_at > baseline, 'No fresh successful upload receipt');\\n    const registered = metadata(); currentSlug = registered.dashboard_slug;\\n    assert(registered.dashboard_registered === 'true' && currentSlug && registered.dashboard_project_id);\\n    receipt.registeredMetadata = registered;\\n    receipt.phase = 'readback';\\n    const result = await resolved.data.client.getSyncProjectState(currentSlug); assert(result.success);\\n    const remote = result.data;\\n    const localSession = session(receipt.localProof.developerSession.id);\\n    const remoteRecords = bindRemoteRecords(remote, registered, receipt.localProof, localSession);\\n    const now = await resolved.data.client.request('GET', '/api/intel/now?' + new URLSearchParams({ scope: 'project', project: currentSlug, mode: 'full', limit: '1', itemsPerProject: '20', contentChars: '4000' }));\\n    assert(now.success && now.data.scope === 'project' && now.data.projectsInScope === 1 && now.data.truncated === false);\\n    const projects = now.data.projects.filter(row => row.slug === currentSlug && row.projectId === remote.project.id); assert.equal(projects.length, 1);\\n    const nextSteps = receipt.localProof.captures.filter(row => row.category === 'next-step').map(row => {\\n      const found = projects[0].nextSteps.filter(step => step.content === row.content); assert.equal(found.length, 1);\\n      return { contentSha256: row.sha256, remoteId: found[0].id, exactMatchCount: found.length };\\n    });\\n    receipt.remoteProof = { ...remoteRecords, nextSteps,\\n      countingRule: 'Exactly one remote decision ID+text+creation-time match in the returned source project, one implementation session ID+status+completion-time match, and one full-content match per expected follow-up; null remote authorship remains explicitly unavailable.' };\\n    receipt.success = true; receipt.phase = 'complete';\\n  } catch (error) {\\n    receipt.error = { code: error.code || 'DASHBOARD_PROOF_FAILED', detail: 'Check the bounded receipt and local expectations. Raw errors are withheld to avoid credential disclosure; never repeat a dispatched close.' };\\n  } finally {\\n    clearTimeout(timer); if (originalFetch) globalThis.fetch = originalFetch;\\n    try { await transport?.close(); } catch { receipt.success = false; receipt.transportCloseFailed = true; }\\n    receipt.finishedAt = new Date().toISOString(); save();\\n  }\\n  return { success: receipt.success, phase: receipt.phase, receipt: receiptPath, error: receipt.error };\\n}\\nmodule.exports = { validateScope, bindRemoteRecords, validateClose };\\nif (require.main === module) main(process.argv.slice(2)).then(result => { console.log(JSON.stringify(result)); if (result.success === false) process.exitCode = 1; }).catch(() => { console.error('Dashboard helper failed; inspect durable close intent before any retry.'); process.exitCode = 1; });\\n\""
+        "lineSha256": "67c4ab090e1fb3cb518b2d274856d08472672cfec8f159410f82e333e67c3f8b",
+        "lineUtf8Bytes": 20620
       },
       {
         "file": "rbook/research/2026-10-s99-probes/s99-m08-dashboard.cjs",
         "line": 87,
-        "text": "const upload = () => read(registryFile, db => db.prepare('SELECT project_id,upload_last_attempt_at,upload_last_outcome,last_synced_at FROM projects WHERE store_path=? AND archived_at IS NULL').get(setup.project));"
+        "lineSha256": "72c6b1a92acc541c50807365c76ecbc0b95d41d4fd678d87c9e3c8e2e27d9fe9",
+        "lineUtf8Bytes": 213
       },
       {
         "file": "rbook/research/2026-10-s99-probes/s99-m08-dashboard.cjs",
         "line": 183,
-        "text": "if (receipt.finalUpload.upload_last_outcome === 'success' && receipt.finalUpload.last_synced_at > baseline) break;"
+        "lineSha256": "5985c1e1079647f561bca50f443f9fa239810094e42b5eb5fa0be3e78bfd8a37",
+        "lineUtf8Bytes": 114
       },
       {
         "file": "rbook/research/2026-10-s99-probes/s99-m08-dashboard.cjs",
         "line": 184,
-        "text": "assert(!['failed', 'blocked'].includes(receipt.finalUpload.upload_last_outcome), 'Upload failed after close; audit only');"
+        "lineSha256": "d4ea4f5dfafa2bd268599a250fe51e4ccad6bef46ef39f6a1bcee08681106580",
+        "lineUtf8Bytes": 122
       },
       {
         "file": "rbook/research/2026-10-s99-probes/s99-m08-dashboard.cjs",
         "line": 188,
-        "text": "assert(receipt.finalUpload?.upload_last_attempt_at >= receipt.close.startedAt && receipt.finalUpload.upload_last_outcome === 'success' && receipt.finalUpload.last_synced_at > baseline, 'No fresh successful upload receipt');"
+        "lineSha256": "d67e25153e5f91689903879379ffd7f612027dc7185558970e157d824d28ad92",
+        "lineUtf8Bytes": 223
       },
       {
         "file": "src/intelligence/project-upload-state.ts",
@@ -591,5 +642,10 @@
   },
   "recordedAt": {
     "sha": "d429a4b4e7878d1bcb80e474f63bd852bec1aa7b"
+  },
+  "privateExcerptOmission": {
+    "count": 51,
+    "countingRule": "objects with file beginning rbook/, cmos/ or analysis/ and a string text field",
+    "preserved": "Original counts, paths, line numbers and public text; private text replaced with SHA-256 and UTF-8 byte length."
   }
 }

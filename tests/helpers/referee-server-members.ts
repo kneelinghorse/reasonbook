@@ -72,11 +72,15 @@ export async function archiveMovedBack(
   id: string,
   outcome: RefereeOutcome<unknown>
 ): Promise<void> {
-  const archived = await host.serialized(id, () =>
-    engine.archiveReferee(
-      host.locate(id),
-      path.join(config.root, 'archive', id, `${Date.now()}.sqlite`)
-    )
+  // Archival moves the file but preserves its already refreshed census for a later re-share.
+  const archived = await host.serialized(
+    id,
+    () =>
+      engine.archiveReferee(
+        host.locate(id),
+        path.join(config.root, 'archive', id, `${Date.now()}.sqlite`)
+      ),
+    false
   );
   if (!archived.result.success) return;
   const project = host.state.get(id)!;

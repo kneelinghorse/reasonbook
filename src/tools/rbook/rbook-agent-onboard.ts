@@ -11,6 +11,7 @@
  * @module tools/rbook/rbook-agent-onboard
  */
 
+import { isDirectoryEdition } from '../../edition';
 import { getSetting } from '../../intelligence/legacy-compat';
 import { prepareSpinOutRead } from './spin-out-read';
 import { missionCompletedSql } from './terminal-status';
@@ -323,7 +324,7 @@ export interface RbookAgentOnboardResult {
   contextFreshness: ContextFreshness;
 
   /** s80-m07 — self-capture gap: are local commits ahead of the last Reasonbook write? */
-  selfCapture: SelfCaptureGap;
+  selfCapture?: SelfCaptureGap;
 
   /**
    * Staleness, computed when read (s93-m11). `staleDecisions`/`staleLearnings` count rows whose
@@ -623,7 +624,8 @@ export async function rbookAgentOnboard(
       // projectRoot still wins; loadTierConfig's bundled rbook-seed/tiers fallback
       // covers a store that has no copied rbook/tiers.
       const tierRoot = params.projectRoot ?? path.resolve(client.path, '..', '..', '..');
-      const tierConfig = loadTierConfig(project.projectType, tierRoot);
+      const directory = isDirectoryEdition();
+      const tierConfig = directory ? null : loadTierConfig(project.projectType, tierRoot);
       const hiddenFields = new Set(tierConfig?.onboardFieldsHide ?? []);
 
       // Conditionally fetch sprint/mission data based on tier
@@ -703,29 +705,32 @@ export async function rbookAgentOnboard(
 
       // Detect fresh project: zero active missions AND no PROJECT BRIEF in master_context
       const freshProject = !membersCopy && detectFreshProject(client);
-      const tierSelectionPrompt = freshProject
-        ? buildTierSelectionPrompt(project.projectType)
-        : undefined;
+      const tierSelectionPrompt =
+        freshProject && !directory ? buildTierSelectionPrompt(project.projectType) : undefined;
 
       // Managed Sprint Zero trigger: fresh project + managed tier
-      const sprintZeroReady = freshProject && project.projectType === 'managed' ? true : undefined;
+      const sprintZeroReady =
+        freshProject && !directory && project.projectType === 'managed' ? true : undefined;
       const sprintZeroContext = sprintZeroReady ? buildSprintZeroContext() : undefined;
 
       // General tier first-session prompt: fresh project + general tier
       const firstSessionPrompt =
-        freshProject && project.projectType === 'general' ? buildFirstSessionPrompt() : undefined;
+        freshProject && !directory && project.projectType === 'general'
+          ? buildFirstSessionPrompt()
+          : undefined;
 
       // Fetch messaging context and sync health (non-blocking — gracefully degrades)
       // Skip syncHealth fetch if tier config hides it (avoids unnecessary network calls)
       // s93-m01: an offline onboard (the hook CLI) skips both, without a warning.
-      const [messaging, syncHealth] = params.offline
-        ? [null, null]
-        : await Promise.all([
-            fetchMessagingContext(warnings, tierRoot),
-            hiddenFields.has('syncHealth') || membersCopy
-              ? Promise.resolve(null)
-              : fetchSyncHealth(client, warnings, tierRoot),
-          ]);
+      const [messaging, syncHealth] =
+        isDirectoryEdition() || params.offline
+          ? [null, null]
+          : await Promise.all([
+              fetchMessagingContext(warnings, tierRoot),
+              hiddenFields.has('syncHealth') || membersCopy
+                ? Promise.resolve(null)
+                : fetchSyncHealth(client, warnings, tierRoot),
+            ]);
 
       // Server health (build staleness). The server-stale signal tracks THIS
       // server's OWN build (cmos-mcp-pro), not the onboarding project's — so it is
@@ -767,8 +772,8 @@ export async function rbookAgentOnboard(
       // s80-m07 — self-capture guard: are local commits running ahead of the last Reasonbook
       // write? Project-local, fail-open (never throws, no advisory when a signal is
       // absent). onboardRoot is the project we're onboarding (defined above).
-      const selfCapture = calculateSelfCaptureGap(client, onboardRoot);
-      const selfCaptureWarning = buildSelfCaptureWarning(selfCapture);
+      const selfCapture = directory ? undefined : calculateSelfCaptureGap(client, onboardRoot);
+      const selfCaptureWarning = selfCapture ? buildSelfCaptureWarning(selfCapture) : null;
       if (selfCaptureWarning) {
         warnings.push(selfCaptureWarning);
       }
@@ -799,7 +804,10 @@ export async function rbookAgentOnboard(
       let authState: AuthState | undefined;
       try {
         const authProjectRoot = params.projectRoot ?? undefined;
-        authState = await computeAuthState(authProjectRoot ? { projectRoot: authProjectRoot } : {});
+        if (!isDirectoryEdition())
+          authState = await computeAuthState(
+            authProjectRoot ? { projectRoot: authProjectRoot } : {}
+          );
       } catch {
         authState = undefined;
       }
@@ -825,12 +833,12 @@ export async function rbookAgentOnboard(
         senderAttributionAmbiguity,
         toolsSkip: tierConfig?.toolsSkip ?? [],
         projectLevel: readProjectLevel(client),
-        freshProject,
+        freshProject: freshProject && !directory,
         authState,
         projectRootSupplied: !!params.projectRoot,
         serverCodeStaleActionable,
         staleServer,
-        dashboardInUse: await dashboardInUse(onboardRoot),
+        dashboardInUse: isDirectoryEdition() ? false : await dashboardInUse(onboardRoot),
         localProjectId: getProjectId(client),
         membersCopy,
       });
@@ -840,7 +848,7 @@ export async function rbookAgentOnboard(
       // action must be re-sorted into priority order (generateSuggestedActions already
       // sorted, and a bare push would tail the array — s80-m07 review — so a p2 nudge
       // could be sliced out of rbook_review's top-3 by lower-priority actions).
-      if (selfCapture.fires) {
+      if (selfCapture?.fires) {
         suggestedActions.push({
           action: `Local commits are ~${Math.round(selfCapture.gapDays)}d ahead of the last Reasonbook write — capture recent decisions/learnings/mission progress`,
           command: 'rbook_session(action="capture", category="decision", content="...")',
@@ -862,7 +870,7 @@ export async function rbookAgentOnboard(
         sessionStats,
         contextSizes,
         contextFreshness: freshnessResult.freshness,
-        selfCapture,
+        ...(selfCapture ? { selfCapture } : {}),
         staleness: {
           staleDecisions: stalenessRead.storedStaleDecisions,
           staleLearnings: stalenessRead.storedStaleLearnings,

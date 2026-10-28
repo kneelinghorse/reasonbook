@@ -242,7 +242,10 @@ describe('documents a migration plans', () => {
     const text = JSON.stringify(
       {
         aquex: { command: 'aquex', args: ['serve', '--stdio'] },
-        'cmos-mcp': { command: 'node', args: ['/Users/someone/cmos-mcp/dist/index.js'] },
+        'cmos-mcp': {
+          command: 'node',
+          args: [['', 'Users', 'someone', 'cmos-mcp', 'dist', 'index.js'].join('/')],
+        },
       },
       null,
       2

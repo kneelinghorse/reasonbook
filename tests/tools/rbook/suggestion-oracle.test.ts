@@ -375,7 +375,7 @@ const SITES_BY_MISSION = {
     'src/tools/rbook/record-settle.ts:207',
     'src/tools/rbook/record-settle.ts:214',
     'src/tools/rbook/record-settle.ts:223',
-    'src/tools/rbook/session-owner.ts:187',
+    'src/tools/rbook/session-owner.ts:189',
   ],
   // s96-m13: the sync, sharing and joining refusals and remedies: share, invite, members, remove and
   // sync on rbook_project; the exchange and its steps, the wire, SSH and bundles; the join; owner-copy
@@ -641,7 +641,7 @@ const SITES_BY_MISSION = {
   's98-m11': ['src/tools/rbook/rbook-session-capture.ts:411'],
   // s98-m12: an already-answered message refuses another response with a read-current-message
   // remedy. The portable HTTP arm drives its 409 and executes that exact message's get remedy.
-  's98-m12': ['src/tools/rbook/dashboard-client.ts:1486'],
+  's98-m12': ['src/tools/rbook/dashboard-client.ts:1493'],
   // s98-m13: two failed session-schema/query reads refuse closeout (FAULT; injected in
   // sprint-close-audit-receipt.test.ts). The peer remedy translator spreads an arbitrary engine
   // code, so it is UNTYPED by this gate's sibling-code rule. member-remedies.test.ts covers its
@@ -726,7 +726,7 @@ const SITES_BY_MISSION = {
   's101-m10': [
     'src/tools/rbook/registration-error.ts:29',
     'src/tools/rbook/registration-error.ts:48',
-    'src/tools/rbook/dashboard-client.ts:2426',
+    'src/tools/rbook/dashboard-client.ts:2433',
   ],
   // s101-m02: one common delivery notice and three admission/exchange refusals. The helper
   // and readmit spread have no sibling code and remain UNTYPED; this matrix reaches neither.
@@ -753,12 +753,17 @@ const SITES_BY_MISSION = {
   ],
   // s102-m05: an operator decline awaiting its store write blocks records across sessions.
   // The marker is identifier-only, and the existing row-presence axis drives this refusal.
-  's102-m05': ['src/tools/rbook/draft-evaluation.ts:156'],
+  's102-m05': ['src/tools/rbook/draft-evaluation.ts:160'],
   // s102-m06: unreadable next-step provenance refuses instead of silently counting foreign use.
   // DB_QUERY_FAILED is FAULT; the real-store API suite injects the schema-inspection failure.
   's102-m06': ['src/tools/rbook/next-steps-read.ts:80'],
   // s102-m07: failure to inspect parked work refuses instead of claiming an exhausted queue.
   's102-m07': ['src/tools/rbook/mission-status-parked.ts:23'],
+  // s104-m01: selected tail evidence cannot re-admit a recovered removed member.
+  // This hosted-library refusal is driven by recovery-census tests, not this router matrix.
+  's104-m01': ['src/referee/recovery.ts:281'],
+  // s104-m04: one shared local-edition refusal, driven by the directory boundary suites.
+  's104-m04': ['src/edition.ts:20'],
 } as const satisfies Readonly<Record<string, readonly string[]>>;
 const RATIFIED_SITE_ADDS = Object.values(SITES_BY_MISSION).flat();
 // Warning propagation moved reopen's eligibility sites after their initial addition.
@@ -766,6 +771,12 @@ const CURRENT_S102_M04_SITES = [
   ...SITES_BY_MISSION['s102-m04'].slice(0, 4),
   'src/tools/rbook/rbook-mission-reopen.ts:124',
   'src/tools/rbook/rbook-mission-reopen.ts:141',
+];
+const CURRENT_S98_M15_SITES = [
+  'src/referee/recovery.ts:72',
+  'src/referee/recovery.ts:87',
+  'src/referee/recovery.ts:273',
+  SITES_BY_MISSION['s98-m15'][3],
 ];
 // Keep mission history above fixed; these retained refusals moved in s101-m02 and s101-m03.
 const CURRENT_S98_M13_SITES = [
@@ -1226,6 +1237,39 @@ async function driveMirrored(
     if (timer) clearTimeout(timer);
   }
 }
+
+describe('router hang guard', () => {
+  let savedRouters: MirrorRouters;
+  beforeEach(() => {
+    savedRouters = mirrorRouters;
+    jest.useFakeTimers();
+  });
+  afterEach(() => {
+    mirrorRouters = savedRouters;
+    jest.useRealTimers();
+  });
+
+  it('bounds a never-settling router at the configured deadline', async () => {
+    mirrorRouters = { never: () => new Promise(() => {}) };
+    let observed: DrivenCall | undefined;
+    void driveMirrored('never settles', 'guard', 'never', {}).then((result) => {
+      observed = result;
+    });
+    await jest.advanceTimersByTimeAsync(CALL_TIMEOUT_MS - 1);
+    expect(observed).toBeUndefined();
+    await jest.advanceTimersByTimeAsync(1);
+    expect(observed).toMatchObject({ outcome: 'TIMEOUT' });
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it('returns a completed router result and releases its deadline timer', async () => {
+    mirrorRouters = { ready: async () => ({ success: true }) };
+    expect(await driveMirrored('settles', 'guard', 'ready', {})).toMatchObject({
+      outcome: 'SUCCEEDS',
+    });
+    expect(jest.getTimerCount()).toBe(0);
+  });
+});
 
 // ───────────────────────────────────────────────────────────────────────────────────────────────
 // THE AXIS MATRIX — 8 state axes with small enumerations, not N bespoke fixtures
@@ -2892,14 +2936,14 @@ const HTTP_EXTERNAL_SITES = new Set([
   'src/tools/rbook/owner-resolution.ts:158',
   'src/tools/rbook/owner-resolution.ts:234',
   'src/tools/rbook/rbook-db-backfill.ts:234',
-  'src/tools/rbook/dashboard-client.ts:1486',
+  'src/tools/rbook/dashboard-client.ts:1493',
   'src/tools/rbook/rbook-db-backfill.ts:518',
   'src/tools/rbook/rbook-db-backfill.ts:600',
-  'src/tools/rbook/rbook-auth.ts:633',
-  'src/tools/rbook/rbook-auth.ts:1222',
-  'src/tools/rbook/rbook-auth.ts:1231',
-  'src/tools/rbook/rbook-auth.ts:1239',
-  'src/tools/rbook/rbook-message.ts:1094',
+  'src/tools/rbook/rbook-auth.ts:636',
+  'src/tools/rbook/rbook-auth.ts:1225',
+  'src/tools/rbook/rbook-auth.ts:1234',
+  'src/tools/rbook/rbook-auth.ts:1242',
+  'src/tools/rbook/rbook-message.ts:1097',
   'src/tools/rbook/errors.ts:427',
   'src/tools/rbook/errors.ts:443',
   'src/tools/rbook/errors.ts:462',
@@ -2910,15 +2954,15 @@ const HTTP_EXTERNAL_SITES = new Set([
 const SYNTHETIC_EXTERNAL_SITES = new Set([
   'src/tools/rbook/rbook-db-backfill.ts:175',
   'src/auth/dashboard-owner.ts:19',
-  'src/tools/rbook/rbook-auth.ts:595',
-  'src/tools/rbook/rbook-auth.ts:604',
-  'src/tools/rbook/rbook-auth.ts:690',
-  'src/tools/rbook/rbook-auth.ts:835',
-  'src/tools/rbook/rbook-auth.ts:970',
-  'src/tools/rbook/rbook-auth.ts:977',
-  'src/tools/rbook/rbook-auth.ts:1159',
-  'src/tools/rbook/rbook-auth.ts:1168',
-  'src/tools/rbook/dashboard-client.ts:284',
+  'src/tools/rbook/rbook-auth.ts:598',
+  'src/tools/rbook/rbook-auth.ts:607',
+  'src/tools/rbook/rbook-auth.ts:693',
+  'src/tools/rbook/rbook-auth.ts:838',
+  'src/tools/rbook/rbook-auth.ts:973',
+  'src/tools/rbook/rbook-auth.ts:980',
+  'src/tools/rbook/rbook-auth.ts:1162',
+  'src/tools/rbook/rbook-auth.ts:1171',
+  'src/tools/rbook/dashboard-client.ts:285',
   'src/tools/rbook/errors.ts:492',
 ]);
 
@@ -2962,7 +3006,8 @@ describe('s89-m08 CENSUS — the universe re-derives at build time, never from a
       ...SITES_BY_MISSION['s98-m11'],
       ...SITES_BY_MISSION['s98-m12'],
       ...CURRENT_S98_M13_SITES,
-      ...SITES_BY_MISSION['s98-m15'],
+      ...CURRENT_S98_M15_SITES,
+      ...SITES_BY_MISSION['s104-m01'],
       ...CURRENT_S98_M16_SITES,
       ...CURRENT_S98_M17_SITES,
       ...CURRENT_S98_M18_SITES,
@@ -2990,9 +3035,7 @@ describe('s89-m08 CENSUS — the universe re-derives at build time, never from a
       CURRENT_S98_M13_SITES.map((site) => CENSUS.find((row) => row.site === site)?.triggerClass)
     ).toEqual(['FAULT', 'FAULT', 'UNTYPED']);
     expect(
-      SITES_BY_MISSION['s98-m15'].map(
-        (site) => CENSUS.find((row) => row.site === site)?.triggerClass
-      )
+      CURRENT_S98_M15_SITES.map((site) => CENSUS.find((row) => row.site === site)?.triggerClass)
     ).toEqual(['STATE', 'STATE', 'STATE', 'STATE']);
     expect(
       CURRENT_S98_M16_SITES.map((site) => CENSUS.find((row) => row.site === site)?.triggerClass)
@@ -3252,7 +3295,7 @@ describe('s89-m08 T5 — every authored suggestion naming a shipped tool yields 
       'src/tools/rbook/errors.ts:408',
       'src/tools/rbook/rbook-db-backfill.ts:234',
       'src/tools/rbook/rbook-decisions-update.ts:81',
-      'src/tools/rbook/rbook-feedback.ts:509',
+      'src/tools/rbook/rbook-feedback.ts:512',
       'src/tools/rbook/rbook-learnings-reaffirm.ts:91',
       'src/tools/rbook/rbook-learnings-update.ts:104',
       'src/tools/rbook/rbook-sprint-complete.ts:585',
@@ -5051,7 +5094,40 @@ describe('s90-m07 PORTABLE EXTERNAL + FIRST-RUN LEDGER — loopback, never live 
         replay.resolverOutputs.every((output) => output === externalDouble.origin)
       )
     ).toBe(true);
-    expect(portableReplays.every((replay) => replay.durationMs < 5_000)).toBe(true);
+    for (const replay of loginFamily) {
+      const action = replay.action;
+      const count = (pathname: string) =>
+        replay.requests.filter(
+          (request) =>
+            request.method === 'POST' &&
+            new URL(request.url, externalDouble.origin).pathname === pathname
+        ).length;
+      expect({
+        action,
+        outcome: replay.outcome,
+        code: count('/api/auth/device/code'),
+        token: count('/api/auth/device/token'),
+      }).toEqual({
+        action,
+        outcome: 'SUCCEEDS',
+        code: action === 'login_complete' ? 0 : 1,
+        token: action === 'login_init' ? 0 : 1,
+      });
+    }
+    // driveMirrored's deadline is tested with a never-settling router above. Elapsed time
+    // under shared CPU load is diagnostic, not a second, contradictory speed budget.
+    const slowest = [...portableReplays].sort((a, b) => b.durationMs - a.durationMs)[0];
+    // eslint-disable-next-line no-console
+    console.log(
+      `[external replay slowest] ${JSON.stringify(
+        slowest && {
+          caseName: slowest.caseName,
+          tool: slowest.tool,
+          action: slowest.action,
+          durationMs: slowest.durationMs,
+        }
+      )}`
+    );
     expect(unmatched).toEqual([]);
     expect(blockedOutboundUrls).toEqual([]);
   });
@@ -5692,9 +5768,9 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     'The ordinary exchange withholds changes from an older member after accepting its own push. This router matrix establishes no mixed-version exchange; separate transport and published-copy tests grant no examined-site or remedy-replay credit.',
   'src/tools/rbook/registration-error.ts:29':
     'An exact owner/name collision refuses detached first registration, including archived names and concurrent stores. This synchronous router-refusal matrix does not await close uploads; the separate real-store loopback and MCP-close suite grants no oracle-site credit.',
-  'src/tools/rbook/dashboard-client.ts:2426':
+  'src/tools/rbook/dashboard-client.ts:2433':
     'The create-only server incorrectly returns a re-registration success. The router matrix does not drive background first registration or synthesize that unsafe response; the focused client test verifies refusal without granting oracle-site credit.',
-  'src/tools/rbook/rbook-project-init.ts:823':
+  'src/tools/rbook/rbook-project-init.ts:827':
     'A second initializer wins the id claim after the first read, with an id that conflicts with this caller explicit projectId. This single-call router matrix has no competing connection at that boundary; deterministic real-SQLite claim tests and two-process probes confer no oracle-site credit.',
   'src/tools/rbook/record-context.ts:52':
     'The shared CLI merge boundary sees an unshared store. MCP project sync/move refuse earlier in rbook-project-shared, and MCP has no set-aside action, so this router-only matrix cannot reach that CLI boundary. Real-store CLI tests execute its share remedy separately and confer no oracle-site credit.',
@@ -5759,21 +5835,29 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     'establishes no retained dashboard copy or incomplete remote handover. No focused fixture ' +
     'currently drives this exact non-authority hello branch; the reattachment happy path and ' +
     'record-identity refusal give it no examined-site or wire credit.',
+  'src/edition.ts:20':
+    'Directory mode refuses remote/draft/federated operations before project resolution. ' +
+    'directory-edition and directory-wire tests drive this with absent projects; this full-mode ' +
+    'matrix supplies no directory mode and claims no examined-site or wire credit.',
+  'src/referee/recovery.ts:281':
+    'A selected tail removal conflicts with the active census; recovery refuses to re-admit it. ' +
+    'recovery-census.test.ts drives this branch before judgment and publication. The router ' +
+    'matrix creates no hosted recovery, so this grants no examined-site or wire credit.',
   // ── s98-m15: hosted recovery state the local router matrix does not establish ──
-  'src/referee/recovery.ts:68':
+  'src/referee/recovery.ts:72':
     'A lost hosted referee collecting copies. The reference host returns this library answer; ' +
     'the router matrix builds no host recovery. recovery.test.ts and hosted-recovery-e2e.test.ts ' +
     'drive it, and the published 4.3.0 receipt checks the upgrade text. Those separate witnesses ' +
     'give this matrix no examined-site or wire credit.',
-  'src/referee/recovery.ts:83':
+  'src/referee/recovery.ts:87':
     'The stateless recovery intake/plan/finalize catch wrapper, reached by refused inputs as well ' +
     'as internal failures. Its conditional code is STATE by this census rule, not evidence that ' +
     'every branch is an ordinary state. recovery-boundaries, recovery-adversarial and ' +
     'recovery-publication tests drive file/schema/lock and publication refusals. This router ' +
     'matrix opens no collected recovery files; those tests give it no examined-site or wire credit.',
-  'src/referee/recovery.ts:251':
-    'A confirmed member name or role disagrees with the recovered record after selected-tail ' +
-    'replay. recovery-membership.test.ts and the independent HTTP membership probe drive the ' +
+  'src/referee/recovery.ts:273':
+    'A confirmed member name disagrees with the recovered identity after selected-tail ' +
+    'replay. recovery-membership.test.ts drives the ' +
     'refusal before judging or publication. The router matrix creates no hosted recovery and ' +
     'earns no examined-site or wire credit from those witnesses.',
   'src/tools/rbook/record-dashboard-recovery-moves.ts:174':
@@ -5954,9 +6038,9 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     "A removed member asking for what members receive. The dashboard's peer route only; who-may-call.test.ts and reference-server.test.ts ask as one.",
   'src/referee/peer.ts:331':
     "A peer call on a referee that has not joined. The dashboard's peer route only; remedies.test.ts says hello before the join and after.",
-  'src/referee/views.ts:70':
+  'src/referee/views.ts:74':
     'A view of a referee that has not joined. A dashboard page call, never routed; remedies.test.ts asks before the join and after.',
-  'src/referee/views.ts:98':
+  'src/referee/views.ts:102':
     'The activity feed asked from a change the referee does not hold. A dashboard page call, never routed; remedies.test.ts asks from one, then from the start.',
   'src/tools/rbook/record-fresh-copy.ts:407':
     "A fresh copy's own schema that the sharing preparation cannot make current, which only a broken install leaves. The referee library and the share's upload build it, never a router; no test constructs one.",
@@ -6018,9 +6102,9 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
   // s102-m05 extracted evaluation; these are current locations, unlike the mission history above.
   // The matrix drives routers in process with no harness link, so the server writes as a process
   // and no operator words can be bound to it; these are driven by name in draft-approval.test.ts.
-  'src/tools/rbook/draft-evaluation.ts:182':
+  'src/tools/rbook/draft-evaluation.ts:186':
     "A fromDraft record, in other words than the draft's, of a draft revised after the operator approved it. The record path only; draft-approval.test.ts records a declined revision's text under the earlier approval.",
-  'src/tools/rbook/draft-evaluation.ts:208':
+  'src/tools/rbook/draft-evaluation.ts:212':
     'The operator plainly declined but the prompt hook could not write the decline, so only the ' +
     'runtime words say so. Needs a harness-linked server and hook runtime words; driven in ' +
     'draft-approval.test.ts ("refuses a decline the hook could not write to the store").',
@@ -6033,7 +6117,7 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     'claim. Needs the operator words bound in a harness session; driven in draft-approval.test.ts ' +
     '("releases the claim when an approved profile line cannot be written").',
   // s102-m05: pending-decline settlement moves the unchanged draft-race refusal again.
-  'src/tools/rbook/rbook-decisions-record.ts:352':
+  'src/tools/rbook/rbook-decisions-record.ts:357':
     'Two records of one decision draft at once: the in-transaction guard approves it once and ' +
     'rolls the other back. Driven in draft-approval.test.ts ("records a draft once").',
   // ── s96-m01: the shared record's refusals of a copy, which need a second copy or a restore ─────
@@ -6081,7 +6165,7 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     "A settle of a value no copy wrote, which would spread to every copy. It needs a field in conflict, which needs two copies' writes; record-merge-fixtures.test.ts settles a decision status to values no copy wrote and to a candidate.",
   'src/tools/rbook/record-standing.ts:151':
     "A project identity write on a member's copy, refused before it is recorded. The healthy-store matrix drives routed calls on one store, and only a member's copy reaches this; record-merge.test.ts drives rbook_context and rbook_project updates on a member's copy.",
-  'src/tools/rbook/session-owner.ts:187':
+  'src/tools/rbook/session-owner.ts:189':
     "A write to, or a close of, a session another copy started. A peer's session arrives only by a merge from another copy; record-derived.test.ts completes and captures into a peer's session on the owner's copy.",
   // ── s96-m13: the sync, sharing and joining refusals a single store cannot reach ──────────────
   'src/tools/rbook/rbook-db-backfill.ts:163':
@@ -6261,7 +6345,7 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
   // ── CONSTRUCTION-MASKED PRECONDITIONS inside a VALIDATION/STATE-coded site ───────────────────
   // Driveable by CODE, but dispatcher and collab gates mask the triggers from every supported
   // construction the portable m07 instrument can establish. Four former entries moved to E.
-  'src/tools/rbook/rbook-message.ts:1071':
+  'src/tools/rbook/rbook-message.ts:1074':
     'A defensive branch whose own message says the dispatcher should have caught the condition via ' +
     'resolveSenderContext. Reaching it means reaching a state the dispatcher forbids.',
   // ── MASKED BY AN EARLIER REFUSAL ON EVERY PATH THIS MATRIX CAN DRIVE ─────────────────────────

@@ -194,6 +194,14 @@ Reasonbook runtime and plugin installation make outbound requests in these situa
      one exchange over SSH: a catch-up from the owner's copy that moved the project back, which it
      serves with only the methods a catch-up needs, so SSH login is the boundary there too
      ([record-wire.ts](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/record-wire.ts)).
+   - **Recovery contributions** can upload a fresh shared-record SQLite copy to
+     `POST /api/relay/projects/<id>/recovery/copy` when the dashboard is recovering the remembered
+     project and referee. It holds the shared tables, identity and full change log, with the same
+     exclusions as the share copy above. The owner's copy contributes too. An accepted contribution
+     is sent once per recovery and copy; an unacknowledged request may be retried. Either
+     `RBOOK_SHARED_SYNC=off` or `RBOOK_DASHBOARD_SHARING=off` stops contributions, including during
+     explicit sync. `RBOOK_CHECKPOINT_SYNC=off` controls whole-store uploads separately and does not
+     stop these contributions. [Privacy](docs/privacy.md#sharing-through-reasonbookai) describes their retention.
    - **Moving back** (`rbook_project(action="move", to="owner")`, `reasonbook move --to owner`)
      hands the record to the owner's copy, and the dashboard archives its copy once the owner's
      copy holds the record and has synced again.
@@ -553,4 +561,4 @@ subagent type (e.g. the `Explore` agent) — that is a mitigation, not the machi
 
 ---
 
-_Last verified against the source for release 4.6.1._
+_Last verified against the source for release 4.7.0._

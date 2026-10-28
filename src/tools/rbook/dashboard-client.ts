@@ -10,6 +10,7 @@
  * @module tools/rbook/dashboard-client
  */
 
+import { isDirectoryEdition, directoryEditionError } from '../../edition';
 import {
   LEGACY,
   normalizeAddressScheme,
@@ -907,6 +908,7 @@ export class DashboardClient {
   private static readonly EXPIRY_BUFFER_MS = 30_000;
 
   constructor(config: DashboardClientConfig) {
+    if (isDirectoryEdition()) throw new Error(directoryEditionError().suggestion);
     this.baseUrl = config.baseUrl.replace(/\/+$/, '');
     this.timeoutMs = config.timeoutMs ?? 10_000;
 
@@ -928,6 +930,7 @@ export class DashboardClient {
    * Returns an error result if not configured.
    */
   static fromEnv(overrides?: Partial<DashboardClientConfig>): RbookToolResult<DashboardClient> {
+    if (isDirectoryEdition()) return createError(directoryEditionError());
     const baseUrl = resolveDashboardBaseUrl(overrides?.baseUrl);
     const apiKey = overrides?.apiKey ?? getSetting(RBOOK_DASHBOARD_API_KEY_ENV);
 
@@ -982,6 +985,7 @@ export class DashboardClient {
     projectRoot: string | undefined,
     overrides?: Partial<DashboardClientConfig> & { credentialStore?: CredentialStore }
   ): Promise<RbookToolResult<ResolvedDashboardClient>> {
+    if (isDirectoryEdition()) return createError(directoryEditionError());
     const baseUrl = resolveDashboardBaseUrl(overrides?.baseUrl);
 
     const buildConfig = (apiKey: string): DashboardClientConfig =>
@@ -1045,6 +1049,7 @@ export class DashboardClient {
       userScopedKeyId?: string;
     }
   ): Promise<RbookToolResult<ResolvedDashboardClient>> {
+    if (isDirectoryEdition()) return createError(directoryEditionError());
     const baseUrl = resolveDashboardBaseUrl(overrides?.baseUrl);
 
     // (1) Explicit override, unless the caller selected an attributable stored key.
@@ -1141,6 +1146,7 @@ export class DashboardClient {
    * Authenticate with the dashboard and cache the token.
    */
   private async authenticate(): Promise<RbookToolResult<string>> {
+    if (isDirectoryEdition()) return createError(directoryEditionError());
     const url = `${this.baseUrl}/api/auth/login`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -1204,6 +1210,7 @@ export class DashboardClient {
    * Get a valid auth token, re-authenticating if needed.
    */
   private async getAuthToken(): Promise<RbookToolResult<string>> {
+    if (isDirectoryEdition()) return createError(directoryEditionError());
     // API keys are permanent — no expiry check, no login needed
     if (this.authMethod === 'apiKey') {
       return createSuccess(this.cachedToken!);

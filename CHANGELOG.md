@@ -2,6 +2,18 @@
 
 All notable changes to Reasonbook (published as `@aquex/cmos-mcp` before 4.0.0) are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.7.0] — 2026-10-28
+
+- Add the local directory edition in the same package: requested project records without hooks,
+  profile/draft access, sharing or runtime network calls. Its status response has `edition`,
+  `rbook_address` and `local_health`; dashboard/auth/sync fields remain exclusive to full mode.
+- Complete hosted recovery when the frozen census has a membership change absent from every
+  surviving record, while keeping removed members removed and reporting reconciliation in the plan.
+- Correct privacy/recovery disclosures, make next-step carry honor its mission filter, and harden
+  local release gates and mirror checks.
+- Exclude browser-disconnection notices from draft approval evidence. Explain the Codex exec/resume
+  session boundary and direct users to propose and approve within one running conversation.
+
 ## [4.6.1] — 2026-10-27
 
 ### Changed
@@ -2647,6 +2659,7 @@ This is the section to read carefully if you've been tracking pre-1.0 internal b
 - **Custom `cmos_learnings(action="update")` callers** should pass at least one of `status` or `evergreen` per call (see Tool-surface changes above).
 
 [1.0.0]: https://www.npmjs.com/package/@aquex/cmos-mcp/v/1.0.0
+[4.7.0]: https://github.com/kneelinghorse/reasonbook/compare/v4.6.1...v4.7.0
 [4.6.1]: https://github.com/kneelinghorse/reasonbook/compare/v4.6.0...v4.6.1
 [4.6.0]: https://github.com/kneelinghorse/reasonbook/compare/v4.5.1...v4.6.0
 [4.5.1]: https://github.com/kneelinghorse/reasonbook/compare/v4.5.0...v4.5.1

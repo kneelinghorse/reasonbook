@@ -271,14 +271,16 @@ const EXPECTED_TOTALS = {
   // s102-m05: two runtime helpers and the evaluation extraction add files, without changing answer shapes.
   // s102-m06: three digest/read helpers; previews/show add three fields plus row/local provenance.
   // s102-m07: refusal bounds and parked-status helpers add files; answer types stay unchanged.
-  files: 326,
-  roots: 149,
-  declarations: 348,
-  compositions: 348,
+  // s104-m04 adds the directory guard and separates local/full status result declarations.
+  // Local status exposes edition/address/health and declares absent dashboard fields as never.
+  files: 327,
+  roots: 151,
+  declarations: 350,
+  compositions: 350,
   // s98-m11: bulk feedback receipts name the project and list already resolved skips.
   // s98-m12: ProjectTypeFields gains optional build_freshness_check, disclosed in CHANGELOG.
   // s98-m13: sprint-close adds implicitSessionsAtClose beside the direct-membership list.
-  rows: 1957,
+  rows: 1966,
 } as const;
 const EXPLICIT_OPAQUE_LEDGER = [
   'RbookToolError.providedValue = ANY',

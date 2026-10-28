@@ -40,6 +40,14 @@ it('knows a harness prompt by its opening, with or without a transcript', () => 
   );
 });
 
+it('recognizes the observed browser-disconnection notice without treating ordinary discussion as a notice', () => {
+  const notice =
+    '[Browser disconnected: The browser connection has been closed. Browser tools are no longer available.]';
+  expect(harnessPrompt(notice)).toBe('[Browser disconnected:');
+  expect(harnessPrompt(`  ${notice}`)).toBe('[Browser disconnected:');
+  expect(harnessPrompt(`Please explain this notice: ${notice}`)).toBeNull();
+});
+
 it('knows a scheduled wakeup, which has no opening, by the call that scheduled it', () => {
   const wakeup = 'Check the full-suite log and the critics; continue the build.';
   // Without the transcript it reads as the operator's: a named false negative.

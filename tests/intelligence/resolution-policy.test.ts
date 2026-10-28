@@ -149,7 +149,9 @@ describe('isEphemeralStorePath', () => {
 
   it('flags a store under os.tmpdir() and leaves a durable project alone', () => {
     expect(isEphemeralStorePath(path.join(os.tmpdir(), 'scratch-store'))).toBe(true);
-    expect(isEphemeralStorePath('/Users/someone/portfolio/project')).toBe(false);
+    expect(isEphemeralStorePath(['', 'Users', 'someone', 'portfolio', 'project'].join('/'))).toBe(
+      false
+    );
   });
 
   it('adds the RBOOK_EPHEMERAL_PATHS list to the defaults', () => {

@@ -2,6 +2,7 @@
 // ABOUTME: s92-m03 — whose session a write belongs to: the caller's explicit session, else its own implicit
 // ABOUTME: session, opened lazily. Also the facts reconcile decides on.
 
+import { isDirectoryEdition } from '../../edition';
 import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -118,6 +119,7 @@ export function processOwnerKey(pid: number, startedMs: number, hostId = THIS_HO
  * elsewhere as itself. Without `dbPath` the harness session counts wherever the link points.
  */
 export function currentSessionOwner(dbPath?: string): SessionOwner {
+  if (isDirectoryEdition()) return processSessionOwner();
   if (ownerOverride) return ownerOverride;
   if (externalOwnerId) {
     return { key: `ext:${externalOwnerId}`, kind: 'external', pid: process.pid };

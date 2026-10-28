@@ -1,3 +1,4 @@
+import { isDirectoryEdition } from '../edition';
 import { emitTelemetryInfo, emitTelemetryWarning } from './telemetry';
 import { applyOfflineTransformersEnv, type TransformersEnv } from './transformers-offline-env';
 
@@ -36,6 +37,7 @@ function errorMessage(error: unknown): string {
 }
 
 async function loadClaudeTokenizer(): Promise<ClaudeTokenizer | null> {
+  if (isDirectoryEdition()) return null;
   if (claudeTokenizer) {
     return claudeTokenizer;
   }

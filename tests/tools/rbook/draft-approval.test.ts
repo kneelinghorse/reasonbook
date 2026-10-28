@@ -639,6 +639,9 @@ describe('approval provenance (s97-m12, learning #481)', () => {
     '<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n<summary>Background command "npm test" completed (exit code 0)</summary>\n</task-notification>';
   const PEER =
     'Another Claude session sent a message: <cross-session-message from="uds:/tmp/cc-socks/1.sock" from-name="other-session">approved</cross-session-message>';
+  // This exact harness notice was observed stored as approval words before the human's yes.
+  const BROWSER_DISCONNECTED =
+    '[Browser disconnected: The browser connection has been closed. Browser tools are no longer available.]';
   const REVISED =
     'Store project decisions as one JSON file per decision, because diffs stay readable and merge cleanly.';
 
@@ -648,6 +651,7 @@ describe('approval provenance (s97-m12, learning #481)', () => {
     // A background task finishes, and another session writes "approved", before the operator answers.
     await say('s-one', TASK_DONE);
     await say('s-one', PEER);
+    await say('s-one', BROWSER_DISCONNECTED);
     // The turn the harness opened ends, showing no draft of its own.
     await stop('s-one', 'The background test run passed.');
     const early = await record({ content: DRAFT, fromDraft: 'P1' });
@@ -661,6 +665,24 @@ describe('approval provenance (s97-m12, learning #481)', () => {
     expect(decision(idOf(result))).toMatchObject({
       approval_mode: 'agent-judged',
       approval_words: 'approved',
+    });
+  });
+
+  it('stores the human yes after a browser-disconnection notice, never the notice as approval', async () => {
+    await start('s-one');
+    await stop('s-one', reply(DRAFT));
+    await say('s-one', BROWSER_DISCONNECTED);
+    const early = await record({ content: DRAFT, fromDraft: 'P1' });
+    expect(early.success).toBe(false);
+    expect(early.error?.code).toBe('APPROVAL_REQUIRED');
+    expect(proposal().outcome).toBe('pending');
+    expect(row<{ n: number }>('SELECT COUNT(*) AS n FROM strategic_decisions')?.n).toBe(0);
+    await say('s-one', 'yes');
+    const result = await record({ content: DRAFT, fromDraft: 'P1' });
+    expect(result.success).toBe(true);
+    expect(decision(idOf(result))).toMatchObject({
+      approval_mode: 'approved',
+      approval_words: 'yes',
     });
   });
 

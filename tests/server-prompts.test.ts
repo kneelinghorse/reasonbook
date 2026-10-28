@@ -27,6 +27,43 @@ async function connect(skillRoot?: string) {
 }
 
 describe('Reasonbook MCP prompts', () => {
+  test('directory prompts expose only the six shipped chat skills and refuse full workflows', async () => {
+    const saved = process.env.RBOOK_EDITION;
+    process.env.RBOOK_EDITION = 'directory';
+    const { client, close } = await connect();
+    try {
+      const commands = [
+        'setup',
+        'catch-up',
+        'propose-decision',
+        'capture-notes',
+        'recall',
+        'next-up',
+      ];
+      expect((await client.listPrompts()).prompts.map((prompt) => prompt.name)).toEqual(
+        commands.map((name) => `rbook-${name}`)
+      );
+      for (const name of commands) {
+        const source = fs.readFileSync(
+          path.resolve(__dirname, `../plugins/reasonbook-chat/skills/${name}/SKILL.md`),
+          'utf8'
+        );
+        const body = source.replace(/^---\r?\n[\s\S]+?\r?\n---\r?\n/, '').trim();
+        expect((await client.getPrompt({ name: `rbook-${name}` })).messages[0].content).toEqual({
+          type: 'text',
+          text: body,
+        });
+      }
+      await expect(client.getPrompt({ name: 'rbook-build' })).rejects.toMatchObject({
+        code: ProtocolErrorCode.InvalidParams,
+      });
+    } finally {
+      await close();
+      if (saved === undefined) delete process.env.RBOOK_EDITION;
+      else process.env.RBOOK_EDITION = saved;
+    }
+  });
+
   test('a supporting client discovers all four commands and gets the exact shared skill body', async () => {
     const { client, close } = await connect();
     try {

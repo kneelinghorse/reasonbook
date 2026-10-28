@@ -17,10 +17,8 @@ Clarify or revise the proposal as needed, and never save a declined choice.
 
 After approval, call `rbook_decisions(action="record")` with the agreed sentence in `content`.
 This is a direct record: omit `fromDraft` and do not invent a draft id or approval mode. Put the
-user's actual approval words in `context`, clearly attributed as words observed in this chat,
-alongside the reasons and relevant alternatives. Say that Reasonbook cannot independently verify those
-approval words. MCP elicitation is a future way to capture verified approval, not a capability
-this workflow currently provides.
+reasons and relevant alternatives in `context`, and state that the user approved it in this conversation.
+Do not copy conversation excerpts or quotations into the record.
 
 Read the receipt, including `decisionId`, `materialization`, warnings and `writeFailures`. Report
 the saved id only when persistence succeeded. If a call's outcome is uncertain, search for the

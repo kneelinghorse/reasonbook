@@ -73,7 +73,10 @@ function recoveryCopies(
   changes: readonly LoggedChange[],
   input: RecoveryPlanInput,
   adoptedPrefix: number
-): Map<string, Member> {
+): {
+  copies: Map<string, Member>;
+  people: Map<string, { role: string; cuts?: Record<string, number> }>;
+} {
   const prefixes = new Map<string, number>();
   for (const change of changes)
     if (change.replica_seq === (prefixes.get(change.replica_id) ?? 0) + 1)
@@ -144,7 +147,7 @@ function recoveryCopies(
     const copy = copies.get(replicaId);
     if (copy) copies.set(replicaId, { ...copy, cut: Math.min(copy.cut ?? Infinity, cut) });
   }
-  return copies;
+  return { copies, people };
 }
 
 /** One union retaining every fill; the plan refuses publication if any input disagrees. */
@@ -215,7 +218,22 @@ export function makeRecoveryPlan(
   for (const file of files)
     for (const member of [...file.context.members.values(), ...file.context.unseen.values()])
       evidenceCopies.set(member.replicaId, member);
-  const copies = recoveryCopies(base, changes, input, adoptedPrefix);
+  const { copies, people } = recoveryCopies(base, changes, input, adoptedPrefix);
+  const memberReconciliation: RecoveryPlan['memberReconciliation'] = input.members
+    .filter(
+      (member) =>
+        member.memberId !== OWNER_MEMBER && people.get(member.memberId)?.role !== member.role
+    )
+    .map((member) => {
+      const fromRole = people.get(member.memberId)?.role ?? null;
+      return {
+        memberId: member.memberId,
+        name: member.name,
+        fromRole,
+        role: fromRole === 'removed' ? 'removed' : member.role,
+        action: fromRole === 'removed' ? 'keep_removed' : 'write',
+      };
+    });
   // An authenticated upload or an explicit drop can name an unseen copy. Its unverified
   // admission never retires a trusted predecessor or creates a missing-copy obligation.
   for (const file of files.filter((entry) => entry.caller))
@@ -306,6 +324,7 @@ export function makeRecoveryPlan(
     },
     thirdPartyStreams,
     tailMembership,
+    memberReconciliation,
     ready: !waiting.length && !clashes.length,
   };
   const planHash = createHash('sha256')

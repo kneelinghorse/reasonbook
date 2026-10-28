@@ -7,6 +7,8 @@ import path from 'node:path';
 
 export function getSetting(name, env = process.env) {
   const suffix = name.replace(/^(?:RBOOK|CMOS)_/, '');
+  // The edition was introduced after the rename; no CMOS_EDITION setting ever existed.
+  if (suffix === 'EDITION') return env.RBOOK_EDITION;
   return env[`RBOOK_${suffix}`] ?? env[`CMOS_${suffix}`];
 }
 

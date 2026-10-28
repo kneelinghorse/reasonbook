@@ -57,6 +57,7 @@
  * @module tools/rbook/rbook-review
  */
 
+import { isDirectoryEdition } from '../../edition';
 import { resolveRecordPaths } from '../../intelligence/legacy-compat';
 import { isOpenStatus } from './terminal-status';
 import { countReflaggedSinceRepair } from './staleness-detection';
@@ -541,7 +542,7 @@ export async function rbookReview(
     // the registered projects). Runs in the same parallel batch as onboard/status
     // so it adds no serial latency; latency-fenced to the active-missions query.
     // Degrades to null (never throws) on ≤1 project or fan-out failure.
-    buildPortfolioSection(internalOpts.registry),
+    isDirectoryEdition() ? null : buildPortfolioSection(internalOpts.registry),
     // s69-m05 / s88-m08 — refresh last_seen_at only for an EXISTING registration.
     // A read-classified opener must not register a store it merely names; the first write or an
     // explicit rbook_project(register) owns that transition. Never throws or blocks the opener.
@@ -845,7 +846,7 @@ async function readSharedRecordText(
   try {
     const read = await withClientAsync(
       async (client) => {
-        const review = sharedRecordReview(client);
+        const review = sharedRecordReview(client, isDirectoryEdition());
         return createSuccess({ text: sharedRecordText(review), protocol: review?.protocol });
       },
       projectRoot ? { projectRoot } : {}

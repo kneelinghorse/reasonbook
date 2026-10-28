@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
-import { copiedPlugin, fixture, packageCode, version } from './fixtures';
+import { copiedPlugin, fixture, fixtureNode, packageCode, version } from './fixtures';
 import { cleanupFixture, watchFixture } from './detached-install-diagnostics';
 
 describe('detached fixture diagnostics', () => {
@@ -156,9 +156,7 @@ test('cold SessionStart detaches one worker, then the next session uses its full
   );
   try {
     const plugin = copiedPlugin(root);
-    const localNode = path.join(root, process.platform === 'win32' ? 'node.exe' : 'node');
-    fs.copyFileSync(process.execPath, localNode);
-    fs.chmodSync(localNode, 0o755);
+    const localNode = fixtureNode(root);
     const npmScript = path.join(root, 'npm-fixture.js');
     fs.writeFileSync(
       npmScript,
@@ -176,9 +174,8 @@ test('cold SessionStart detaches one worker, then the next session uses its full
       CLAUDE_PLUGIN_DATA: data,
       RBOOK_CONFIG_DIR: path.join(root, 'config'),
     };
-    // s96-m10 (#647): a hang guard, not a speed budget. The first call is the first run of the
-    // binary copied above, which macOS scans first: it measured 2.0-2.9 s at load 19-25, and ran
-    // past 5 s in 3 of 89 runs under two concurrent full suites. A hung hook still fails, by signal.
+    // A hang guard, not a speed budget: the fixture installs a cold package while using
+    // the already running Node executable. Preserve bounded failure evidence under load.
     const invoke = () =>
       spawnSync(
         localNode,
@@ -192,7 +189,12 @@ test('cold SessionStart detaches one worker, then the next session uses its full
         { env, input: '{}', encoding: 'utf8', timeout: 30_000 }
       );
     const first = invoke();
-    expect({ status: first.status, signal: first.signal }).toEqual({ status: 0, signal: null });
+    expect({
+      status: first.status,
+      signal: first.signal,
+      error: first.error?.message,
+      stderr: first.stderr?.slice(-4096),
+    }).toEqual({ status: 0, signal: null, error: undefined, stderr: '' });
     expect(first.stdout).toContain('Reasonbook is installing');
     const deadline = Date.now() + 10000;
     while (
@@ -203,7 +205,12 @@ test('cold SessionStart detaches one worker, then the next session uses its full
       await new Promise((resolve) => setTimeout(resolve, 20));
     expect(fs.existsSync(path.join(installRoot, '.rbook-ready.json'))).toBe(true);
     const second = invoke();
-    expect({ status: second.status, signal: second.signal }).toEqual({ status: 0, signal: null });
+    expect({
+      status: second.status,
+      signal: second.signal,
+      error: second.error?.message,
+      stderr: second.stderr?.slice(-4096),
+    }).toEqual({ status: 0, signal: null, error: undefined, stderr: '' });
     expect(JSON.parse(second.stdout).args).toEqual([
       'hook',
       'session-start',
@@ -238,9 +245,7 @@ test('shared hook and MCP starters install once even after the MCP process group
   let failure: Error | undefined;
   try {
     const plugin = copiedPlugin(root);
-    const localNode = path.join(root, process.platform === 'win32' ? 'node.exe' : 'node');
-    fs.copyFileSync(process.execPath, localNode);
-    fs.chmodSync(localNode, 0o755);
+    const localNode = fixtureNode(root);
     const npmScript = path.join(root, 'npm-fixture.js');
     const calls = path.join(root, 'calls');
     // s98-m08 (#660 item 2): the install finishes when the test says so, not after 750 ms, which a

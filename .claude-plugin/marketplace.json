@@ -11,6 +11,11 @@
       "name": "reasonbook",
       "source": "./plugins/reasonbook",
       "description": "Bring the Reasonbook record into Claude Code with hooks, skills and an MCP server."
+    },
+    {
+      "name": "reasonbook-chat",
+      "source": "./plugins/reasonbook-chat",
+      "description": "Local project decisions, reasons and next steps, without hooks or sharing."
     }
   ]
 }

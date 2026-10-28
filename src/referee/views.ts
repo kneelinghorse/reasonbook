@@ -7,6 +7,7 @@ import { createSuccess } from '../tools/rbook/errors';
 import { replicaMarks } from '../tools/rbook/record-apply';
 import { crossRecordFindings, type CheckFinding } from '../tools/rbook/record-checks';
 import { copyReport, type CopyReport } from '../tools/rbook/record-copy-report';
+import { setAsideCut } from '../tools/rbook/record-member-cuts';
 import { peerHealth } from '../tools/rbook/record-peers';
 import { changesSince } from '../tools/rbook/record-since';
 import { openConflicts, type OpenConflict } from '../tools/rbook/record-settle';
@@ -32,6 +33,9 @@ export interface CopyState extends CopyReport {
   readonly accountId: string | null;
   /** Whether its member was removed: it then receives nothing new. */
   readonly removed: boolean;
+  /** A permanently retired copy and its last accepted sequence, independently of member removal. */
+  readonly setAside: boolean;
+  readonly cut: number | null;
   /** How far the referee holds this copy's own stream. */
   readonly received: number;
   /** The referee's own marks when it last sent this copy the record, and when that was. */
@@ -166,6 +170,8 @@ export function peers(location: RefereeLocation): Promise<RefereeOutcome<CopySta
           memberId: memberOfReplica(ctx, member.replicaId),
           accountId: accountOfReplica(ctx, accounts, member.replicaId),
           removed: member.role === 'removed',
+          setAside: setAsideCut(ctx, member.replicaId) !== undefined,
+          cut: setAsideCut(ctx, member.replicaId) ?? null,
           received: held[member.replicaId] ?? 0,
           servedThrough: served,
           lastServedAt: saw?.served_at ?? null,

@@ -11,6 +11,7 @@
  * @module tools/rbook/rbook-decisions
  */
 
+import { directoryCallError } from '../../edition';
 import { formatToolFailure } from './format-failure';
 import { z } from 'zod';
 import { createError, RbookErrors } from './errors';
@@ -371,6 +372,8 @@ function isDecisionsAction(value: string): value is RbookDecisionsAction {
 export async function rbookDecisions(
   params: RbookDecisionsParams
 ): Promise<RbookToolResult<RbookDecisionsResult>> {
+  const editionError = directoryCallError('rbook_decisions', params);
+  if (editionError) return createError(editionError);
   const actionValue =
     typeof (params as { action?: unknown }).action === 'string' ? params.action : '';
 

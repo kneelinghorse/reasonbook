@@ -8,6 +8,7 @@
  * @module tools/rbook/rbook-learnings
  */
 
+import { directoryCallError } from '../../edition';
 import { formatToolFailure } from './format-failure';
 import { z } from 'zod';
 import { createError, RbookErrors } from './errors';
@@ -249,6 +250,8 @@ function isLearningsAction(value: string): value is RbookLearningsAction {
 export async function rbookLearnings(
   params: RbookLearningsParams
 ): Promise<RbookToolResult<RbookLearningsResult>> {
+  const editionError = directoryCallError('rbook_learnings', params);
+  if (editionError) return createError(editionError);
   const actionValue =
     typeof (params as { action?: unknown }).action === 'string' ? params.action : '';
 

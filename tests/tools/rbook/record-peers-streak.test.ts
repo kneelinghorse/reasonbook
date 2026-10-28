@@ -138,9 +138,12 @@ describe("a delivery's pages, reported as one (s97-m10)", () => {
   });
 
   it("names this machine's home folder as ~ in a failure it reports to the dashboard", () => {
-    expect(withoutHome('/Users/example/work/rbook/db: busy', '/Users/example')).toBe(
-      '~/work/rbook/db: busy'
-    );
+    expect(
+      withoutHome(
+        ['', 'Users', 'example', 'work', 'rbook', 'db: busy'].join('/'),
+        ['', 'Users', 'example'].join('/')
+      )
+    ).toBe('~/work/rbook/db: busy');
     expect(withoutHome('/x: busy', '/')).toBe('/x: busy');
   });
 });

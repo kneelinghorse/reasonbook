@@ -24,16 +24,16 @@ beforeEach(() => {
 });
 afterEach(() => jest.restoreAllMocks());
 
-it('accounts for the complete predicate: 208 rejectable schema rows, one universal JSON value, ten handler promises', () => {
-  // s103-m02 exposes three existing action-specific requirements in the wire descriptions.
-  expect(rows).toHaveLength(219);
+it('accounts for the complete predicate: 208 rejectable schema rows, one universal JSON value, eleven handler promises', () => {
+  // s104-m03 restores the complete action's existing summary requirement on the wire.
+  expect(rows).toHaveLength(220);
   expect(new Set(rows.map(constraintKey)).size).toBe(rows.length);
   expect(schemaRows).toHaveLength(209);
   expect(rejectable).toHaveLength(208);
   expect(
     cases.filter((item) => item.args === undefined).map((item) => constraintKey(item.row))
   ).toEqual(['rbook_context /fieldUpdates/items/properties/value nested-type']);
-  expect(rows.filter((row) => row.kind.startsWith('desc-'))).toHaveLength(10);
+  expect(rows.filter((row) => row.kind.startsWith('desc-'))).toHaveLength(11);
 });
 
 it.each(rejectable.map(({ row, args }) => [constraintKey(row), row, args] as const))(

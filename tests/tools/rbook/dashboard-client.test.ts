@@ -1374,13 +1374,15 @@ describe('registerProject', () => {
     await client.registerProject({
       projectName: 'My Project',
       sqlitePath: tmpFilePath,
-      localDbPath: '/home/user/project/rbook/db/rbook.sqlite',
+      localDbPath: ['', 'home', 'user', 'project', 'rbook', 'db', 'rbook.sqlite'].join('/'),
     });
 
     const [, options] = mockFetch.mock.calls[0];
     const formData = options?.body as FormData;
     expect(formData.get('projectName')).toBe('My Project');
-    expect(formData.get('localDbPath')).toBe('/home/user/project/rbook/db/rbook.sqlite');
+    expect(formData.get('localDbPath')).toBe(
+      ['', 'home', 'user', 'project', 'rbook', 'db', 'rbook.sqlite'].join('/')
+    );
   });
 
   it('should refuse registration when expected slug does not match the project name', async () => {

@@ -258,7 +258,10 @@ export const rbookContextSchema = z
       .array(z.number().int().positive())
       .optional()
       .describe('Constraint IDs to archive'),
-    missionId: z.string().optional().describe('Only next steps recorded for this mission'),
+    missionId: z
+      .string()
+      .optional()
+      .describe('list/carry: only next steps recorded for this mission'),
 
     constraintId: z
       .number()
@@ -454,7 +457,7 @@ export const rbookContextToolDefinition = {
       },
       missionId: {
         type: 'string',
-        description: 'Only next steps recorded for this mission',
+        description: 'list/carry: only next steps recorded for this mission',
       },
       constraintId: {
         type: 'integer',

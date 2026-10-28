@@ -20,6 +20,8 @@ import { COPY_KEYS } from './replica-copy-keys';
 import { protocolReview, type RecordProtocolReview } from './record-protocol-review';
 
 export interface SharedRecordReview {
+  /** Directory mode reports stored integrity only, never remote status or remote remedies. */
+  readonly directory?: true;
   /** Informational write protocol and complete named blockers, never conflict states. */
   readonly protocol?: RecordProtocolReview;
   /** Each field in conflict, as "missions s96-m12's objective (2 values)". */
@@ -225,7 +227,10 @@ const STANDING_TEXT: Readonly<Record<string, (n: number, cause: string) => strin
 };
 
 /** What the review shows about a shared record (design §s96-m12, item 6); null off one. */
-export function sharedRecordReview(client: RbookDatabaseClient): SharedRecordReview | null {
+export function sharedRecordReview(
+  client: RbookDatabaseClient,
+  directory = false
+): SharedRecordReview | null {
   if (!isRecordedStore(client)) return null;
   const query = clientQuery(client);
   const conflicts = openConflicts(client).map(
@@ -235,6 +240,15 @@ export function sharedRecordReview(client: RbookDatabaseClient): SharedRecordRev
   const standings = query<{ state: string; n: number; cause: string }>(
     'SELECT state, count(*) AS n, min(cause) AS cause FROM record_txn_state GROUP BY state ORDER BY state'
   );
+  if (directory)
+    return {
+      directory: true,
+      conflicts,
+      states: crossRecordFindings(client).map((finding) => finding.detail),
+      waiting: standings.map((row) => `${row.n} stored changes: ${row.state}`),
+      waitingTotal: standings.reduce((sum, row) => sum + row.n, 0),
+      started: [],
+    };
   const waiting = standings.map((row) =>
     (STANDING_TEXT[row.state] ?? ((n: number, cause: string) => `${n} ${row.state} (${cause})`))(
       row.n,

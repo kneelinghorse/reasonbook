@@ -12,6 +12,7 @@ const HISTORICAL_FAILURES = [
   'tests/cli/hook-lifecycle.test.ts',
   'tests/cli/migrate-ownership.test.ts',
   'tests/cli/prompt-recall.test.ts',
+  'tests/cli/telemetry-use.test.ts',
   'tests/docs/seed-example-calls.test.ts',
   'tests/index.runtime.test.ts',
   'tests/integration/codex-request-dispatch.test.ts',

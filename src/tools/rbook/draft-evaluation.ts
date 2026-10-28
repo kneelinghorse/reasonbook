@@ -3,6 +3,7 @@
 // ABOUTME: Refusals preserve draft lifecycle rules, late-answer evidence and pending-decline protection.
 
 import * as path from 'path';
+import { currentCodexRequest } from '../../codex-request-context';
 import { formatCliRemedy } from '../../utils/cli-remedy';
 import type { RbookDatabaseClient } from './client';
 import { CONTENT_FLOOR, draftCoverage, recordStatesDraft, type ReplyClass } from './draft-grammar';
@@ -99,10 +100,13 @@ const REPLY_WORDS: Readonly<Record<ReplyClass, string>> = {
 
 /** The one refusal for a draft the operator has not plainly approved here; its remedy re-proposes. */
 function approvalRequired(draft: DraftRow, label: string, why: string): RbookToolError {
+  const codexRemedy = currentCodexRequest()
+    ? ' Keep one Codex conversation running for both proposal and approval; separate codex exec / codex exec resume runs end the hook session. Re-propose and approve there.'
+    : '';
   return {
     code: RBOOK_ERROR_CODES.APPROVAL_REQUIRED,
     message: `Draft ${label} (${draft.kind}) was not recorded: ${why}`,
-    suggestion: `End a reply with "Would record${draft.kind === 'decision' ? '' : ` (${draft.kind})`}: ${draft.text.slice(0, 80)}" (revised if needed), and record it after the operator approves it.`,
+    suggestion: `End a reply with "Would record${draft.kind === 'decision' ? '' : ` (${draft.kind})`}: ${draft.text.slice(0, 80)}" (revised if needed), and record it after the operator approves it.${codexRemedy}`,
   };
 }
 

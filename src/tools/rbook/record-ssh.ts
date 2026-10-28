@@ -2,6 +2,7 @@
 // ABOUTME: A copy over SSH (ADR s96 §7): BatchMode, a connect timeout and a shell-quoted remote command naming the node
 // ABOUTME: and the binary there, since a non-login SSH command sees only the bare PATH, and the config folder there.
 
+import { isDirectoryEdition, directoryEditionError } from '../../edition';
 import { spawn } from 'child_process';
 import { wirePeer, type WirePeer } from './record-wire';
 
@@ -84,6 +85,7 @@ export async function sshPeer(
     readonly nearHello?: Parameters<typeof wirePeer>[5];
   } = {}
 ): Promise<WirePeer> {
+  if (isDirectoryEdition()) throw new Error(directoryEditionError().suggestion);
   const problem = routeProblem(route);
   if (problem) throw new Error(`The route cannot be used: ${problem}.`);
   // ssh is found on this process's PATH, as the caller sees it.

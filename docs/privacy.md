@@ -7,6 +7,32 @@ server and plugins; your AI client's and model provider's own policies apply to 
 results and files they receive. [Trust](trust.md) explains the local hooks and network controls in
 more detail.
 
+## Local directory edition
+
+The `reasonbook-chat` plugin selects the directory mode of the same npm package. It records only
+what you ask to save or approve through its skills. It has no hooks, transcript/history readers,
+operator-profile injection, draft capture or approval-runtime access. It never reads or writes
+`CLAUDE.md`, `AGENTS.md` or `.claude`, and init creates no agent instructions. Existing local
+records remain readable; this mode does not erase previously saved content.
+
+It makes no server-side network calls: dashboard credentials do not enable sharing, messages,
+checkpoint uploads or sign-in. SSH and automatic sync are disabled. Search is keyword-only and
+optional model/tokenizer downloads are disabled. First installation still downloads the pinned npm
+package and dependencies; SQLite may fetch its native binary from GitHub or Node headers from
+nodejs.org. Your AI client receives requested tool results under its own policy.
+
+It stores the selected project record, local snapshots and Reasonbook's own configuration, registry
+and usage files. Registry lookup can read path and identity/address metadata from registered stores;
+it does not aggregate their record content. The selected project's constraints are returned as data.
+Its MCP usage log contains timestamps, restricted tool/client/session tokens, outcomes and capped
+record identifiers, never argument/result prose; the three newest monthly files are retained. The
+legacy `telemetry_events` table can contain arbitrary imported JSON and is not this log. Existing
+records, backups and SQLite free-page contents have the retention limits described below.
+
+The remaining hooks, dashboard and sharing disclosures describe the full plugin, available
+separately as `reasonbook@reasonbook`. See the
+[directory edition README](../plugins/reasonbook-chat/README.md) for installation and exact boundaries.
+
 ## The local server and its plugins
 
 **What is collected.** Ordinary local work needs no dashboard account. Reasonbook's server contacts
@@ -30,11 +56,14 @@ available. On your machine it keeps:
 
 The hooks read your prompt and the agent's last reply. Claude Code hooks also read bounded pieces
 of its transcript; the Codex transcript path is discarded. Reasonbook's MCP tools return the
-requested project information to your AI client. The local usage log is never uploaded.
+requested project information to your AI client. `rbook_review` can also read registered local
+projects and return their project names, attention counts and other projects' mission names into
+the current AI conversation. The local usage log is never uploaded.
 
 Draft capture stores up to three proposed lines of 1,000 characters each and up to 600 characters
 of the preceding assistant reply in the project's SQLite file, before approval. This includes
-profile drafts; pending, declined and expired drafts remain stored until the record is removed.
+profile drafts; pending, declined and expired drafts remain stored, as do approved and replaced drafts and those marked answered,
+until the record is removed. Expiry changes whether a draft can be used, not whether it is stored.
 These excerpts can travel in whole-store dashboard uploads and initial shared copies. Later
 shared-record exchanges exclude proposals, but include approval words copied into a decision.
 Those words follow the decision's retention, not the runtime excerpt's two-hour validity.
@@ -49,8 +78,10 @@ client's context in later projects. Client and model-provider retention follows 
 - A session's Git note is deleted when the session-end hook completes; otherwise it remains until
   you delete it.
 - Your message after a draft is valid for approval binding for two hours. Validity expiry is not
-  immediate physical erasure: later binding operations or session cleanup remove stored excerpts.
-  Without that cleanup, they can remain until you delete the runtime store. Approval words already
+  immediate physical erasure: later binding operations or session cleanup delete the excerpt rows.
+  Their text can remain in SQLite free pages in the user-only runtime file after row deletion;
+  cleanup does not guarantee physical erasure. Without cleanup, the rows can remain until you
+  delete the runtime store. Approval words already
   copied into a decision remain with that record.
 - A decline awaiting a busy store keeps only its draft id and first decline time until the store
   confirms the draft is no longer pending. This retry marker survives session cleanup.
@@ -117,15 +148,16 @@ copy. Once the referee copy holds the record, the owner's copy uploads no more w
 project is moved back, and the project's pages come from the referee copy meanwhile. Every member's
 machine keeps its own full copy of the shared record.
 
-**Recovery contributions.** This client can send a member's copy during sync when a dashboard offers
-an owner-started recovery for that copy's remembered project and referee. It builds a fresh file
+**Recovery contributions.** When a call finds a referee copy lost or behind, the dashboard begins recovery
+if it has the required saved identity, head and member census. A member's next sync, the owner's
+included, can send that copy's contribution for its remembered project and referee. It builds a fresh file
 with the shared tables, identity and full change log described above; it does not copy feedback,
 session timelines, proposals, snapshots, search indexes or local working-memory documents. An
 accepted contribution is sent once per recovery and copy; a request without an acknowledgement may
 be retried. Either `RBOOK_SHARED_SYNC=off` or `RBOOK_DASHBOARD_SHARING=off` stops this contribution,
-including during an explicit sync. `RBOOK_CHECKPOINT_SYNC=off` does not. The deployed reasonbook.ai
-service does not yet offer this recovery route, so this client support is not a recovery procedure
-available there today.
+including during an explicit sync. `RBOOK_CHECKPOINT_SYNC=off` does not. On the Shared record page,
+the owner reviews the plan, chooses copies not to wait for, and confirms or cancels. A cancelled attempt can be restarted.
+Choosing not to wait for a copy does not remove its member from the frozen census.
 
 **What reasonbook.ai keeps.**
 
@@ -140,11 +172,17 @@ available there today.
   it accepts.
 - The referee copy: every change it took in, with its verdict, the changes it sets aside included
   (a delivery it refuses whole is not kept); the members, by dashboard account and username; and
-  each copy's latest call. It is snapshotted daily and each snapshot is kept 7 days; a copy that
-  needs recovery or is moving back takes no new snapshot, and its last ones stay until it is
-  archived or deleted. After a move back, the dashboard keeps the archived copy 7 days, and its list
-  of the project's members (each one's account, username and whether they were removed) until the
-  project is deleted or shared through it again.
+  each copy's latest call. Ordinary daily snapshots are pruned after 7 days. A copy that needs
+  recovery or is moving back takes no new snapshot; recovery retention is described next. After a
+  move back, the dashboard keeps the archived copy 7 days, and its list of the project's members
+  (each one's account, username and whether they were removed) until the project is deleted. A
+  same-record re-share carries these bindings forward.
+- Recovery records: the frozen member census, the attempt's current stored plan and summary,
+  contribution receipts and final result. Accepted recovery contributions and whatever remained at
+  the lost store's path, including sidecars and account bindings, are kept until the project is deleted.
+  After successful recovery, earlier snapshots move into the retained lost-store folder and no
+  longer follow ordinary seven-day snapshot pruning. Refused contributions are removed;
+  replanning replaces the stored plan rather than keeping every revision.
 - A member's first copy is built each time they ask for it, sent, and deleted.
 
 **The activity feed** shows what was created (sprints, missions, sessions, decisions, learnings,
@@ -177,8 +215,9 @@ accept it first. The service's operators can read every account's mirror.
   clear the mirror, the owner moves the project back first (`reasonbook move --to owner`), then
   purges from that copy.
 - Deleting the project removes its registration, mirror and mirror sync log, attributed activity
-  and sync-request logs, shares, keys and signals report. It also attempts to remove the uploaded
-  file, referee copy, snapshots and archive; file-removal failures are logged for cleanup. You do
+  and sync-request logs, shares, keys and signals report. Recovery records are removed with their project.
+  It also attempts to remove the uploaded file, referee copy, snapshots and archive, along with
+  recovery contributions and retained lost-store artifacts; file-removal failures are logged for cleanup. You do
   not need to purge, move it back, stop uploads or sign out first. The dashboard keeps a tombstone
   containing the owner's account id, each current or former project slug and the deletion time to
   stop later uploads from recreating it. Uploads and pushes authenticated with the owner's account
@@ -187,7 +226,8 @@ accept it first. The service's operators can read every account's mirror.
   deliberately taken again or the account is deleted. Messages, hosting logs and backups follow the
   retention described below. Every member keeps their own copy.
 - Deleting your account removes your projects and mirrors and attempts to remove their uploaded
-  files, referee copies and snapshots. In projects shared with you, your username and your changes
+  files, referee copies, snapshots and retained recovery contributions and artifacts. In projects
+  shared with you, your username and your changes
   remain in their record.
 - The owner's copy moves a project back off reasonbook.ai with
   `rbook_project(action="move", to="owner")` or `reasonbook move --to owner`, and catches up a
@@ -197,12 +237,17 @@ accept it first. The service's operators can read every account's mirror.
 
 **Limits.**
 
-- If reasonbook.ai loses a project's referee copy, sharing through it stops. The deployed service
-  has no recovery route yet, even though this client supports recovery contributions. Every member
-  keeps their own copy.
-- After a move back, sharing the project through reasonbook.ai again cannot include the people it
-  was shared with: the share refuses a project that still has members, and once they are removed,
-  the new referee copy refuses their usernames, because the record keeps each removed member's name.
+- If reasonbook.ai loses a project's referee copy, normal exchange stops while recovery collects
+  surviving copies. Recovery requires a previously recorded valid member census, record identity
+  and head. Every member keeps their own copy. As verified on 2026-10-27, the deployed host still refuses
+  finalization when its frozen census contains an invite, removal or role change absent from the
+  recovered record. The 4.7.0 library can reconcile these changes while keeping verified removals;
+  that guarantee reaches reasonbook.ai only after its host adopts the library and is changed to
+  invalidate its census before membership-changing calls and recovery finalization, refreshing it
+  after success and retaining invalidity after an unknown outcome.
+- After a move back, a same-record re-share carries member/account bindings, including removed members.
+  Members or copies admitted only over SSH after the move back are refused; a different record
+  starts fresh. The host binds by member and account ids, not by guessing from usernames.
 - Cases not measured after a move back include a member's copy that syncs with the dashboard
   before the owner's copy catches it up, whose sync then says to sync with the owner's copy over SSH
   or with a bundle, and a member's copy the owner's machine cannot reach over SSH.
@@ -229,8 +274,9 @@ their own policies apply. Reasonbook's dashboard receives no install report.
 - registered projects' uploaded databases, their local file paths, copied record contents,
   including decision reasons, recorded approval words and each record's author name and account
   id, and synced events;
-- for a project shared through it, its referee copy, that copy's snapshots for 7 days and, after a
-  move back, its archive for 7 days;
+- for a project shared through it, its referee copy, ordinary snapshots for 7 days and, after a
+  move back, its archive for 7 days; recovery records, accepted contributions and retained lost-store
+  artifacts (including earlier snapshots) stay until the project is deleted, as described above;
 - for projects owned by configured operator accounts, one current signals report: the project's
   name and id, counts, row ids, timestamps, rule sentences, read-failure reasons and the Reasonbook
   library version, without record prose;
@@ -328,7 +374,7 @@ receive connection information under their own policies.
   encryption layer. Deleting a live record does not remove it from an existing backup; it can remain
   there until that backup expires. These are configured retention periods, not a guarantee of
   physical media erasure.
-- Render's [log policy](https://render.com/docs/logging) gives the service's Pro plan 14 days of log
+- Render's [log policy](https://render.com/docs/logging) gives the workspace's Pro plan 14 days of log
   retention.
 
 **How to remove it.**
@@ -336,8 +382,8 @@ receive connection information under their own policies.
 - **Delete your account** in Profile, then Delete. This removes the account, its projects, mirror
   copies and keys, and messages it sent or received, including sent messages in other accounts'
   inboxes. Its activity rows, sync-request logs sent by or routed to it, signals reports and deletion
-  tombstones are removed too. Uploaded files, referee copies, snapshots and archives are removed on
-  a best-effort basis. Your edits and activity relayed into other owners' projects remain there.
+  tombstones are removed too. Recovery records are removed with their project. Uploaded files, referee copies, snapshots and archives are removed on
+  a best-effort basis, as are recovery contributions and retained lost-store artifacts. Your edits and activity relayed into other owners' projects remain there.
 - **Delete a project** to remove its registration, mirror, attributed activity and sync-request logs,
   shares, keys and signals report, and attempt to remove its uploaded and referee files. No purge or
   sign-out is needed first. The [deletion details](#sharing-through-reasonbookai) explain its

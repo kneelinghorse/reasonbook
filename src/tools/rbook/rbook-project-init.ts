@@ -17,6 +17,7 @@
  * @module tools/rbook/rbook-project-init
  */
 
+import { isDirectoryEdition } from '../../edition';
 import { z } from 'zod';
 import { SPRINT_OPEN_STATUSES, statusInSql } from './terminal-status';
 import { formatCliRemedy, inertCliPath } from '../../utils/cli-remedy';
@@ -645,7 +646,7 @@ export async function rbookProjectInit(
   let isNewProject = !rbookExisted;
 
   // What the folder's agents file says, read before anything is written.
-  const lineReading = readRbookLine(projectRoot);
+  const lineReading = isDirectoryEdition() ? null : readRbookLine(projectRoot);
 
   // s95-m06: the level is settled before anything is written, because it decides which seed files
   // the project gets. The same order as the metadata write below: a passed level, else the tier an
@@ -759,7 +760,9 @@ export async function rbookProjectInit(
 
   try {
     // s95-m06: the seed files this level gets; existing files are never overwritten or removed.
-    const levelFiles = writeLevelFiles(projectRoot, fileTier, seedPath);
+    const levelFiles = isDirectoryEdition()
+      ? { directories: [] as string[], files: [] as string[] }
+      : writeLevelFiles(projectRoot, fileTier, seedPath);
     const createdDirs = [...levelFiles.directories];
     const createdFiles = [...levelFiles.files];
 
@@ -770,6 +773,7 @@ export async function rbookProjectInit(
       const dbDir = path.join(rbookDir, 'db');
       if (!fs.existsSync(dbDir)) {
         fs.mkdirSync(dbDir, { recursive: true });
+        if (isDirectoryEdition()) createdDirs.push('db/');
       }
     }
 
@@ -1067,24 +1071,26 @@ export async function rbookProjectInit(
       const storedAmbient = asRulesAmbient(stored(AMBIENT_METADATA_KEY));
       db.close();
 
-      const agents = ensureAgentsMd(projectRoot, seedPath, {
-        level: levelOfTier(storedTier),
-        projectName: storedName || path.basename(projectRoot),
-        hooks: internalOpts.hooks !== false,
-        ambient: storedAmbient,
-      });
+      const agents = isDirectoryEdition()
+        ? { name: AGENTS_FILE_NAME, written: false }
+        : ensureAgentsMd(projectRoot, seedPath, {
+            level: levelOfTier(storedTier),
+            projectName: storedName || path.basename(projectRoot),
+            hooks: internalOpts.hooks !== false,
+            ambient: storedAmbient,
+          });
       if (agents.written) createdFiles.push(path.join('..', AGENTS_FILE_NAME));
       // s93-m12 (the build critic): what init leaves undone is said, never silently skipped.
       const rulesWarnings: string[] = [];
       // s95-m06 (the build critic): a README replaced for the level is said, as update says it.
-      const readme = readmeNote(levelFiles);
+      const readme = 'readme' in levelFiles ? readmeNote(levelFiles) : null;
       if (readme) rulesWarnings.push(readme);
       // s93-m12 (the confirming critics): a re-init that passes a level moves an existing agents
       // file's Reasonbook line with it, as rbook_project(action="update") does, and says so, or says what
       // it left (a line edited by hand, a read-only file). Without a level, a line that names
       // another level or hooks setting than the store holds is pointed out, not changed.
       const storedLevel = levelOfTier(storedTier);
-      if (!agents.written && projectType) {
+      if (!isDirectoryEdition() && !agents.written && projectType) {
         const note = describeRbookLineRefresh(
           refreshRbookLine(projectRoot, { level: storedLevel, ambient: storedAmbient })
         );
@@ -1120,17 +1126,19 @@ export async function rbookProjectInit(
           `This store's project id is '${storeProjectId}', but the project registry holds '${registryProjectId}' for this folder, so writes here are refused as an identity conflict until they agree. If '${registryProjectId}' belonged to a project that has moved away, rbook_project(action="unregister", projectRoot="${projectRoot}") and then rbook_project(action="register", projectRoot="${projectRoot}") register this folder under '${storeProjectId}'.`
         );
       }
-      if (!agents.written && internalOpts.hooks === false) {
+      if (!isDirectoryEdition() && !agents.written && internalOpts.hooks === false) {
         rulesWarnings.push(
           `${agents.name} already exists, so the hook-less block was not added; append rbook/templates/${NO_HOOKS_TEMPLATE} to it by hand.`
         );
       }
-      if (ensureClaudeMd(projectRoot, seedPath, agents.name)) {
-        createdFiles.push(path.join('..', 'CLAUDE.md'));
-      } else if (!claudeMdImports(projectRoot, agents.name)) {
-        rulesWarnings.push(
-          `CLAUDE.md does not import ${agents.name}, so Claude Code does not read it; add the line "@${agents.name}" to CLAUDE.md.`
-        );
+      if (!isDirectoryEdition()) {
+        if (ensureClaudeMd(projectRoot, seedPath, agents.name)) {
+          createdFiles.push(path.join('..', 'CLAUDE.md'));
+        } else if (!claudeMdImports(projectRoot, agents.name)) {
+          rulesWarnings.push(
+            `CLAUDE.md does not import ${agents.name}, so Claude Code does not read it; add the line "@${agents.name}" to CLAUDE.md.`
+          );
+        }
       }
 
       const result: RbookProjectInitResult = {

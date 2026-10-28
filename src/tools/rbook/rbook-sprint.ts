@@ -8,6 +8,7 @@
  * @module tools/rbook/rbook-sprint
  */
 
+import { directoryCallError } from '../../edition';
 import { formatToolFailure } from './format-failure';
 import { z } from 'zod';
 import { createError, RbookErrors } from './errors';
@@ -326,6 +327,8 @@ function isSprintAction(value: string): value is RbookSprintAction {
 export async function rbookSprint(
   params: RbookSprintParams
 ): Promise<RbookToolResult<RbookSprintResult>> {
+  const editionError = directoryCallError('rbook_sprint', params);
+  if (editionError) return createError(editionError);
   const actionValue =
     typeof (params as { action?: unknown }).action === 'string' ? params.action : '';
 

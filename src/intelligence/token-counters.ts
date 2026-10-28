@@ -8,6 +8,7 @@
  * An unsupported model (e.g. the retired 'gpt') throws `Unsupported model: …`.
  */
 
+import { isDirectoryEdition } from '../edition';
 import { AbortableOptions, ITokenCounter, TokenCount, SupportedModel } from './types';
 import { emitTelemetryWarning } from './telemetry';
 import { getClaudeTokenizerInstance } from './tokenizer-bootstrap';
@@ -55,6 +56,7 @@ export class TokenCounter implements ITokenCounter {
    * Should be monitored via validation suite in B2.3
    */
   private async countClaude(text: string, options: AbortableOptions): Promise<TokenCount> {
+    if (isDirectoryEdition()) return this.fallbackCount(text, 'claude', options.signal);
     const { signal } = options;
 
     try {

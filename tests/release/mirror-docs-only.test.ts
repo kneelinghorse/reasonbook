@@ -59,6 +59,8 @@ function released() {
   write(source, 'README.md', 'released readme\n');
   write(source, 'docs/demo/README.md', 'old demo\n');
   write(source, 'src/index.ts', 'export const released = true;\n');
+  write(source, 'plugins/reasonbook/skills/build/SKILL.md', 'released build instructions\n');
+  git(source, 'config', 'diff.renames', 'true');
   write(source, 'rbook/private.txt', 'PRIVATE fixture bytes\n');
   git(source, 'add', '.');
   git(source, 'commit', '-qm', 'release');
@@ -78,7 +80,7 @@ function released() {
     git(source, 'add', '.');
     git(source, 'commit', '-qm', `change ${rel}`);
   };
-  return { remote, run, ref, commit };
+  return { source, remote, run, ref, commit };
 }
 
 afterAll(() => {
@@ -129,6 +131,64 @@ it('changes nothing remote on a docs-only dry run', () => {
   const ran = f.run({ DOCS_ONLY: '1', DRY_RUN: '1' });
   expect(ran.status).toBe(0);
   expect(f.ref('main')).toBe(mainBefore);
+});
+
+it('refuses a skill renamed into docs because installs still lose its original path', () => {
+  const f = released();
+  const main = f.ref('main');
+  const tag = f.ref('refs/tags/v1.2.3^{commit}');
+  const skill = 'plugins/reasonbook/skills/build/SKILL.md';
+  git(f.source, 'mv', skill, 'docs/moved-skill.md');
+  git(f.source, 'commit', '-qm', 'move installed instructions into docs');
+  expect(git(f.source, 'diff', '--name-status', 'v1.2.3', 'HEAD')).toContain('R100');
+  const ran = f.run({ DOCS_ONLY: '1' });
+  expect(ran.status).toBe(1);
+  expect(ran.stdout + ran.stderr).toContain(`${skill} changed since v1.2.3 and installs run it`);
+  expect(f.ref('main')).toBe(main);
+  expect(f.ref('refs/tags/v1.2.3^{commit}')).toBe(tag);
+  expect(git(f.remote, 'show', `main:${skill}`)).toBe('released build instructions');
+});
+
+it('allows a documentation-only rename while preserving the released tag', () => {
+  const f = released();
+  const tag = f.ref('refs/tags/v1.2.3^{commit}');
+  git(f.source, 'mv', 'docs/demo/README.md', 'docs/demo/renamed.md');
+  git(f.source, 'commit', '-qm', 'rename documentation');
+  expect(f.run({ DOCS_ONLY: '1' }).status).toBe(0);
+  expect(git(f.remote, 'show', 'main:docs/demo/renamed.md')).toBe('old demo');
+  expect(f.ref('refs/tags/v1.2.3^{commit}')).toBe(tag);
+});
+
+it('still refuses an install rename when a tracked filename also names the release tag', () => {
+  const f = released();
+  const main = f.ref('main');
+  const tag = f.ref('refs/tags/v1.2.3^{commit}');
+  const skill = 'plugins/reasonbook/skills/build/SKILL.md';
+  git(f.source, 'mv', skill, 'docs/moved-skill.md');
+  f.commit('v1.2.3', 'ambiguous revision and filename');
+  const result = f.run({ DOCS_ONLY: '1' });
+  expect(result.status).toBe(1);
+  expect(f.ref('main')).toBe(main);
+  expect(f.ref('refs/tags/v1.2.3^{commit}')).toBe(tag);
+});
+
+it('stops before publishing when the changed-path census fails', () => {
+  const f = released();
+  const main = f.ref('main');
+  const tag = f.ref('refs/tags/v1.2.3^{commit}');
+  f.commit('docs/demo/README.md', 'allowed docs edit');
+  const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+  const bin = path.join(path.dirname(f.source), 'bin');
+  fs.mkdirSync(bin);
+  fs.writeFileSync(
+    path.join(bin, 'git'),
+    `#!/bin/sh\nif [ "$1" = diff ]; then exit 42; fi\nexec '${realGit.replace(/'/g, "'\\''")}' "$@"\n`,
+    { mode: 0o755 }
+  );
+  const result = f.run({ DOCS_ONLY: '1', PATH: `${bin}${path.delimiter}${process.env.PATH}` });
+  expect(result.status).toBe(42);
+  expect(f.ref('main')).toBe(main);
+  expect(f.ref('refs/tags/v1.2.3^{commit}')).toBe(tag);
 });
 
 it('without DOCS_ONLY, still refuses to mirror a tree the release tag does not name', () => {

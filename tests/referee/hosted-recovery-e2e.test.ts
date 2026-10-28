@@ -33,6 +33,12 @@ interface RecoveryView {
     waiting: unknown[];
     members: Array<{ name: string; copies: Array<{ replicaId: string }> }>;
     tailMembership: unknown[];
+    memberReconciliation: Array<{
+      name: string;
+      fromRole: string | null;
+      role: string;
+      action: string;
+    }>;
   };
 }
 interface LogRow {
@@ -262,11 +268,28 @@ PRIVATE.describe('hosted recovery of the committed real repository record', () =
     await decision(darryl, 'Recovery keeps the real repository record usable.');
     await converge([h.owner, darryl]);
     const before = ids(refereeFile());
+    // The real historical store activates the new census path: no survivor sees this role change.
+    required(
+      (
+        await request(h.server, `/api/test/projects/${RECOVERY_PROJECT}/shares/acct-darryl/role`, {
+          token: RECOVERY_TOKENS.owner,
+          json: { role: 'owner' },
+        })
+      ).body
+    );
     await h.control('lose');
     await h.sync(h.owner);
     await h.sync(darryl);
     const planned = await view();
     expect(planned.plan.ready).toBe(true);
+    expect(planned.plan.memberReconciliation).toContainEqual(
+      expect.objectContaining({
+        name: 'darryl',
+        fromRole: 'editor',
+        role: 'owner',
+        action: 'write',
+      })
+    );
     await confirm(planned);
     await converge([h.owner, darryl]);
     const finalIds = ids(refereeFile());

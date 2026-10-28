@@ -64,7 +64,7 @@ This creates:
 From your project folder, initialize the Builder level this guide uses:
 
 ```bash
-npx --prefer-offline -y @aquex/reasonbook@4.6.1 init --level builder
+npx --prefer-offline -y @aquex/reasonbook@4.7.0 init --level builder
 ```
 
 Commit the rest of `rbook/`, including `rbook/.gitignore`, and the root `AGENTS.md` and

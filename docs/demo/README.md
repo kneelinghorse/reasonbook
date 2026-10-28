@@ -1,6 +1,6 @@
 # The handoff demo
 
-A 65-second replay of three real sessions recorded on 2026-10-25 with the released Reasonbook
+A 65-second replay of three real sessions recorded on 2026-10-26 UTC (2026-10-25 US Central) with the released Reasonbook
 4.6.0. Claude Code saves a choice and the next step. A new Codex session opens on that next step,
 meets a changed requirement, records a correction that supersedes the first decision, then builds
 and tests to it. A fresh Claude Code session asks why, and answers from the record.

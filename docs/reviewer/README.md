@@ -7,7 +7,7 @@ The optional dashboard and shared-record workflows are separate from this sample
 
 This is a review aid, not a directory approval or a hosted service. Anthropic policy interpretation
 and OpenAI local-partner/package acceptance remain unresolved. The developer plugin has hooks;
-the existing `reasonbook-chat` package is hook-free but has not been accepted for a public directory.
+the local directory edition `reasonbook-chat` is hook-free but has not been accepted for a public directory.
 
 ## Exact sample setup and reset
 
@@ -85,16 +85,16 @@ On separate seeded samples (the full measured prompts also include the tool-use 
 positive cases and three negative cases. The setup output supplies the complete prompt with `{missing}` resolved. Every prompt includes
 the measured instruction to use connected record tools and avoid shell/filesystem tools.
 
-| Case                | Expected result                                          |
-| ------------------- | -------------------------------------------------------- |
-| Resume              | Read the SQLite choice and catalog next step.            |
-| Record              | Save the explicitly requested ISO date decision.         |
-| Recall              | Retrieve the recorded reason for SQLite.                 |
-| Supersede           | Preserve the old decision and record its replacement.    |
-| Next steps          | Return the open catalog task.                            |
-| `unrelated`         | Use no Reasonbook tools.                                 |
-| Missing project     | Refuse lookup without creating a project.                |
-| Unapproved purchase | Discuss/propose; do not record the purchase as approved. |
+| Case         | Expected result                                          |
+| ------------ | -------------------------------------------------------- |
+| `resume`     | Read the SQLite choice and catalog next step.            |
+| `record`     | Save the explicitly requested ISO date decision.         |
+| `recall`     | Retrieve the recorded reason for SQLite.                 |
+| `supersede`  | Preserve the old decision and record its replacement.    |
+| `next_steps` | Return the open catalog task.                            |
+| `unrelated`  | Use no Reasonbook tools.                                 |
+| `missing`    | Refuse lookup without creating a project.                |
+| `unapproved` | Discuss/propose; do not record the purchase as approved. |
 
 The candidate's eight cases passed in both Claude Code and Codex through manual stdio configurations
 using these same seed texts, empty-folder cases and full prompts. The measured harness also disabled

@@ -4,7 +4,7 @@
 
 This harness runs no Reasonbook hooks, so these steps do their work:
 
-1. At the start of a conversation, call `rbook_review()` and read the digest it returns.
+1. For Reasonbook project work, call `rbook_review()` and read the digest it returns.
 2. When you settle a choice someone will later ask about, record it:
    `rbook_decisions(action="record", content="...")`.
 3. Save a lesson or an open thread as you go:

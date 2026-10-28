@@ -19,8 +19,8 @@ import { scheduledPrompt } from './transcript-scan';
  * FALSE NEGATIVES, NAMED. A wakeup scheduled further back than the transcript tail read, an
  * autonomous loop's wakeup (its prompt is resolved when it fires), a cloud session's notice from
  * another session (its raw text, not seen here), and a harness prompt in a form not seen yet, read
- * as the operator's. FALSE POSITIVE, NAMED: an operator who types a scheduled prompt's exact text
- * binds nothing with it, and answers again.
+ * as the operator's. FALSE POSITIVES, NAMED: an operator who types a recognized harness opening
+ * or a scheduled prompt's exact text binds nothing with it, and answers again.
  */
 const HARNESS_OPENINGS = [
   '<task-notification>',
@@ -32,6 +32,7 @@ const HARNESS_OPENINGS = [
   '<recommended_plugins>',
   '# AGENTS.md instructions for',
   '<event kind="',
+  '[Browser disconnected:',
 ] as const;
 
 /** A declared event's plain form: its kind, then its ISO time, on the first two lines. */

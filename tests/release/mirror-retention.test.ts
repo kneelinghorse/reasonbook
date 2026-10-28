@@ -133,6 +133,75 @@ it('retains nothing after a leak-guard failure', () => {
   expect(f.refs()).toBe(before);
 });
 
+it.each(['rbook/', 'cmos/', 'analysis/'])(
+  'refuses a nested JSON quotation from excluded %s source without exposing its text',
+  (prefix) => {
+    const f = fixture();
+    const before = f.refs();
+    fs.writeFileSync(
+      path.join(f.source, 'quoted.json'),
+      JSON.stringify({
+        nested: [{ file: `${prefix}private.md`, text: 'PRIVATE QUOTATION WITNESS' }],
+      })
+    );
+    git(f.source, 'add', '.');
+    git(f.source, 'commit', '-qm', 'plant private quotation');
+    const ran = f.run({ DRY_RUN_KEEP: '1' });
+    expect(ran.status).toBe(1);
+    expect(ran.stdout + ran.stderr).toContain('quoted private source');
+    expect(ran.stdout + ran.stderr).not.toContain('PRIVATE QUOTATION WITNESS');
+    expect(ran.stdout).not.toContain('DRY_RUN_TREE=');
+    expect(fs.readdirSync(f.scratch)).toEqual([]);
+    expect(f.refs()).toBe(before);
+  }
+);
+
+it.each([
+  ['/', 'Users', 'private-person', 'project'].join('/').replace('//', '/'),
+  ['/', 'home', 'private-person', 'project'].join('/').replace('//', '/'),
+  ['C:', 'Users', 'private-person', 'project'].join('\\'),
+  ['/', 'Users', '…actual-person', 'project'].join('/').replace('//', '/'),
+])('refuses a literal home path %s without retaining or publishing it', (home) => {
+  const f = fixture();
+  const before = f.refs();
+  fs.writeFileSync(path.join(f.source, 'home.txt'), home);
+  git(f.source, 'add', '.');
+  git(f.source, 'commit', '-qm', 'plant home path');
+  const ran = f.run({ DRY_RUN_KEEP: '1' });
+  expect(ran.status).toBe(1);
+  expect(ran.stdout + ran.stderr).toContain('absolute home path');
+  expect(ran.stdout + ran.stderr).not.toContain(home);
+  expect(fs.readdirSync(f.scratch)).toEqual([]);
+  expect(f.refs()).toBe(before);
+});
+
+it('allows public-source quotations, seed paths and private provenance without quoted text', () => {
+  const f = fixture();
+  fs.writeFileSync(
+    path.join(f.source, 'public.json'),
+    JSON.stringify([
+      { file: 'src/index.ts', text: 'public source witness' },
+      { file: 'rbook-seed/docs/README.md', text: 'public seed witness' },
+      { file: 'rbook/private.md', line: 3, lineSha256: 'hash-only-provenance' },
+    ])
+  );
+  git(f.source, 'add', '.');
+  git(f.source, 'commit', '-qm', 'retain public and hash-only evidence');
+  expect(f.run().status).toBe(0);
+});
+
+it.each(['…', '...'])(
+  'allows prose punctuation after an explicit %s home placeholder',
+  (ellipsis) => {
+    const f = fixture();
+    const example = ['/', 'Users', `${ellipsis},`].join('/').replace('//', '/');
+    fs.writeFileSync(path.join(f.source, 'example.txt'), `Example ${example} so no home is named.`);
+    git(f.source, 'add', '.');
+    git(f.source, 'commit', '-qm', 'document a placeholder path');
+    expect(f.run().status).toBe(0);
+  }
+);
+
 it('cleans both temporary roots when the final retention move fails', () => {
   const f = fixture();
   const before = f.refs();

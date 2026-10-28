@@ -16,6 +16,7 @@
  * @module tools/rbook/checkpoint-backfill
  */
 
+import { isDirectoryEdition } from '../../edition';
 import { getSetting, settingIsOff } from '../../intelligence/legacy-compat';
 import { attemptDashboardUpload, probeDashboardUpload } from './dashboard-upload-attempt';
 import {
@@ -101,7 +102,7 @@ export async function hasResolvableUserScopedKey(): Promise<boolean> {
  * put it there (the s97 review's finding 7).
  */
 export async function whyCloseUploadsNothing(): Promise<'off' | 'signed-out' | null> {
-  if (settingIsOff(RBOOK_CHECKPOINT_SYNC_ENV)) return 'off';
+  if (isDirectoryEdition() || settingIsOff(RBOOK_CHECKPOINT_SYNC_ENV)) return 'off';
   const hasApiKey = !!getSetting(RBOOK_DASHBOARD_API_KEY_ENV);
   const hasCredentials =
     !!getSetting(RBOOK_DASHBOARD_USER_ENV) && !!getSetting(RBOOK_DASHBOARD_PASSWORD_ENV);
@@ -164,7 +165,7 @@ export function triggerCheckpointBackfill(options: {
   force: boolean;
   automatic?: boolean;
 }): Promise<void> {
-  if (settingIsOff(RBOOK_CHECKPOINT_SYNC_ENV) || isReadOnlyAgentSession()) {
+  if (isDirectoryEdition() || settingIsOff(RBOOK_CHECKPOINT_SYNC_ENV) || isReadOnlyAgentSession()) {
     return Promise.resolve();
   }
   const inFlight = trackDashboardUpload(async () => {

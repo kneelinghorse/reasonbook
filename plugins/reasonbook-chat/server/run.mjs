@@ -70,6 +70,27 @@ export async function run(
   } = {}
 ) {
   const hook = args[0] === 'hook';
+  // A contained marker owns the edition, even when the parent shell exports another value.
+  // Validate before config discovery, installer startup or the disabled-server shortcut.
+  try {
+    const inheritedEdition = getSetting('RBOOK_EDITION', env);
+    let edition = inheritedEdition;
+    try {
+      edition = fs.readFileSync(path.join(directory, '..', 'EDITION'), 'utf8').trim();
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+    if (edition !== undefined && !['full', 'directory'].includes(edition))
+      throw new Error(
+        'Unknown edition. Use full or directory; reinstall the plugin if its EDITION marker is invalid.'
+      );
+    if (edition !== inheritedEdition) env = { ...env, RBOOK_EDITION: edition };
+    if (edition === 'directory' && hook)
+      throw new Error('The directory edition has no hooks. Use the full plugin for hooks.');
+  } catch (error) {
+    writeError(`Reasonbook command unavailable: ${error.message}\n`);
+    return 1;
+  }
   try {
     const installFlag = args.indexOf('--install-root');
     const shared = installFlag !== -1;

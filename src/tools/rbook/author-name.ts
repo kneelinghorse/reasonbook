@@ -3,6 +3,7 @@
 // ABOUTME: account's, resolved once per call; and how a read shows a stored author, including a NULL one.
 
 import Database from 'better-sqlite3';
+import { isDirectoryEdition } from '../../edition';
 import { readFileSync } from 'fs';
 import path from 'path';
 import type { UserScopedKeyRecord } from '../../intelligence/credential-store';
@@ -108,6 +109,7 @@ export function signedInIdentity(
   projectRoot: string | null,
   env: NodeJS.ProcessEnv = process.env
 ): DashboardIdentity | null {
+  if (isDirectoryEdition(env)) return null;
   try {
     const baseUrl = resolveDashboardBaseUrl();
     for (const credential of projectCredentials(projectRoot, env)) {

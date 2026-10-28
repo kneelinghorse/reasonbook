@@ -37,6 +37,8 @@ export function settingNames(name: string): readonly [string, string] {
 /** Empty is an explicit override too, particularly when clearing a credential. */
 export function getSetting(name: string, env: NodeJS.ProcessEnv = process.env): string | undefined {
   const [current, legacy] = settingNames(name);
+  // The edition was introduced after the rename; no CMOS_EDITION setting ever existed.
+  if (current === 'RBOOK_EDITION') return env[current];
   return env[current] ?? env[legacy];
 }
 

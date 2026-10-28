@@ -11,6 +11,7 @@
  * @module tools/rbook/rbook-mission
  */
 
+import { directoryCallError } from '../../edition';
 import { formatToolFailure } from './format-failure';
 import { z } from 'zod';
 import { createError, RbookErrors } from './errors';
@@ -374,6 +375,8 @@ function isMissionAction(value: string): value is RbookMissionAction {
 export async function rbookMission(
   params: RbookMissionParams
 ): Promise<RbookToolResult<RbookMissionResult>> {
+  const editionError = directoryCallError('rbook_mission', params);
+  if (editionError) return createError(editionError);
   const actionValue =
     typeof (params as { action?: unknown }).action === 'string' ? params.action : '';
 

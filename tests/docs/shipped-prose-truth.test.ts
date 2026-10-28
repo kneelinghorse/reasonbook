@@ -1266,7 +1266,8 @@ describePrivate('agents.md environment-variable block is derived, not maintained
     // CLI's per-session off switch, src/cli/core.ts), making 20. s96-m13 adds RBOOK_SHARED_SYNC
     // (the shared record's own sync switch, record-sync-trigger.ts), making 21. s97-m11 adds
     // RBOOK_DASHBOARD_SHARING (dashboard sharing's switch, record-dashboard-share.ts), making 22.
-    expect(srcReads.size).toBe(22);
+    // s104-m04: RBOOK_EDITION selects the local runtime before configuration.
+    expect(srcReads.size).toBe(23);
     expect(agentsMdEnvSections().server.sort()).toEqual([...srcReads].sort());
   });
 

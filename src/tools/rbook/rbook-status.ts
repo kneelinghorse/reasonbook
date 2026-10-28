@@ -17,6 +17,7 @@
  * @module tools/rbook/rbook-status
  */
 
+import { isDirectoryEdition } from '../../edition';
 import { z } from 'zod';
 import * as path from 'path';
 import { withClientAsync, type RbookDatabaseClient } from './client';
@@ -41,7 +42,8 @@ import { readDashboardUploadStatus } from './dashboard-upload-scheduler';
  * removing, or renaming any of them is a cross-side parity break and must
  * coordinate with the dashboard team before shipping.
  */
-export interface RbookStatusResult {
+export interface FullRbookStatusResult {
+  readonly edition?: never;
   /** Project's rbook:// identity, or "local-only" when not dashboard-connected. */
   rbook_address: string;
   /** Runtime RBOOK_DASHBOARD_URL value (always defined post-Sprint 62 m02 bake). */
@@ -65,6 +67,18 @@ export interface RbookStatusResult {
     removed_at?: string;
   }>;
 }
+
+export interface DirectoryStatusResult {
+  readonly edition: 'directory';
+  readonly rbook_address: string;
+  readonly local_health: 'ok';
+  readonly dashboard_url?: never;
+  readonly auth_tier?: never;
+  readonly last_sync_at?: never;
+  readonly last_delivery_observed_at?: never;
+  readonly shared_sync?: never;
+}
+export type RbookStatusResult = FullRbookStatusResult | DirectoryStatusResult;
 
 export const rbookStatusSchema = z
   .object({
@@ -189,7 +203,7 @@ export async function rbookStatus(
   );
   if (wrongTypedParam) return createError<RbookStatusResult>(wrongTypedParam);
 
-  return withClientAsync(
+  return withClientAsync<RbookStatusResult>(
     async (client) => {
       const identity = getProjectIdentity(client);
       // s100-m01: a member's copy names the address it joined by, and asks the dashboard nothing
@@ -200,6 +214,12 @@ export async function rbookStatus(
           (membersCopy ? readCopyKey(client, COPY_KEYS.joinedAddress) : null)
       );
 
+      if (isDirectoryEdition())
+        return createSuccess<DirectoryStatusResult>({
+          edition: 'directory',
+          rbook_address,
+          local_health: 'ok',
+        });
       const dashboard_url = resolveDashboardBaseUrl();
 
       const authState = await computeAuthState({ projectRoot: params.projectRoot });
@@ -242,27 +262,34 @@ export function formatStatusForLLM(result: RbookToolResult<RbookStatusResult>): 
   }
 
   const s = result.data;
-  const lines = [
-    'Reasonbook Status',
-    '',
-    `rbook_address:              ${s.rbook_address}`,
-    `dashboard_url:             ${s.dashboard_url}`,
-    `auth_tier:                 ${s.auth_tier}`,
-    `last_sync_at:              ${s.last_sync_at ?? 'never'}`,
-    `last_delivery_observed_at: ${s.last_delivery_observed_at ?? 'never'}`,
-    ...(s.shared_sync
+  const lines =
+    s.edition === 'directory'
       ? [
-          `shared sync:               ${s.shared_sync.length ? '' : 'no copy has synced with this one yet'}`,
-          ...s.shared_sync.map(
-            (peer) =>
-              `  ${peer.peer}: ${peer.removed_at ? `said this copy's member was removed (first said ${peer.removed_at}), so what this copy sends is set aside; ` : ''}last synced ${peer.last_synced_at ?? 'never'}, ${peer.pending} pending${peer.last_error ? `, last error: ${peer.last_error}` : ''}`
-          ),
+          'Reasonbook directory edition',
+          `rbook_address: ${s.rbook_address}`,
+          `local_health: ${s.local_health}`,
         ]
-      : []),
-    s.auth_tier === 'none'
-      ? '\nNo dashboard credentials configured. Run rbook_auth(action="login_init"), then rbook_auth(action="login_complete"), to bootstrap, or sign up at https://reasonbook.ai/register.'
-      : '',
-  ].filter(Boolean);
+      : [
+          'Reasonbook Status',
+          '',
+          `rbook_address:              ${s.rbook_address}`,
+          `dashboard_url:             ${s.dashboard_url}`,
+          `auth_tier:                 ${s.auth_tier}`,
+          `last_sync_at:              ${s.last_sync_at ?? 'never'}`,
+          `last_delivery_observed_at: ${s.last_delivery_observed_at ?? 'never'}`,
+          ...(s.shared_sync
+            ? [
+                `shared sync:               ${s.shared_sync.length ? '' : 'no copy has synced with this one yet'}`,
+                ...s.shared_sync.map(
+                  (peer) =>
+                    `  ${peer.peer}: ${peer.removed_at ? `said this copy's member was removed (first said ${peer.removed_at}), so what this copy sends is set aside; ` : ''}last synced ${peer.last_synced_at ?? 'never'}, ${peer.pending} pending${peer.last_error ? `, last error: ${peer.last_error}` : ''}`
+                ),
+              ]
+            : []),
+          s.auth_tier === 'none'
+            ? '\nNo dashboard credentials configured. Run rbook_auth(action="login_init"), then rbook_auth(action="login_complete"), to bootstrap, or sign up at https://reasonbook.ai/register.'
+            : '',
+        ].filter(Boolean);
 
   appendWarnings(lines, result);
 

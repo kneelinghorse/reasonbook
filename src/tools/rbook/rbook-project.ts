@@ -13,6 +13,7 @@
  * @module tools/rbook/rbook-project
  */
 
+import { directoryCallError } from '../../edition';
 import { formatToolFailure } from './format-failure';
 import { z } from 'zod';
 import { createError, RbookErrors } from './errors';
@@ -356,6 +357,8 @@ function isProjectAction(value: string): value is RbookProjectAction {
 export async function rbookProject(
   params: RbookProjectParams
 ): Promise<RbookToolResult<RbookProjectResult>> {
+  const editionError = directoryCallError('rbook_project', params);
+  if (editionError) return createError(editionError);
   const actionValue =
     typeof (params as { action?: unknown }).action === 'string' ? params.action : '';
 

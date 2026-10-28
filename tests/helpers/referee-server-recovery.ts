@@ -119,7 +119,15 @@ export async function recoveryRoute(
     if (method !== 'GET' && requestedId !== attempt.recoveryId)
       return bad('That recovery attempt is no longer current.', 'REFEREE_NOT_READY');
     if (rest === 'recovery/copy' && method === 'POST') {
-      if (attempt.state === 'cancelled' && owner) attempt = host.beginRecovery(projectId)!;
+      if (attempt.state === 'cancelled' && owner) {
+        const next = host.beginRecovery(projectId);
+        if (!next)
+          return bad(
+            'Membership is unconfirmed after a possibly committed recovery. The host must reconcile the published referee and refresh its census before starting another attempt.',
+            'REFEREE_NOT_READY'
+          );
+        attempt = next;
+      }
       if (attempt.state !== 'collecting')
         return bad('That recovery is not collecting copies.', 'REFEREE_NOT_READY');
       const replicaId = route.url.searchParams.get('replicaId');
@@ -242,13 +250,23 @@ export async function recoveryRoute(
       const confirmedTailMembershipIds = strings(route.parsed.confirmedTailMembershipIds);
       if (typeof route.parsed.confirmedPlanHash !== 'string' || !confirmedTailMembershipIds)
         return bad('Confirm the plan hash and selected tail membership ids.');
+      // Finalization can keep a census member removed. A lost result must not validate the old census.
+      const wasInvalid = project.membersInvalid;
+      project.membersInvalid = true;
+      host.save();
       const finalized = await engine.finalizeRecovery(location(), {
         ...input,
         confirmedPlanHash: route.parsed.confirmedPlanHash,
         confirmedTailMembershipIds,
       });
-      if (!finalized.result.success || !finalized.result.data || !finalized.head)
+      if (!finalized.result.success || !finalized.result.data || !finalized.head) {
+        // The library's validation refusal precedes publication; an internal failure may not.
+        if (finalized.result.error?.code === engine.REFEREE_ERROR_CODES.UPLOAD_REFUSED) {
+          project.membersInvalid = wasInvalid;
+          host.save();
+        }
         return answer(finalized.result);
+      }
       host.rememberHead(project, finalized.head);
       // This host authenticated the lost referee; a later re-share must retain its admissions.
       if (!project.formerRefereeReplicaIds.includes(attempt.lostHead.replicaId))
@@ -264,6 +282,7 @@ export async function recoveryRoute(
       project.needsRecovery = null;
       attempt.state = 'hosted';
       project.shared = true;
+      project.membersInvalid = false;
       host.save();
       return answer({
         ...finalized.result,

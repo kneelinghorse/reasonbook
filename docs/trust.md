@@ -13,6 +13,32 @@ the [upgrade guide](migrating-from-cmos.md) explains how those locations are sel
 The paths below describe a new installation. Removing only those paths does not remove data that
 remains in an older location.
 
+## Local directory edition
+
+The `reasonbook-chat` plugin selects the directory mode of the same npm package. It records only
+what you ask to save or approve through its skills. It has no hooks, transcript/history readers,
+operator-profile injection, draft capture or approval-runtime access. It never reads or writes
+`CLAUDE.md`, `AGENTS.md` or `.claude`, and init creates no agent instructions. Existing local
+records remain readable; this mode does not erase previously saved content.
+
+It makes no server-side network calls: dashboard credentials do not enable sharing, messages,
+checkpoint uploads or sign-in. SSH and automatic sync are disabled. Search is keyword-only and
+optional model/tokenizer downloads are disabled. First installation still downloads the pinned npm
+package and dependencies; SQLite may fetch its native binary from GitHub or Node headers from
+nodejs.org. Your AI client receives requested tool results under its own policy.
+
+It stores the selected project record, local snapshots and Reasonbook's own configuration, registry
+and usage files. Registry lookup can read path and identity/address metadata from registered stores;
+it does not aggregate their record content. The selected project's constraints are returned as data.
+Its MCP usage log contains timestamps, restricted tool/client/session tokens, outcomes and capped
+record identifiers, never argument/result prose; the three newest monthly files are retained. The
+legacy `telemetry_events` table can contain arbitrary imported JSON and is not this log. Existing
+records, backups and SQLite free-page contents have the retention limits described below.
+
+The remaining hooks, dashboard and sharing disclosures describe the full plugin, available
+separately as `reasonbook@reasonbook`. See the
+[directory edition README](../plugins/reasonbook-chat/README.md) for installation and exact boundaries.
+
 ## What leaves your machine, and when
 
 | What                                           | When                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | How to stop or control it                                                                                                                                                                                                                                                                                                    |
@@ -76,27 +102,30 @@ because claims use clock order. After the switch, the first counted acceptance f
 position, and pre-switch claims precede later ones. An accepted id is final once a copy holds every
 earlier-positioned claim's data. Predictable ids can still be claimed first, and recovery judges
 previously unjudged transactions in clock order. The switch requires every active copy to report
-support; the dashboard must pin the supporting library before hosted records can switch.
+support; reasonbook.ai already runs a supporting library for hosted records.
 Re-inviting a removed member judges their set-aside changes again; those their role does not allow
 are refused.
 
 The owner shares and removes members on the dashboard. A copy shared through the dashboard exchanges
 with it alone, never by bundle, and over SSH only to take a catch-up from the owner's copy that moved
-the project back, with Reasonbook 4.2.1 on both machines; there, as for direct sharing, SSH login is
+the project back, with Reasonbook 4.2.1 or later on both machines; there, as for direct sharing, SSH login is
 the boundary. One machine keeps one live copy of a shared project: a second copy of it in another
 folder on the same machine has its writes refused, and two joined copies of one project there both
 do. The dashboard's operator can read the referee
 copy; [Privacy](privacy.md#sharing-through-reasonbookai) says what the dashboard keeps and for how
 long.
 
-This client also supports a recovery contribution from a member's copy. When a dashboard offers an
-owner-started recovery for the copy's remembered project and referee, a sync can automatically send
+When a call finds a lost or behind referee copy, reasonbook.ai begins recovery if its saved
+identity, head and member census permit it. A member's sync, the owner's included, can automatically send
 a fresh file holding the shared tables, identity and full change log. It does not copy feedback,
 session timelines, proposals, snapshots, search indexes or local working-memory documents. An
 accepted contribution is sent once per recovery and copy; an unacknowledged request may be retried.
 Either `RBOOK_SHARED_SYNC=off` or `RBOOK_DASHBOARD_SHARING=off` stops this upload, even during an
-explicit sync; `RBOOK_CHECKPOINT_SYNC=off` does not. The deployed reasonbook.ai service has no recovery
-route yet, so this client support does not make hosted recovery available there today.
+explicit sync; `RBOOK_CHECKPOINT_SYNC=off` does not. The owner reviews the plan on the Shared record
+page, chooses copies not to wait for, and confirms or cancels; a cancelled attempt can be restarted.
+Recovery keeps accepted contributions, lost-store artifacts and earlier snapshots until project
+deletion. [Privacy](privacy.md#sharing-through-reasonbookai) describes retention and the deployed
+host's remaining census-mismatch limit.
 
 `RBOOK_SHARED_SYNC=off` stops the exchanges Reasonbook starts itself through hooks and its five-minute
 server timer, and recovery contributions. Explicit sync and bundle commands still run.
@@ -124,7 +153,9 @@ started: with `ps` on macOS, from `/proc` on Linux.
 - **Prompt submit** may add up to 1,500 characters: previews of related past decisions, drafts
   waiting for you, and reminders. When a reply has shown you a draft, Reasonbook keeps your next message,
   whatever it says, up to 1,000 characters, outside the record with two-hour approval validity.
-  Later binding or session cleanup removes expired excerpts; expiry itself does not erase them.
+  Later binding or session cleanup deletes expired excerpt rows; expiry itself does not erase them.
+  Their text can remain in SQLite free pages in the user-only runtime file after row deletion;
+  cleanup does not guarantee physical erasure.
   A decision recorded from the draft carries your words. An answer after two hours can still address an
   unexpired draft in the same conversation: an approval reads agent-judged; a decline remains
   declined after its words expire. A busy write keeps an id-only refusal for retry; older binaries
@@ -144,7 +175,8 @@ The hooks keep their own state in `~/.config/rbook/runtime/`:
 - the folders and repositories you worked in;
 - each session's Git note (the commit and the changed file names), deleted when the session-end hook
   completes, and otherwise kept until you delete it;
-- your messages after a draft, until later binding or session cleanup removes them;
+- your messages after a draft, until later binding or session cleanup deletes their rows, with
+  possible text residue in SQLite free pages as described above;
 - which records' previews you have already been shown, with no expiry.
 
 The conversation-focused plugin, `reasonbook-chat`, has no hooks.
@@ -165,7 +197,7 @@ tree and why.
 
 ## Turning parts off
 
-- **The hooks in one project:** `npx --prefer-offline -y @aquex/reasonbook@4.6.1 ambient off`, run in that project,
+- **The hooks in one project:** `npx --prefer-offline -y @aquex/reasonbook@4.7.0 ambient off`, run in that project,
   with the version the plugin installed if it differs. The hooks still start and log their use locally, but add
   nothing. The command also updates the Reasonbook line in that project's `AGENTS.md`. `ambient on` turns
   them back on.
@@ -208,8 +240,9 @@ tree and why.
   does. While a project is shared through the dashboard, every copy refuses the purge, the owner's
   included: the owner moves the project back first (`reasonbook move --to owner`), then purges.
 - **Delete a project on the dashboard:** this removes its registration, mirror, attributed activity
-  and sync-request logs, shares, keys and signals report, and attempts to remove its uploaded file,
-  referee copy, snapshots and archive. No purge, move back or sign-out is needed first. Tombstones
+  and sync-request logs, shares, keys, signals report and recovery records, and attempts to remove
+  recovery contributions, retained lost-store artifacts, its uploaded file, referee copy, snapshots
+  and archive. File-removal failures are logged for cleanup. No purge, move back or sign-out is needed first. Tombstones
   retain the owner's account id, current and former slugs and deletion time so later uploads cannot
   recreate it. The deleted project's key receives `401`; an upload or push authenticated with the
   owner's account credential receives `410 PROJECT_DELETED`. A `401` alone does not prove deletion.

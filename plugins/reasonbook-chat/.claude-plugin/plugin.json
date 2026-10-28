@@ -1,0 +1,17 @@
+{
+  "name": "reasonbook-chat",
+  "version": "4.7.0",
+  "description": "Reasonbook local edition: explicitly requested project decisions, lessons and plans, without hooks or sharing.",
+  "author": {
+    "name": "Reasonbook"
+  },
+  "homepage": "https://github.com/kneelinghorse/reasonbook",
+  "repository": "https://github.com/kneelinghorse/reasonbook",
+  "license": "Apache-2.0",
+  "mcpServers": {
+    "rbook": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/server/launch.sh",
+      "args": ["serve", "--install-root", "shared"]
+    }
+  }
+}

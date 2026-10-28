@@ -3,7 +3,7 @@
 // ABOUTME: Real referee tables and peer dispatch prove NULL/error behavior and preserve active member access.
 import { afterEach, beforeEach, expect, it } from '@jest/globals';
 import Database from 'better-sqlite3';
-import { members, peer, remove, setAside, PEER_METHODS } from '../../src/referee';
+import { members, peers, peer, remove, setAside, PEER_METHODS } from '../../src/referee';
 import { rememberPeer } from '../../src/tools/rbook/record-peers';
 import { setAsideReplica } from '../../src/tools/rbook/record-set-aside';
 import { replicaFixture, type ReplicaFixture } from '../helpers/replica-fixture';
@@ -62,6 +62,12 @@ it('recent observed calls need consent, then the member stays active and a repea
   });
   const listed = await ask(hosted.referee, (at) => members(at));
   expect(listed.data?.find((person) => person.name === 'Erin')?.role).toBe('editor');
+  const copies = await ask(hosted.referee, (at) => peers(at));
+  expect(copies.data?.find((held) => held.replicaId === copy.replicaId)).toMatchObject({
+    removed: false,
+    setAside: true,
+    cut: applied.data!.cut,
+  });
   const again = await ask(hosted.referee, (at) =>
     setAside(at, { replicaId: copy.replicaId, confirmGone: true })
   );

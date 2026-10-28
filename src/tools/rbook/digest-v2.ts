@@ -114,6 +114,10 @@ function sharedSection(
   room: number
 ): Section | null {
   if (!review) return null;
+  if (review.directory) {
+    const text = sharedShortForm(review)!;
+    return text.length <= Math.min(SHARED_SECTION_CAP, room) ? section([{ text }]) : null;
+  }
   const { conflicts, states, waiting, started } = review;
   const peers = review.peers ?? [];
   const moves = review.moves ?? [];
@@ -168,6 +172,8 @@ export function sharedRecordText(review: SharedRecordReview | null | undefined):
 /** The shared section's short form, a count of each part it has, whose room the digest keeps. */
 function sharedShortForm(review: SharedRecordReview | null | undefined): string | null {
   if (!review) return null;
+  if (review.directory)
+    return `Local shared record: ${review.conflicts.length} field(s) in conflict; ${review.states.length} state(s) need a person; ${review.waitingTotal} stored change(s) not live. Changes beyond this copy are not checked. Use the full plugin to inspect and resolve shared-record issues.`;
   const { conflicts, states, waiting, waitingTotal, started } = review;
   const peers = review.peers ?? [];
   const moves = review.moves ?? [];

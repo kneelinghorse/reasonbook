@@ -2,6 +2,7 @@
 // ABOUTME: Read a local digest snapshot without migrations, registration, lifecycle changes or network calls.
 // ABOUTME: Recency and rule ranking use published predicates; failed reads cannot masquerade as empty context.
 
+import { isDirectoryEdition } from '../../edition';
 import { prepareSpinOutRead } from './spin-out-read';
 import { resolveRecordPaths } from '../../intelligence/legacy-compat';
 import { projectDisplayName } from '../../utils/project-display-name';
@@ -227,7 +228,7 @@ function snapshot(
     local,
     sprintId ?? null
   );
-  const shared = sharedRecordReview(client);
+  const shared = sharedRecordReview(client, isDirectoryEdition(env));
   const writer = shared ? authorForWrite(client).name : undefined;
   // A quiet established store is not a first-hour store: inspect durable rows, not recent sections.
   const tables = [
@@ -239,7 +240,9 @@ function snapshot(
     'sprints',
     'sessions',
   ];
-  for (const table of ['agent_feedback', 'proposals']) {
+  for (const table of isDirectoryEdition(env)
+    ? ['agent_feedback']
+    : ['agent_feedback', 'proposals']) {
     if (rows<{ name: string }>(client, `PRAGMA table_info(${table})`).length) tables.push(table);
   }
   const emptyRecord =
@@ -255,7 +258,7 @@ function snapshot(
     emptyRecord,
     localProjectId: local,
     sprint,
-    profile: readProfile(env),
+    profile: isDirectoryEdition(env) ? null : readProfile(env),
     stepUp:
       level === 'ledger' && stepCount >= 5
         ? 'Consider Planner: at least 5 open next steps.'
@@ -267,7 +270,7 @@ function snapshot(
     learnings: recent(recordRows(client, 'learnings'), 'l', 3, now, writer),
     work,
     nextSteps,
-    drafts: pendingUnexpired(client, env, now),
+    drafts: isDirectoryEdition(env) ? [] : pendingUnexpired(client, env, now),
     shared,
   };
 }
@@ -328,12 +331,17 @@ export async function readDigestV2(
         return {
           ...result.data,
           legacyRecord: resolveRecordPaths(root).legacy,
-          dashboardUpload:
-            readUploadNotice(root, { env, sessionStart: options.sessionStart, attentionOnly: true })
-              ?.text ?? null,
-          feedback: result.data.emptyRecord
+          dashboardUpload: isDirectoryEdition(env)
             ? null
-            : await feedbackDigestLine(env, deadlineAtMs, fleetBudgetMs),
+            : (readUploadNotice(root, {
+                env,
+                sessionStart: options.sessionStart,
+                attentionOnly: true,
+              })?.text ?? null),
+          feedback:
+            isDirectoryEdition(env) || result.data.emptyRecord
+              ? null
+              : await feedbackDigestLine(env, deadlineAtMs, fleetBudgetMs),
         };
       } finally {
         client.close();

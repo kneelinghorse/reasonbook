@@ -2,6 +2,7 @@
 // ABOUTME: When a shared record syncs on its own (design §s96-m13 item 4): at session start and end, detached from the
 // ABOUTME: hook, and on the server's timer, each under RBOOK_SHARED_SYNC alone; two triggers at once run one sync.
 
+import { isDirectoryEdition } from '../../edition';
 import { spawn } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
 import fs from 'fs';
@@ -20,7 +21,7 @@ const LOCK_REFRESH_MS = 60 * 1000;
 export const SHARED_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 
 export function sharedSyncEnabled(): boolean {
-  return !settingIsOff(SHARED_SYNC_ENV) && !isReadOnlyAgentSession();
+  return !isDirectoryEdition() && !settingIsOff(SHARED_SYNC_ENV) && !isReadOnlyAgentSession();
 }
 
 /**
@@ -66,6 +67,7 @@ export function readsAsSyncing(dbPath: string): boolean | null {
 export function launchSync(projectRoot: string, bin: string = process.argv[1] ?? ''): boolean {
   // Only Reasonbook's own entry starts one: a hook run inside a test runner never spawns it. An
   // adapter runs `reasonbook hook` through the npm bin link, which names the entry by its own name.
+  if (isDirectoryEdition()) return false;
   let entry = bin;
   try {
     entry = fs.realpathSync(bin);

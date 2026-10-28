@@ -61,10 +61,10 @@ test('trusted hook definitions remain exact and contain no release version', () 
   }
 });
 
-test('Codex forwards exactly the RBOOK settings the server reads, including consent switches', () => {
+test('Codex forwards server settings except the edition selected by its contained marker', () => {
   const forwarded: string[] = json(`${plugin}/codex.mcp.json`).mcpServers.rbook.env_vars;
   expect(forwarded.filter((name) => name.startsWith('RBOOK_')).sort()).toEqual(
-    [...deriveEnvReads(path.join(root, 'src'))].sort()
+    [...deriveEnvReads(path.join(root, 'src'))].filter((name) => name !== 'RBOOK_EDITION').sort()
   );
 });
 

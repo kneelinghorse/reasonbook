@@ -348,7 +348,7 @@ Consolidated context tool with action parameter support. Actions: view, update, 
 | `nextStepStatus` | string | no | Filter status for next_steps list (default: every open row, pending and carried, with its lease age) |
 | `nextStepIds` | array | no | Next-step IDs for full show, historical list lookup (includes moved/dropped rows and pointers unless explicitly status-filtered), or complete/carry/drop/reopen |
 | `carryToSprint` | string | no | Existing target sprint ID for carry; missing targets are refused by name. Create one with rbook_sprint(action="add"), or omit to park with no target |
-| `missionId` | string | no | Only next steps recorded for this mission |
+| `missionId` | string | no | list/carry: only next steps recorded for this mission |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
 
 ### rbook_context(action="constraints")

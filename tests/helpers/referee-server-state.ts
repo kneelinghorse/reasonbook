@@ -191,8 +191,11 @@ export function createHostState(config: RefereeServerConfig, engine: RefereeEngi
       const members = await engine.members(locate(id));
       if (!members.result.success) {
         // Creation has not joined yet; the host's carried bindings remain authoritative.
-        if (joining && members.result.error?.code === engine.REFEREE_ERROR_CODES.NOT_READY)
+        if (joining && members.result.error?.code === engine.REFEREE_ERROR_CODES.NOT_READY) {
+          project.membersInvalid = false;
+          save();
           return null;
+        }
         error = members.result.error ?? failed('The referee did not return its membership.');
       } else if (
         !Array.isArray(members.result.data) ||
@@ -234,7 +237,8 @@ export function createHostState(config: RefereeServerConfig, engine: RefereeEngi
   };
   const serialized = <T>(
     id: string,
-    call: () => Promise<RefereeOutcome<T>>
+    call: () => Promise<RefereeOutcome<T>>,
+    membershipMayChange = true
   ): Promise<RefereeOutcome<T>> =>
     serialize(id, async () => {
       const project = state.get(id)!;
@@ -252,9 +256,28 @@ export function createHostState(config: RefereeServerConfig, engine: RefereeEngi
           return { result: { success: false, error: refusal }, head: project.head };
         }
       }
+      // Persist before calling: a crash after commit must never leave a stale census valid.
+      const previousHead = project.head;
+      if (membershipMayChange) {
+        project.membersInvalid = true;
+        save();
+      }
       const outcome = await call();
+      const headChanged =
+        outcome.head !== null &&
+        (outcome.head.replicaId !== previousHead?.replicaId ||
+          outcome.head.seq !== previousHead?.seq ||
+          outcome.head.hash !== previousHead?.hash);
+      const code = outcome.result.error?.code;
+      // FAILED may follow a committed write. Only a named refusal with no advanced head is definite.
+      const definiteRefusal =
+        !outcome.result.success &&
+        !headChanged &&
+        code !== engine.REFEREE_ERROR_CODES.FAILED &&
+        Object.values(engine.REFEREE_ERROR_CODES).some((known) => known === code);
+      if (membershipMayChange && definiteRefusal) project.membersInvalid = false;
       if (outcome.head) rememberHead(project, outcome.head);
-      if (outcome.result.success && outcome.head) {
+      if (membershipMayChange && !definiteRefusal && outcome.head) {
         // A first hand-in carries the record id separately from this host's registry id.
         const data = outcome.result.data as { joinRequest?: { projectId?: string } } | undefined;
         if (data?.joinRequest?.projectId) project.recordProjectId = data.joinRequest.projectId;

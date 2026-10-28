@@ -63,7 +63,7 @@ describe('portable chat plugin', () => {
       extensions: {
         'com.openai': {
           onboardingSkill: './skills/setup/SKILL.md',
-          interface: { displayName: 'Reasonbook Chat', category: 'Productivity' },
+          interface: { displayName: 'Reasonbook', category: 'Productivity' },
         },
       },
     });
@@ -80,6 +80,33 @@ describe('portable chat plugin', () => {
         },
       },
     });
+  });
+
+  it('selects the local edition and exposes a contained Claude server and square app icons', () => {
+    expect(read(`${PLUGIN}/EDITION`)).toBe('directory\n');
+    const claude = json(`${PLUGIN}/.claude-plugin/plugin.json`);
+    expect(claude.version).toBe(json('package.json').version);
+    expect(claude.mcpServers.rbook).toEqual({
+      command: '${CLAUDE_PLUGIN_ROOT}/server/launch.sh',
+      args: ['serve', '--install-root', 'shared'],
+    });
+    expect(claude).not.toHaveProperty('hooks');
+    const ui = json(`${PLUGIN}/plugin.json`).extensions['com.openai'].interface;
+    for (const field of ['logo', 'composerIcon']) {
+      expect(ui[field]).toMatch(/^\.\/assets\/[^/]+\.svg$/);
+      const svg = read(`${PLUGIN}/${ui[field].slice(2)}`);
+      expect(svg).toMatch(/width="128" height="128" viewBox="0 0 128 128"/);
+      expect(svg).not.toMatch(/script|href=|foreignObject/);
+    }
+  });
+
+  it('keeps requested records without extracting conversation excerpts', () => {
+    for (const file of files(`${PLUGIN}/skills`)) {
+      expect(read(file)).not.toMatch(/approval words|actual words|user's words/i);
+    }
+    expect(read(`${PLUGIN}/skills/propose-decision/SKILL.md`)).toContain(
+      'the user approved it in this conversation'
+    );
   });
 
   it('copies the complete bootstrap closure byte-for-byte so chat cannot diverge from developer installs', () => {
@@ -127,7 +154,7 @@ describe('chat instruction lint', () => {
     'node program',
     '`git status`',
     '```sh\necho hi\n```',
-    '/Users/person/project',
+    ['', 'Users', 'person', 'project'].join('/'),
     '/',
     './',
     '../',

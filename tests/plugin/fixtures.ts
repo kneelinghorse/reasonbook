@@ -17,6 +17,26 @@ export function fixture(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'rbook-plugin-test-'));
 }
 
+export function fixtureNode(root: string): string {
+  const file = path.join(root, process.platform === 'win32' ? 'node.exe' : 'node');
+  // These fixtures install a cold package, not a new Node binary. Keep execPath local so
+  // adjacent-npm resolution is still exercised; never chmod the shared executable inode.
+  try {
+    fs.linkSync(process.execPath, file);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (
+      !['EXDEV', 'EPERM', 'EACCES', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS', 'EMLINK'].includes(
+        code ?? ''
+      )
+    )
+      throw error;
+    fs.copyFileSync(process.execPath, file);
+    fs.chmodSync(file, 0o755);
+  }
+  return file;
+}
+
 export function node(code: string, env: NodeJS.ProcessEnv = {}, input?: string) {
   return spawnSync(process.execPath, ['--input-type=module', '-e', code], {
     encoding: 'utf8',

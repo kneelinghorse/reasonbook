@@ -36,6 +36,14 @@ it('honors an explicitly empty new setting instead of reviving a legacy credenti
   expect(settingNames('CMOS_AMBIENT')).toEqual(['RBOOK_AMBIENT', 'CMOS_AMBIENT']);
 });
 
+it('does not invent a legacy alias for the edition introduced after the rename', () => {
+  expect(getSetting('RBOOK_EDITION', { CMOS_EDITION: 'directory' })).toBeUndefined();
+  expect(getSetting('RBOOK_EDITION', { RBOOK_EDITION: '', CMOS_EDITION: 'directory' })).toBe('');
+  expect(getSetting('RBOOK_EDITION', { RBOOK_EDITION: 'full', CMOS_EDITION: 'directory' })).toBe(
+    'full'
+  );
+});
+
 it('selects the existing legacy config without creating a competing registry', () => {
   const legacy = path.join(temp, '.config', 'cmos-mcp');
   fs.mkdirSync(legacy, { recursive: true });

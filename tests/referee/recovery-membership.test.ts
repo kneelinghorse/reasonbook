@@ -3,7 +3,6 @@
 // ABOUTME: Real removal and retained-tail controls prevent reviving missing members through a stale authority cut.
 import { afterEach, beforeEach, expect, it, jest } from '@jest/globals';
 import fs from 'fs';
-import path from 'path';
 import { finalizeRecovery, members, peer, recoveryPlan, remove } from '../../src/referee';
 import * as judge from '../../src/tools/rbook/record-judge';
 import { dbOf, replicaFixture, type ReplicaFixture } from '../helpers/replica-fixture';
@@ -47,8 +46,6 @@ it.each(['unselected-tail', 'selected-tail', 'verified-head'] as const)(
     const plan = planned.result.data!;
     expect(plan.ready).toBe(true);
     expect(plan.members.find((member) => member.name === 'Erin')?.role).toBe('removed');
-    const registryRoot = path.join(location.configDir, 'referees');
-    const registries = fs.readdirSync(registryRoot).sort();
     const bytes = fs.readFileSync(file);
     const judging = jest.spyOn(judge, 'judgeUnjudged');
     const final = await finalizeRecovery(location, {
@@ -61,35 +58,24 @@ it.each(['unselected-tail', 'selected-tail', 'verified-head'] as const)(
               .map((change) => change.change_id)
           : [],
     });
-    if (mode === 'unselected-tail') {
-      expect(final.result.success).toBe(false);
-      expect(final.head).toBeNull();
-      expect(final.result.error?.code).toBe('REFEREE_UPLOAD_REFUSED');
-      expect(final.result.error?.message).toMatch(/Erin.*removed.*editor/);
-      expect(final.result.error?.suggestion).toMatch(/select.*tail|tail.*select/i);
-      expect(judging).not.toHaveBeenCalled();
-      expect(fs.existsSync(location.storePath)).toBe(false);
-      expect(fs.readdirSync(registryRoot).sort()).toEqual(registries);
-    } else {
-      expect(final.result.error).toBeUndefined();
-      expect(judging).toHaveBeenCalled();
-      expect(final.result.data?.members.find((member) => member.name === 'Erin')?.role).toBe(
-        'removed'
-      );
-      const read = await peer(
-        { ...location, expectedHead: final.head },
-        'changesSince',
-        {},
-        { accountId: 'acct-erin', replicaId: extra[0].replicaId }
-      );
-      expect(read.result.error?.code).toBe('REFEREE_MEMBER_REMOVED');
-    }
+    expect(final.result.error).toBeUndefined();
+    expect(judging).toHaveBeenCalled();
+    expect(final.result.data?.members.find((member) => member.name === 'Erin')?.role).toBe(
+      'removed'
+    );
+    const read = await peer(
+      { ...location, expectedHead: final.head },
+      'changesSince',
+      {},
+      { accountId: 'acct-erin', replicaId: extra[0].replicaId }
+    );
+    expect(read.result.error?.code).toBe('REFEREE_MEMBER_REMOVED');
     expect(fs.readFileSync(file)).toEqual(bytes);
   }
 );
 
 it.each(['name', 'role', 'missing'] as const)(
-  'a confirmed %s mismatch is named and refused before any permission-sensitive judgment',
+  'a confirmed %s difference refuses renamed identities but recovers lost role and admission changes',
   async (mode) => {
     const { input, location } = await recoveryFixture(fixture.tmp, true);
     const confirmed = input.members.map((member) =>
@@ -116,12 +102,16 @@ it.each(['name', 'role', 'missing'] as const)(
       confirmedPlanHash: planned.result.data!.planHash,
       confirmedTailMembershipIds: [],
     });
-    expect(final.result.success).toBe(false);
-    expect(final.result.error?.message).toContain(
-      mode === 'name' ? 'Morgan' : mode === 'role' ? 'Erin' : 'Missing Person'
-    );
-    expect(final.result.error?.suggestion).toMatch(/recover.*copy.*evidence/i);
-    expect(judging).not.toHaveBeenCalled();
-    expect(fs.existsSync(location.storePath)).toBe(false);
+    if (mode === 'name') {
+      expect(final.result.success).toBe(false);
+      expect(final.result.error?.message).toContain('Morgan');
+      expect(final.result.error?.suggestion).toMatch(/name|identity/i);
+      expect(judging).not.toHaveBeenCalled();
+      expect(fs.existsSync(location.storePath)).toBe(false);
+    } else {
+      expect(final.result.error).toBeUndefined();
+      expect(judging).toHaveBeenCalled();
+      expect(final.result.data?.members).toEqual(confirmed);
+    }
   }
 );

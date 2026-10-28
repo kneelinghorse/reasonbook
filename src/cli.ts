@@ -2,6 +2,7 @@
 // ABOUTME: s93-m01 — the reasonbook CLI: hook verbs for harness hooks, and the read and write verbs adapters
 // ABOUTME: and people call. Each verb loads only its own module; hooks exit 0 and print nothing past deadline.
 
+import { isDirectoryEdition, directoryEditionError } from './edition';
 import { getSetting } from './intelligence/legacy-compat';
 import {
   CliStoreError,
@@ -119,6 +120,10 @@ function holdStderr(): { release(): string[] } {
  * Run one hook verb under its deadline. Exits 0 in every case; at most one stderr line.
  */
 export async function runHook(argv: readonly string[], io: CliIo): Promise<number> {
+  if (isDirectoryEdition(io.env)) {
+    io.stderr(directoryEditionError().suggestion!);
+    return 1;
+  }
   const { positional, flags } = parseArgs(argv);
   if (flags.harness && flags.harness !== 'claude') {
     // Also isolate rejected native events: their failure telemetry must not route to
@@ -286,6 +291,32 @@ export async function runHook(argv: readonly string[], io: CliIo): Promise<numbe
  */
 export async function runCli(argv: readonly string[], io: CliIo = processIo()): Promise<number> {
   const [verb, ...rest] = argv;
+  if (
+    isDirectoryEdition(io.env) &&
+    [
+      'hook',
+      'drafts',
+      'profile',
+      'sync',
+      'join',
+      'copy',
+      'handover',
+      'recover',
+      'share',
+      'move',
+      'signals',
+      'brief',
+      'stats',
+      'migrate',
+      'spin-out',
+      'ambient',
+      'import',
+      'set-aside',
+    ].includes(verb ?? '')
+  ) {
+    io.stderr(directoryEditionError().suggestion!);
+    return 1;
+  }
   const { USAGE, firstUnknownOption, unexpectedArgument } = await import('./cli/usage');
   if (argv.includes('--help') || argv.includes('-h')) {
     io.stdout(USAGE);

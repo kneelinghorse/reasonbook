@@ -9,7 +9,11 @@ import { createError, createSuccess } from '../tools/rbook/errors';
 import type { RbookDatabaseClient } from '../tools/rbook/client';
 import { buildFreshCopy, FreshCopyRefused } from '../tools/rbook/record-fresh-copy';
 import { recordOwnChanges } from '../tools/rbook/record-changes';
-import { listMembers, OWNER_MEMBER } from '../tools/rbook/record-membership';
+import { canonicalJson } from '../tools/rbook/record-capture';
+import { replicaMarks } from '../tools/rbook/record-apply';
+import { carriedSetAsideCuts } from '../tools/rbook/record-member-cuts';
+import { mergeContext } from '../tools/rbook/record-standing';
+import { listMembers, MEMBER_ENTITY, OWNER_MEMBER } from '../tools/rbook/record-membership';
 import { recoverAuthorityCore, recoveryCuts } from '../tools/rbook/record-recovery-core';
 import type { RecoveryReport } from '../tools/rbook/record-recovery';
 import type { Opener } from '../tools/rbook/record-sync';
@@ -158,6 +162,14 @@ async function publishRecovery(
       'Every confirmed membership change must be a distinct row in the current plan.'
     );
   const tail = plan.tailMembership.filter((change) => selected.has(change.change_id));
+  const keptRemoved = new Set(
+    plan.memberReconciliation
+      .filter((change) => change.action === 'keep_removed')
+      .map((change) => change.memberId)
+  );
+  const effectiveMembers = input.members.map((member) =>
+    keptRemoved.has(member.memberId) ? { ...member, role: 'removed' } : member
+  );
   for (const change of tail) {
     const value = JSON.parse(change.value ?? '{}') as {
       member?: string;
@@ -224,13 +236,22 @@ async function publishRecovery(
         block,
         cut: plan.adoptedPrefix,
         ownerName: input.members.find((member) => member.memberId === OWNER_MEMBER)!.name,
-        members: input.members
+        members: effectiveMembers
           .filter((member) => member.memberId !== OWNER_MEMBER && member.role !== 'removed')
           .map((member) => member.name),
         cuts: (client) => recoveryCuts(client, copiesToDrop),
         recomputeAll: true,
         beforeJudge: (client) => {
-          for (const change of tail)
+          for (const change of tail) {
+            // Retained tail evidence cannot undo a removal already in the verified record.
+            if (
+              change.kind === 'member' &&
+              listMembers(client).some(
+                (member) => member.memberId === change.entity_id && member.role === 'removed'
+              ) &&
+              JSON.parse(change.value ?? '{}').role !== 'removed'
+            )
+              continue;
             recordOwnChanges(client, [
               {
                 kind: change.kind === 'member' ? 'member' : 'replica_joined',
@@ -240,16 +261,49 @@ async function publishRecovery(
                 value: change.value,
               },
             ]);
+          }
           const recovered = new Map(listMembers(client).map((member) => [member.memberId, member]));
-          for (const member of input.members) {
+          for (const member of effectiveMembers) {
             const actual = recovered.get(member.memberId);
-            if (actual?.name !== member.name || actual?.role !== member.role)
+            if (actual && actual.name !== member.name)
               throw new ReplicaRefusal({
                 code: REFEREE_ERROR_CODES.UPLOAD_REFUSED,
-                message: `The confirmed member ${member.name} (${member.memberId}) has role ${member.role}, but the recovered record ${actual ? `names ${actual.name} with role ${actual.role}` : 'has no admission for that member'}.`,
+                message: `The confirmed member ${member.name} (${member.memberId}) is named ${actual.name} in the recovered record.`,
                 suggestion:
-                  'Select the matching membership rows from the retained tail, or correct the confirmed member list and review a new plan. If admission evidence is missing, recover a copy containing that evidence before finalizing.',
+                  'Verify the member identity and name against the authenticated census before reviewing a new plan.',
               });
+            if (actual?.role === member.role) continue;
+            if (actual?.role === 'removed')
+              throw new ReplicaRefusal({
+                code: REFEREE_ERROR_CODES.UPLOAD_REFUSED,
+                message: `Selected tail evidence removes ${member.name}; recovery cannot re-admit them.`,
+                suggestion:
+                  'Review the selected tail membership against the census; keep the member removed and review a new plan. Re-invite only after recovery finishes.',
+              });
+            const ctx = mergeContext(client);
+            const marks = replicaMarks(client);
+            recordOwnChanges(client, [
+              {
+                kind: 'member',
+                entity: MEMBER_ENTITY,
+                entityId: member.memberId,
+                field: null,
+                value: canonicalJson({
+                  name: member.name,
+                  role: member.role,
+                  ...carriedSetAsideCuts(ctx, member.memberId),
+                  ...(member.role === 'removed'
+                    ? {
+                        cuts: Object.fromEntries(
+                          [...ctx.members.values()]
+                            .filter((copy) => copy.member === member.memberId)
+                            .map((copy) => [copy.replicaId, marks[copy.replicaId] ?? 0])
+                        ),
+                      }
+                    : {}),
+                }),
+              },
+            ]);
           }
         },
       },
@@ -263,7 +317,7 @@ async function publishRecovery(
     const completed = await self((client) => {
       const head = streamHead(client);
       client.pragma('journal_mode = DELETE');
-      return { head, members: input.members };
+      return { head, members: effectiveMembers };
     });
     registry.rebindReplica(value.authority, storeFolder(location.storePath), fileIdentity(store));
     // A hard link publishes one complete self-contained file and refuses to replace an existing destination.

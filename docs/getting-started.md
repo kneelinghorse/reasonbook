@@ -21,16 +21,16 @@ Pick one:
 
 ```bash
 # Recommended: a global install of this release. It starts from disk, with no registry lookup.
-npm install -g @aquex/reasonbook@4.6.1
+npm install -g @aquex/reasonbook@4.7.0
 
 # Or run on demand via npx: pinned, and preferring the local cache. The first launch downloads
 # the package; later launches reuse the npm cache.
-npx --prefer-offline -y @aquex/reasonbook@4.6.1
+npx --prefer-offline -y @aquex/reasonbook@4.7.0
 ```
 
 If you installed only a plugin, its private runtime does not add `reasonbook` to your terminal
 PATH. For any CLI example here, replace `reasonbook` with
-`npx --prefer-offline -y @aquex/reasonbook@4.6.1`, or install the pinned global CLI above.
+`npx --prefer-offline -y @aquex/reasonbook@4.7.0`, or install the pinned global CLI above.
 
 If the former package is installed globally, run `npm uninstall -g @aquex/cmos-mcp` first. Version 4 provides only the `reasonbook` command; update scripts and MCP configurations that use the old command.
 
@@ -39,7 +39,7 @@ Verify it starts:
 ```bash
 reasonbook --version  # if globally installed
 # or
-npx --prefer-offline -y @aquex/reasonbook@4.6.1 --version
+npx --prefer-offline -y @aquex/reasonbook@4.7.0 --version
 ```
 
 Semantic (vector) search is optional: without it, retrieval is keyword-only and the install is about
@@ -53,7 +53,7 @@ Claude Code and Codex are verified; the other blocks follow each client's own MC
 ### Claude Code
 
 ```bash
-claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.6.1"]}'
+claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.7.0"]}'
 claude mcp list   # confirm it's registered
 ```
 
@@ -71,7 +71,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS), 
       "args": [
         "--prefer-offline",
         "-y",
-        "@aquex/reasonbook@4.6.1",
+        "@aquex/reasonbook@4.7.0",
         "--project-root",
         "/absolute/path/to/your/project"
       ]
@@ -94,7 +94,7 @@ Edit `~/.cursor/mcp.json`:
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.6.1"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.7.0"]
     }
   }
 }
@@ -109,7 +109,7 @@ Edit your Zed `settings.json`:
   "context_servers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.6.1"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.7.0"]
     }
   }
 }
@@ -130,7 +130,7 @@ your terminal PATH, so the terminal route needs the standalone Claude CLI.
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.6.1"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.7.0"]
     }
   }
 }
@@ -599,7 +599,7 @@ With a stored user-scoped dashboard key or legacy environment credentials, the n
 
 Each upload sends a consistent snapshot of the whole SQLite file, including pending, declined and expired proposals. There is no table-level exclusion from this whole-file upload. `rbook_status` and `rbook_review` show the last upload result and any failure. Transient failures back off for 1, 5, 15 and then 60 minutes, never earlier than Retry-After. Authentication failures are rechecked before pausing; hourly probes can resume uploads when the key works again. Confirmed deletion or replacement holds this project’s automatic uploads, closes and manual backfill. Other projects keep uploading. Tier and confirmed forbidden responses remain paused until a successful explicit attempt. A failed upload does not fail the local write or close, and implicit process-exit closes do not upload.
 
-Set `RBOOK_CHECKPOINT_SYNC=off` in the MCP server environment to stop timed uploads, explicit session/sprint close uploads and manual backfill for every project that server serves. It does not disable explicit sync, messaging, sign-in, status queries, shared-record exchanges or other requested network actions. Hosted recovery contributions use separate controls: either `RBOOK_SHARED_SYNC=off` or `RBOOK_DASHBOARD_SHARING=off` stops them, even during explicit sync. The client supports those contributions, but reasonbook.ai has not deployed the recovery route. (`rbook_project(action="register", projectRoot=…)` is different: it records the project in the local registry only.) See the [network disclosure](../SECURITY.md#outbound-network).
+Set `RBOOK_CHECKPOINT_SYNC=off` in the MCP server environment to stop timed uploads, explicit session/sprint close uploads and manual backfill for every project that server serves. It does not disable explicit sync, messaging, sign-in, status queries, shared-record exchanges or other requested network actions. Hosted recovery contributions use separate controls: either `RBOOK_SHARED_SYNC=off` or `RBOOK_DASHBOARD_SHARING=off` stops them, even during explicit sync. When a call discovers a lost or behind referee, reasonbook.ai can begin recovery; eligible copies contribute on sync and the owner reviews and confirms the plan on the Shared record page. See the [recovery limits](privacy.md#sharing-through-reasonbookai). (`rbook_project(action="register", projectRoot=…)` is different: it records the project in the local registry only.) See the [network disclosure](../SECURITY.md#outbound-network).
 
 ### Verify
 

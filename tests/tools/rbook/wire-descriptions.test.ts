@@ -51,7 +51,8 @@ const CHARS_PER_TOKEN = 4;
 // s102-m04 adds reopen enum + required-reason hint: +16 characters, leaving 463.
 // s102-m06 adds the next-step show enum: +7 characters, leaving 456.
 // s102-m08 describes the digest target honestly: -2 characters, leaving 458.
-const RESERVE = 458;
+// s104-m03 measures 23,536 before (6 below the old cap), adds 263, leaving 201.
+const RESERVE = 201;
 
 function withoutDescriptions(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(withoutDescriptions);
@@ -94,7 +95,7 @@ describe('s92-m08 — tools/list', () => {
     expect(project.description).toMatch(/SSH join runs on owner's copy/);
     expect(project.description).toMatch(/join runs in the local joining folder/);
     expect(project.parameters.confirm).toMatch(/false\/omitted previews/);
-    expect(project.parameters.confirm).toMatch(/true sends after operator approval/);
+    expect(project.parameters.confirm).toMatch(/true uploads now; get operator approval first/);
     expect(WIRE_TEXT.rbook_auth.description).toMatch(/URL\/code for browser approval/);
     expect(WIRE_TEXT.rbook_auth.parameters.maxWaitSeconds).toMatch(/retry same code/);
   });
@@ -132,7 +133,7 @@ describe('s92-m08 — tools/list', () => {
   it('keeps the project address remedy in every shortened projectRoot hint', () => {
     for (const tool of wire()) {
       expect(tool.inputSchema.properties?.projectRoot.description).toBe(
-        'Folder or rbook:// address; default cwd'
+        'Folder or rbook:// address; inferred'
       );
     }
   });
@@ -194,14 +195,38 @@ describe('s92-m08 — tools/list', () => {
     }
   });
 
-  it('never names actions in a parameter hint (the per-action tables do that)', () => {
-    const offenders: string[] = [];
-    for (const [tool, text] of Object.entries(WIRE_TEXT)) {
-      for (const [parameter, hint] of Object.entries(text.parameters)) {
-        if (hint && /\b[a-z_]+\s+actions?\b/i.test(hint)) offenders.push(`${tool}.${parameter}`);
+  it('limits multi-action hints to requiredness, defaults and effects instead of restating enums', () => {
+    const hints: string[] = [];
+    const enums = (value: unknown): string[] => {
+      if (!value || typeof value !== 'object') return [];
+      const item = value as Record<string, unknown>;
+      return [
+        ...(Array.isArray(item.enum)
+          ? item.enum.filter((entry): entry is string => typeof entry === 'string')
+          : []),
+        ...Object.values(item).flatMap(enums),
+      ];
+    };
+    for (const definition of wire()) {
+      const values = [...new Set(enums(definition.inputSchema))];
+      for (const [name, property] of Object.entries(definition.inputSchema.properties ?? {})) {
+        if ('enum' in property || !property.description) continue;
+        const words: string[] = property.description.match(/[a-z_]+/g) ?? [];
+        if (values.filter((value) => words.includes(value)).length > 1)
+          hints.push(`${definition.name}.${name}`);
       }
     }
-    expect(offenders).toEqual([]);
+    expect(hints).toEqual([
+      'rbook_mission_transition.reason',
+      'rbook_context.nextStepIds',
+      'rbook_context.missionId',
+      'rbook_db.confirm',
+      'rbook_project.name',
+      'rbook_project.confirmOwner',
+      'rbook_project.confirm',
+      'rbook_project.project',
+      'rbook_auth.keyId',
+    ]);
   });
 
   it('keeps the long form in TOOL_REFERENCE.md', () => {
@@ -219,7 +244,7 @@ describe('s92-m08 — server instructions', () => {
     expect(SERVER_INSTRUCTIONS_LOOP).toContain('For Reasonbook project work');
     expect(WIRE_TEXT.rbook_review.description).toContain('Start Reasonbook project work');
     expect(SERVER_INSTRUCTIONS).not.toMatch(/Start each conversation|every conversation/);
-    expect(SERVER_INSTRUCTIONS).toMatch(/Unknown actions\/fields are refused/);
+    expect(SERVER_INSTRUCTIONS).toMatch(/Unknown actions\/top-level fields are refused/);
     expect(SERVER_INSTRUCTIONS).toMatch(/Every call may write telemetry/);
     expect(SERVER_INSTRUCTIONS).toMatch(/retries can repeat effects/);
   });

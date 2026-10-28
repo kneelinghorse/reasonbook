@@ -11,6 +11,7 @@
  * @module tools/rbook/rbook-message
  */
 
+import { directoryCallError } from '../../edition';
 import { formatToolFailure } from './format-failure';
 import { normalizeAddressScheme } from '../../intelligence/legacy-compat';
 import { getSetting } from '../../intelligence/legacy-compat';
@@ -656,6 +657,8 @@ export interface MessageWhoamiOptions {
 export async function getWhoamiDiagnostics(
   options: MessageWhoamiOptions = {}
 ): Promise<RbookToolResult<MessageWhoamiResult>> {
+  const editionError = directoryCallError('rbook_message', options);
+  if (editionError) return createError(editionError);
   const serverInstallRoot = path.resolve(options.serverInstallRootOverride ?? SERVER_INSTALL_ROOT);
   const envRbookProjectRoot = normalizeOptionalEnvPath(getSetting(RBOOK_PROJECT_ROOT_ENV));
 
@@ -1560,6 +1563,8 @@ async function handleWhoami(
 export async function rbookMessage(
   params: InternalRbookMessageParams
 ): Promise<RbookToolResult<RbookMessageResult>> {
+  const editionError = directoryCallError('rbook_message', params);
+  if (editionError) return createError(editionError);
   const actionValue =
     typeof (params as { action?: unknown }).action === 'string' ? params.action : '';
 

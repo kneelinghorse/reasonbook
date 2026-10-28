@@ -9,6 +9,7 @@
  * @module tools/rbook/rbook-db
  */
 
+import { directoryCallError } from '../../edition';
 import { z } from 'zod';
 import { createError, RbookErrors } from './errors';
 import { findWrongTypedStringParam } from './param-type-guard';
@@ -303,6 +304,8 @@ function isDbAction(value: string): value is RbookDbAction {
 }
 
 export async function rbookDb(params: RbookDbParams): Promise<RbookToolResult<RbookDbResult>> {
+  const editionError = directoryCallError('rbook_db', params);
+  if (editionError) return createError(editionError);
   const actionValue =
     typeof (params as { action?: unknown }).action === 'string' ? params.action : '';
 

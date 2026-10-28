@@ -160,7 +160,11 @@ async function closeFixture(
   recover: () => void;
   posts: () => number;
   state: () => Record<string, unknown>;
+  uploadDirectories: () => string[];
 }> {
+  const tmp = path.join(directory, 'close-tmp');
+  fs.mkdirSync(tmp);
+  const locations = path.join(directory, 'upload-locations.jsonl');
   const project = path.join(directory, 'close-project');
   const dbPath = seedRbookDb(project, {
     projectId: 'close-test',
@@ -213,6 +217,19 @@ async function closeFixture(
   fs.writeFileSync(
     bootstrap,
     `${loader()}
+// Refuse before allocation if a child lost the fixture's temp environment. Record only this
+// child's upload paths; another session's files in the system temp directory are not ours.
+const ownedTmp = ${JSON.stringify(tmp)};
+if (require('node:os').tmpdir() !== ownedTmp) throw new Error('Upload fixture lost its owned temp directory');
+const runtimeFs = require('node:fs');
+const makeTemp = runtimeFs.mkdtempSync;
+runtimeFs.mkdtempSync = (prefix, ...rest) => {
+  if (String(prefix).includes('rbook-dashboard-upload-') && require('node:path').dirname(prefix) !== ownedTmp)
+    throw new Error('Upload fixture attempted an unowned temporary allocation');
+  const created = makeTemp(prefix, ...rest);
+  if (String(prefix).includes('rbook-dashboard-upload-')) runtimeFs.appendFileSync(${JSON.stringify(locations)}, JSON.stringify(created) + '\\n');
+  return created;
+};
 // Keep the accepted close before its lease claim until after stdin ends.
 const uploads = require(${JSON.stringify(path.join(repo, 'src/tools/rbook/dashboard-upload.ts'))});
 const claim = uploads.withUploadLease;
@@ -234,6 +251,9 @@ require(${JSON.stringify(path.join(repo, 'src/index.ts'))}).runServer(['--projec
         RBOOK_DASHBOARD_URL: `http://127.0.0.1:${port}`,
         RBOOK_DASHBOARD_API_KEY: 'shutdown-fixture-key',
         RBOOK_SHARED_SYNC: 'off',
+        TMPDIR: tmp,
+        TMP: tmp,
+        TEMP: tmp,
       },
       [],
       30_000
@@ -286,6 +306,15 @@ require(${JSON.stringify(path.join(repo, 'src/index.ts'))}).runServer(['--projec
       uploadDelay = 0;
     },
     posts: () => posts,
+    uploadDirectories: () =>
+      fs.existsSync(locations)
+        ? fs
+            .readFileSync(locations, 'utf8')
+            .trim()
+            .split('\n')
+            .filter(Boolean)
+            .map((line) => JSON.parse(line) as string)
+        : [],
     state: () => {
       const registry = new Database(path.join(directory, 'config', 'project-graph.sqlite'), {
         readonly: true,
@@ -300,6 +329,21 @@ require(${JSON.stringify(path.join(repo, 'src/index.ts'))}).runServer(['--projec
     },
   };
 }
+
+it('keeps every close-upload allocation out of shared /tmp and inside the fixture it cleans', async () => {
+  const fixture = await closeFixture(0);
+  await fixture.complete();
+  await fixture.uploaded;
+  expect(await child!.close()).toBe(0);
+  const locations = fixture.uploadDirectories();
+  expect(locations.length).toBeGreaterThan(0);
+  for (const location of locations) {
+    expect(path.dirname(location)).toBe(path.join(directory, 'close-tmp'));
+    expect(path.dirname(location)).not.toBe('/tmp');
+    expect(path.dirname(location)).not.toBe('/private/tmp');
+    expect(fs.existsSync(location)).toBe(false);
+  }
+}, 45_000);
 
 it.each([false, true])(
   'R1 drains the close upload after stdin ends, including a closed stderr pipe (%s)',

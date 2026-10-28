@@ -85,7 +85,10 @@ describe("the owner's other copies (s100-m01, settled item 9)", () => {
     await onCopy(fixture.tmp, owner, (client) =>
       rememberPeer(client, second.replicaId, {
         name: 'Owner',
-        route: { host: 'workstation.local', root: '/Users/example/work/project' },
+        route: {
+          host: 'workstation.local',
+          root: ['', 'Users', 'example', 'work', 'project'].join('/'),
+        },
       })
     );
     const said = await dryRun(owner);

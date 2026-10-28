@@ -57,22 +57,6 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"; cd "$REPO_ROOT"
 PKG_VERSION="$(node -p "require('./package.json').version")"
 [[ "$SEMVER" == "$PKG_VERSION" ]] || { echo "ERROR: tag $VERSION != package.json version $PKG_VERSION"; exit 1; }
 
-if [[ "${DOCS_ONLY:-0}" == "1" ]]; then
-  git rev-parse --verify --quiet "$VERSION^{commit}" >/dev/null || { echo "ERROR: DOCS_ONLY needs the released tag $VERSION in this repository"; exit 1; }
-  while IFS= read -r changed; do
-    excluded=0
-    for p in "${PRIVATE_PATHS[@]}" "${DOCS_EXCLUDES[@]}"; do
-      [[ "$changed" == "$p" || "$changed" == "$p/"* ]] && { excluded=1; break; }
-    done
-    # Nothing an install runs: docs, top-level and plugin READMEs, tests, and repository scripts.
-    [[ "$excluded" == "1" || "$changed" == docs/* || "$changed" == tests/* || "$changed" == scripts/* ]] && continue
-    [[ "$changed" != */* && "$changed" == *.md ]] && continue
-    [[ "$changed" == plugins/*/README.md && "$changed" != plugins/*/*/* ]] && continue
-    echo "ERROR: DOCS_ONLY: $changed changed since $VERSION and installs run it; release it instead"
-    exit 1
-  done < <(git diff --name-only "$VERSION" HEAD)
-fi
-
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/rbook-mirror.XXXXXXXX")"
 RETAINED_ROOT=""
 RETAINED_READY=0
@@ -83,6 +67,25 @@ cleanup() {
   fi
 }
 trap cleanup EXIT
+
+if [[ "${DOCS_ONLY:-0}" == "1" ]]; then
+  git rev-parse --verify --quiet "$VERSION^{commit}" >/dev/null || { echo "ERROR: DOCS_ONLY needs the released tag $VERSION in this repository"; exit 1; }
+  # A failed census is not an empty diff: run it outside process substitution.
+  git diff --no-renames --name-only -z "$VERSION^{commit}" HEAD -- > "$WORK/docs-only-changes"
+  while IFS= read -r -d '' changed; do
+    excluded=0
+    for p in "${PRIVATE_PATHS[@]}" "${DOCS_EXCLUDES[@]}"; do
+      [[ "$changed" == "$p" || "$changed" == "$p/"* ]] && { excluded=1; break; }
+    done
+    # Nothing an install runs: docs, top-level and plugin READMEs, tests, and repository scripts.
+    [[ "$excluded" == "1" || "$changed" == docs/* || "$changed" == tests/* || "$changed" == scripts/* ]] && continue
+    [[ "$changed" != */* && "$changed" == *.md ]] && continue
+    [[ "$changed" == plugins/*/README.md && "$changed" != plugins/*/*/* ]] && continue
+    echo "ERROR: DOCS_ONLY: $changed changed since $VERSION and installs run it; release it instead"
+    exit 1
+  done < "$WORK/docs-only-changes"
+fi
+
 PUB="$WORK/public"
 STAGE="$WORK/stage"
 
@@ -185,6 +188,48 @@ if (differences.length) {
   process.exit(1);
 }
 console.log(`✓ exact committed-tree comparison passed: ${expected.size} public entries`);
+
+// Inspect staged blobs, never symlink targets or an uncommitted filesystem copy.
+// This catches JSON file/text quotations and literal UTF-8 home paths, not private
+// prose without provenance, other keys, assembled/encoded strings or old public history.
+function quotesPrivateSource(value) {
+  if (!value || typeof value !== 'object') return false;
+  if (typeof value.file === 'string' && /^(?:rbook|cmos|analysis)\//.test(value.file) &&
+    typeof value.text === 'string') return true;
+  return Object.values(value).some(quotesPrivateSource);
+}
+function hasHomePath(text) {
+  const patterns = [
+    /\/(?:Users|home)\/([^\s/"'`\\<>]+)/g,
+    /[A-Za-z]:\\+(?:Users|Documents and Settings)\\+([^\s\\/"'`<>]+)/gi,
+  ];
+  // Explicit ellipsis examples describe a path shape without naming a home.
+  return patterns.some((pattern) => [...text.matchAll(pattern)]
+    .some((match) => !/^(?:\.\.\.|…)[.,;:)\]}!?]*$/.test(match[1])));
+}
+const leaks = [];
+for (const entry of actual.values()) {
+  const [, type, oid] = entry.identity.split(' ');
+  if (type !== 'blob') continue;
+  const bytes = execFileSync('git', ['cat-file', 'blob', oid], {
+    cwd: destination, maxBuffer: 128 * 1024 * 1024,
+  });
+  const text = bytes.toString('utf8');
+  if (bytes.includes(0) || !Buffer.from(text).equals(bytes)) continue;
+  const label = JSON.stringify(entry.name.toString('utf8'));
+  if (hasHomePath(text)) leaks.push(`${label}: absolute home path`);
+  if (entry.name.toString('utf8').endsWith('.json')) {
+    let value;
+    try { value = JSON.parse(text); } catch { continue; }
+    if (quotesPrivateSource(value)) leaks.push(`${label}: quoted private source`);
+  }
+}
+if (leaks.length) {
+  console.error('ABORT: private content in staged public blobs:');
+  for (const leak of leaks) console.error(`  ${leak}`);
+  process.exit(1);
+}
+console.log('✓ staged content guard passed: no JSON private-source quotations or literal home paths');
 NODE
 
 if git diff --cached --quiet; then

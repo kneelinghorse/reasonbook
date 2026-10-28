@@ -7,11 +7,21 @@ import * as path from 'path';
 import { parse as parseYaml } from 'yaml';
 import { ProtocolError, ProtocolErrorCode } from '@modelcontextprotocol/server';
 import type { Server } from '@modelcontextprotocol/server';
+import { isDirectoryEdition } from './edition';
 
 const COMMANDS = ['start', 'close-out', 'plan', 'build'] as const;
+const DIRECTORY_COMMANDS = [
+  'setup',
+  'catch-up',
+  'propose-decision',
+  'capture-notes',
+  'recall',
+  'next-up',
+] as const;
 const SKILL_ROOT = path.resolve(__dirname, '../plugins/reasonbook/skills');
+const DIRECTORY_SKILL_ROOT = path.resolve(__dirname, '../plugins/reasonbook-chat/skills');
 
-function readSkill(command: (typeof COMMANDS)[number], skillRoot: string) {
+function readSkill(command: string, skillRoot: string) {
   try {
     const source = fs.readFileSync(path.join(skillRoot, command, 'SKILL.md'), 'utf8');
     const frontmatter = /^---\r?\n([\s\S]+?)\r?\n---\r?\n/.exec(source);
@@ -40,20 +50,23 @@ function readSkill(command: (typeof COMMANDS)[number], skillRoot: string) {
   }
 }
 
-export function registerRbookPromptHandlers(server: Server, skillRoot = SKILL_ROOT): void {
+export function registerRbookPromptHandlers(server: Server, skillRoot?: string): void {
+  const directory = isDirectoryEdition();
+  const commands: readonly string[] = directory ? DIRECTORY_COMMANDS : COMMANDS;
+  const root = skillRoot ?? (directory ? DIRECTORY_SKILL_ROOT : SKILL_ROOT);
   server.setRequestHandler('prompts/list', async () => ({
-    prompts: COMMANDS.map((command) => {
-      const { name, description } = readSkill(command, skillRoot);
+    prompts: commands.map((command) => {
+      const { name, description } = readSkill(command, root);
       return { name, description };
     }),
   }));
 
   server.setRequestHandler('prompts/get', async (request) => {
-    const command = COMMANDS.find((candidate) => `rbook-${candidate}` === request.params.name);
+    const command = commands.find((candidate) => `rbook-${candidate}` === request.params.name);
     if (!command) {
       throw new ProtocolError(
         ProtocolErrorCode.InvalidParams,
-        `Unknown prompt '${request.params.name}'. Use ${COMMANDS.map((name) => `rbook-${name}`).join(', ')}.`
+        `Unknown prompt '${request.params.name}'. Use ${commands.map((name) => `rbook-${name}`).join(', ')}.`
       );
     }
     if (Object.keys(request.params.arguments ?? {}).length > 0) {
@@ -62,7 +75,7 @@ export function registerRbookPromptHandlers(server: Server, skillRoot = SKILL_RO
         `${request.params.name} does not accept arguments. Invoke it without arguments and describe the scope in the conversation.`
       );
     }
-    const { description, body } = readSkill(command, skillRoot);
+    const { description, body } = readSkill(command, root);
     return {
       description,
       messages: [{ role: 'user', content: { type: 'text', text: body } }],

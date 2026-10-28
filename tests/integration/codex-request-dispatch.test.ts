@@ -338,3 +338,23 @@ it('binds hook-stored operator approval once, without a global owner override', 
     ])
   );
 });
+
+it('names a live-conversation remedy after exec ends the approval window, and binds after reproposing there', async () => {
+  await offer('codex-one');
+  await hook('session-end', 'codex-one');
+  await hook('session-start', 'codex-one', { source: 'resume' });
+  await hook('prompt', 'codex-one', { prompt: 'yes' });
+  const args = { action: 'record', content: DRAFT, fromDraft: 'P1' };
+  const refused = await invoke('rbook_decisions', args, meta());
+  expect(refused.structuredContent.error?.code).toBe('APPROVAL_REQUIRED');
+  expect(refused.structuredContent.error?.suggestion).toContain('one Codex conversation running');
+  expect(refused.structuredContent.error?.suggestion).toContain('codex exec resume');
+  expect(rows('SELECT id FROM strategic_decisions')).toEqual([]);
+  // Re-propose and answer without another SessionEnd/SessionStart between them.
+  await hook('stop', 'codex-one', { last_assistant_message: `Would record: ${DRAFT}` });
+  await hook('prompt', 'codex-one', { prompt: 'yes' });
+  expect((await invoke('rbook_decisions', args, meta())).structuredContent.success).toBe(true);
+  expect(rows('SELECT approval_mode, approval_words FROM strategic_decisions')).toEqual([
+    { approval_mode: 'approved', approval_words: 'yes' },
+  ]);
+});

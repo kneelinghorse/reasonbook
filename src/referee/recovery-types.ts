@@ -86,5 +86,13 @@ export interface RecoveryPlan {
     }
   >;
   readonly tailMembership: readonly LoggedChange[];
+  /** Census changes to record, or lost readmissions that recovery deliberately keeps removed. */
+  readonly memberReconciliation: ReadonlyArray<{
+    readonly memberId: string;
+    readonly name: string;
+    readonly fromRole: string | null;
+    readonly role: string;
+    readonly action: 'write' | 'keep_removed';
+  }>;
   readonly ready: boolean;
 }

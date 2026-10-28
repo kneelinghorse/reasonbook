@@ -122,7 +122,7 @@ export interface RbookNextStepsParams {
   nextStepAction: NextStepAction;
   /** Filter by status (for list; default: the open rows, pending and carried — s91-m06) */
   nextStepStatus?: NextStepStatus;
-  /** s85-m04: filter list to next-steps stamped with this mission (#487 read surface) */
+  /** Filter list and carry to next-steps stamped with this mission. */
   missionId?: string;
   /** Next-step IDs for full show, historical list lookup or complete/carry/drop/reopen. Explicit list IDs bypass implicit open-status filtering. */
   nextStepIds?: number[];
@@ -174,7 +174,12 @@ export async function rbookNextSteps(
         case 'complete':
           return transitionNextSteps(client, params.nextStepIds ?? [], 'completed');
         case 'carry':
-          return carryNextSteps(client, params.nextStepIds, params.carryToSprint ?? null);
+          return carryNextSteps(
+            client,
+            params.nextStepIds,
+            params.carryToSprint ?? null,
+            params.missionId
+          );
         case 'drop':
           return transitionNextSteps(client, params.nextStepIds ?? [], 'dropped');
         case 'reopen':
@@ -266,7 +271,8 @@ function reopenNextSteps(
 function carryNextSteps(
   client: RbookDatabaseClient,
   ids: number[] | undefined,
-  targetSprint: string | null
+  targetSprint: string | null,
+  missionId?: string
 ): RbookToolResult<NextStepsResult> {
   if (targetSprint !== null) {
     const sprint = client.getOne<{ id: string }>('SELECT id FROM sprints WHERE id = ?', [
@@ -295,18 +301,21 @@ function carryNextSteps(
     }
   }
 
-  // If no IDs provided, carry ALL pending next-steps
+  // The same mission predicate constrains broad carry, explicit IDs and conflict disclosure.
   const now = new Date().toISOString();
   const writeSink = { failures: [] as WriteFailure[] };
+  const missionFilter = missionId === undefined ? '' : ' AND mission_id = ?';
+  const missionParams = missionId === undefined ? [] : [missionId];
+  const eligible = TRANSITIONABLE_STATUS + missionFilter;
 
   if (!ids || ids.length === 0) {
     // Carry all pending; on a shared record, skip a row whose status is in conflict (s96-m12).
     const conflicted = ['status', 'resolved_at', 'carried_to_sprint'];
-    const skipped = skippedConflicts(client, 'next_steps', conflicted, TRANSITIONABLE_STATUS, []);
+    const skipped = skippedConflicts(client, 'next_steps', conflicted, eligible, missionParams);
     const result = recordedExecute(
       client,
-      `UPDATE next_steps SET status = 'carried', resolved_at = ?, carried_to_sprint = ? WHERE ${TRANSITIONABLE_STATUS}${skipConflicted(client, 'next_steps', conflicted)}`,
-      [now, targetSprint]
+      `UPDATE next_steps SET status = 'carried', resolved_at = ?, carried_to_sprint = ? WHERE ${eligible}${skipConflicted(client, 'next_steps', conflicted)}`,
+      [now, targetSprint, ...missionParams]
     );
     const affected = countWrite(result, writeSink, 'next_steps.carry (all pending)');
     const carried = createSuccess<NextStepsResult>({
@@ -325,8 +334,8 @@ function carryNextSteps(
   for (const id of ids) {
     const result = recordedExecute(
       client,
-      `UPDATE next_steps SET status = 'carried', resolved_at = ?, carried_to_sprint = ? WHERE id = ? AND ${TRANSITIONABLE_STATUS}`,
-      [now, targetSprint, id]
+      `UPDATE next_steps SET status = 'carried', resolved_at = ?, carried_to_sprint = ? WHERE id = ? AND ${eligible}`,
+      [now, targetSprint, id, ...missionParams]
     );
     // Caller-supplied id: a zero from a WHERE that matched no transitionable row is ordinary and
     // is not a write failure. s87-m06 names it instead of discarding it.
@@ -370,7 +379,9 @@ export function formatNextStepsForLLM(result: RbookToolResult<NextStepsResult>):
     const reason =
       result.data?.nextStepAction === 'reopen'
         ? 'not completed/dropped/carried, or no such id'
-        : 'already resolved, or no such id';
+        : result.data?.nextStepAction === 'carry'
+          ? 'already resolved, outside the requested mission, or no such id'
+          : 'already resolved, or no such id';
     lines.push('');
     lines.push(`Not matched (${reason}): ${unmatched.map((id) => `#${id}`).join(', ')}`);
   }

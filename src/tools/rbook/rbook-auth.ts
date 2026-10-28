@@ -52,6 +52,7 @@
  * @module tools/rbook/rbook-auth
  */
 
+import { directoryCallError } from '../../edition';
 import { z } from 'zod';
 import type { ActionParamMap, RbookToolError, RbookToolResult } from './types';
 import { createError, createSuccess, RbookErrors } from './errors';
@@ -519,6 +520,8 @@ export async function rbookAuth(
   params: RbookAuthParams,
   deps: RbookAuthDependencies = {}
 ): Promise<RbookToolResult<RbookAuthResult>> {
+  const editionError = directoryCallError('rbook_auth', params);
+  if (editionError) return createError(editionError);
   const actionValue =
     typeof (params as { action?: unknown }).action === 'string' ? params.action : '';
   if (!isAction(actionValue)) {

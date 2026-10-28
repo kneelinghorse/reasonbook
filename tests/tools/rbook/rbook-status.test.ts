@@ -256,6 +256,18 @@ describe('rbookStatus', () => {
 
   // ─── formatStatusForLLM ─────────────────────────────────────────────────
 
+  it('keeps local integrity warnings visible in directory status without dashboard guidance', () => {
+    const warning = 'The local record needs an integrity check.';
+    const formatted = formatStatusForLLM({
+      success: true,
+      data: { edition: 'directory', rbook_address: 'local-only', local_health: 'ok' },
+      warnings: [warning],
+    });
+    expect(formatted).toContain('Reasonbook directory edition');
+    expect(formatted.split(warning)).toHaveLength(2);
+    expect(formatted).not.toMatch(/dashboard|rbook_auth|https:/);
+  });
+
   // s97-m14 (critics, round 2): the removal is this copy's, so the line says what this copy sends.
   it("formatStatusForLLM names a member's removal on its shared-sync line", () => {
     const formatted = formatStatusForLLM({

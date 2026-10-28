@@ -2,6 +2,7 @@
 // ABOUTME: rbook_decisions(action="record") — write a decision with no session required, and supersede
 // ABOUTME: the rows it corrects in the same transaction so the pointer exists when the correction does.
 
+import { isDirectoryEdition, directoryCallError } from '../../edition';
 import * as path from 'path';
 import { formatCliRemedy } from '../../utils/cli-remedy';
 import {
@@ -139,6 +140,8 @@ export async function rbookDecisionsRecord(
 export async function rbookDecisionsRecord(
   params: RbookDecisionsRecordParams
 ): Promise<RbookToolResult<RbookDecisionsRecordResult | RbookDraftRecordResult>> {
+  const editionError = directoryCallError('rbook_decisions', params);
+  if (editionError) return createError(editionError);
   const prepared = prepareDecisionFields(params);
   if (!prepared.success || !prepared.data) return createError(prepared.error!);
   const fields = prepared.data.fields;
@@ -264,8 +267,10 @@ export async function rbookDecisionsRecord(
       let correctionError: RbookToolError | undefined;
       let superseded: SupersededEcho[] = [];
       const committed = recordedTransaction(client, () => {
-        settlePendingDeclines(client, process.env);
-        if (!draft) direct = directRecordAnswers(client, content, process.env, Date.now());
+        if (!isDirectoryEdition()) {
+          settlePendingDeclines(client, process.env);
+          if (!draft) direct = directRecordAnswers(client, content, process.env, Date.now());
+        }
         if (draft) {
           const current = clientRunner(client).get<{ outcome: string }>(
             'SELECT outcome FROM proposals WHERE id = ?',

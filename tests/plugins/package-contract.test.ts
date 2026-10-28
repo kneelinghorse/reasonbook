@@ -39,9 +39,10 @@ describe('the shipped Claude Code plugin', () => {
     const marketplace = json('.claude-plugin/marketplace.json');
     expect(marketplace.name).toBe('reasonbook');
     // The migration guide uninstalls the old plugin before refresh and provides a tested
-    // recovery path, so the marketplace exposes only the canonical installation.
+    // recovery path; both canonical editions share the package without a legacy alias.
     expect(marketplace.plugins.map((entry: any) => [entry.name, entry.source])).toEqual([
       ['reasonbook', './plugins/reasonbook'],
+      ['reasonbook-chat', './plugins/reasonbook-chat'],
     ]);
     expect(containedPath(ROOT, marketplace.plugins[0].source)).toBe(true);
     const manifest = json(`${PLUGIN}/.claude-plugin/plugin.json`);
