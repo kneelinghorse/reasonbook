@@ -52,7 +52,8 @@ const CHARS_PER_TOKEN = 4;
 // s102-m06 adds the next-step show enum: +7 characters, leaving 456.
 // s102-m08 describes the digest target honestly: -2 characters, leaving 458.
 // s104-m03 measures 23,536 before (6 below the old cap), adds 263, leaving 201.
-const RESERVE = 201;
+// Glama wording follow-up: +17 for sprint/message routing; preserves summary's parameter hint.
+const RESERVE = 184;
 
 function withoutDescriptions(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(withoutDescriptions);
@@ -86,7 +87,7 @@ describe('s92-m08 — tools/list', () => {
     expect(context.parameters.targetSizePercent).toMatch(/% of size limit/);
     expect(context.parameters.mode).toMatch(/manual if contextType\/edits supplied/);
     expect(context.parameters.statusFilter).toMatch(/decisions\/learnings only/);
-    expect(context.parameters.nextStepStatus).toMatch(/defaults to open unless IDs supplied/);
+    expect(context.parameters.nextStepStatus).toMatch(/open unless IDs supplied/);
     expect(context.parameters.nextStepStatus).toMatch(/show ignores filters/);
   });
 
@@ -133,13 +134,30 @@ describe('s92-m08 — tools/list', () => {
   it('keeps the project address remedy in every shortened projectRoot hint', () => {
     for (const tool of wire()) {
       expect(tool.inputSchema.properties?.projectRoot.description).toBe(
-        'Folder or rbook:// address; inferred'
+        'Folder/rbook:// address; inferred'
       );
     }
   });
 
   it.each([
-    ['rbook_sprint', 'Sprints: plan, change, close and review them.'],
+    [
+      'rbook_sprint',
+      [
+        'Except list/analytics, supply sprintId',
+        'add needs title; update needs fields; complete needs summary',
+        'retro reports outcomes; analytics compares sprints',
+        'carry_forward sends to targetAddress',
+      ],
+    ],
+    [
+      'rbook_message',
+      [
+        'send targetAddress/type/summary',
+        'get/ack messageId; respond messageId/respondStatus',
+        'ack marks read',
+        'One response/message; follow up by sending a new message',
+      ],
+    ],
     [
       'rbook_mission_transition',
       'Change mission state. Complete with notes; record decisions separately with rbook_decisions(action="record", missionId).',
@@ -148,8 +166,11 @@ describe('s92-m08 — tools/list', () => {
       'rbook_db',
       'Database admin. snapshot creates unless listOnly=true; retention deletes oldest files. restore backs up then replaces the local store; shared stores refuse. purge deletes only the dashboard mirror. prune_snapshots previews unless confirmed; empties content, keeps rows, references and milestones. conflicts lists divergent shared fields; settle keeps one value. pull/clone retired: use reasonbook sync. backfill uploads owner stores; force is ignored; dryRun=true refuses retired replay.',
     ],
-  ])('%s keeps its guidance without repeating the action enum', (name, description) => {
-    expect(wire().find((tool) => tool.name === name)?.description).toBe(description);
+  ])('%s exposes the requirements and effects needed to choose an action', (name, guidance) => {
+    const description = wire().find((tool) => tool.name === name)?.description;
+    for (const clause of Array.isArray(guidance) ? guidance : [guidance]) {
+      expect(description).toContain(clause);
+    }
   });
 
   it.each(['rbook_review', 'rbook_agent_onboard', 'rbook_message'])(

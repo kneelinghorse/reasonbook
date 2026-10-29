@@ -8,6 +8,7 @@ import * as path from 'path';
 import { rbookConfigDir } from './harness-session';
 import { appendTelemetry, targetForStore, type TelemetryTarget } from './local-telemetry';
 import { currentSessionOwner } from './session-owner';
+import { processBusyTimeout } from './sqlite-busy';
 import { returnedIds, usedIds } from './telemetry-extract';
 
 const scope = new AsyncLocalStorage<{ projectRoot?: string; presentedIds?: readonly string[] }>();
@@ -66,8 +67,10 @@ export async function withMcpTelemetry<T extends McpResult>(
           (params.acrossProjects !== true && typeof params.projectRoot === 'string'
             ? params.projectRoot
             : undefined);
+        // s105-m03: as tolerant of a held store as the call it observes, which waits the store
+        // client's own default budget (client.ts); a 100 ms lookup filed its row as unattributed.
         const target: TelemetryTarget = (root
-          ? targetForStore(resolveRecordPaths(root).dbPath)
+          ? targetForStore(resolveRecordPaths(root).dbPath, processBusyTimeout() ?? 5000)
           : null) ?? {
           projectId: 'unattributed',
           dbPath: path.join(rbookConfigDir(env), 'unattributed.sqlite'),
@@ -79,10 +82,19 @@ export async function withMcpTelemetry<T extends McpResult>(
             : undefined;
         const ok = !failed && result?.isError !== true && structured?.success !== false;
         const error = structured?.error as { code?: string } | undefined;
+        // A Codex owner lookup reads the draft runtime with its own short budget. If that throws
+        // (the runtime held), the row loses its session, not its place: before s105-m03 the whole
+        // append was skipped and the row was lost from every bucket.
+        let session: string | null = null;
+        try {
+          session = currentSessionOwner(target.dbPath).key;
+        } catch {
+          // The row is still recorded; only who made the call is unknown.
+        }
         appendTelemetry(
           {
             ts,
-            session: currentSessionOwner(target.dbPath).key,
+            session,
             surface: 'mcp',
             client: observation.client,
             tool: observation.name,

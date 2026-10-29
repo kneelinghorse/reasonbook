@@ -5,9 +5,16 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { pathToFileURL } from 'url';
+import Database from 'better-sqlite3';
 import { seedRbookDb } from '../../helpers/seedRbookDb';
+import { holdStore } from '../../helpers/store-lock-holder';
 import { withMcpTelemetry, noteTelemetryProject } from '../../../src/tools/rbook/telemetry-call';
 import { readTelemetry, targetForStore } from '../../../src/tools/rbook/local-telemetry';
+import { setProcessBusyTimeout } from '../../../src/tools/rbook/sqlite-busy';
+import { openDraftRuntime, recordSessionStart } from '../../../src/tools/rbook/draft-runtime';
+import { harnessSessionHash } from '../../../src/tools/rbook/harness-session';
+import { withCodexRequest } from '../../../src/codex-request-context';
 
 let dir: string;
 let project: string;
@@ -19,7 +26,37 @@ beforeEach(() => {
   dbPath = seedRbookDb(project);
   env = { ...process.env, RBOOK_CONFIG_DIR: path.join(dir, 'config') };
 });
-afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
+afterEach(() => {
+  setProcessBusyTimeout(null);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+const unattributed = () =>
+  readTelemetry(
+    { projectId: 'unattributed', dbPath: path.join(env.RBOOK_CONFIG_DIR!, 'unattributed.sqlite') },
+    env
+  );
+/**
+ * Another process holds the store exclusively from before the call's observation until `afterMs`
+ * after the call's last step, which is immediately before the observation's identity lookup.
+ */
+async function callWhileHeld(afterMs: number, client = 'held/1') {
+  const marker = path.join(dir, 'lookup-marker');
+  const hold = holdStore(dbPath, { marker, afterMarkerMs: afterMs });
+  try {
+    await hold.held;
+    const result = { structuredContent: { success: true } };
+    const value = await withMcpTelemetry(
+      { name: 'rbook_review', args: { projectRoot: project }, mode: 'read', client, env },
+      async () => {
+        fs.writeFileSync(marker, '');
+        return result;
+      }
+    );
+    expect(value).toBe(result);
+  } finally {
+    await hold.stop();
+  }
+}
 
 it.each([null, 'scalar', 42, ['array']])(
   'preserves SDK v2 structured content %p without assuming an object',
@@ -163,3 +200,133 @@ it.each([
     expect(fs.readFileSync(dbPath)).toEqual(before);
   }
 );
+
+// s105-m03. An observation must be as tolerant of a held store as the call it observes: the call's
+// own client waits processBusyTimeout() ?? 5000 ms for a held store, but the identity lookup in the
+// telemetry finally gave up after 100 ms, so a call that succeeded had its row filed as unattributed.
+// This reproduces, end to end, the symptom of the 4.7.1 gate's missing row; that it caused that
+// failure is not established.
+it("waits out a store held for 1 s after the call, and keeps the call's row in its project", async () => {
+  await callWhileHeld(1000);
+  expect(readTelemetry(targetForStore(dbPath)!, env)).toEqual([
+    expect.objectContaining({ client: 'held/1', ok: true }),
+  ]);
+  expect(unattributed()).toEqual([]);
+});
+
+it.each([
+  ['above the hold, so the row stays in its project', 4000, 1000, 'project'],
+  [
+    'below a hold that outlasts the lookup, so the row is unattributed',
+    250,
+    30_000,
+    'unattributed',
+  ],
+] as const)(
+  'takes its budget from the process busy timeout when one is set: %s',
+  async (_case, budgetMs, holdMs, bucket) => {
+    // Where a process budget is set the observation keeps to it; in the server none is set, so it
+    // is 5,000 ms. Past the budget the row is best-effort, filed as unattributed, and the call's
+    // result is unchanged. Only the first case fails a fixed 100 ms lookup; neither tells a set
+    // budget from the 5,000 ms default, which the instruments' anchor and `budgetMs: 300` pin.
+    setProcessBusyTimeout(budgetMs);
+    await callWhileHeld(holdMs);
+    setProcessBusyTimeout(null);
+    expect(readTelemetry(targetForStore(dbPath)!, env)).toHaveLength(bucket === 'project' ? 1 : 0);
+    expect(unattributed()).toHaveLength(bucket === 'unattributed' ? 1 : 0);
+  }
+);
+
+it("keeps a Codex call's row with a null session when its draft runtime is held", async () => {
+  // The Codex owner lookup keeps its own 100 ms budget; its failure now costs the row only its
+  // session, where before the whole append was skipped and the row was lost from every bucket.
+  const saved = process.env.RBOOK_CONFIG_DIR;
+  process.env.RBOOK_CONFIG_DIR = env.RBOOK_CONFIG_DIR;
+  const runtime = openDraftRuntime(dbPath, process.env)!;
+  recordSessionStart(runtime, harnessSessionHash('codex-session'), Date.now());
+  const file = runtime.path;
+  runtime.close();
+  const holder = new Database(file);
+  holder.exec('BEGIN EXCLUSIVE');
+  const result = { structuredContent: { success: true } };
+  try {
+    const meta = {
+      'x-codex-turn-metadata': {},
+      sessionId: 'codex-session',
+      'codex/sandbox-state-meta': { sandboxCwd: pathToFileURL(project).href },
+    };
+    const value = await withCodexRequest(meta, () =>
+      withMcpTelemetry(
+        {
+          name: 'rbook_review',
+          args: { projectRoot: project },
+          mode: 'read',
+          client: 'codex/1',
+          env,
+        },
+        async () => result
+      )
+    );
+    expect(value).toBe(result);
+  } finally {
+    holder.exec('ROLLBACK');
+    holder.close();
+    if (saved === undefined) delete process.env.RBOOK_CONFIG_DIR;
+    else process.env.RBOOK_CONFIG_DIR = saved;
+  }
+  expect(readTelemetry(targetForStore(dbPath)!, env)).toEqual([
+    expect.objectContaining({ client: 'codex/1', ok: true, session: null }),
+  ]);
+});
+
+// s105-m03, the six-path checklist on the real module: the call's budget only lengthens a wait for a
+// held store. A store that names no project, or one the lookup cannot read as a Reasonbook store,
+// is filed exactly as before, and the read-only lookup changes none of them.
+it('files a call against a store whose metadata names no project under unknown-project', async () => {
+  // The real schema forbids a NULL metadata value, so a store that names no project has no row.
+  const db = new Database(dbPath);
+  db.prepare(
+    "DELETE FROM metadata WHERE key IN ('project_id', 'dashboard_slug', 'project_name')"
+  ).run();
+  db.close();
+  const before = fs.readFileSync(dbPath);
+  const result = { structuredContent: { success: true } };
+  expect(
+    await withMcpTelemetry(
+      { name: 'rbook_review', args: { projectRoot: project }, mode: 'read', client: 'null/1', env },
+      async () => result
+    )
+  ).toBe(result);
+  expect(readTelemetry({ projectId: 'unknown-project', dbPath }, env)).toEqual([
+    expect.objectContaining({ client: 'null/1' }),
+  ]);
+  expect(fs.readFileSync(dbPath)).toEqual(before);
+});
+
+it.each([
+  ['an un-migrated store with no metadata table', 'CREATE TABLE legacy (value TEXT)'],
+  ['a file that is not a database', null],
+])('files a call against %s as unattributed, opening it read-only', async (_case, schema) => {
+  fs.rmSync(dbPath);
+  if (schema) {
+    const db = new Database(dbPath);
+    db.exec(schema);
+    db.close();
+  } else fs.writeFileSync(dbPath, 'not a database');
+  const before = fs.readFileSync(dbPath);
+  const result = { structuredContent: { success: true } };
+  expect(
+    await withMcpTelemetry(
+      {
+        name: 'rbook_review',
+        args: { projectRoot: project },
+        mode: 'read',
+        client: 'foreign/1',
+        env,
+      },
+      async () => result
+    )
+  ).toBe(result);
+  expect(unattributed()).toEqual([expect.objectContaining({ client: 'foreign/1' })]);
+  expect(fs.readFileSync(dbPath)).toEqual(before);
+});

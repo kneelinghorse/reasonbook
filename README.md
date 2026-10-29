@@ -37,7 +37,7 @@ Requires Node.js 20 or newer.
 1. Install the pinned CLI:
 
    ```sh
-   npm install -g @aquex/reasonbook@4.7.0
+   npm install -g @aquex/reasonbook@4.7.1
    ```
 
    Ensure the global npm bin directory is on your PATH. If the former package is installed globally, run `npm uninstall -g @aquex/cmos-mcp` first. Version 4 provides only the `reasonbook` command; update scripts and MCP configurations that use the old command.
@@ -64,8 +64,8 @@ of Git. Init preserves an existing ignore file. Shared records require the store
 untracked; exchange those records through Reasonbook's sharing commands.
 
 A plugin installation does not put `reasonbook` on your terminal PATH. Plugin-only users can
-replace `reasonbook` in these commands with `npx --prefer-offline -y @aquex/reasonbook@4.7.0`,
-for example `npx --prefer-offline -y @aquex/reasonbook@4.7.0 review --format=context`.
+replace `reasonbook` in these commands with `npx --prefer-offline -y @aquex/reasonbook@4.7.1`,
+for example `npx --prefer-offline -y @aquex/reasonbook@4.7.1 review --format=context`.
 
 ## Codex plugins
 
@@ -214,7 +214,7 @@ Recommended: a global install of this release. The server then starts from disk,
 lookup on launch:
 
 ```bash
-npm install -g @aquex/reasonbook@4.7.0
+npm install -g @aquex/reasonbook@4.7.1
 ```
 
 If the former package is installed globally, run `npm uninstall -g @aquex/cmos-mcp` first. Version 4 provides only the `reasonbook` command; update scripts and MCP configurations that use the old command.
@@ -223,7 +223,7 @@ Or run it on demand with `npx`. Pin the version and prefer the local cache: an u
 can look the package up again on every launch.
 
 ```bash
-npx --prefer-offline -y @aquex/reasonbook@4.7.0
+npx --prefer-offline -y @aquex/reasonbook@4.7.1
 ```
 
 Semantic (vector) search is optional. Without it, retrieval is keyword-only, and the install is
@@ -242,7 +242,7 @@ arguments (keep `--project-root` where an example has it).
 ### Claude Code
 
 ```bash
-claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.7.0"]}'
+claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.7.1"]}'
 ```
 
 ### Claude Desktop
@@ -257,7 +257,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
       "args": [
         "--prefer-offline",
         "-y",
-        "@aquex/reasonbook@4.7.0",
+        "@aquex/reasonbook@4.7.1",
         "--project-root",
         "/absolute/path/to/your/project"
       ]
@@ -281,7 +281,7 @@ Add to `~/.cursor/mcp.json`:
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.7.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.7.1"]
     }
   }
 }
@@ -294,7 +294,7 @@ Add to `~/.cursor/mcp.json`:
   "context_servers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.7.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.7.1"]
     }
   }
 }
@@ -315,7 +315,7 @@ your terminal PATH, so the terminal route needs the standalone Claude CLI.
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.7.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.7.1"]
     }
   }
 }
@@ -561,7 +561,7 @@ Every tool returns a uniform envelope:
 - Registered projects with dashboard credentials upload snapshots after writes and explicit closes while a server is running; manual `rbook_db(action="backfill")` requests a whole-file upload immediately. Shared-record exchanges use their own hooks, timer and `RBOOK_SHARED_SYNC` control.
 - SQLite is the source of truth; the dashboard holds the owner's uploaded mirror. Shared copies exchange their record with `reasonbook sync`, through reasonbook.ai, over SSH or by bundle.
 - Through reasonbook.ai, moving a project back was measured with one member and automatic syncs off: the owner's copy caught the member's copy up over SSH before that copy had synced with the dashboard since the move. With automatic syncs on, the member's copy may well sync first. Not measured: a member's copy that syncs with the dashboard first, whose sync then says to sync with the owner's copy over SSH or with a bundle, and a member's copy the owner's machine cannot reach over SSH. The dashboard's activity feed shows 50 entries a page by default and at most 100, and its decisions page 20 decisions a page; older entries are on later pages.
-- A project shared through reasonbook.ai changes through its members' agents; the dashboard's pages show the record. Hosted recovery collects surviving copies after a call discovers a lost or behind referee, and the owner reviews and confirms its plan. A same-record re-share after a move back retains member/account bindings, including removed members; members admitted only through direct sharing afterwards are refused. Every member keeps their local copy. [Privacy](docs/privacy.md#sharing-through-reasonbookai) names the deployed host's remaining census-mismatch limit and the 4.7.0 integration requirement.
+- A project shared through reasonbook.ai changes through its members' agents; the dashboard's pages show the record. Hosted recovery collects surviving copies after a call discovers a lost or behind referee, and the owner reviews and confirms its plan. A same-record re-share after a move back retains member/account bindings, including removed members; members admitted only through direct sharing afterwards are refused. Every member keeps their local copy. [Privacy](docs/privacy.md#sharing-through-reasonbookai) describes the deployed membership reconciliation and its valid-census requirement.
 - A share through reasonbook.ai names and refuses over the owner's other copies that wrote, exchanged successfully or retain an SSH route, including an observed or routed former owner copy. Dashboard-route rows, cut copies and this folder's former identities do not count. On the direct authority copy, `reasonbook set-aside --replica <id>` previews one gone copy's held cutoff and last exchange; add `--yes` to record it. The person's other copies remain members. Role changes, removal and re-admission preserve the cut; later writes stay quarantined for the person to redo, and recovery does not wait for that copy. On a hosted project, the owner uses **Set aside this copy** on the Shared record page, with **This copy is gone** confirmation for a copy that called in the last seven days. This control is unavailable during recovery or a move back. Local administration is refused while the dashboard referees.
 - A record with a set-aside requires a reported library version of 4.5.0 or later at the target of a planned handover or dashboard share. Unknown reports refuse too; a share checks before uploading. **A `reasonbook recover` run by a pre-4.5.0 binary can undo a set-aside.** Upgrade recovery copies before using them. The old `rbook_db(action="clone")` and `rbook_db(action="pull")` actions refuse with `LEGACY_SYNC_RETIRED`; their action values remain until 5.0.0.
 

@@ -239,12 +239,11 @@ accept it first. The service's operators can read every account's mirror.
 
 - If reasonbook.ai loses a project's referee copy, normal exchange stops while recovery collects
   surviving copies. Recovery requires a previously recorded valid member census, record identity
-  and head. Every member keeps their own copy. As verified on 2026-10-27, the deployed host still refuses
-  finalization when its frozen census contains an invite, removal or role change absent from the
-  recovered record. The 4.7.0 library can reconcile these changes while keeping verified removals;
-  that guarantee reaches reasonbook.ai only after its host adopts the library and is changed to
-  invalidate its census before membership-changing calls and recovery finalization, refreshing it
-  after success and retaining invalidity after an unknown outcome.
+  and head. Every member keeps their own copy. Since the 2026-10-28 deployment of the 4.7.0 library,
+  reasonbook.ai can reconcile membership changes absent from the recovered record while preserving
+  verified removals. Production verification covered an admitted member and a removal missing from
+  that record. The host invalidates its census before membership changes and recovery finalization,
+  refreshes it after success and retains invalidity after an unknown outcome.
 - After a move back, a same-record re-share carries member/account bindings, including removed members.
   Members or copies admitted only over SSH after the move back are refused; a different record
   starts fresh. The host binds by member and account ids, not by guessing from usernames.

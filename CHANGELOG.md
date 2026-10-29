@@ -2,6 +2,18 @@
 
 All notable changes to Reasonbook (published as `@aquex/cmos-mcp` before 4.0.0) are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.7.1] — 2026-10-29
+
+- Clarify required inputs and effects for sprint and messaging actions, preserving safety guidance
+  within the existing tool-text budget. Directory mode describes only its available sprint actions.
+- Update the hosted-recovery disclosure after reasonbook.ai adopted the 4.7.0 recovery support and
+  verified admission and removal changes missing from the recovered record.
+- Record each MCP call's local telemetry under its own project when another process briefly holds
+  the store. The identity lookup now waits as long as the call itself does (5 s in the server)
+  instead of 100 ms, so a hold that ends within that budget no longer files the row as unattributed.
+  While a store stays held, a call can answer several seconds later. A Codex call whose hook runtime
+  is busy keeps its row without a session. Hook and CLI timing is unchanged.
+
 ## [4.7.0] — 2026-10-28
 
 - Add the local directory edition in the same package: requested project records without hooks,

@@ -96,7 +96,7 @@ hook environment stops those automatic exchanges.
 Deleting an excerpt row can leave its text in SQLite free pages in the user-only runtime file.
 This cleanup does not guarantee physical erasure.
 
-To turn the hooks off in one project, run `npx --prefer-offline -y @aquex/reasonbook@4.7.0 ambient off` in that
+To turn the hooks off in one project, run `npx --prefer-offline -y @aquex/reasonbook@4.7.1 ambient off` in that
 project, with the version this plugin installed; `ambient on` turns them back on. To turn everything
 off, disable or uninstall the plugin.
 

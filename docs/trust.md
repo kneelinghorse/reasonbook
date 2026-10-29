@@ -124,8 +124,8 @@ Either `RBOOK_SHARED_SYNC=off` or `RBOOK_DASHBOARD_SHARING=off` stops this uploa
 explicit sync; `RBOOK_CHECKPOINT_SYNC=off` does not. The owner reviews the plan on the Shared record
 page, chooses copies not to wait for, and confirms or cancels; a cancelled attempt can be restarted.
 Recovery keeps accepted contributions, lost-store artifacts and earlier snapshots until project
-deletion. [Privacy](privacy.md#sharing-through-reasonbookai) describes retention and the deployed
-host's remaining census-mismatch limit.
+deletion. [Privacy](privacy.md#sharing-through-reasonbookai) describes retention, the deployed
+membership reconciliation and the valid-census requirement.
 
 `RBOOK_SHARED_SYNC=off` stops the exchanges Reasonbook starts itself through hooks and its five-minute
 server timer, and recovery contributions. Explicit sync and bundle commands still run.
@@ -197,7 +197,7 @@ tree and why.
 
 ## Turning parts off
 
-- **The hooks in one project:** `npx --prefer-offline -y @aquex/reasonbook@4.7.0 ambient off`, run in that project,
+- **The hooks in one project:** `npx --prefer-offline -y @aquex/reasonbook@4.7.1 ambient off`, run in that project,
   with the version the plugin installed if it differs. The hooks still start and log their use locally, but add
   nothing. The command also updates the Reasonbook line in that project's `AGENTS.md`. `ambient on` turns
   them back on.

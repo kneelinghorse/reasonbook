@@ -1,6 +1,6 @@
 {
   "name": "reasonbook-chat",
-  "version": "4.7.0",
+  "version": "4.7.1",
   "description": "Reasonbook local edition: explicitly requested project decisions, lessons and plans, without hooks or sharing.",
   "author": {
     "name": "Reasonbook"

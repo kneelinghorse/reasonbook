@@ -15,7 +15,7 @@ it('puts a short decision headline in content and its reasons in context', () =>
 
 it('names the required close summary, resolved sender and actual poll default', () => {
   expect(WIRE_TEXT.rbook_sprint.parameters.summary).toMatch(/Required to complete/);
-  expect(WIRE_TEXT.rbook_message.parameters.senderProjectId).toMatch(/resolved for you/);
+  expect(WIRE_TEXT.rbook_message.parameters.senderProjectId).toMatch(/inferred/);
   expect(WIRE_TEXT.rbook_auth.parameters.pollIntervalSeconds).toMatch(/Default 2s/);
   expect(WIRE_TEXT.rbook_review.parameters.projectRoot).toContain('inferred');
 });

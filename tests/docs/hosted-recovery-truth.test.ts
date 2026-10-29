@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// ABOUTME: Public docs must describe deployed recovery without hiding retained copies or promising a new host guarantee.
+// ABOUTME: Public docs must describe verified deployed recovery without hiding retained copies or its preconditions.
 // ABOUTME: These regressions retain the sprint-103 review's forbidden sentences and the user-facing facts replacing them.
 import fs from 'fs';
 import path from 'path';
@@ -65,11 +65,19 @@ describe('hosted recovery disclosure', () => {
     expect(contribution).toContain('RBOOK_CHECKPOINT_SYNC=off');
   });
 
-  it('does not present the new census guarantee as already deployed', () => {
+  it('describes deployed membership reconciliation while retaining its safety conditions', () => {
     const privacy = read('docs/privacy.md');
-    expect(privacy).toContain('deployed host still refuses');
+    expect(privacy).not.toContain('deployed host still refuses');
+    expect(privacy).not.toContain('only after its host adopts');
     expect(privacy).toContain('4.7.0');
-    expect(privacy).toContain('invalidate its census before');
+    expect(privacy).toContain('preserving verified removals');
+    expect(privacy).toContain('Production verification covered an admitted member and a removal');
+    expect(privacy).toContain('invalidates its census before membership changes');
+    expect(privacy).toContain('retains invalidity after an unknown outcome');
+    for (const file of ['README.md', 'docs/trust.md']) {
+      expect(read(file)).not.toContain('remaining census-mismatch limit');
+      expect(read(file)).toContain('valid-census requirement');
+    }
   });
 
   it('discloses all draft outcomes and other projects mission names entering this conversation', () => {

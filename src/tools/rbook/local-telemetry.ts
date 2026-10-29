@@ -27,7 +27,10 @@ import { storeProjectId, type StoreTarget } from './store-key';
  * learning, `c:` constraint, `n:` next step) and capped at {@link TELEMETRY_ID_CAP} per field.
  *
  * WRITES (fork 2): once per MCP tool call and once per CLI verb, best-effort: an append never fails
- * the call that makes it, and a write error is swallowed.
+ * the call that makes it, and a write error is swallowed. s105-m03: an MCP call that resolved a
+ * project records its row under that project whenever the store stays readable within the store
+ * client's default busy budget (`processBusyTimeout() ?? 5000`); beyond that, telemetry remains
+ * best-effort and never changes the call's result.
  *
  * RETENTION (fork 5): the {@link TELEMETRY_MONTHS_KEPT} newest monthly files per project; an older
  * one is deleted on every append, including backdated writes.
@@ -40,7 +43,10 @@ export type TelemetrySurface = 'mcp' | 'hook' | 'cli';
 
 export interface TelemetryRecord {
   readonly ts: string;
-  /** The harness session hash, else the server's pid key; null for a CLI verb with neither. */
+  /**
+   * The harness session hash, else the server's pid key; null for a CLI verb with neither, or for an
+   * MCP call whose owner lookup threw.
+   */
   readonly session: string | null;
   readonly surface: TelemetrySurface;
   /** The MCP client (`name/version`) or the harness a hook ran for; null when unknown. */
@@ -127,11 +133,16 @@ export function capIds(ids: Iterable<string>): string[] {
   return [...kept];
 }
 
-/** Read only the existing identity; telemetry must never migrate, repair or create a store. */
-export function targetForStore(dbPath: string): TelemetryTarget | null {
+/**
+ * Read only the existing identity; telemetry must never migrate, repair or create a store.
+ * `budgetMs` is how long a held store is waited for, per statement. Only the MCP observation passes
+ * a longer one, its call's own budget; every other caller keeps the 100 ms default, and the hooks
+ * among them must, because their deadlines cannot afford more.
+ */
+export function targetForStore(dbPath: string, budgetMs = 100): TelemetryTarget | null {
   let db: Database.Database | undefined;
   try {
-    db = new Database(dbPath, { readonly: true, fileMustExist: true, timeout: 100 });
+    db = new Database(dbPath, { readonly: true, fileMustExist: true, timeout: budgetMs });
     const query = db.prepare('SELECT value FROM metadata WHERE key = ?');
     const projectId = storeProjectId(
       (key) => (query.get(key) as { value: unknown } | undefined)?.value

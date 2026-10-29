@@ -23,6 +23,17 @@ it('pins all thirteen local tools with a separate measured wire budget', () => {
   for (const tool of tools) expect(tool.annotations?.openWorldHint).toBe(false);
 });
 
+it('advertises only available sprint actions in the local edition', () => {
+  const sprint = getToolDefinitions().find((tool) => tool.name === 'rbook_sprint');
+  expect(sprint?.description).toContain('Except list/analytics, supply sprintId');
+  expect(sprint?.description).toContain('complete needs summary');
+  expect(sprint?.description).not.toMatch(/carry_forward|targetAddress|send/);
+  process.env.RBOOK_EDITION = 'full';
+  expect(getToolDefinitions().find((tool) => tool.name === 'rbook_sprint')?.description).toContain(
+    'carry_forward sends to targetAddress'
+  );
+});
+
 it('changes only the three resolved instruction clauses and the edition disclosure', () => {
   expect(getServerInstructions()).toBe(
     SERVER_INSTRUCTIONS.replace(

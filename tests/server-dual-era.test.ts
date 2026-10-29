@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // ABOUTME: Exercises both MCP eras against actual application children and temporary compiler output.
-// ABOUTME: Proves roots, cache hints, client identity, shared-store reads, and EOF/signal shutdown.
+// ABOUTME: Proves protocol isolation and shutdown, retaining telemetry evidence when identity fails.
 
 import * as fs from 'fs';
 import * as os from 'os';
@@ -10,8 +10,15 @@ import Database from 'better-sqlite3';
 import { seedRbookDb } from './helpers/seedRbookDb';
 import { RawStdioServer } from './helpers/raw-stdio-server';
 import { readTelemetry, targetForStore } from '../src/tools/rbook/local-telemetry';
+import { processBusyTimeout } from '../src/tools/rbook/sqlite-busy';
 import { ProjectGraphRegistry } from '../src/intelligence/project-graph-registry';
 import { pathToFileURL } from 'url';
+import {
+  instrumentTelemetrySource,
+  withTelemetryFailureEvidence,
+} from './helpers/telemetry-failure-evidence';
+import { holdStore, type StoreHold } from './helpers/store-lock-holder';
+import { armPause, releasePause, waitForFile } from './helpers/telemetry-observation-records';
 
 const repo = path.resolve(__dirname, '..');
 const modern = (name: string) => ({
@@ -25,14 +32,18 @@ let project: string;
 let other: string;
 let config: string;
 let cwd: string;
+let fixtureRoot: string;
+const retainedFixtures = new Set<string>();
 const children: RawStdioServer[] = [];
 
 beforeAll(() => {
   directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rbook-dual-era-'));
   const output = path.join(directory, 'package');
   fs.mkdirSync(output);
-  // Transpile the actual source, without instrumentation or a real-dist write. Type checking
-  // remains a separate required gate, so this protocol test does not run the compiler twice.
+  // Transpile source with scratch-only telemetry diagnostics, without a real-dist write. Type checking
+  // remains a separate required gate, so this protocol test does not run the compiler twice. s105-m03:
+  // the scratch package also records each observation and honors the pause point the held-store
+  // case below arms; neither changes a call that is not armed.
   const compile = (relative: string): void => {
     const source = path.join(repo, 'src', relative);
     if (fs.statSync(source).isDirectory()) {
@@ -42,14 +53,20 @@ beforeAll(() => {
       fs.mkdirSync(path.dirname(target), { recursive: true });
       fs.writeFileSync(
         target,
-        ts.transpileModule(fs.readFileSync(source, 'utf8'), {
-          fileName: source,
-          compilerOptions: {
-            target: ts.ScriptTarget.ES2020,
-            module: ts.ModuleKind.CommonJS,
-            esModuleInterop: true,
-          },
-        }).outputText
+        ts.transpileModule(
+          instrumentTelemetrySource(relative, fs.readFileSync(source, 'utf8'), {
+            records: path.join(directory, 'records'),
+            pause: true,
+          }),
+          {
+            fileName: source,
+            compilerOptions: {
+              target: ts.ScriptTarget.ES2020,
+              module: ts.ModuleKind.CommonJS,
+              esModuleInterop: true,
+            },
+          }
+        ).outputText
       );
     }
   };
@@ -63,6 +80,7 @@ beforeAll(() => {
 
 beforeEach(() => {
   const root = fs.mkdtempSync(path.join(directory, 'case-'));
+  fixtureRoot = root;
   project = path.join(root, 'project');
   other = path.join(root, 'other');
   config = path.join(root, 'config');
@@ -81,8 +99,11 @@ beforeEach(() => {
 });
 afterEach(async () => {
   await Promise.all(children.splice(0).map((child) => child.close()));
+  if (!retainedFixtures.has(fixtureRoot)) fs.rmSync(fixtureRoot, { recursive: true, force: true });
 });
-afterAll(() => fs.rmSync(directory, { recursive: true, force: true }));
+afterAll(() => {
+  if (retainedFixtures.size === 0) fs.rmSync(directory, { recursive: true, force: true });
+});
 
 function start(workingDir = cwd, args: string[] = []): RawStdioServer {
   const child = new RawStdioServer(
@@ -253,24 +274,115 @@ it('serves two simultaneous application processes against one store without SQLi
   expect(first.child.pid).not.toBe(second.child.pid);
   const dbPath = path.join(project, 'rbook/db/rbook.sqlite');
   const before = snapshot(dbPath);
-  const results = await Promise.all(
-    [first, second].map((child, index) =>
-      child.request('tools/call', {
-        name: 'rbook_review',
-        arguments: { projectRoot: project },
-        _meta: modern(`parallel-${index}`),
-      })
-    )
+  const results: any[] = [{ pending: true }, { pending: true }];
+  await withTelemetryFailureEvidence(
+    async () => {
+      await Promise.all(
+        [first, second].map(async (child, index) => {
+          try {
+            results[index] = await child.request('tools/call', {
+              name: 'rbook_review',
+              arguments: { projectRoot: project },
+              _meta: modern(`parallel-${index}`),
+            });
+          } catch (error) {
+            results[index] = { requestError: String(error) };
+            throw error;
+          }
+        })
+      );
+      // s98-m08 (#660 item 6): match each whole answer, so a refusal prints its code and message.
+      for (const result of results)
+        expect(result.structuredContent).toMatchObject({ success: true });
+      expect(snapshot(dbPath)).toEqual(before);
+      snapshot(path.join(config, 'project-graph.sqlite'));
+      expect([first.rootsCalls, second.rootsCalls]).toEqual([0, 0]);
+      expect(
+        // s105-m03: the reader waits as long as the calls it reads; a hold they survive fails no read.
+        readTelemetry(targetForStore(dbPath, processBusyTimeout() ?? 5000)!, {
+          RBOOK_CONFIG_DIR: config,
+        })
+          .map((row) => row.client)
+          .sort()
+      ).toEqual(['parallel-0/1', 'parallel-1/1']);
+      expect(`${first.stderr}${second.stderr}`).not.toMatch(/SQLITE_BUSY|SQLITE_MISUSE/);
+    },
+    {
+      fixtureRoot,
+      config,
+      dbPath,
+      responses: results,
+      children: [first, second],
+      retain: () => retainedFixtures.add(fixtureRoot),
+    }
   );
-  // s98-m08 (#660 item 6): match each whole answer, so a refusal prints its code and message.
-  for (const result of results) expect(result.structuredContent).toMatchObject({ success: true });
-  expect(snapshot(dbPath)).toEqual(before);
-  snapshot(path.join(config, 'project-graph.sqlite'));
-  expect([first.rootsCalls, second.rootsCalls]).toEqual([0, 0]);
-  expect(
-    readTelemetry(targetForStore(dbPath)!, { RBOOK_CONFIG_DIR: config })
-      .map((row) => row.client)
-      .sort()
-  ).toEqual(['parallel-0/1', 'parallel-1/1']);
-  expect(`${first.stderr}${second.stderr}`).not.toMatch(/SQLITE_BUSY|SQLITE_MISUSE/);
+});
+
+it("keeps both rows when another process holds the store across one call's identity lookup", async () => {
+  // s105-m03: the design's fork 1, made permanent. An observation must be as tolerant of a held
+  // store as the call it observes. parallel-0 completes while parallel-1 waits at its pause point;
+  // another process then takes the store, and the pause is released. parallel-1 writes a marker
+  // immediately before its identity lookup, and the store stays held until 1,000 ms after it. A
+  // 100 ms lookup lost parallel-1's row here every time; the call's own budget keeps it.
+  const first = start();
+  const second = start();
+  expect(first.child.pid).not.toBe(second.child.pid);
+  const dbPath = path.join(project, 'rbook/db/rbook.sqlite');
+  const before = snapshot(dbPath);
+  const pause = armPause(config, 'parallel-1/1');
+  const results: any[] = [{ pending: true }, { pending: true }];
+  let hold: StoreHold | undefined;
+  try {
+    await withTelemetryFailureEvidence(
+      async () => {
+        const calls = [first, second].map(async (child, index) => {
+          try {
+            results[index] = await child.request('tools/call', {
+              name: 'rbook_review',
+              arguments: { projectRoot: project },
+              _meta: modern(`parallel-${index}`),
+            });
+          } catch (error) {
+            results[index] = { requestError: String(error) };
+            throw error;
+          }
+        });
+        await Promise.all([
+          ...calls,
+          (async () => {
+            await calls[0];
+            expect(await waitForFile(pause.paused)).toBe(true);
+            hold = holdStore(dbPath, { marker: pause.marker, afterMarkerMs: 1000 });
+            await hold.held;
+            releasePause(pause);
+            expect(await hold.released).toMatchObject({ sawMarker: true });
+          })(),
+        ]);
+        for (const result of results)
+          expect(result.structuredContent).toMatchObject({ success: true });
+        expect(snapshot(dbPath)).toEqual(before);
+        snapshot(path.join(config, 'project-graph.sqlite'));
+        expect([first.rootsCalls, second.rootsCalls]).toEqual([0, 0]);
+        expect(
+          // s105-m03: the reader waits as long as the calls it reads; a hold they survive fails no read.
+          readTelemetry(targetForStore(dbPath, processBusyTimeout() ?? 5000)!, {
+            RBOOK_CONFIG_DIR: config,
+          })
+            .map((row) => row.client)
+            .sort()
+        ).toEqual(['parallel-0/1', 'parallel-1/1']);
+        expect(`${first.stderr}${second.stderr}`).not.toMatch(/SQLITE_BUSY|SQLITE_MISUSE/);
+      },
+      {
+        fixtureRoot,
+        config,
+        dbPath,
+        responses: results,
+        children: [first, second],
+        retain: () => retainedFixtures.add(fixtureRoot),
+      }
+    );
+  } finally {
+    await (hold as StoreHold | undefined)?.stop();
+  }
 });
