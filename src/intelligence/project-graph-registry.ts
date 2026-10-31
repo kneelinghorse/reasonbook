@@ -151,7 +151,7 @@ const IDENTITY_BACKFILL_MARKER_KEY = 'identity_backfill_done';
  * registry_meta key holding the authoritative default project's `project_id`
  * (s79-m01, F1). The graph's answer to the JSON registry's `defaultProject`.
  */
-const DEFAULT_PROJECT_META_KEY = 'default_project_id';
+export const DEFAULT_PROJECT_META_KEY = 'default_project_id';
 
 /**
  * s92-m01 — registry_meta key holding the `project_id` an operator CONFIRMED as the default with
@@ -159,7 +159,7 @@ const DEFAULT_PROJECT_META_KEY = 'default_project_id';
  * {@link DEFAULT_PROJECT_META_KEY}. Defaults written before 3.2.0 (a legacy JSON migration, an
  * older sibling process) never set it, so they stay visible but are not honoured until re-set.
  */
-const DEFAULT_CONFIRMED_META_KEY = 'default_project_confirmed';
+export const DEFAULT_CONFIRMED_META_KEY = 'default_project_confirmed';
 
 /** Legacy default path waiting for its store to receive a durable project_id. */
 const PENDING_LEGACY_DEFAULT_PATH_META_KEY = 'pending_legacy_default_store_path';

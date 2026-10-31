@@ -2,6 +2,7 @@
 // ABOUTME: s93-m06 — the published grammar of a drafted record ("Would record: …") and of the operator's reply.
 // ABOUTME: Pure and light: the Stop and prompt hooks load it inside their budgets, and the record path reuses it.
 
+import { ARTIFACT_TAG_NAMES } from '../../intelligence/content-sanitizer';
 import { extractKeywords } from './keyword-extraction';
 
 /**
@@ -51,7 +52,7 @@ const MIN_CHARS = 15;
 
 const WRAP = String.raw`(\*\*|__|\*|_|\`)`;
 const LABEL = new RegExp(
-  String.raw`^${WRAP}?\s*would\s+record(?:\s*\(\s*([a-z]+)\s*\))?\s*${WRAP}?\s*:\s*${WRAP}?\s*(.*?)\s*$`,
+  String.raw`^${WRAP}?\s*would\s+record(?:\s*\(\s*([a-z]+)\s*\))?\s*${WRAP}?\s*:\s*${WRAP}?(\s*)(.*?)\s*$`,
   'i'
 );
 
@@ -71,11 +72,14 @@ interface Labelled {
 function readLabel(line: string): Labelled | null {
   const match = LABEL.exec(stripMarkers(line));
   if (!match) return null;
-  const [, open, kindWord, close1, close2] = match;
-  let rest = match[5] ?? '';
+  const [, open, kindWord, close1, after, gap, text] = match;
   // A wrapper around the label alone (`**Would record:** text`) is closed before the text; one
-  // around the whole line (`**Would record: text**`) is closed at its end.
-  if (open && close1 !== open && close2 !== open && rest.endsWith(open)) {
+  // around the whole line (`**Would record: text**`) is closed at its end. s107-m02 (#875): a mark
+  // right after the colon closes only a wrapper opened before the label and still open; any other
+  // opens the text (`Would record: \`<tag>\` …`) and stays with it.
+  const closesLabel = open !== undefined && close1 !== open && after === open;
+  let rest = after === undefined || closesLabel ? (text ?? '') : `${after}${gap}${text ?? ''}`;
+  if (open && close1 !== open && !closesLabel && rest.endsWith(open)) {
     rest = rest.slice(0, rest.length - open.length).trim();
   }
   return { kindWord: kindWord?.toLowerCase(), rest };
@@ -86,9 +90,64 @@ function kindOf(word: string | undefined): DraftKind | null {
   return word === 'constraint' || word === 'rule' || word === 'profile' ? word : null;
 }
 
+/**
+ * A <…> span with the code-span or emphasis marks around it. Its inside holds no `<`, so a line of
+ * many `<` and no `>` is read in linear time (s107-m02 round-4 critic: 37 s on 200,000).
+ */
+const SPAN = /(\*\*|__|\*|_|`)?<([^<>]*)>\1/g;
+/**
+ * A tag the content sanitizer cuts (src/intelligence/content-sanitizer.ts), opening or closing:
+ * the bare name, or with name="…" attributes as a call writes them. A slot only named after one
+ * (`<content and reason>`) is still a slot (s107-m02 round-5 critic).
+ */
+const TOOL_TAG = new RegExp(`^\\/?(?:${ARTIFACT_TAG_NAMES.join('|')})(?:\\s+name="[^"]*")*\\s*$`);
+/**
+ * A word beside a placeholder: a run of letters or digits in a script that spaces its words, or one
+ * Han, Hiragana or Katakana character, since Japanese and Chinese write no spaces between words
+ * (s107-m02 round 4, decision #1762).
+ */
+const WORD =
+  /[\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}]|(?:(?![\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}])[\p{L}\p{N}])+/gu;
+
+/**
+ * Whether a span is content rather than a slot to fill in (s107-m02 round 5): a tool-call tag the
+ * sanitizer cuts, a URL, or a generic written onto a name (`Array<T>`, `Promise<void>`). `previous`
+ * is the character right before the `<`: a generic's is an ASCII letter or digit, never a mark
+ * (an underscore may open emphasis), since Chinese, Japanese and Korean write a placeholder onto
+ * the word before it (round-5 and round-6 critics).
+ */
+function contentSpan(inner: string, previous: string): boolean {
+  return (
+    TOOL_TAG.test(inner) || /^[a-z][a-z0-9+.-]*:\/\//i.test(inner) || /^[A-Za-z0-9]$/.test(previous)
+  );
+}
+
 function usable(text: string): boolean {
   if (text.length < MIN_CHARS || text.split(/\s+/).filter(Boolean).length < MIN_WORDS) return false;
   if (/^<[^>]+>/.test(text)) return false;
+  // s107-m02: a placeholder in a code span or emphasis (`<decision>`, **<decision and reason>**) is
+  // still one now that its opening mark stays. So beside placeholders the minimum is counted
+  // outside them and their marks, in WORDs, with two more words and ten more characters for each
+  // placeholder after the first: slots joined by connectors ("`<decision>` and the reason:
+  // `<reason>`") stay a template. A tool-call tag, a URL or a generic is content, not a
+  // placeholder, so a line naming two tags drafts in any script (round 5).
+  if (text.includes('<')) {
+    let placeholders = 0;
+    const bare = text
+      .replace(SPAN, (span: string, mark: string | undefined, inner: string, at: number) => {
+        if (contentSpan(inner, mark ? '' : text.charAt(at - 1))) return span;
+        placeholders += 1;
+        return ' ';
+      })
+      .trim();
+    const extra = Math.max(0, placeholders - 1);
+    if (
+      placeholders > 0 &&
+      (bare.length < MIN_CHARS + 10 * extra ||
+        (bare.match(WORD) ?? []).length < MIN_WORDS + 2 * extra)
+    )
+      return false;
+  }
   return !/^(?:nothing|none|n\/a|no decision)\b/i.test(text);
 }
 

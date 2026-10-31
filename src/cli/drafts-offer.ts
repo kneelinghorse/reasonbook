@@ -91,8 +91,11 @@ function instruction(reply: ReplyClass, bound: readonly DraftRow[]): string {
   const labels = bound.map((draft) => draftLabel(draft.id));
   const one = labels.length === 1;
   const standing = bound.some((draft) => draft.kind !== 'decision');
-  const call = (label: string) =>
-    `rbook_decisions(action="record", content=<${label}'s text as drafted>, fromDraft="${label}")`;
+  // s107-m02 (#877): fromDraft alone records the draft's own words, so a plain approval sends
+  // nothing else; content carries only the operator's nuance folded into the draft.
+  const call = (label: string) => `rbook_decisions(action="record", fromDraft="${label}")`;
+  const nuanced = (label: string) =>
+    `rbook_decisions(action="record", content=<${label} with the operator's nuance folded in>, fromDraft="${label}")`;
   switch (reply) {
     case 'approval':
       return one
@@ -102,7 +105,7 @@ function instruction(reply: ReplyClass, bound: readonly DraftRow[]): string {
       return `The operator’s message asks about ${labels.join(', ')}: answer, leave it unrecorded, and end with its Would record line again, revised if your answer changes it.`;
     default:
       return (
-        `Only if this message approves ${labels.join(', ')}, record it with ${call(one ? labels[0] : 'P<n>')} and the operator's nuance folded in (it reads agent-judged); ask first when the nuance is unclear or conflicts with a record. An amendment gets a revised Would record line; otherwise leave it pending.` +
+        `Only if this message approves ${labels.join(', ')}, record it with ${nuanced(one ? labels[0] : 'P<n>')} (it reads agent-judged); ask first when the nuance is unclear or conflicts with a record. An amendment gets a revised Would record line; otherwise leave it pending.` +
         (standing
           ? ' A constraint, rule or profile line is recorded only on a plain approval: propose it again instead.'
           : '')

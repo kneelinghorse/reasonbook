@@ -21,16 +21,16 @@ Pick one:
 
 ```bash
 # Recommended: a global install of this release. It starts from disk, with no registry lookup.
-npm install -g @aquex/reasonbook@4.8.0
+npm install -g @aquex/reasonbook@4.9.0
 
 # Or run on demand via npx: pinned, and preferring the local cache. The first launch downloads
 # the package; later launches reuse the npm cache.
-npx --prefer-offline -y @aquex/reasonbook@4.8.0
+npx --prefer-offline -y @aquex/reasonbook@4.9.0
 ```
 
 If you installed only a plugin, its private runtime does not add `reasonbook` to your terminal
 PATH. For any CLI example here, replace `reasonbook` with
-`npx --prefer-offline -y @aquex/reasonbook@4.8.0`, or install the pinned global CLI above.
+`npx --prefer-offline -y @aquex/reasonbook@4.9.0`, or install the pinned global CLI above.
 
 If the former package is installed globally, run `npm uninstall -g @aquex/cmos-mcp` first. Version 4 provides only the `reasonbook` command; update scripts and MCP configurations that use the old command.
 
@@ -39,7 +39,7 @@ Verify it starts:
 ```bash
 reasonbook --version  # if globally installed
 # or
-npx --prefer-offline -y @aquex/reasonbook@4.8.0 --version
+npx --prefer-offline -y @aquex/reasonbook@4.9.0 --version
 ```
 
 Semantic (vector) search is optional: without it, retrieval is keyword-only and the install is about
@@ -53,7 +53,7 @@ Claude Code and Codex are verified; the other blocks follow each client's own MC
 ### Claude Code
 
 ```bash
-claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.8.0"]}'
+claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.9.0"]}'
 claude mcp list   # confirm it's registered
 ```
 
@@ -71,7 +71,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS), 
       "args": [
         "--prefer-offline",
         "-y",
-        "@aquex/reasonbook@4.8.0",
+        "@aquex/reasonbook@4.9.0",
         "--project-root",
         "/absolute/path/to/your/project"
       ]
@@ -94,7 +94,7 @@ Edit `~/.cursor/mcp.json`:
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.8.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.9.0"]
     }
   }
 }
@@ -109,7 +109,7 @@ Edit your Zed `settings.json`:
   "context_servers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.8.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.9.0"]
     }
   }
 }
@@ -130,7 +130,7 @@ your terminal PATH, so the terminal route needs the standalone Claude CLI.
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.8.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.9.0"]
     }
   }
 }
@@ -222,17 +222,17 @@ The transition tool surfaces relevant past decisions via FTS5 keyword overlap wh
 
 ## 7. Complete the work
 
-If this project's code runs directly from source and has no build output to watch, set its
-build-freshness preference once:
+Review and sprint close warn about a stale build only in a project whose build writes
+`dist/.build-manifest.json`, as Reasonbook's own does. To turn that warning off there, set
+`build_freshness_check` to false; any other value, or none, keeps it:
 
 ```text
 rbook_context(action="update", contextType="project_identity",
               fieldUpdates=[{"path":"type_fields.build_freshness_check","value":false}])
 ```
 
-Review and sprint close then omit that project's build advisory. Setting the value to `true`
-restores it; an absent or null value keeps the check enabled. This changes the project's advisory,
-not its own release or validation requirements.
+This changes the project's advisory, not its own release or validation requirements. A check
+that cannot run says so: "Build freshness could not be checked", with the reason.
 
 When the work is verified, record what you decided in its own call, then finish the mission with notes only:
 
@@ -625,6 +625,11 @@ This revokes the user-scoped key on the dashboard and clears the local row. Proj
 - [GitHub issues](https://github.com/kneelinghorse/reasonbook/issues) — bug reports and feature requests.
 
 ## Troubleshooting
+
+**The setup looks wrong** (no Reasonbook hooks run, two Reasonbook servers answer, an old version
+runs, a project still uses the old `cmos/` folder): `reasonbook doctor` lists the setup drift on this
+machine and the fix for each, in the order to apply them. It writes nothing; `--format json` gives
+the same as data, and `--offline` skips its one lookup of the latest version on npm.
 
 **A tool answers "No Reasonbook project in '<dir>'"** (or, for a `projectRoot` you passed, `RBOOK_NOT_DETECTED`: "Reasonbook directory not found starting from '<dir>'"): that folder has no `rbook/db/rbook.sqlite`. Either `cd` into a project that has one, pass the right `projectRoot`, or start a record there with the init call the answer names, at the level step 3 uses: `rbook_project(action="init", projectRoot="<dir>", projectType="build")`.
 

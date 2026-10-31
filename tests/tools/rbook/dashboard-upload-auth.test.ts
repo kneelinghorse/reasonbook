@@ -160,7 +160,11 @@ describe('upload owner evidence and fresh auth checks', () => {
   });
   it('uses the parent before a newer account and a same-owner fallback after parent sign-out', async () => {
     responses.project = { status: 401 };
-    const issuedAt = new Date().toISOString();
+    // s107-m01 (#886): every key's instant comes from this one reading, so the order under test
+    // never depends on how long the awaits take. 'other' is newer than the parent (beforeEach
+    // issues it at now - 1 s), which keeps "parent first" under test; 'fallback' is older still.
+    const now = Date.now();
+    const issuedAt = new Date(now).toISOString();
     await store.upsertUserScopedKey('newest', {
       key: 'other',
       label: 'other',
@@ -168,22 +172,29 @@ describe('upload owner evidence and fresh auth checks', () => {
       lastUsedAt: issuedAt,
     });
     responses.other = { username: 'other', projects: [{ ...row, id: 'replacement' }] };
-    const prior = Date.now() - 15 * 60_000;
+    const prior = now - 15 * 60_000;
     expect((await recheckUploadAuth(root, { authFirstFailedAt: prior })).pauseReason).toBe(
       'project-key'
     );
     expect(seen).toEqual(['project', 'parent']);
     await store.removeUserScopedKey('parent-id');
-    await store.upsertUserScopedKey('same-owner', {
-      key: 'fallback',
-      label: 'fallback',
-      issuedAt: new Date(Date.now() - 2000).toISOString(),
-      lastUsedAt: issuedAt,
-    });
-    responses.fallback = { username: 'owner', projects: [row] };
-    expect((await recheckUploadAuth(root, { authFirstFailedAt: prior })).pauseReason).toBe(
-      'project-key'
-    );
+    // A slow machine: more than 2 s pass between the two keys (s106-m04's run got project, fallback).
+    const clock = Date.now.bind(Date);
+    const slow = jest.spyOn(Date, 'now').mockImplementation(() => clock() + 5_000);
+    try {
+      await store.upsertUserScopedKey('same-owner', {
+        key: 'fallback',
+        label: 'fallback',
+        issuedAt: new Date(now - 20_000).toISOString(),
+        lastUsedAt: issuedAt,
+      });
+      responses.fallback = { username: 'owner', projects: [row] };
+      expect((await recheckUploadAuth(root, { authFirstFailedAt: prior })).pauseReason).toBe(
+        'project-key'
+      );
+    } finally {
+      slow.mockRestore();
+    }
     expect(seen.slice(2)).toEqual(['project', 'other', 'fallback']);
   });
   it('tries owner fallback keys by issuance instant even when ISO offsets sort differently', async () => {

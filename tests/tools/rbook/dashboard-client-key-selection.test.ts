@@ -105,6 +105,36 @@ describe('DashboardClient.fromEnvForProject (credential-store wiring)', () => {
     expect(result.data?.client).toBeInstanceOf(DashboardClient);
   });
 
+  it('falls back to the newest user-scoped key by instant whatever the stored spelling (s107-m01, #788)', async () => {
+    const store = await CredentialStore.create({ configDir: tempDir });
+    // Today's UTC midday, so a minute either side stays on the same date at any hour of the run.
+    const midday = new Date();
+    midday.setUTCHours(12, 0, 0, 0);
+    const now = midday.getTime();
+    const spellings: Array<[newer: string, older: string]> = [
+      // An offset spelling of the older instant sorts after the newer key's Z spelling.
+      [
+        new Date(now).toISOString(),
+        new Date(now - 60_000 + 2 * 3_600_000).toISOString().replace('Z', '+02:00'),
+      ],
+      // SQLite's zone-less spelling of the newer instant sorts before the older key's T.
+      [
+        new Date(now).toISOString().replace('T', ' ').slice(0, 19),
+        new Date(now - 60_000).toISOString(),
+      ],
+    ];
+    for (const [newer, older] of spellings) {
+      await store.upsertUserScopedKey('newer', userKey({ key: 'cmk_newer', issuedAt: newer }));
+      await store.upsertUserScopedKey('older', userKey({ key: 'cmk_older', issuedAt: older }));
+      expect(older > newer).toBe(true);
+      const result = await DashboardClient.fromEnvForProject('/not/registered', {
+        credentialStore: store,
+      });
+      expect(result.data?.keySource).toBe('user-scoped');
+      expect(result.data?.client.authenticatingKeyId).toBe('newer');
+    }
+  });
+
   it('falls back to RBOOK_DASHBOARD_API_KEY env var when the store is empty', async () => {
     process.env[RBOOK_DASHBOARD_API_KEY_ENV] = 'cmk_legacy_env';
     const store = await CredentialStore.create({ configDir: tempDir });

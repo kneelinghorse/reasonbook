@@ -22,6 +22,7 @@ import { runImport } from '../../src/cli/import';
 import { runDrafts } from '../../src/cli/drafts';
 import { runSignals } from '../../src/cli/signals';
 import { runBrief } from '../../src/cli/brief';
+import { runDoctor } from '../../src/cli/doctor';
 
 jest.mock('../../src/cli/telemetry', () => ({
   CliTelemetry: jest.fn(() => ({ resolve: jest.fn(), patch: jest.fn(), finish: jest.fn() })),
@@ -51,6 +52,7 @@ jest.mock('../../src/cli/import', () => ({ runImport: jest.fn(async () => 0) }))
 jest.mock('../../src/cli/drafts', () => ({ runDrafts: jest.fn(async () => 0) }));
 jest.mock('../../src/cli/signals', () => ({ runSignals: jest.fn(async () => 0) }));
 jest.mock('../../src/cli/brief', () => ({ runBrief: jest.fn(async () => 0) }));
+jest.mock('../../src/cli/doctor', () => ({ runDoctor: jest.fn(async () => 0) }));
 
 // Independent inventory from the actual handlers, including less visible transport and array options.
 const routes = [
@@ -175,6 +177,7 @@ const routes = [
   ],
   ['signals', runSignals, ['--format=json']],
   ['brief', runBrief, ['--days=7', '--format=md']],
+  ['doctor', runDoctor, ['--offline', '--format=json', '--project-root=/a']],
   [
     'spin-out',
     runSpinOut,
@@ -210,7 +213,7 @@ beforeEach(() => {
 describe('F9 public option boundary', () => {
   it('accounts for every routed CLI verb, including the hook exemption', () => {
     expect([...CLI_VERBS].sort()).toEqual([...routes.map(([verb]) => verb), 'hook'].sort());
-    expect(routes).toHaveLength(26);
+    expect(routes).toHaveLength(27);
   });
 
   it.each(routes.map(([verb]) => verb))(

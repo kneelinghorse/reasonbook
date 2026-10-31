@@ -11,6 +11,7 @@
  * @module tools/rbook/rbook-agent-onboard
  */
 
+import { callText } from './answer-page';
 import { isDirectoryEdition } from '../../edition';
 import { getSetting } from '../../intelligence/legacy-compat';
 import { prepareSpinOutRead } from './spin-out-read';
@@ -2385,7 +2386,7 @@ function generateSuggestedActions(state: {
     const blocked = state.blockedMissions[0];
     actions.push({
       action: missionActionText(`Resolve blocked ${work}`, blocked),
-      command: `rbook_mission(action="show", missionId="${blocked.id}")`,
+      command: callText('rbook_mission', { action: 'show', missionId: blocked.id }),
       priority: 3,
     });
   }
@@ -2395,7 +2396,7 @@ function generateSuggestedActions(state: {
   if (inProgress && !skippedTools.has('rbook_mission')) {
     actions.push({
       action: missionActionText(`Continue in-progress ${work}`, inProgress),
-      command: `rbook_mission(action="show", missionId="${inProgress.id}")`,
+      command: callText('rbook_mission', { action: 'show', missionId: inProgress.id }),
       priority: 4,
     });
   }

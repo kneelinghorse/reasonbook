@@ -455,7 +455,7 @@ export async function rbookFeedback(
 
       if (action === 'list') {
         const status = params.status ?? 'open';
-        // s106-m03: 50 rows were 35,736 characters on OODS-Forge, past the 20,000 cap.
+        // s106-m03: 50 rows were 35,736 characters on a registered store, past the 20,000 cap.
         const request = pageRequest(params.page, params.limit, FEEDBACK_PAGE_SIZE);
         const limit = request.pageSize;
         const conditions: string[] = ['status = ?'];

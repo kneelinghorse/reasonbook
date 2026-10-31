@@ -36,6 +36,8 @@ import {
 } from './schema-migrations';
 import {
   checkBuildFreshness,
+  freshnessFailureWarning,
+  keepsFreshnessReport,
   isBlockingStaleness,
   projectChecksBuildFreshness,
   type BuildFreshnessReport,
@@ -309,8 +311,8 @@ export interface RbookSprintCompleteResult {
    * as found because nothing on disk records when it closed.
    */
   endDateRepair?: SprintEndDateRepair;
-  /** Build-freshness report, included ONLY when stale=true (omitted on the happy path
-   *  to keep the response shape unchanged for fresh-build sprints). */
+  /** Build-freshness report, included only when stale or when the check failed (s107-m04); omitted
+   *  on the happy path to keep the response shape unchanged for fresh-build sprints. */
   buildFreshness?: BuildFreshnessReport;
   /** s86-m02b — writes the closeout ATTEMPTED and the database REJECTED. Always present. */
   writeFailures: WriteFailure[];
@@ -1085,12 +1087,11 @@ export async function rbookSprintComplete(
           const freshnessRoot = await resolveFreshnessProjectRoot(params.projectRoot);
           if (freshnessRoot) {
             const freshness = await checkBuildFreshness(freshnessRoot);
-            if (freshness.stale) {
-              result.buildFreshness = freshness;
-              if (isBlockingStaleness(freshness)) {
-                warnings.push(buildStaleAdvisory(freshness));
-              }
-            }
+            // s107-m04: a check that failed is kept and said, never read as fresh.
+            if (keepsFreshnessReport(freshness)) result.buildFreshness = freshness;
+            if (isBlockingStaleness(freshness)) warnings.push(buildStaleAdvisory(freshness));
+            const failure = freshnessFailureWarning(freshness);
+            if (failure) warnings.push(failure);
             const serverRoot = getServerProjectRoot();
             if (serverRoot && path.resolve(serverRoot) === path.resolve(freshnessRoot)) {
               if (

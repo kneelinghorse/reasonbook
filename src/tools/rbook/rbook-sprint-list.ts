@@ -196,7 +196,7 @@ export const rbookSprintListToolDefinition = {
 export async function rbookSprintList(
   params: RbookSprintListParams = {}
 ): Promise<RbookToolResult<RbookSprintListResult>> {
-  // s106-m03: 20 previewed rows were 20,513 characters on OODS-Forge; 30,351 before the previews.
+  // s106-m03: 20 previewed rows were 20,513 characters on a registered store, 30,351 unpreviewed.
   const request = pageRequest(params.page, params.limit, SPRINT_LIST_PAGE_SIZE);
   const limit = request.pageSize;
 

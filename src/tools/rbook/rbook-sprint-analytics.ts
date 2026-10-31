@@ -123,7 +123,7 @@ export interface RbookSprintAnalyticsParams {
   page?: number;
 }
 
-/** s106-m03: per-sprint rows on a page. 219 rows were 94,342 characters on OODS-Forge. */
+/** s106-m03: per-sprint rows on a page. 219 rows were 94,342 characters on a registered store. */
 export const ANALYTICS_PAGE_SIZE = 20;
 
 const ANALYTICS_COUNTING_RULE =

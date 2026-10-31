@@ -371,6 +371,9 @@ describe('the offer rides on the operator’s next messages', () => {
     await stop('s-one', PROPOSAL);
     const offer = context(await prompt('s-one', 'approved'));
     expect(offer).toContain('plain approval of P1: record it now');
+    // s107-m02 (#877): fromDraft alone records the draft's own words; restating it adds nothing.
+    expect(offer).toContain('rbook_decisions(action="record", fromDraft="P1")');
+    expect(offer).not.toContain('content=');
     const runtime = openDraftRuntime(dbPath, process.env, { readonly: true })!;
     try {
       expect(readExcerpt(runtime, harnessSessionHash('s-one'), 1, Date.now())).toMatchObject({
@@ -383,6 +386,26 @@ describe('the offer rides on the operator’s next messages', () => {
     }
     const store = fs.readFileSync(dbPath);
     expect(store.includes(Buffer.from('approved\u0000'))).toBe(false);
+  });
+
+  it('teaches fromDraft alone for several drafts approved at once, and content only for nuance', async () => {
+    await start('s-one');
+    await stop(
+      's-one',
+      `${PROPOSAL}\nWould record: Keep the decision folder under rbook/decisions, never at the root.`
+    );
+    const offer = context(await prompt('s-one', 'approved'));
+    expect(offer).toContain('approves P1, P2 together');
+    expect(offer).toContain('rbook_decisions(action="record", fromDraft="P<n>")');
+    expect(offer).not.toContain('content=');
+    await start('s-two');
+    await stop(
+      's-two',
+      'Here is the plan.\n\nWould record: Run the importer nightly, because the source files change once a day.'
+    );
+    const nuance = context(await prompt('s-two', 'yes, but run it at two in the morning'));
+    expect(nuance).toContain('content=<P3 with the operator');
+    expect(nuance).toContain('fromDraft="P3"');
   });
 
   it('declines on a plain decline, and the draft never comes back', async () => {

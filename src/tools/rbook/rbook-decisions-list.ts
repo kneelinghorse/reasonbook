@@ -412,8 +412,8 @@ async function listAcrossProjects(
 }
 
 /**
- * s106-m03: 20 previews were 20,777 characters on OODS-Forge and 23,957 across projects; measured
- * on every registered store, 15 still reached 19,354, so a page holds 12.
+ * s106-m03: 20 previews were 20,777 characters on a registered store and 23,957 across projects;
+ * measured on every registered store, 15 still reached 19,354, so a page holds 12.
  */
 export const DECISIONS_PAGE_SIZE = 12;
 

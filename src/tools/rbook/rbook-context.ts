@@ -313,7 +313,9 @@ export const rbookContextSchema = z
       // s86-m03 corrected the JSON side of this ('default: all' → the real ['decision'],
       // rbook-context-search.ts:89); s86-m04 states the same thing on the zod side so the two
       // descriptions of one parameter say one thing.
-      .describe("Content types to search for search action (default: ['decision'])"),
+      .describe(
+        'Content types to search for search action (default: [\'decision\']); session is accepted but not searched: use rbook_session(action="search")'
+      ),
     recencyWeight: z
       .number()
       .min(0)
@@ -330,7 +332,7 @@ export const rbookContextSchema = z
       .array(z.string())
       .optional()
       .describe(
-        'Status values to include in search results (default: every status except superseded). Applies to decision and learning results ONLY — ignored for mission and session results. An empty array disables status filtering entirely rather than matching nothing.'
+        'Status values to include in search results (default: every status except superseded). Applies to decision and learning results ONLY — ignored for mission results. An empty array disables status filtering entirely rather than matching nothing.'
       ),
     projectRoot: z
       .string()
@@ -514,7 +516,8 @@ export const rbookContextToolDefinition = {
       searchTypes: {
         type: 'array',
         items: { type: 'string', enum: ['decision', 'learning', 'mission', 'session'] },
-        description: "Content types to search (default: ['decision'])",
+        description:
+          'Content types to search (default: [\'decision\']); session is accepted but not searched: use rbook_session(action="search")',
       },
       recencyWeight: {
         type: 'number',
@@ -526,7 +529,7 @@ export const rbookContextToolDefinition = {
         type: 'array',
         items: { type: 'string' },
         description:
-          'Status values to include in search results (default: every status except superseded). Applies to decision and learning results ONLY — ignored for mission and session results. An empty array disables status filtering entirely rather than matching nothing.',
+          'Status values to include in search results (default: every status except superseded). Applies to decision and learning results ONLY — ignored for mission results. An empty array disables status filtering entirely rather than matching nothing.',
       },
       projectRoot: {
         type: 'string',

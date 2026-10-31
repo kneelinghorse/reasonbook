@@ -71,6 +71,7 @@ const OPTIONS: Readonly<
     values: ['from', 'to', 'sprint', 'missions', 'decisions', 'learnings', 'next-steps'],
     switches: ['apply'],
   },
+  doctor: { values: [...ROOT, 'format'], switches: ['offline'] },
   serve: { values: ROOT, switches: ['version', 'whoami'] },
 };
 
@@ -181,6 +182,8 @@ export const USAGE =
   '                                 preview or copy selected work into its own project\n' +
   '  migrate [--apply] [--docs-only] [--project <root>] [--config]\n' +
   '                                 preview or apply the Reasonbook rename\n' +
+  '  doctor [--offline] [--format json] [--project-root <root>]\n' +
+  '                                 list setup drift and the fix for each; writes nothing\n' +
   '  profile show                   the operator profile every project reads\n' +
   '  config author [<name>]         the author name your records carry, or where it comes from\n' +
   '  repair --guard [--project-root <root>]\n' +

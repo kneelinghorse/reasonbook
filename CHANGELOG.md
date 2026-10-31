@@ -2,7 +2,83 @@
 
 All notable changes to Reasonbook (published as `@aquex/cmos-mcp` before 4.0.0) are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [4.8.0] - 2026-10-30
+## [4.9.0] — 2026-10-31
+
+`reasonbook doctor` lists what in your setup is out of date, doubled up or left over from the move
+from cmos-mcp, with the command that fixes each, and changes nothing. Approving a drafted record
+now saves its words whole or says why it cannot, and a long session is read a page at a time
+instead of in one oversized answer.
+
+### Added
+
+- `reasonbook doctor` lists setup drift on this machine and the fix for each, in the order to apply
+  them: an old global install or the old `cmos-mcp` one; a Claude Code or Codex plugin that is old,
+  disabled, both editions at once or still the old `cmos` plugin; a `config.json` that stops the
+  plugin's server; a manual Reasonbook server where the plugin belongs, beside it, or running an old
+  release, and a project `.mcp.json` pin that migrate refuses; saved permissions for tools that no
+  longer exist; records on the old `cmos/` layout or with an interrupted move, and client settings
+  migrate would refuse before such a move; the config folder and its setting, registered projects
+  that are gone, and a default never confirmed. A file it cannot read is reported as not checked,
+  never as clean, and without its text. It writes nothing and exits 0 only when every check ran and
+  nothing needs fixing; `--format json` gives the same as data. It makes one GET of the npm registry
+  for the latest version unless `--offline` is given, and is not part of the local directory edition.
+
+### Changed
+
+- `rbook_session(action="list", sessionId)` reads a session too large for one answer a page at a
+  time: the captures in stored order, then the summary, each page under 20,000 characters, with
+  `nextPageCall` for the next. Completing the session, or a change of the store's own identity,
+  while it is read moves no page. A capture, its context or the summary larger than a page comes in
+  parts (`part`, `parts` and `fullLength`; `summaryPart`, `summaryParts` and `summaryFullLength`);
+  a context too large to ride on a capture's first part follows its content's parts in parts of its
+  own, and joining each field across the parts gives it back exactly. Such a read adds
+  `pageCount` and `capturesShown`, counts only readable captures, and carries the summary cut
+  (`summaryTruncated`, `summaryFullLength`) on the pages that do not read it; asking for a page past
+  the last says so instead of "No sessions found". A session that fits on one page answers as
+  before, however long its fields, and one with a field too long to page, its own or a capture's,
+  is answered whole as before, with a warning; this repository's largest session answered 314,266
+  characters in one piece.
+- Review and sprint close warn about a stale build only in a project whose build writes
+  `dist/.build-manifest.json`. A project with `dist/`, `.next/`, `build/` or `out/` output and no
+  manifest got a warning it could not act on; those folders are no longer read, and such a
+  project's `src/` is not walked. A check that cannot read the manifest or the source is kept in
+  the answer and said, "Build freshness could not be checked", where it used to read as fresh.
+- For a plain approval, the approval offer and the record-decision skill teach
+  `rbook_decisions(action="record", fromDraft="P1")` alone, which records the draft's own words;
+  `content` is only for a draft with the operator's nuance folded in.
+
+### Fixed
+
+- `rbook_context(action="search")` with `searchTypes` holding `session` searched no sessions and
+  said nothing; it now warns and names `rbook_session(action="search", …)`, and with `session` as
+  the only type its no-results suggestions name that search.
+- Five "read it in full" hints (the session list and session search, context search's mission
+  hits, and onboard's blocked and in-progress missions) quoted the id by hand, so an id holding a
+  quote or a backtick named a call that reads nothing; they now quote it as every other hint does.
+- `migrate` names a client file it cannot parse, or a `.mcp.json` server entry that is not an object
+  or whose `args` is not a list, and refuses; it used to stop with the parser's message, which quotes
+  the file's text, or with a TypeError.
+- A constraint, rule or profile draft whose own text holds a tool-call tag outside backticks, or such
+  a decision draft sent in its own words, is refused and stays pending. With the tag late in the
+  line, a constraint or rule was written cut short and a profile line with the raw tag, under a
+  receipt that said "written as drafted", and the decision was recorded cut short. The refusal asks
+  for the line again with the tag in backticks; a decision restated in other words still records.
+- A drafted line that opens with a code span or a bold mark keeps it. A mark right after
+  "Would record:" was read as closing the label, so the stored text lost its opening backtick, and a
+  line that opened with a quoted tag made no draft at all. A placeholder in a code span or emphasis
+  is still not a draft: beside placeholders a line needs three words and 15 characters, and two
+  more words and ten more characters for each placeholder after the first, so slots joined by
+  connectors stay a template. There a word is a run of letters or digits, or one Han, Hiragana or
+  Katakana character. A tool-call tag, bare or with `name="…"` attributes, a URL, or a generic whose
+  `<` follows an ASCII letter or digit, such as `Array<T>`, is not a placeholder.
+
+- The newest saved user key is the one issued last, whether its time ends in `Z`, carries an offset
+  such as `+02:00`, or uses SQLite's `YYYY-MM-DD HH:MM:SS`. The sign-in state and the dashboard
+  client's newest-key fallback compared `issuedAt` as text, so such a credentials file could pick an
+  older key; they now compare instants, as the upload fallback already did, and a time they cannot
+  read ranks oldest.
+
+## [4.8.0] — 2026-10-30
 
 ### Changed
 

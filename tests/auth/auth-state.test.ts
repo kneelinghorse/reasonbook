@@ -132,6 +132,32 @@ describe('computeAuthState', () => {
     expect(result.userScopedKey?.keyId).toBe('new');
   });
 
+  it('newest user-scoped key wins by instant whatever the stored spelling (s107-m01, #788)', async () => {
+    // The store takes issuedAt as given, so the upload fallback's own test writes an offset.
+    // Today's UTC midday, so a minute either side stays on the same date at any hour of the run.
+    const midday = new Date();
+    midday.setUTCHours(12, 0, 0, 0);
+    const now = midday.getTime();
+    const spellings: Array<[newer: string, older: string]> = [
+      // An offset spelling of the older instant sorts after the newer key's Z spelling.
+      [
+        new Date(now).toISOString(),
+        new Date(now - 60_000 + 2 * 3_600_000).toISOString().replace('Z', '+02:00'),
+      ],
+      // SQLite's zone-less spelling of the newer instant sorts before the older key's T.
+      [
+        new Date(now).toISOString().replace('T', ' ').slice(0, 19),
+        new Date(now - 60_000).toISOString(),
+      ],
+    ];
+    for (const [newer, older] of spellings) {
+      await store.upsertUserScopedKey('newer', userRecord({ issuedAt: newer }));
+      await store.upsertUserScopedKey('older', userRecord({ issuedAt: older }));
+      expect(older > newer).toBe(true);
+      expect((await computeAuthState({ store })).userScopedKey?.keyId).toBe('newer');
+    }
+  });
+
   it('warns when projectRoot is supplied but no project key has been issued yet', async () => {
     await store.upsertUserScopedKey('u', userRecord());
     const result = await computeAuthState({ projectRoot: path.join(tempDir, 'unbound'), store });

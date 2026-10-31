@@ -39,7 +39,7 @@ import { PREVIEW_MAX_CHARS, previewText } from './text-preview';
 /**
  * s106-m03: missions, sessions, decisions and learnings per page. This repo's sprint-96 retro was
  * 114,044 characters (14 missions, 21 sessions, 123 decisions and 39 learnings, in full), past the
- * 20,000 cap; with previews, 5 of each still reached 21,403 on an OODS-Forge sprint, the commit
+ * 20,000 cap; with previews, 5 of each still reached 21,403 on another store's sprint, the commit
  * summary (one line per mission, 21 missions at most here) going out in both copies.
  */
 export const RETRO_PAGE_SIZE = 3;

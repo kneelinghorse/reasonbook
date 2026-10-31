@@ -224,10 +224,10 @@ export function evaluateDraft(
             ? `Draft ${label}'s own text holds a tool-call tag outside backticks, which the content sanitizer cuts; what is left does not state the draft.`
             : `The content does not state draft ${label} ("${draft.text.slice(0, 120)}"); the operator's approval covers only what the draft said.`,
           field: 'content',
-          suggestion:
-            cut.wasModified && draftCoverage(draft.text, cut.cleaned) < CONTENT_FLOOR
-              ? cutRemedy
-              : `Send fromDraft without content to record ${label} in its own words, or restate its decision with any nuance folded in. If the decision itself changed, end your reply with a revised Would record line so the operator approves the new text, or record it without fromDraft.`,
+          // s107-m02: fromDraft alone is refused for any cut draft below, so it is never the remedy.
+          suggestion: cut.wasModified
+            ? cutRemedy
+            : `Send fromDraft without content to record ${label} in its own words, or restate its decision with any nuance folded in. If the decision itself changed, end your reply with a revised Would record line so the operator approves the new text, or record it without fromDraft.`,
         },
       };
     const session = harnessSessionOf(client.path);
@@ -239,6 +239,21 @@ export function evaluateDraft(
           code: RBOOK_ERROR_CODES.DRAFT_NOT_PENDING,
           message: `The operator declined draft ${label}; nothing was recorded.`,
           suggestion: 'Do not record it. Propose a different choice with a new Would record line.',
+        },
+      };
+    // s107-m02 (#876): with the tag late enough that the cut copy passed the coverage check above,
+    // a constraint or rule draft was written cut short and a profile line with its raw tag, under a
+    // receipt that said "written as drafted", and a decision sent in its own words was recorded cut
+    // short. Each is refused here, so nothing is written and the draft stays pending; a decision
+    // restated in other words still records, as the agent's own judgment.
+    if (cut.wasModified && (draft.kind !== 'decision' || recordStatesDraft(cut.cleaned, content)))
+      return {
+        ok: false,
+        error: {
+          code: RBOOK_ERROR_CODES.INVALID_PARAMETER,
+          message: `Draft ${label}'s own text holds a tool-call tag outside backticks, which the content sanitizer cuts, so it cannot be recorded as drafted; nothing was recorded and ${label} stays pending.`,
+          field: 'content',
+          suggestion: cutRemedy,
         },
       };
     if (session && !excerpt)

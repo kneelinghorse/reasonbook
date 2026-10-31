@@ -18,6 +18,7 @@
  * @module scripts/verify-dist
  */
 
+import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -2378,6 +2379,37 @@ async function main(): Promise<void> {
       's89-m08: the shipped bundle contains no "not an input-validation problem" claim',
       !codeOf('../../index.js').includes('not an input-validation problem'),
       'the catch-all boundary still asserts a cause it has no way to determine'
+    );
+
+    // s107-m03: the built doctor, run once with HOME at an empty fixture, catches module-level
+    // effects a unit test cannot: it must load, find nothing to fix and write nothing under HOME.
+    // --offline, because a child process is outside jest's network guard.
+    const doctorHome = mkTmp('rbook-verify-doctor-home-');
+    const doctor = spawnSync(
+      process.execPath,
+      [path.join(REPO_ROOT, 'dist', 'bin.js'), 'doctor', '--offline'],
+      {
+        cwd: mkTmp('rbook-verify-doctor-cwd-'),
+        encoding: 'utf8',
+        env: { HOME: doctorHome, PATH: '' },
+        timeout: 60_000,
+      }
+    );
+    check(
+      's107-m03: dist doctor --offline exits 0 on a clean HOME',
+      doctor.status === 0,
+      `exit ${doctor.status}: ${doctor.stderr}`
+    );
+    check(
+      's107-m03: dist doctor reports nothing to fix and says nothing was written',
+      /: 0 to fix, 0 could not be checked, 0 notes/.test(doctor.stdout) &&
+        doctor.stdout.includes('Nothing was written.'),
+      doctor.stdout.slice(0, 300)
+    );
+    check(
+      's107-m03: dist doctor leaves its HOME empty',
+      fs.readdirSync(doctorHome).length === 0,
+      fs.readdirSync(doctorHome).join(', ')
     );
   } finally {
     await h.close();

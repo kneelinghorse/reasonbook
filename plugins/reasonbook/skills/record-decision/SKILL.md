@@ -42,11 +42,16 @@ Use the label at the start of a trailing line, outside code blocks; `Would recor
 also names a decision. Leading list or quote markers and Markdown wrappers are accepted. A label
 may also start the final sentence of the reply's final line, after `.`, `?` or `!` and whitespace;
 an inline label after a colon or the abbreviations `e.g.`, `i.e.`, `etc.`, `vs.` or `cf.` does not
-count. A placeholder or "nothing" is not a proposal. The text needs at least three words and 15
-characters; text over 1,000 characters is cut at a word. Where Reasonbook hooks run, the line becomes a
-draft with an id (`P<n>`) and the operator's next message is bound to it. The line is a proposal,
-not a claim that a hook saved or approved it. Continue independent authorized work while the choice
-is open.
+count. A placeholder or "nothing" is not a proposal, even in a code span or emphasis. The text needs
+at least three words, counted between spaces, and 15 characters. A placeholder (a `<…>` span that is
+not a tool-call tag, bare or with `name="…"` attributes, a URL, or a generic whose `<` follows an
+ASCII letter or digit, such as `Array<T>`) is not counted: beside placeholders the
+text needs three words and 15 characters, and two more words and ten more characters for each
+placeholder after the first, where a word is a run of letters or digits, or one Han, Hiragana or
+Katakana character. Text over 1,000 characters is cut at a word.
+Where Reasonbook hooks run, the line becomes a draft with an id (`P<n>`) and the operator's next
+message is bound to it. The line is a proposal, not a claim that a hook saved or approved it.
+Continue independent authorized work while the choice is open.
 
 **Published reply grammar** ([source](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/draft-grammar.ts)): a plain reply
 is at most 60 normalized characters and consists entirely of phrases below, joined by whitespace,
@@ -68,10 +73,10 @@ phrases, make it other. Courtesies alone do not approve or decline.
 **When the operator answers:**
 
 - A plain approval: record it now with
-  `rbook_decisions(action="record", content="<the draft's text as drafted>", fromDraft="P<n>")`.
-  Content about something else is refused. Constraint, rule and profile drafts are written as
-  drafted; different content passed to the call is not used and produces a warning, except for
-  whitespace changes.
+  `rbook_decisions(action="record", fromDraft="P<n>")`, which records the draft's own words; send
+  nothing else. Content about something else is refused. Constraint, rule and profile drafts are
+  written as drafted; different content passed to the call is not used and produces a warning,
+  except for whitespace changes.
 - Nuance or call-outs approving a decision: fold them in; ask first when the nuance is unclear or
   conflicts with an existing record. For a constraint, rule or profile line, propose the revised
   text again and wait for a plain approval; these kinds refuse nuance and questions.

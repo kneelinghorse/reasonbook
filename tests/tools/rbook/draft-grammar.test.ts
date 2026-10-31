@@ -4,6 +4,7 @@
 
 import { describe, expect, it } from '@jest/globals';
 
+import { sanitizeContentField } from '../../../src/intelligence/content-sanitizer';
 import {
   APPROVAL_PHRASES,
   classifyReply,
@@ -203,9 +204,162 @@ describe('extractDraftLines: what becomes a draft', () => {
     }
   });
 
+  // s107-m02 (#875): a mark right after the label opens the text unless it closes one opened before
+  // the label, so a line that starts with a code span keeps its opening backtick, and the content
+  // sanitizer then keeps the tag the span quotes instead of cutting the record there.
+  it('keeps the code span or emphasis that opens the text after the label', () => {
+    const tag = ['<', 'parameter', '>'].join('');
+    const text = `\`${tag}\` tags stay quoted in imported notes, so the record keeps them whole.`;
+    const lines = [
+      `Would record: ${text}`,
+      `Answered both questions. Would record: ${text}`,
+      `**Would record:** ${text}`,
+      `**Would record**: ${text}`,
+    ];
+    for (const line of lines) {
+      const [draft] = extractDraftLines(`Done.\n\n${line}`);
+      expect(draft?.text).toBe(text);
+      expect(sanitizeContentField(draft.text)).toEqual({ cleaned: text, wasModified: false });
+    }
+    const bold = '**Keep** one AGENTS.md per project as the single rules file.';
+    expect(extractDraftLines(`Done.\nWould record: ${bold}`)[0]?.text).toBe(bold);
+  });
+
+  // s107-m02 (round-2 critic): the words left beside a placeholder are counted in letters of any
+  // script, a run of letters or digits being one word.
+  it('keeps a choice in any script that quotes a tag, while a placeholder in it still drops', () => {
+    const tag = ['<', 'parameter', '>'].join('');
+    for (const text of [
+      `Удалять лишнюю разметку из импортированных заметок перед записью, например \`${tag}\` теги.`,
+      `Αφαιρούμε την περιττή σήμανση από τις σημειώσεις πριν την εγγραφή, όπως τις \`${tag}\`.`,
+    ])
+      expect(extractDraftLines(`Готово.\nWould record: ${text}`)[0]?.text).toBe(text);
+    expect(extractDraftLines('Готово.\nWould record: `<решение и причина>`')).toEqual([]);
+  });
+
+  // s107-m02 round 4 (decision #1762): Japanese and Chinese write no spaces between words, so a run
+  // of kanji, kana or hanzi between punctuation marks was one "word" and these lines, which drafted
+  // before the mission, stopped drafting. Each Han, Hiragana or Katakana character is now a word.
+  it('keeps a Japanese or Chinese choice that names a tag and has no mid-sentence comma', () => {
+    const tag = ['<', 'parameter', '>'].join('');
+    for (const text of [
+      `インポートしたメモの \`${tag}\` タグはバッククォートで囲んで記録します。`,
+      `导入笔记时保留 \`${tag}\` 标签并用反引号括起来以免记录被截断。`,
+    ])
+      expect(extractDraftLines(`完了。\nWould record: ${text}`)[0]?.text).toBe(text);
+    // A placeholder in those scripts is still one.
+    expect(extractDraftLines('完了。\nWould record: `<決定と理由>`')).toEqual([]);
+  });
+
+  // s107-m02 round 5 (decision #1762): a tool-call tag, a URL or a generic written onto a name is
+  // content, not a placeholder, so lines naming two or four tags draft in every script, and terse
+  // lines naming code keep drafting; the minimum and its increments count placeholders only.
+  it('keeps lines naming several tags, generics or URLs, in Chinese, Japanese and English', () => {
+    const [invoke, parameter, content, calls] = [
+      'invoke',
+      'parameter',
+      'content',
+      'function_calls',
+    ].map((name) => ['<', name, '>'].join(''));
+    for (const text of [
+      `保留笔记中的 \`${invoke}\` 和 \`${parameter}\` 标签以免记录被截断。`,
+      `记录前把 \`${invoke}\` 和 \`${parameter}\` 标签放进反引号里。`,
+      `メモの \`${invoke}\` と \`${parameter}\` タグは必ず引用符で囲む。`,
+      `导入笔记时把 \`${content}\`、\`${parameter}\`、\`${invoke}\` 和 \`${calls}\` 标签都放进反引号里以免记录被截断。`,
+      `Keep \`${invoke}\` and \`${parameter}\` tags quoted.`,
+      'Prefer `ReadonlyArray<T>` over `Array<T>`.',
+      'Return `Promise<void>`, never `Promise<boolean>`.',
+      'Cite <https://a.example/x> and <https://b.example/y> as sources.',
+    ])
+      expect(extractDraftLines(`Done.\nWould record: ${text}`)[0]?.text).toBe(text);
+  });
+
+  it('asks for both increments beside placeholders: two more words and ten more characters each', () => {
+    // Four words and 27 characters beside two placeholders: the word increment drops it.
+    expect(
+      extractDraftLines('A.\nWould record: `<choice>` beats everything else here: `<reason>`')
+    ).toEqual([]);
+    // Fifteen Japanese words and fifteen characters beside two placeholders: past the base
+    // minimum, so only the character increment drops it.
+    expect(
+      extractDraftLines('A.\nWould record: `<決定>` を採用した理由は次のとおりです `<理由>`')
+    ).toEqual([]);
+  });
+
+  it('reads a line of many < and no > in linear time', () => {
+    // Words first, so the whole-line check passes and the span matching runs.
+    const line = `Would record: Keep these notes ${'<'.repeat(200_000)} quoted.`;
+    const started = Date.now();
+    extractDraftLines(`A.\n${line}`);
+    const elapsed = Date.now() - started;
+    // Quadratic span matching took 9.4 s on this line (s107-m02 round-4 critic).
+    expect(elapsed).toBeLessThan(2_000);
+  });
+
+  // s107-m02 round 4: each further span asks for more words beside it, so slots joined by
+  // connectors stay a template, while a real line naming two tags still drafts.
+  it('drops a template of two slots and connectors, and keeps a real line naming two tags', () => {
+    for (const text of [
+      '`<decision>` and the reason: `<reason>`',
+      '`<choice>`, chosen over `<alternative>` because `<reason>`',
+      '`<решение>` и причина: `<причина>`',
+      '`<決定>` とその理由: `<理由>`',
+    ])
+      expect(extractDraftLines(`Answer.\nWould record: ${text}`)).toEqual([]);
+    const [invoke, parameter] = [
+      ['<', 'invoke', '>'],
+      ['<', 'parameter', '>'],
+    ].map((parts) => parts.join(''));
+    const real = `Keep \`${invoke}\` and \`${parameter}\` tags in backticks when recording a note.`;
+    expect(extractDraftLines(`Answer.\nWould record: ${real}`)[0]?.text).toBe(real);
+  });
+
+  // s107-m02 round-5 critic: only an ASCII name written right onto its `<` makes a generic.
+  // Chinese, Japanese and Korean write a placeholder onto the word before it, and a code-span
+  // mark between a word and its `<` makes a slot, so these templates drafted and recorded.
+  it('drops a template whose placeholders are written onto the word before them', () => {
+    for (const text of [
+      '決定は`<決定>` 理由は`<理由>` です。',
+      '决定是`<决定>` 理由是`<理由>` 。',
+      '결정은`<결정>` 이유는`<이유>` 입니다.',
+      '決定は<決定> 理由は<理由> です。',
+      'Adopt`<decision>` because`<reason>` here.',
+      // Emphasis opened right on a slot and closed elsewhere (s107-m02 round-6 critic).
+      '_<decision>, chosen because <reason>_',
+      '__<decision>, chosen because <reason>__',
+    ])
+      expect(extractDraftLines(`Answer.\nWould record: ${text}`)).toEqual([]);
+    for (const text of ['Prefer `ReadonlyArray<T>` over `Array<T>`.', 'Return Promise<void> here.'])
+      expect(extractDraftLines(`Answer.\nWould record: ${text}`)[0]?.text).toBe(text);
+  });
+
+  // A slot named after a tool-call tag is still a slot: only the bare tag name, or the tag with
+  // name="…" attributes as a call writes it, is the tag (s107-m02 round-5 critic).
+  it('drops a slot whose name only starts with a tool-call tag name', () => {
+    const tag = (inner: string): string => ['<', inner, '>'].join('');
+    for (const line of [
+      `Would record: \`${tag('content and reason')}\``,
+      `Would record (constraint): \`${tag('content of the constraint')}\``,
+      `Would record: \`${tag('parameter value')}\` because \`${tag('reason')}\``,
+    ])
+      expect(extractDraftLines(`Answer.\n${line}`)).toEqual([]);
+    for (const quoted of [
+      `Quote \`${tag('parameter name="content"')}\` and \`${tag('/parameter')}\` in notes.`,
+      // Terse, so it drafts only while both tags with attributes read as tags (round-6 critic).
+      `Keep \`${tag('invoke name="a"')}\` and \`${tag('parameter name="b"')}\` quoted.`,
+    ])
+      expect(extractDraftLines(`Answer.\nWould record: ${quoted}`)[0]?.text).toBe(quoted);
+  });
+
   it('drops placeholders, "nothing", and text too short to be a decision', () => {
     for (const text of [
       '<decision and reason>',
+      // s107-m02: a placeholder in a code span or emphasis is still one, now the mark stays.
+      '`<decision and reason>`',
+      '**<decision and reason>**',
+      '*<constraint and its reason>*',
+      '_<decision and reason>_.',
+      '`<decision>` and `<reason>`',
       '<proposed decision and reason>.',
       'nothing',
       'Nothing to record this time.',

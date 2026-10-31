@@ -277,7 +277,9 @@ const EXPECTED_TOTALS = {
   // s106-m02: emptied-parameter.ts (a refusal kept out of the sealed errors.ts) adds one file, no
   // answer type.
   // s106-m03: answer-page.ts (the shared page arithmetic) adds one file, no answer type.
-  files: 330,
+  // s107-m05: session-read-pages.ts (a named session read's pages) and, from its round-1 critic
+  // fold, session-read-render.ts (how such a read prints) add two files, no answer type.
+  files: 332,
   roots: 151,
   declarations: 350,
   compositions: 350,
@@ -292,7 +294,10 @@ const EXPECTED_TOTALS = {
   // item counts, sprint show's and the work queue's preview flags and the digest's reads, and
   // takes back onboard's guide preview: 22 rows. Round 2 adds the session list's nextPage and
   // nextPageCall, and pages the digest's document lists (compact's page fields): 2 rows.
-  rows: 2042,
+  // s107-m05: a named session read in pages gains pageCount and capturesShown, a capture's part,
+  // parts and fullLength, and the summary's summaryPart and summaryParts: 7 rows, disclosed in
+  // the CHANGELOG.
+  rows: 2049,
 } as const;
 const EXPLICIT_OPAQUE_LEDGER = [
   'RbookToolError.providedValue = ANY',

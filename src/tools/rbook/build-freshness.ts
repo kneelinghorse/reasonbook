@@ -5,6 +5,7 @@
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import { collectSrcMtimes, hashSrcFiles, SRC_WALK_CAP } from '../../utils/build-source';
+import { oneLine } from '../../utils/one-line';
 
 /** Only an explicit project preference disables the advisory; missing/old identities keep it. */
 export function projectChecksBuildFreshness(
@@ -50,23 +51,36 @@ export function isBlockingStaleness(report: BuildFreshnessReport): boolean {
   );
 }
 
+const FAILED_PREFIX = 'freshness-check-failed:';
+
+/** A report a caller keeps: stale, or a check that failed, which is never read as fresh (s107-m04). */
+export function keepsFreshnessReport(report: BuildFreshnessReport): boolean {
+  return report.stale || (report.reason?.startsWith(FAILED_PREFIX) ?? false);
+}
+
+/** The words review and sprint close show for a check that could not run. */
+export function freshnessFailureWarning(report: BuildFreshnessReport): string | null {
+  return !report.stale && report.reason?.startsWith(FAILED_PREFIX)
+    ? `Build freshness could not be checked: ${oneLine(report.reason.slice(FAILED_PREFIX.length))}`
+    : null;
+}
+
 const STALE_FILES_CAP = 5;
 const BUILD_MANIFEST_RELATIVE = path.join('dist', '.build-manifest.json');
 const BUILD_MANIFEST_BASENAME = '.build-manifest.json';
+/** Reuse the src walk's bound — caps the dist/ walk against pathological trees. */
+const BUILD_WALK_CAP = SRC_WALK_CAP;
 
 /**
- * Candidate build-output directories, highest priority first (Sprint 74 m01,
- * decision #834). When the manifest is absent the build time is the newest file
- * mtime under the first of these that holds build output — covering layouts the
- * old hardcoded dist/index.js probe missed: aquex.ai (dist/server/entry.mjs),
- * Forge monorepo (dist/src/index.js), Synthesis-Workbench (Next .next/).
+ * s107-m04 (#812, the operator's F3 answer): a project whose build writes no manifest has no build
+ * Reasonbook can call stale, so it is not checked. Sprint 74 m01's .next/, build/ and out/
+ * candidates (decision #834) warned every such project about a build it never saw run.
  */
-const BUILD_DIR_CANDIDATES = ['dist', '.next', 'build', 'out'] as const;
-/** Reuse the src walk's bound — caps the build-dir walk against pathological trees. */
-const BUILD_WALK_CAP = SRC_WALK_CAP;
-/** .next/cache is dev-server churn, not a build artifact — excluded from the .next walk. */
-const NEXT_BUILD_SKIP_DIRS: ReadonlySet<string> = new Set(['cache']);
-const NO_SKIP_DIRS: ReadonlySet<string> = new Set();
+const NOT_APPLICABLE: BuildFreshnessReport = {
+  stale: false,
+  latestSrcMtime: null,
+  distBuildTime: null,
+};
 
 interface DistBuildInfo {
   buildTimeMs: number | null;
@@ -75,20 +89,14 @@ interface DistBuildInfo {
 }
 
 /**
- * Recursively walk a build-output directory and return the NEWEST file mtime.
- * Unlike collectSrcMtimes this accepts ANY extension — build artifacts are
- * .js/.mjs/.cjs/.json/.map/.html/etc. Skips subdirectories whose basename is in
- * skipDirNames (used to drop .next/cache dev-server churn) and the
- * .build-manifest.json metadata file itself: the walk only runs when the
- * manifest is absent OR failed to parse, and a corrupt/partial manifest's fresh
- * mtime must not vouch for an interrupted build (it would mask staleness and
- * wrongly pass the gate). Capped at BUILD_WALK_CAP entries against pathological
- * trees. Returns null when the directory holds no build files.
+ * Recursively walk dist/ and return the NEWEST file mtime. Unlike collectSrcMtimes
+ * this accepts ANY extension — build artifacts are .js/.mjs/.cjs/.json/.map/.html/etc.
+ * Skips the .build-manifest.json metadata file itself: the walk only runs when the
+ * manifest failed to parse, and a corrupt/partial manifest's fresh mtime must not
+ * vouch for an interrupted build (it would mask staleness). Capped at BUILD_WALK_CAP
+ * entries against pathological trees. Returns null when dist/ holds no build files.
  */
-async function findNewestBuildMtime(
-  buildDir: string,
-  skipDirNames: ReadonlySet<string>
-): Promise<number | null> {
+async function findNewestBuildMtime(buildDir: string): Promise<number | null> {
   let newest: number | null = null;
   let visited = 0;
   const stack: string[] = [buildDir];
@@ -112,7 +120,6 @@ async function findNewestBuildMtime(
       }
       visited++;
       if (stat.isDirectory()) {
-        if (skipDirNames.has(name)) continue;
         stack.push(fullPath);
       } else if (
         stat.isFile() &&
@@ -127,11 +134,13 @@ async function findNewestBuildMtime(
 }
 
 async function readDistBuildInfo(projectRoot: string): Promise<DistBuildInfo> {
-  // 1. dist/.build-manifest.json — deterministic primary, unchanged in priority
-  //    and parse behavior. A valid manifest short-circuits the candidate walk.
+  // 1. dist/.build-manifest.json — deterministic primary, unchanged in parse behavior.
+  //    A valid manifest short-circuits the dist/ walk.
   const manifestPath = path.join(projectRoot, BUILD_MANIFEST_RELATIVE);
+  // A manifest that cannot be read (EACCES, EISDIR) throws to the caller's catch, so the check
+  // fails rather than reading as fresh; only one that reads but will not parse is walked past.
+  const raw = await fs.readFile(manifestPath, 'utf-8');
   try {
-    const raw = await fs.readFile(manifestPath, 'utf-8');
     const parsed = JSON.parse(raw) as { buildTime?: string; srcHash?: unknown };
     if (parsed && typeof parsed.buildTime === 'string') {
       const ms = Date.parse(parsed.buildTime);
@@ -146,40 +155,35 @@ async function readDistBuildInfo(projectRoot: string): Promise<DistBuildInfo> {
       }
     }
   } catch {
-    // Fall through to the candidate build-dir walk.
+    // Fall through to the dist/ walk.
   }
 
-  // 2. Newest file mtime under the first candidate build dir that holds output
-  //    (decision #834). An existing-but-empty candidate (e.g. a wiped dist/) is
-  //    skipped rather than false-blocking; only when NONE of the candidates
-  //    yields a build file do we report missing, so a genuinely-unbuilt tree
-  //    still blocks the s70-m02 enforced gate.
-  for (const candidate of BUILD_DIR_CANDIDATES) {
-    const candidateDir = path.join(projectRoot, candidate);
-    try {
-      if (!(await fs.stat(candidateDir)).isDirectory()) continue;
-    } catch {
-      continue;
-    }
-    const skip = candidate === '.next' ? NEXT_BUILD_SKIP_DIRS : NO_SKIP_DIRS;
-    const newest = await findNewestBuildMtime(candidateDir, skip);
-    if (newest != null) {
-      return { buildTimeMs: newest, source: 'build-dir-mtime' };
-    }
-  }
-
-  return { buildTimeMs: null, source: 'missing' };
+  // 2. A manifest that exists but will not parse is an interrupted build: the newest file under
+  //    dist/ is its build time, so it still warns; with no other file there it is missing.
+  const newest = await findNewestBuildMtime(path.join(projectRoot, 'dist'));
+  return newest != null
+    ? { buildTimeMs: newest, source: 'build-dir-mtime' }
+    : { buildTimeMs: null, source: 'missing' };
 }
 
 /**
- * Determine whether dist/ is behind src/. Never throws — all I/O errors fold
- * into a stale=false / reason='freshness-check-failed: <msg>' return so the
- * helper cannot block sprint close or review.
+ * Determine whether dist/ is behind src/. Never throws — every error reading the manifest or the
+ * source folds into a stale=false / reason='freshness-check-failed: <msg>' return so the helper
+ * cannot block sprint close or review; callers keep and say that reason.
  */
 export async function checkBuildFreshness(projectRoot: string): Promise<BuildFreshnessReport> {
   try {
+    // Before any walk: without a manifest there is nothing to check (ENOENT); any other error
+    // is the check failing, which the catch below reports rather than reading as fresh.
+    try {
+      await fs.stat(path.join(projectRoot, BUILD_MANIFEST_RELATIVE));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { ...NOT_APPLICABLE };
+      throw error;
+    }
     const [srcFiles, distInfo] = await Promise.all([
-      collectSrcMtimes(projectRoot),
+      // Strict: a source file that cannot be read fails the check instead of reading as fresh.
+      collectSrcMtimes(projectRoot, { strict: true }),
       readDistBuildInfo(projectRoot),
     ]);
 
@@ -231,7 +235,9 @@ export async function checkBuildFreshness(projectRoot: string): Promise<BuildFre
           : 'src-newer-than-build-dir',
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'unknown error';
+    // By shape: an fs error from another realm (a test sandbox) is not `instanceof Error`.
+    const text = (error as { message?: unknown } | null)?.message;
+    const message = typeof text === 'string' ? text : 'unknown error';
     return {
       stale: false,
       latestSrcMtime: null,

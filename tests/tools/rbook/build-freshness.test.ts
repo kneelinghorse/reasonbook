@@ -1,7 +1,7 @@
 // ABOUTME: Sprint 67 m03 — checkBuildFreshness covers the states sprint close + rbook_review
 // ABOUTME: depend on: fresh, src-newer-than-manifest, src-newer-than-build-dir, dist-missing,
 // ABOUTME: plus defensive defaults for missing src/ and I/O errors. Sprint 74 m01 adds the
-// ABOUTME: generalized candidate-build-dir layouts (aquex.ai / monorepo / Next .next/).
+// ABOUTME: generalized candidate-build-dir layouts; s107-m04 checks only a project with a manifest.
 
 import * as fs from 'fs';
 import * as os from 'os';
@@ -16,6 +16,13 @@ interface TempProject {
   root: string;
   cleanup: () => void;
 }
+
+/** A project without a manifest has no build to check: not stale, no times, no reason. */
+const NOT_APPLICABLE: BuildFreshnessReport = {
+  stale: false,
+  latestSrcMtime: null,
+  distBuildTime: null,
+};
 
 function makeTempProject(): TempProject {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'build-freshness-test-'));
@@ -122,28 +129,35 @@ describe('checkBuildFreshness', () => {
     expect(result.reason).toBe('src-newer-than-build-manifest');
   });
 
-  it('falls back to the newest dist/ file mtime when the manifest is absent and detects stale src', async () => {
-    const indexMtime = new Date(Date.now() - 60_000);
-    const newerSrc = new Date();
-    writeSrcFile(project.root, 'src/foo.ts', newerSrc);
-    writeDistIndex(project.root, indexMtime);
-
-    const result = await checkBuildFreshness(project.root);
-
-    expect(result.stale).toBe(true);
-    expectIsoCloseTo(result.distBuildTime, indexMtime);
-    expect(result.reason).toBe('src-newer-than-build-dir');
+  it('without a manifest, a dist/ build is not checked and src/ is not walked (s107-m04, #812)', async () => {
+    // Only a build that writes dist/.build-manifest.json is one Reasonbook can call stale; a
+    // project that merely has dist/ files got a warning it could not act on.
+    writeSrcFile(project.root, 'src/foo.ts', new Date());
+    writeDistIndex(project.root, new Date(Date.now() - 60_000));
+    const walk = jest.spyOn(fs.promises, 'readdir');
+    try {
+      expect(await checkBuildFreshness(project.root)).toEqual(NOT_APPLICABLE);
+      expect(walk).not.toHaveBeenCalledWith(path.join(project.root, 'src'));
+    } finally {
+      walk.mockRestore();
+    }
   });
 
-  it('returns stale=true reason=dist-missing when no candidate build dir exists', async () => {
+  it('without a manifest and without any build output, nothing is checked either', async () => {
     writeSrcFile(project.root, 'src/foo.ts');
+
+    expect(await checkBuildFreshness(project.root)).toEqual(NOT_APPLICABLE);
+  });
+
+  it('a manifest that cannot be read, other than missing, is freshness-check-failed, never fresh', async () => {
+    // dist/ is a file, so the manifest's stat fails with ENOTDIR rather than ENOENT.
+    writeSrcFile(project.root, 'src/foo.ts', new Date());
+    fs.writeFileSync(path.join(project.root, 'dist'), 'not a folder');
 
     const result = await checkBuildFreshness(project.root);
 
-    expect(result.stale).toBe(true);
-    expect(result.reason).toBe('dist-missing');
-    expect(result.distBuildTime).toBeNull();
-    expect(result.staleFiles).toEqual([path.join('src', 'foo.ts')]);
+    expect(result.stale).toBe(false);
+    expect(result.reason).toMatch(/^freshness-check-failed: ENOTDIR/);
   });
 
   it('returns stale=false defensively when src/ is missing (dist-only install path)', async () => {
@@ -201,23 +215,19 @@ describe('checkBuildFreshness', () => {
   });
 
   it('returns stale=false with freshness-check-failed reason when the project root is unreadable', async () => {
-    // Passing a path with a null byte triggers EILSEQ / EINVAL on both Linux and macOS
-    // before any of the helper's branches succeed — exercising the outer try/catch.
+    // A path with a null byte fails the manifest's stat with an error other than ENOENT, which
+    // reaches the outer catch (s107-m04: deterministic now, so it is asserted).
     const result = await checkBuildFreshness('/proc/this/path/does/not/exist\0invalid');
 
-    // Either the inner walks silently no-op (stale=false, no reason) or the outer catch
-    // fires (stale=false, reason starts with 'freshness-check-failed'). Both are valid
-    // defensive shapes — assert no crash, no stale=true.
     expect(result.stale).toBe(false);
+    expect(result.reason).toMatch(/^freshness-check-failed:/);
   });
 });
 
-describe('checkBuildFreshness — generalized build-dir layouts (Sprint 74 m01)', () => {
-  // The pre-s74 probe only checked dist/.build-manifest.json then the hardcoded
-  // dist/index.js, so any project whose build output was not exactly <root>/dist/index.js
-  // got a permanent false dist-missing and could never close a sprint without
-  // forceComplete. These cover the three independently-reported layouts plus the
-  // priority/exclusion/empty-dir edges (decision #834).
+describe('checkBuildFreshness — a build is one that writes a manifest (s107-m04, #812)', () => {
+  // Sprint 74 m01 (decision #834) read these layouts' newest file as a build time, so every
+  // project with any build output got a stale-build warning about a build Reasonbook cannot see
+  // run. The operator's F3 answer: only a manifest makes a build checkable.
   let project: TempProject;
 
   beforeEach(() => {
@@ -228,144 +238,28 @@ describe('checkBuildFreshness — generalized build-dir layouts (Sprint 74 m01)'
     project.cleanup();
   });
 
-  it('aquex.ai layout: detects stale when src is newer than dist/server/entry.mjs (no dist/index.js, no manifest)', async () => {
-    const buildMtime = new Date(Date.now() - 60_000);
-    const newerSrc = new Date();
-    writeBuildFile(project.root, 'dist/server/entry.mjs', buildMtime);
-    writeSrcFile(project.root, 'src/foo.ts', newerSrc);
-
-    const result = await checkBuildFreshness(project.root);
-
-    expect(result.stale).toBe(true);
-    expect(result.distBuildTime).not.toBeNull();
-    expectIsoCloseTo(result.distBuildTime, buildMtime);
-    expect(result.reason).toBe('src-newer-than-build-dir');
-    expect(result.staleFiles).toEqual([path.join('src', 'foo.ts')]);
-  });
-
-  it('aquex.ai layout: reports fresh when dist/server/entry.mjs is newer than src', async () => {
-    const olderSrc = new Date(Date.now() - 60_000);
-    const buildMtime = new Date();
-    writeSrcFile(project.root, 'src/foo.ts', olderSrc);
-    writeBuildFile(project.root, 'dist/server/entry.mjs', buildMtime);
-
-    const result = await checkBuildFreshness(project.root);
-
-    expect(result.stale).toBe(false);
-    expectIsoCloseTo(result.distBuildTime, buildMtime);
-    expect(result.reason).toBeUndefined();
-  });
-
-  it('monorepo layout: walks dist/src/index.js when there is no dist/index.js', async () => {
-    const buildMtime = new Date(Date.now() - 60_000);
-    const newerSrc = new Date();
-    writeBuildFile(project.root, 'dist/src/index.js', buildMtime);
-    writeBuildFile(project.root, 'dist/src/util.js', new Date(buildMtime.getTime() - 5_000));
-    writeSrcFile(project.root, 'src/index.ts', newerSrc);
-
-    const result = await checkBuildFreshness(project.root);
-
-    expect(result.stale).toBe(true);
-    // Newest file in dist/ (index.js) is the build time, not the older util.js.
-    expectIsoCloseTo(result.distBuildTime, buildMtime);
-    expect(result.reason).toBe('src-newer-than-build-dir');
-  });
-
-  it('Next.js layout: uses .next/ newest mtime when there is no dist/', async () => {
-    const buildMtime = new Date(Date.now() - 60_000);
-    const newerSrc = new Date();
-    writeBuildFile(project.root, '.next/server/app/page.js', buildMtime);
-    writeSrcFile(project.root, 'src/page.tsx', newerSrc);
-
-    const result = await checkBuildFreshness(project.root);
-
-    expect(result.stale).toBe(true);
-    expect(result.distBuildTime).not.toBeNull();
-    expectIsoCloseTo(result.distBuildTime, buildMtime);
-    expect(result.reason).toBe('src-newer-than-build-dir');
-  });
-
-  it('Next.js layout: reports fresh when .next/ build is newer than src', async () => {
-    const olderSrc = new Date(Date.now() - 60_000);
-    const buildMtime = new Date();
-    writeSrcFile(project.root, 'src/page.tsx', olderSrc);
-    writeBuildFile(project.root, '.next/server/app/page.js', buildMtime);
-
-    const result = await checkBuildFreshness(project.root);
-
-    expect(result.stale).toBe(false);
-    expectIsoCloseTo(result.distBuildTime, buildMtime);
-  });
-
-  it('excludes .next/cache from the build-dir walk (dev-server churn is not a build artifact)', async () => {
-    // Real build output is OLDER than src (so the tree is genuinely stale), but a
-    // .next/cache entry is NEWER than everything. If cache were counted the project
-    // would look fresh and the gate would wrongly pass.
-    const realBuild = new Date(Date.now() - 60_000);
-    const srcMtime = new Date(Date.now() - 30_000);
-    const cacheChurn = new Date();
-    writeBuildFile(project.root, '.next/server/app/page.js', realBuild);
-    writeBuildFile(project.root, '.next/cache/webpack/0.pack', cacheChurn);
-    writeSrcFile(project.root, 'src/page.tsx', srcMtime);
-
-    const result = await checkBuildFreshness(project.root);
-
-    expect(result.stale).toBe(true);
-    expectIsoCloseTo(result.distBuildTime, realBuild);
-    expect(result.reason).toBe('src-newer-than-build-dir');
-  });
-
-  it('prefers dist/ over .next/ when both exist (candidate priority order)', async () => {
-    const distMtime = new Date(Date.now() - 90_000);
-    const nextMtime = new Date(Date.now() - 10_000);
-    writeBuildFile(project.root, 'dist/server/entry.mjs', distMtime);
-    writeBuildFile(project.root, '.next/server/app/page.js', nextMtime);
-    writeSrcFile(project.root, 'src/foo.ts', new Date(Date.now() - 120_000));
-
-    const result = await checkBuildFreshness(project.root);
-
-    // Build time comes from dist/ (the higher-priority candidate), not the newer .next/.
-    expectIsoCloseTo(result.distBuildTime, distMtime);
-  });
-
-  it('skips an empty higher-priority candidate and uses the next that holds output', async () => {
-    // A wiped dist/ dir exists but holds no files; the real build is in .next/.
-    // Must NOT false-block as dist-missing.
-    fs.mkdirSync(path.join(project.root, 'dist'), { recursive: true });
-    const buildMtime = new Date(Date.now() - 60_000);
-    writeBuildFile(project.root, '.next/server/app/page.js', buildMtime);
-    writeSrcFile(project.root, 'src/page.tsx', new Date(Date.now() - 120_000));
-
-    const result = await checkBuildFreshness(project.root);
-
-    expect(result.stale).toBe(false);
-    expect(result.reason).toBeUndefined();
-    expectIsoCloseTo(result.distBuildTime, buildMtime);
-  });
-
-  it('recognizes build/ as a candidate build dir', async () => {
-    const buildMtime = new Date(Date.now() - 60_000);
-    writeBuildFile(project.root, 'build/main.js', buildMtime);
-    writeSrcFile(project.root, 'src/foo.ts', new Date());
-
-    const result = await checkBuildFreshness(project.root);
-
-    expect(result.stale).toBe(true);
-    expectIsoCloseTo(result.distBuildTime, buildMtime);
-    expect(result.reason).toBe('src-newer-than-build-dir');
-  });
-
-  it('recognizes out/ as a candidate build dir', async () => {
-    const buildMtime = new Date(Date.now() - 60_000);
-    writeBuildFile(project.root, 'out/bundle.js', buildMtime);
-    writeSrcFile(project.root, 'src/foo.ts', new Date());
-
-    const result = await checkBuildFreshness(project.root);
-
-    expect(result.stale).toBe(true);
-    expectIsoCloseTo(result.distBuildTime, buildMtime);
-    expect(result.reason).toBe('src-newer-than-build-dir');
-  });
+  it.each([
+    ['aquex.ai', ['dist/server/entry.mjs']],
+    ['monorepo', ['dist/src/index.js', 'dist/src/util.js']],
+    ['Next.js', ['.next/server/app/page.js', '.next/cache/webpack/0.pack']],
+    ['build/', ['build/main.js']],
+    ['out/', ['out/bundle.js']],
+    ['an empty dist/ beside .next/', ['.next/server/app/page.js']],
+  ])(
+    'the %s layout without a manifest reads as not applicable, with no src/ walk',
+    async (_layout, files) => {
+      fs.mkdirSync(path.join(project.root, 'dist'), { recursive: true });
+      for (const file of files) writeBuildFile(project.root, file, new Date(Date.now() - 60_000));
+      writeSrcFile(project.root, 'src/foo.ts', new Date());
+      const walk = jest.spyOn(fs.promises, 'readdir');
+      try {
+        expect(await checkBuildFreshness(project.root)).toEqual(NOT_APPLICABLE);
+        expect(walk).not.toHaveBeenCalledWith(path.join(project.root, 'src'));
+      } finally {
+        walk.mockRestore();
+      }
+    }
+  );
 
   it('does NOT let a corrupt-but-present manifest mtime vouch for an interrupted build', async () => {
     // A partial/truncated manifest write leaves dist/.build-manifest.json present
@@ -387,6 +281,61 @@ describe('checkBuildFreshness — generalized build-dir layouts (Sprint 74 m01)'
     expect(result.reason).toBe('src-newer-than-build-dir');
   });
 
+  it('an interrupted build reads only dist/: newer output in .next/ does not vouch for it', async () => {
+    // The removed candidates read .next/ next, so this layout read as fresh (s107-m04 critic).
+    writeCorruptDistManifest(project.root, new Date());
+    writeBuildFile(project.root, '.next/server/app/page.js', new Date());
+    writeSrcFile(project.root, 'src/foo.ts', new Date(Date.now() - 60_000));
+
+    const result = await checkBuildFreshness(project.root);
+
+    expect(result.stale).toBe(true);
+    expect(result.reason).toBe('dist-missing');
+  });
+
+  it('a symlink cycle under src/ is walked past, as before, not a failed check (s107-m04 round 2)', async () => {
+    writeDistManifest(project.root, new Date());
+    writeSrcFile(project.root, 'src/a.ts', new Date(Date.now() - 60_000));
+    fs.symlinkSync('.', path.join(project.root, 'src', 'loop'));
+
+    const result = await checkBuildFreshness(project.root);
+
+    expect(result.reason).toBeUndefined();
+    expect(result.stale).toBe(false);
+  });
+
+  const asRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+  (asRoot ? it.skip : it)(
+    'a manifest or a source folder that cannot be read fails the check, never reading as fresh',
+    async () => {
+      // A newer dist/ file would have vouched for the build had the read error been walked past.
+      writeSrcFile(project.root, 'src/a.ts', new Date(Date.now() - 60_000));
+      writeBuildFile(project.root, 'dist/index.js', new Date());
+      writeDistManifest(project.root, new Date(Date.now() - 600_000));
+      const manifest = path.join(project.root, 'dist', '.build-manifest.json');
+      fs.chmodSync(manifest, 0o000);
+      try {
+        expect((await checkBuildFreshness(project.root)).reason).toMatch(
+          /^freshness-check-failed: EACCES/
+        );
+      } finally {
+        fs.chmodSync(manifest, 0o644);
+      }
+      // The only newer source file sits in a folder the walk cannot read.
+      writeDistManifest(project.root, new Date(Date.now() - 30_000));
+      writeSrcFile(project.root, 'src/sub/b.ts', new Date());
+      const sub = path.join(project.root, 'src', 'sub');
+      fs.chmodSync(sub, 0o000);
+      try {
+        expect((await checkBuildFreshness(project.root)).reason).toMatch(
+          /^freshness-check-failed: EACCES/
+        );
+      } finally {
+        fs.chmodSync(sub, 0o755);
+      }
+    }
+  );
+
   it('lets a VALID manifest short-circuit the candidate walk even when a dist file is newer', async () => {
     // A newer build artifact must not override the deterministic manifest buildTime.
     const manifestBuildTime = new Date(Date.now() - 60_000);
@@ -402,10 +351,8 @@ describe('checkBuildFreshness — generalized build-dir layouts (Sprint 74 m01)'
     expect(result.stale).toBe(false);
   });
 
-  it('still reports dist-missing when every candidate build dir is empty or absent (gate preserved)', async () => {
-    // .next/ exists but holds ONLY the excluded cache subtree → no usable build
-    // file anywhere → genuinely unbuilt → must still block.
-    writeBuildFile(project.root, '.next/cache/webpack/0.pack', new Date());
+  it('still reports dist-missing when a manifest that will not parse is the only file in dist/', async () => {
+    writeCorruptDistManifest(project.root, new Date());
     writeSrcFile(project.root, 'src/foo.ts', new Date());
 
     const result = await checkBuildFreshness(project.root);

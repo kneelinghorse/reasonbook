@@ -1360,6 +1360,67 @@ describe('fromDraft alone records the draft in its own words (s106-m02)', () => 
     expect(refused.error?.suggestion).toMatch(/revised Would record \(constraint\) line/);
   });
 
+  // s107-m02 (#876): with the tag late in the line, the cut copy still states most of the draft, so
+  // it passed every check and was written cut short under "written as drafted" (a decision,
+  // constraint or rule) or written with the raw tag (a profile line). Each is refused before
+  // anything is written, and the line proposed again with the tag in a code span records whole.
+  const TAG = ['<', 'parameter', '>'].join('');
+  it.each([
+    ['decision', 'Strip stray markup from imported notes before recording them, such as'],
+    ['constraint', 'Never record imported notes that still hold stray markup, such as'],
+    ['rule', 'Strip stray markup from imported notes before they are recorded, such as'],
+    ['profile', 'Ask before recording imported notes that still hold stray markup, such as'],
+  ])(
+    'a %s draft a late tag cuts short is refused, and records whole once the tag is quoted',
+    async (kind, words) => {
+      const label = kind === 'decision' ? 'Would record' : `Would record (${kind})`;
+      const late = `${words} ${TAG} tags.`;
+      const quoted = `${words} \`${TAG}\` tags.`;
+      await proposeAndAnswer('approved', `Proposed.\n\n${label}: ${late}`);
+      const untouched = recordState();
+      for (const extra of [{}, { content: late }]) {
+        const refused = await record({ fromDraft: 'P1', ...extra });
+        expect(refused.error?.code).toBe('INVALID_PARAMETER');
+        expect(refused.error?.suggestion).toMatch(/quotes the tag in backticks/);
+      }
+      expect(proposal().outcome).toBe('pending');
+      expect(recordState()).toEqual(untouched);
+
+      await stop('s-one', `Revised.\n\n${label}: ${quoted}`);
+      await say('s-one', 'approved');
+      const recorded = await record({ fromDraft: 'P2' });
+      expect(recorded.success).toBe(true);
+      if (kind === 'decision')
+        expect(
+          row<{ decision_text: string }>(
+            'SELECT decision_text FROM strategic_decisions WHERE id = ?',
+            idOf(recorded)
+          ).decision_text
+        ).toBe(quoted);
+      else if (kind === 'profile')
+        expect(fs.readFileSync(profilePath(process.env), 'utf8').split('\n')).toContain(quoted);
+      else
+        expect(
+          row<{ n: number }>(
+            `SELECT COUNT(*) AS n FROM ${kind === 'constraint' ? 'constraints' : 'learnings'} WHERE content = ?`,
+            quoted
+          ).n
+        ).toBe(1);
+    }
+  );
+
+  it('a decision a late tag cuts short, sent with other content, names the quoted line, not a resend', async () => {
+    const late = `Strip stray markup from imported notes before recording them, such as ${TAG} tags.`;
+    await proposeAndAnswer('approved', reply(late));
+    const refused = await record({
+      fromDraft: 'P1',
+      content: 'Adopt Postgres for the analytics store, because the team runs it.',
+    });
+    expect(refused.error?.code).toBe('INVALID_PARAMETER');
+    expect(refused.error?.suggestion).toMatch(/quotes the tag in backticks/);
+    expect(refused.error?.suggestion).not.toMatch(/fromDraft without content/);
+  });
+
   it.each([
     ['constraint', 'Never push to main without a green CI run on the branch.'],
     ['rule', 'Run the full suite before every commit that touches the hook CLI.'],

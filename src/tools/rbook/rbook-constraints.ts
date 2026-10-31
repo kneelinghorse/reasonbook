@@ -37,7 +37,7 @@ import {
 
 /**
  * s106-m03: rows per page. A constraint has no show action, so each goes out whole: a registered
- * store's 14 active constraints answered 32,493 characters, 16 flagged ones 22,944, and Stage1's
+ * store's 14 active constraints answered 32,493 characters, 16 flagged ones 22,944, and another's
  * average about 3,700 characters a row across text and structured copy; 8 flagged reached 19,579.
  */
 export const CONSTRAINTS_PAGE_SIZE = 4;

@@ -148,6 +148,7 @@ import { RbookErrors } from '../../../src/tools/rbook/errors';
 import { processOwnerKey } from '../../../src/tools/rbook/session-owner';
 import { PROPOSALS_TABLE_SQL } from '../../../src/tools/rbook/proposals';
 import { openDraftRuntime, retainDeclines } from '../../../src/tools/rbook/draft-runtime';
+import { extractDraftLines } from '../../../src/tools/rbook/draft-grammar';
 
 import {
   buildSuggestionMirror,
@@ -195,116 +196,120 @@ const PRIVATE = requiresPrivateEvidence({
  * s90-m05 adds exactly the carry-target refusal below. The ratified base remains fixed; each later
  * mission enumerates the authored sites it adds, and since s92-m03 the ones it retires, rather than
  * moving that base.
+ *
+ * s107-m01 (#882): a label is the census's own `file:line` for its site, re-derived from the census
+ * at s107-m01. A site a later mission removed keeps the label of the removal that retired it. The
+ * census arm names every label its census lacks, so a change that moves a labelled site relabels it.
  */
 const RATIFIED_AUTHORED_BASE = 181;
 const SITES_BY_MISSION = {
-  's90-m05': ['src/tools/rbook/rbook-next-steps.ts:330'],
+  's90-m05': ['src/tools/rbook/rbook-next-steps.ts:310'],
   's90-m07': [],
   's91-m02': ['src/tools/rbook/unknown-param-guard.ts:105'],
   's91-m03': [
-    'src/tools/rbook/rbook-mission-complete.ts:232',
-    'src/tools/rbook/rbook-session-complete.ts:333',
+    'src/tools/rbook/rbook-mission-complete.ts:253',
+    'src/tools/rbook/rbook-session-complete.ts:352',
   ],
   's91-m04': [
-    'src/tools/rbook/rbook-decisions-record.ts:166',
-    'src/tools/rbook/rbook-decisions-record.ts:192',
+    'src/tools/rbook/rbook-decisions-record.ts:247',
+    'src/tools/rbook/rbook-decisions-record.ts:279',
   ],
   // s92-m01: the no-project refusal (one site, three situations), driven below in the first-run
   // instrument through the mirrored resolver and refusal classifier.
-  's92-m01': ['src/tools/rbook/errors.ts:513'],
+  's92-m01': ['src/tools/rbook/errors.ts:516'],
   // s92-m03: completing another live process's implicit session is refused; driven in axis 3.
-  's92-m03': ['src/tools/rbook/errors.ts:528'],
+  's92-m03': ['src/tools/rbook/errors.ts:531'],
   // s92-m08: show names a decision or learning id the project does not hold; driven in axis 2.
-  's92-m08': ['src/tools/rbook/errors.ts:539'],
+  's92-m08': ['src/tools/rbook/errors.ts:542'],
   // s92-m09: an explicit snapshot named like one of Reasonbook's automatic copies is refused
   // (INVALID_PARAMETER; driven in axis 6). prune_snapshots refuses to apply while a reference or
   // sprint-close source is unreadable (DB_QUERY_FAILED) and when the database snapshot fails
   // (SNAPSHOT_CREATION_FAILED); both are FAULT and driven in tests/tools/rbook/snapshot-diet.test.ts.
   's92-m09': [
     'src/tools/rbook/rbook-context-snapshot.ts:148',
-    'src/tools/rbook/rbook-db-prune-snapshots.ts:445',
-    'src/tools/rbook/rbook-db-prune-snapshots.ts:468',
+    'src/tools/rbook/rbook-db-prune-snapshots.ts:448',
+    'src/tools/rbook/rbook-db-prune-snapshots.ts:471',
   ],
   // s93-m11: init without its folder names the call to make, and list asked to prune names the
   // actions that prune (a read never does); both driven in axis 5. An explicit 'stale' a store
   // cannot stamp with its review time is refused, in update and batch update (DB_SCHEMA_MISMATCH,
   // FAULT: the column migration failed); both driven in tests/tools/rbook/first-write-upkeep.test.ts.
   's93-m11': [
-    'src/tools/rbook/rbook-project-init.ts:403',
-    'src/tools/rbook/rbook-project.ts:385',
-    'src/tools/rbook/rbook-decisions-update.ts:137',
-    'src/tools/rbook/rbook-decisions-batch-update.ts:101',
+    'src/tools/rbook/rbook-project-init.ts:566',
+    'src/tools/rbook/rbook-project.ts:409',
+    'src/tools/rbook/rbook-decisions-update.ts:141',
+    'src/tools/rbook/rbook-decisions-batch-update.ts:102',
     // A since/until no stored time can be compared with is refused (it used to match nothing);
     // driven in axis 5.
-    'src/tools/rbook/errors.ts:551',
+    'src/tools/rbook/errors.ts:554',
   ],
   // s93-m12: a re-init naming a project id the project does not have is refused (a re-init keeps
   // the stored identity); driven in axis 2.
-  's93-m12': ['src/tools/rbook/rbook-project-init.ts:666'],
+  's93-m12': ['src/tools/rbook/rbook-project-init.ts:755'],
   // s95-m06: a Ledger init given an initial sprint or missions is refused before it writes
   // anything, naming the Builder init; driven in axis 6.
   's95-m06': [
-    'src/tools/rbook/rbook-project-init.ts:646',
+    'src/tools/rbook/rbook-project-init.ts:674',
     // The confirming critic: init refuses a store it cannot read rather than guess its level.
-    'src/tools/rbook/rbook-project-init.ts:637',
+    'src/tools/rbook/rbook-project-init.ts:665',
   ],
   // s93-m05: a failed local v2 digest read is explicit, with a health-check remedy; driven in
   // review-v2-presentation.test.ts rather than returning an apparently empty successful digest.
-  's93-m05': ['src/tools/rbook/review-presentation.ts:73'],
+  's93-m05': ['src/tools/rbook/review-presentation.ts:91'],
   // s93-m08: count each authored suggestion PropertyAssignment, not each branch value: five
   // standalone CLI refusals and two fleet refusals. The CLI's write-failure and sanitized-empty
   // branches share one site. Portable cases drive every non-fault site and execute CLI remedies.
   's93-m08': [
-    'src/cli/feedback.ts:57',
-    'src/cli/feedback.ts:66',
-    'src/cli/feedback.ts:83',
-    'src/cli/feedback.ts:94',
-    'src/cli/feedback.ts:126',
-    'src/tools/rbook/rbook-feedback.ts:232',
-    'src/tools/rbook/rbook-feedback.ts:242',
+    'src/cli/feedback.ts:59',
+    'src/cli/feedback.ts:81',
+    'src/cli/feedback.ts:98',
+    'src/cli/feedback.ts:109',
+    'src/cli/feedback.ts:141',
+    'src/tools/rbook/rbook-feedback.ts:430',
+    'src/tools/rbook/rbook-feedback.ts:440',
   ],
   // s93-m06: recording a draft. Six refusals are driven in axis 2 below (an id that is not a draft
   // id, no such draft, an answered draft, an expired one, content that does not state the draft, a
   // constraint draft with no operator words in this session); four need a harness session or a
   // race and are named residuals, each driven in tests/tools/rbook/draft-approval.test.ts.
   's93-m06': [
-    'src/tools/rbook/draft-approval.ts:118',
-    'src/tools/rbook/draft-approval.ts:161',
-    'src/tools/rbook/draft-approval.ts:173',
-    'src/tools/rbook/draft-approval.ts:190',
-    'src/tools/rbook/draft-approval.ts:221',
-    'src/tools/rbook/draft-approval.ts:232',
-    'src/tools/rbook/draft-approval.ts:138',
-    'src/tools/rbook/draft-approval.ts:384',
-    'src/tools/rbook/draft-approval.ts:455',
-    'src/tools/rbook/rbook-decisions-record.ts:379',
+    'src/tools/rbook/draft-evaluation.ts:87',
+    'src/tools/rbook/draft-evaluation.ts:147',
+    'src/tools/rbook/draft-evaluation.ts:159',
+    'src/tools/rbook/draft-evaluation.ts:185',
+    'src/tools/rbook/draft-evaluation.ts:228',
+    'src/tools/rbook/draft-evaluation.ts:241',
+    'src/tools/rbook/draft-evaluation.ts:110',
+    'src/tools/rbook/draft-approval.ts:181',
+    'src/tools/rbook/draft-approval.ts:252',
+    'src/tools/rbook/rbook-decisions-record.ts:370',
   ],
   // s94-m04: shape preflight at six writer boundaries, immutable retry comparison and draft-field conflict.
   's94-m04': [
-    'src/tools/rbook/rbook-decisions-record.ts:199',
-    'src/tools/rbook/rbook-decisions-record.ts:298',
-    'src/tools/rbook/rbook-mission-complete.ts:346',
-    'src/tools/rbook/rbook-session-capture.ts:517',
-    'src/tools/rbook/rbook-session-complete.ts:453',
-    'src/tools/rbook/sync-bootstrap.ts:149',
-    'src/tools/rbook/sync-pull.ts:219',
+    'src/tools/rbook/rbook-decisions-record.ts:218',
+    'src/tools/rbook/rbook-decisions-record.ts:300',
+    'src/tools/rbook/rbook-mission-complete.ts:356',
+    'src/tools/rbook/rbook-session-capture.ts:578',
+    'src/tools/rbook/rbook-session-complete.ts:465',
+    'src/tools/rbook/sync-bootstrap.ts:151',
+    'src/tools/rbook/sync-pull.ts:221',
     'src/tools/rbook/decision-fields.ts:50',
   ],
   // s94-m05: eight explicit remedies replace one retired pre-lock parent-inspection fallback.
   's94-m05': [
-    'src/tools/rbook/rbook-mission-add.ts:298',
-    'src/tools/rbook/rbook-mission-add.ts:314',
-    'src/tools/rbook/rbook-mission-start.ts:254',
-    'src/tools/rbook/rbook-mission-start.ts:268',
-    'src/tools/rbook/rbook-mission-status.ts:271',
-    'src/tools/rbook/rbook-mission-update.ts:326',
-    'src/tools/rbook/rbook-mission-update.ts:466',
-    'src/tools/rbook/rbook-mission-update.ts:478',
+    'src/tools/rbook/rbook-mission-add.ts:299',
+    'src/tools/rbook/rbook-mission-add.ts:315',
+    'src/tools/rbook/rbook-mission-start.ts:300',
+    'src/tools/rbook/rbook-mission-start.ts:314',
+    'src/tools/rbook/rbook-mission-status.ts:280',
+    'src/tools/rbook/rbook-mission-update.ts:327',
+    'src/tools/rbook/rbook-mission-update.ts:516',
+    'src/tools/rbook/rbook-mission-update.ts:528',
   ],
   // s94-m06: six authored fault remedies cover required citation preflight/materialization and
   // rollback. The inline capture-permissions suggestion retires into shared failure handling.
   's94-m06': [
-    'src/tools/rbook/rbook-decisions-record.ts:396',
+    'src/tools/rbook/rbook-decisions-record.ts:382',
     'src/tools/rbook/record-link-write.ts:26',
     'src/tools/rbook/record-link-write.ts:83',
     'src/tools/rbook/record-links.ts:22',
@@ -313,22 +318,22 @@ const SITES_BY_MISSION = {
   ],
   // s94-m08: four mandatory mission-drop fault remedies and two CLI spin-out refusals.
   's95-m13': [
-    'src/index.ts:1289',
-    'src/tools/rbook/rbook-message.ts:790',
-    'src/tools/rbook/sender-refusal.ts:96',
+    'src/index.ts:1380',
+    'src/tools/rbook/rbook-message.ts:798',
+    'src/tools/rbook/sender-refusal.ts:90',
   ],
   's94-m08': [
-    'src/tools/rbook/rbook-mission-drop.ts:69',
-    'src/tools/rbook/rbook-mission-drop.ts:92',
-    'src/tools/rbook/rbook-mission-drop.ts:219',
-    'src/tools/rbook/rbook-mission-drop.ts:258',
+    'src/tools/rbook/rbook-mission-drop.ts:70',
+    'src/tools/rbook/rbook-mission-drop.ts:93',
+    'src/tools/rbook/rbook-mission-drop.ts:221',
+    'src/tools/rbook/rbook-mission-drop.ts:260',
     'src/tools/rbook/spin-out-mapping.ts:31',
-    'src/tools/rbook/spin-out.ts:352',
+    'src/tools/rbook/spin-out.ts:378',
   ],
   // s99-m06: offline migration refusals plus guarded init/client opens.
   's99-m06': [
-    'src/tools/rbook/client.ts:423',
-    'src/tools/rbook/rbook-project-init.ts:626',
+    'src/tools/rbook/client.ts:517',
+    'src/tools/rbook/rbook-project-init.ts:640',
     'src/cli/migrate.ts:176',
     'src/cli/migrate-config.ts:156',
     'src/cli/migrate-config.ts:166',
@@ -338,22 +343,22 @@ const SITES_BY_MISSION = {
   // a shared copy. Each was a shorthand or new site; all are named residuals or FAULT below, since
   // no supported call makes a store shared before s96-m03.
   's96-m01': [
-    'src/tools/rbook/replica-check.ts:37',
-    'src/tools/rbook/replica-check.ts:48',
-    'src/tools/rbook/replica-check.ts:59',
+    'src/tools/rbook/replica-check.ts:45',
+    'src/tools/rbook/replica-check.ts:57',
     'src/tools/rbook/replica-check.ts:67',
-    'src/tools/rbook/replica-check.ts:77',
-    'src/tools/rbook/replica-identity.ts:289',
-    'src/tools/rbook/rbook-project-init.ts:695',
+    'src/tools/rbook/replica-check.ts:76',
+    'src/tools/rbook/replica-check.ts:85',
+    'src/tools/rbook/replica-identity.ts:311',
+    'src/tools/rbook/rbook-project-init.ts:706',
   ],
   // s96-m03: a broken write guard, a delete the change log cannot record, a shared row with no
   // stable id, and a recorded write that ends its own transaction. Named residuals below: each is
   // damage or a write no tool makes, on a shared store or not.
   's96-m03': [
     'src/tools/rbook/replica-check.ts:112',
-    'src/tools/rbook/record-capture.ts:57',
-    'src/tools/rbook/record-capture.ts:67',
-    'src/tools/rbook/record-guards.ts:405',
+    'src/tools/rbook/record-capture.ts:59',
+    'src/tools/rbook/record-capture.ts:93',
+    'src/tools/rbook/record-recording.ts:88',
   ],
   // s96-m12: the merge's refusals and remedies: a delivery of another project's record, a slot that
   // holds a different change, a merge into a store that keeps no change log, a member admitted off
@@ -382,7 +387,7 @@ const SITES_BY_MISSION = {
   // moves, recovery and re-identification; a member's copy refusing the old backfill, a purge and a
   // restore; and the CLI's bundle for a member (nine of the 72 added at the build-time critics' folds).
   's96-m13': [
-    'src/cli/sync.ts:161',
+    'src/cli/sync.ts:162',
     'src/tools/rbook/rbook-db-backfill.ts:861',
     'src/tools/rbook/rbook-db-backfill.ts:163',
     'src/tools/rbook/rbook-db-restore.ts:226',
@@ -393,25 +398,25 @@ const SITES_BY_MISSION = {
     'src/tools/rbook/record-admit-successor.ts:121',
     'src/tools/rbook/record-admit-successor.ts:136',
     'src/tools/rbook/record-admit-successor.ts:144',
+    'src/tools/rbook/record-bundle.ts:135',
+    'src/tools/rbook/record-bundle.ts:174',
+    'src/tools/rbook/record-bundle.ts:187',
+    'src/tools/rbook/record-bundle.ts:195',
+    'src/tools/rbook/record-bundle.ts:208',
     'src/tools/rbook/record-bundle.ts:120',
-    'src/tools/rbook/record-bundle.ts:159',
-    'src/tools/rbook/record-bundle.ts:172',
-    'src/tools/rbook/record-bundle.ts:180',
-    'src/tools/rbook/record-bundle.ts:193',
-    'src/tools/rbook/record-bundle.ts:105',
-    'src/tools/rbook/record-bundle.ts:112',
+    'src/tools/rbook/record-bundle.ts:127',
     'src/tools/rbook/record-decide.ts:77',
-    'src/tools/rbook/record-exchange-steps.ts:237',
-    'src/tools/rbook/record-exchange-steps.ts:39',
-    'src/tools/rbook/record-exchange.ts:214',
-    'src/tools/rbook/record-exchange.ts:133',
-    'src/tools/rbook/record-exchange.ts:227',
-    'src/tools/rbook/record-exchange.ts:234',
-    'src/tools/rbook/record-exchange.ts:242',
-    'src/tools/rbook/record-exchange.ts:266',
-    'src/tools/rbook/record-exchange.ts:273',
-    'src/tools/rbook/record-exchange.ts:280',
-    'src/tools/rbook/record-exchange.ts:317',
+    'src/tools/rbook/record-exchange-steps.ts:290',
+    'src/tools/rbook/record-exchange-steps.ts:43',
+    'src/tools/rbook/record-exchange.ts:137',
+    'src/tools/rbook/record-exchange.ts:143',
+    'src/tools/rbook/record-exchange.ts:150',
+    'src/tools/rbook/record-exchange.ts:157',
+    'src/tools/rbook/record-exchange.ts:165',
+    'src/tools/rbook/record-exchange.ts:189',
+    'src/tools/rbook/record-exchange.ts:196',
+    'src/tools/rbook/record-exchange.ts:203',
+    'src/tools/rbook/record-exchange.ts:274',
     'src/tools/rbook/record-join.ts:108',
     'src/tools/rbook/record-join.ts:117',
     'src/tools/rbook/record-join.ts:142',
@@ -449,11 +454,11 @@ const SITES_BY_MISSION = {
     'src/tools/rbook/record-successor.ts:134',
     'src/tools/rbook/record-successor.ts:178',
     'src/tools/rbook/record-sync-channel.ts:148',
-    'src/tools/rbook/record-sync.ts:197',
     'src/tools/rbook/record-sync.ts:125',
-    'src/tools/rbook/record-sync.ts:261',
-    'src/tools/rbook/record-sync.ts:337',
-    'src/tools/rbook/record-sync.ts:412',
+    'src/tools/rbook/record-sync.ts:205',
+    'src/tools/rbook/record-sync.ts:211',
+    'src/tools/rbook/record-sync.ts:312',
+    'src/tools/rbook/record-sync.ts:387',
   ],
   // s96-m14: the import's refusals: a --from holding the store it would write to, a project that is
   // not shared, a --from with no store or with both layouts, a copy this account cannot read or that is
@@ -529,14 +534,14 @@ const SITES_BY_MISSION = {
     'src/referee/open.ts:278',
     'src/referee/open.ts:287',
     'src/referee/peer-input.ts:20',
-    'src/referee/peer.ts:74',
-    'src/referee/peer.ts:81',
-    'src/referee/peer.ts:153',
-    'src/referee/peer.ts:185',
-    'src/referee/peer.ts:199',
-    'src/referee/peer.ts:324',
-    'src/referee/views.ts:70',
-    'src/referee/views.ts:98',
+    'src/referee/peer.ts:75',
+    'src/referee/peer.ts:82',
+    'src/referee/peer.ts:154',
+    'src/referee/peer.ts:186',
+    'src/referee/peer.ts:200',
+    'src/referee/peer.ts:331',
+    'src/referee/views.ts:74',
+    'src/referee/views.ts:102',
     'src/tools/rbook/record-fresh-copy.ts:407',
   ],
   // s97-m10: the dashboard transport's refusals (a sign-in, a project, a limit, a status, a route to
@@ -556,49 +561,49 @@ const SITES_BY_MISSION = {
     'src/tools/rbook/record-dashboard-peer.ts:245',
     'src/tools/rbook/record-dashboard-stream.ts:50',
     'src/tools/rbook/record-dashboard-peer.ts:367',
-    'src/tools/rbook/record-peers.ts:99',
+    'src/tools/rbook/record-peers.ts:141',
     'src/tools/rbook/record-sync-channel.ts:96',
     'src/tools/rbook/record-sync-channel.ts:129',
-    'src/tools/rbook/record-wire.ts:87',
+    'src/tools/rbook/record-wire.ts:88',
   ],
   // s97-m11: sharing, joining and moving back through the dashboard: the flows' refusals, setRole, the
   // referee's move back and archive, and a route the dashboard ended.
   's97-m11': [
     'src/referee/handover.ts:291',
     'src/referee/membership.ts:183',
-    'src/referee/peer.ts:242',
+    'src/referee/peer.ts:250',
     'src/tools/rbook/rbook-project-shared.ts:275',
     'src/tools/rbook/rbook-project-shared.ts:320',
     'src/tools/rbook/record-dashboard-join.ts:69',
     'src/tools/rbook/record-dashboard-join.ts:101',
     'src/tools/rbook/record-dashboard-join.ts:129',
     'src/tools/rbook/record-dashboard-join.ts:88',
-    'src/tools/rbook/record-dashboard-move.ts:90',
-    'src/tools/rbook/record-dashboard-move.ts:99',
-    'src/tools/rbook/record-dashboard-move.ts:159',
-    'src/tools/rbook/record-dashboard-move.ts:153',
-    'src/tools/rbook/record-dashboard-move.ts:180',
-    'src/tools/rbook/record-dashboard-move.ts:216',
-    'src/tools/rbook/record-dashboard-move.ts:134',
+    'src/tools/rbook/record-dashboard-move.ts:93',
+    'src/tools/rbook/record-dashboard-move.ts:102',
+    'src/tools/rbook/record-dashboard-move.ts:179',
+    'src/tools/rbook/record-dashboard-move.ts:171',
+    'src/tools/rbook/record-dashboard-move.ts:200',
+    'src/tools/rbook/record-dashboard-move.ts:244',
+    'src/tools/rbook/record-dashboard-move.ts:140',
     'src/tools/rbook/record-successor.ts:319',
-    'src/tools/rbook/record-dashboard-move.ts:166',
+    'src/tools/rbook/record-dashboard-move.ts:186',
     'src/tools/rbook/record-dashboard-peer.ts:219',
     'src/tools/rbook/record-dashboard-peer.ts:272',
-    'src/tools/rbook/record-dashboard-share.ts:99',
+    'src/tools/rbook/record-dashboard-share.ts:105',
     'src/tools/rbook/record-dashboard-share-state.ts:67',
     'src/tools/rbook/record-dashboard-share-state.ts:84',
-    'src/tools/rbook/record-dashboard-share-state.ts:100',
-    'src/tools/rbook/record-dashboard-share-state.ts:129',
-    'src/tools/rbook/record-dashboard-share.ts:133',
-    'src/tools/rbook/record-dashboard-share.ts:220',
-    'src/tools/rbook/record-dashboard-share.ts:261',
+    'src/tools/rbook/record-dashboard-share-state.ts:105',
+    'src/tools/rbook/record-dashboard-share-state.ts:178',
+    'src/tools/rbook/record-dashboard-share.ts:139',
+    'src/tools/rbook/record-dashboard-share.ts:229',
+    'src/tools/rbook/record-dashboard-share.ts:270',
     'src/tools/rbook/record-membership.ts:279',
     'src/tools/rbook/record-membership.ts:270',
     'src/tools/rbook/record-membership.ts:285',
     'src/tools/rbook/record-membership.ts:291',
     'src/tools/rbook/record-membership.ts:277',
   ],
-  's97-m12': ['src/tools/rbook/draft-approval.ts:206'],
+  's97-m12': ['src/tools/rbook/draft-evaluation.ts:208'],
   // s100-m01: the sharing fixes' refusals: the owner's other copies at a share, a removed member's
   // route the dashboard ended, a re-judge off the owner's copy, a join and a recovery of a newer
   // protocol, a handover to a copy behind a move or from one, a removed copy's sync, and a member's
@@ -617,15 +622,15 @@ const SITES_BY_MISSION = {
   // s100-m02: a share of a project the dashboard does not hold yet, refused signed out or with
   // uploads off, where a session close would upload nothing (the s97 review's finding 7).
   's100-m02': [
-    'src/tools/rbook/record-dashboard-share-state.ts:118',
-    'src/tools/rbook/record-dashboard-share-state.ts:124',
+    'src/tools/rbook/record-dashboard-share-state.ts:167',
+    'src/tools/rbook/record-dashboard-share-state.ts:173',
   ],
   // s100-m03: a next-step capture whose table or genesis columns cannot be prepared before the
   // write lock, now that the capture writes its row (#712).
-  's100-m03': ['src/tools/rbook/rbook-session-capture.ts:498'],
+  's100-m03': ['src/tools/rbook/rbook-session-capture.ts:510'],
   // s97-m07: a bulk resolve whose feedbackIds is not a list of row ids, and one naming a row that
   // does not exist, which resolves none.
-  's97-m07': ['src/tools/rbook/rbook-feedback.ts:282', 'src/tools/rbook/rbook-feedback.ts:354'],
+  's97-m07': ['src/tools/rbook/rbook-feedback.ts:307', 'src/tools/rbook/rbook-feedback.ts:382'],
   // s98-m09: protected identity clears, invalid explicit snapshot retention, and the shared
   // whole-schema validator's type/bound remedy. The validator spreads `error`, so this census's
   // sibling-code rule classifies its site UNTYPED; its separate unit/dispatch tests grant this
@@ -641,24 +646,24 @@ const SITES_BY_MISSION = {
   's98-m11': ['src/tools/rbook/rbook-session-capture.ts:411'],
   // s98-m12: an already-answered message refuses another response with a read-current-message
   // remedy. The portable HTTP arm drives its 409 and executes that exact message's get remedy.
-  's98-m12': ['src/tools/rbook/dashboard-client.ts:1493'],
+  's98-m12': ['src/tools/rbook/dashboard-client.ts:1497'],
   // s98-m13: two failed session-schema/query reads refuse closeout (FAULT; injected in
   // sprint-close-audit-receipt.test.ts). The peer remedy translator spreads an arbitrary engine
   // code, so it is UNTYPED by this gate's sibling-code rule. member-remedies.test.ts covers its
   // five host-code branches plus fallback and caller-safe controls; no router or wire credit.
   's98-m13': [
-    'src/tools/rbook/rbook-sprint-complete.ts:620',
-    'src/tools/rbook/rbook-sprint-complete.ts:636',
-    'src/referee/member-answer.ts:57',
+    'src/tools/rbook/rbook-sprint-complete.ts:622',
+    'src/tools/rbook/rbook-sprint-complete.ts:638',
+    'src/referee/member-answer.ts:58',
   ],
   // s98-m15: hosted recovery offers, intake/finalization refusal and confirmed-membership guard,
   // plus a hosted sync's forged own-authority refusal. All are STATE under the unchanged
   // sibling-code expression rule, including the mixed validation/fault catch wrapper. Their
   // focused library/HTTP/client tests give this router matrix no examined-site or wire credit.
   's98-m15': [
-    'src/referee/recovery.ts:68',
-    'src/referee/recovery.ts:83',
-    'src/referee/recovery.ts:251',
+    'src/referee/recovery.ts:72',
+    'src/referee/recovery.ts:87',
+    'src/referee/recovery.ts:273',
     'src/tools/rbook/record-dashboard-recovery-moves.ts:174',
   ],
   // s98-m16: three authority remedies consolidate in one route-aware helper; reattachment adds
@@ -671,7 +676,7 @@ const SITES_BY_MISSION = {
     'src/tools/rbook/record-dashboard-join.ts:260',
     'src/tools/rbook/record-dashboard-join.ts:271',
     'src/tools/rbook/record-dashboard-move.ts:153',
-    'src/tools/rbook/record-dashboard-share.ts:209',
+    'src/tools/rbook/record-dashboard-share.ts:218',
   ],
   // s98-m17: permanent-copy cutoffs, recent-call consent, returning-copy admission and version
   // floors. Twelve sites are STATE by the unchanged sibling-expression rule, including the
@@ -683,23 +688,23 @@ const SITES_BY_MISSION = {
     'src/referee/set-aside.ts:49',
     'src/referee/set-aside.ts:56',
     'src/tools/rbook/record-dashboard-join.ts:293',
-    'src/tools/rbook/record-dashboard-share.ts:200',
+    'src/tools/rbook/record-dashboard-share.ts:209',
     'src/tools/rbook/record-decide.ts:92',
     'src/tools/rbook/record-moves.ts:114',
-    'src/tools/rbook/record-set-aside.ts:58',
-    'src/tools/rbook/record-set-aside.ts:68',
-    'src/tools/rbook/record-set-aside.ts:77',
-    'src/tools/rbook/record-set-aside.ts:87',
-    'src/tools/rbook/record-set-aside.ts:94',
+    'src/tools/rbook/record-set-aside.ts:66',
+    'src/tools/rbook/record-set-aside.ts:76',
+    'src/tools/rbook/record-set-aside.ts:85',
+    'src/tools/rbook/record-set-aside.ts:95',
+    'src/tools/rbook/record-set-aside.ts:102',
   ],
   // s98-m18: one upload capacity refusal and four incompatible/incomplete-reader refusals.
   // Separate transport fixtures give this existing MCP matrix no examined-site credit.
   's98-m18': [
-    'src/tools/rbook/record-dashboard-share.ts:253',
+    'src/tools/rbook/record-dashboard-share.ts:262',
     'src/tools/rbook/record-dashboard-stream.ts:35',
     'src/tools/rbook/record-reader-gate.ts:25',
-    'src/tools/rbook/record-since.ts:66',
-    'src/tools/rbook/record-wire.ts:193',
+    'src/tools/rbook/record-since.ts:82',
+    'src/tools/rbook/record-wire.ts:188',
   ],
   // s101-m01: interrupted acceptance, an occupied/terminal-held lease, a fenced unfinished
   // upload, a dashboard tombstone, verified owner mismatches and an unsaved upload destination.
@@ -720,13 +725,13 @@ const SITES_BY_MISSION = {
   's101-m04': [
     'src/tools/rbook/record-context.ts:52',
     'src/tools/rbook/rbook-db-backfill.ts:175',
-    'src/tools/rbook/rbook-project-init.ts:822',
+    'src/tools/rbook/rbook-project-init.ts:827',
   ],
   // s101-m10: create-only registration collision, old-server and unsafe-response refusals.
   's101-m10': [
     'src/tools/rbook/registration-error.ts:29',
     'src/tools/rbook/registration-error.ts:48',
-    'src/tools/rbook/dashboard-client.ts:2433',
+    'src/tools/rbook/dashboard-client.ts:2437',
   ],
   // s101-m02: one common delivery notice and three admission/exchange refusals. The helper
   // and readmit spread have no sibling code and remain UNTYPED; this matrix reaches neither.
@@ -739,6 +744,14 @@ const SITES_BY_MISSION = {
   // s101-m03: the confirmed owner-copy remedy inherits its code through a spread (UNTYPED).
   // Its loopback/CLI/dispatch tests confer no examined-site or wire credit on this matrix.
   's101-m03': ['src/tools/rbook/record-dashboard-share-state.ts:147'],
+  // s102-m03 (09321121): the correction guard's one refusal in place of s91-m04's two and
+  // s94-m04's retry, and the session-link failures of mission transitions and sprint retro.
+  // Recorded by s107-m01 (#882): the swap kept the count, so only the labels showed it.
+  's102-m03': [
+    'src/tools/rbook/decision-correction.ts:46',
+    'src/tools/rbook/mission-session-link.ts:24',
+    'src/tools/rbook/rbook-sprint-retro.ts:477',
+  ],
   // s102-m04: three blocking-episode postcondition refusals and reopen's failure/eligibility
   // sites. The shared failure helper has a shorthand code, so remains UNTYPED; the three
   // postcondition sites are fault-shaped STATE residuals under the unchanged code rule.
@@ -748,15 +761,15 @@ const SITES_BY_MISSION = {
     'src/tools/rbook/rbook-mission-unblock.ts:323',
     'src/tools/rbook/rbook-mission-update.ts:481',
     'src/tools/rbook/rbook-mission-reopen.ts:51',
-    'src/tools/rbook/rbook-mission-reopen.ts:128',
-    'src/tools/rbook/rbook-mission-reopen.ts:145',
+    'src/tools/rbook/rbook-mission-reopen.ts:131',
+    'src/tools/rbook/rbook-mission-reopen.ts:148',
   ],
   // s102-m05: an operator decline awaiting its store write blocks records across sessions.
   // The marker is identifier-only, and the existing row-presence axis drives this refusal.
   's102-m05': ['src/tools/rbook/draft-evaluation.ts:175'],
   // s102-m06: unreadable next-step provenance refuses instead of silently counting foreign use.
   // DB_QUERY_FAILED is FAULT; the real-store API suite injects the schema-inspection failure.
-  's102-m06': ['src/tools/rbook/next-steps-read.ts:94'],
+  's102-m06': ['src/tools/rbook/next-steps-read.ts:109'],
   // s102-m07: failure to inspect parked work refuses instead of claiming an exhausted queue.
   's102-m07': ['src/tools/rbook/mission-status-parked.ts:23'],
   // s104-m01: selected tail evidence cannot re-admit a recovered removed member.
@@ -774,45 +787,11 @@ const SITES_BY_MISSION = {
   // rather than state a total they did not take or end the paging at a page's own length.
   // DB_QUERY_FAILED is FAULT, like s102-m06's provenance refusal beside the first.
   's106-m03': ['src/tools/rbook/next-steps-read.ts:136', 'src/tools/rbook/rbook-feedback.ts:497'],
+  // s107-m02 (#876): a draft the content sanitizer cuts is refused before anything is written,
+  // with the propose-it-quoted remedy; driven in axis 2 (decision kind, fromDraft alone).
+  's107-m02': ['src/tools/rbook/draft-evaluation.ts:256'],
 } as const satisfies Readonly<Record<string, readonly string[]>>;
 const RATIFIED_SITE_ADDS = Object.values(SITES_BY_MISSION).flat();
-// Warning propagation moved reopen's eligibility sites after their initial addition.
-const CURRENT_S102_M04_SITES = [
-  ...SITES_BY_MISSION['s102-m04'].slice(0, 4),
-  'src/tools/rbook/rbook-mission-reopen.ts:131',
-  'src/tools/rbook/rbook-mission-reopen.ts:148',
-];
-const CURRENT_S98_M15_SITES = [
-  'src/referee/recovery.ts:72',
-  'src/referee/recovery.ts:87',
-  'src/referee/recovery.ts:273',
-  SITES_BY_MISSION['s98-m15'][3],
-];
-// Keep mission history above fixed; these retained refusals moved in s101-m02 and s101-m03.
-const CURRENT_S98_M13_SITES = [
-  ...SITES_BY_MISSION['s98-m13'].slice(0, 2),
-  'src/referee/member-answer.ts:58',
-];
-const CURRENT_S98_M16_SITES = [
-  ...SITES_BY_MISSION['s98-m16'].slice(0, 5),
-  'src/tools/rbook/record-dashboard-share.ts:218',
-];
-const CURRENT_S98_M17_SITES = [
-  ...SITES_BY_MISSION['s98-m17'].slice(0, 5),
-  'src/tools/rbook/record-dashboard-share.ts:209',
-  ...SITES_BY_MISSION['s98-m17'].slice(6, 8),
-  'src/tools/rbook/record-set-aside.ts:66',
-  'src/tools/rbook/record-set-aside.ts:76',
-  'src/tools/rbook/record-set-aside.ts:85',
-  'src/tools/rbook/record-set-aside.ts:95',
-  'src/tools/rbook/record-set-aside.ts:102',
-];
-const CURRENT_S98_M18_SITES = [
-  'src/tools/rbook/record-dashboard-share.ts:262',
-  ...SITES_BY_MISSION['s98-m18'].slice(1, 3),
-  'src/tools/rbook/record-since.ts:82',
-  'src/tools/rbook/record-wire.ts:188',
-];
 
 /**
  * Authored sites a mission retired, named as they stood at the commit before it (file:line there).
@@ -844,6 +823,13 @@ const SITES_REMOVED_BY_MISSION = {
     'src/tools/rbook/sync-pull.ts:192',
     'src/tools/rbook/sync-pull.ts:221',
     'src/tools/rbook/sync-pull.ts:230',
+  ],
+  // s102-m03: pre-edit 09321121^ sites, recorded by s107-m01 (#882): s91-m04's two supersedes
+  // refusals and s94-m04's retry, whose failed read now throws inside the correction's write lock.
+  's102-m03': [
+    'src/tools/rbook/rbook-decisions-record.ts:247',
+    'src/tools/rbook/rbook-decisions-record.ts:279',
+    'src/tools/rbook/rbook-decisions-record.ts:300',
   ],
   's94-m06': ['src/tools/rbook/rbook-session-capture.ts:591'],
   's94-m05': ['src/tools/rbook/rbook-mission-start.ts:198'],
@@ -1375,6 +1361,12 @@ const S93_M06_DECLINED = 's93-m06 probe: keep one JSON file per decision, a decl
 const S93_M06_EXPIRED = 's93-m06 probe: keep one JSON file per decision, a draft past its lease.';
 const S93_M06_PENDING = 's93-m06 probe: keep one JSON file per decision, a pending draft.';
 const S93_M06_CONSTRAINT = 's93-m06 probe: never push to main without a green CI run first.';
+/** s107-m02: a late tool-call tag, so the cut copy still states most of the draft (#876). */
+const S107_M02_LATE_TAG = `s107-m02 probe: strip stray markup from imported notes, such as ${[
+  '<',
+  'parameter',
+  '>',
+].join('')} tags.`;
 
 function seedDraft(
   dbPath: string,
@@ -1844,6 +1836,23 @@ const MATRIX: MatrixCase[] = [
           action: 'record',
           content: 'Adopt Postgres for the analytics warehouse, the team already runs it.',
           fromDraft: `P${draftIdOf(ctx.dbPath, S93_M06_PENDING)}`,
+          projectRoot: ctx.projectRoot,
+        },
+      },
+    ],
+  },
+  {
+    axis: '2 row-presence',
+    name: 's107-m02: a draft the content sanitizer cuts short, recorded by fromDraft alone',
+    reachable:
+      'ordinary: an approved draft names a tool-call tag late in its line, outside backticks',
+    setup: (ctx) => seedDraft(ctx.dbPath, S107_M02_LATE_TAG, 'decision', 0, 'pending'),
+    calls: (ctx) => [
+      {
+        tool: 'rbook_decisions',
+        params: {
+          action: 'record',
+          fromDraft: `P${draftIdOf(ctx.dbPath, S107_M02_LATE_TAG)}`,
           projectRoot: ctx.projectRoot,
         },
       },
@@ -2943,6 +2952,37 @@ function countAllSuggestionSites(): { sites: number; forwarding: number; files: 
   return { sites, forwarding, files: files.size };
 }
 
+/**
+ * s107-m01 (#882): the ledger labels that name no census site and no removal that retired them,
+ * each with the census lines its file does hold. The count alone let a label drift off its site,
+ * and let a swap of sites that kept the count leave two labels naming removed refusals. A removal
+ * retires at most one label.
+ *
+ * What it cannot see: a label moved onto another real site that no label names (a base site), a
+ * site replaced on the same line, and a label naming a removal that retired a base site; removals
+ * are taken as recorded, never checked against the commit before their mission. The duplicate
+ * check beside it catches a label moved onto a site another label names.
+ */
+function labelsCensusLacks(
+  labels: readonly string[],
+  removed: readonly string[],
+  census: ReadonlySet<string>
+): string[] {
+  const unspent = [...removed];
+  return labels
+    .filter((site) => {
+      if (census.has(site)) return false;
+      const retiredBy = unspent.indexOf(site);
+      if (retiredBy >= 0) unspent.splice(retiredBy, 1);
+      return retiredBy < 0;
+    })
+    .map((site) => {
+      const file = site.slice(0, site.lastIndexOf(':') + 1);
+      const held = [...census].filter((s) => s.startsWith(file)).map((s) => s.slice(file.length));
+      return `${site} (the census holds ${file}${held.join(', ') || ' nothing'})`;
+    });
+}
+
 const CENSUS = runCensus();
 const DRIVEABLE = CENSUS.filter(
   (r) => r.triggerClass === 'VALIDATION' || r.triggerClass === 'STATE'
@@ -2983,7 +3023,7 @@ const HTTP_EXTERNAL_SITES = new Set([
   'src/tools/rbook/owner-resolution.ts:158',
   'src/tools/rbook/owner-resolution.ts:234',
   'src/tools/rbook/rbook-db-backfill.ts:234',
-  'src/tools/rbook/dashboard-client.ts:1493',
+  'src/tools/rbook/dashboard-client.ts:1497',
   'src/tools/rbook/rbook-db-backfill.ts:518',
   'src/tools/rbook/rbook-db-backfill.ts:600',
   'src/tools/rbook/rbook-auth.ts:636',
@@ -3009,7 +3049,7 @@ const SYNTHETIC_EXTERNAL_SITES = new Set([
   'src/tools/rbook/rbook-auth.ts:980',
   'src/tools/rbook/rbook-auth.ts:1162',
   'src/tools/rbook/rbook-auth.ts:1171',
-  'src/tools/rbook/dashboard-client.ts:285',
+  'src/tools/rbook/dashboard-client.ts:286',
   'src/tools/rbook/errors.ts:492',
 ]);
 
@@ -3045,19 +3085,21 @@ describe('s89-m08 CENSUS — the universe re-derives at build time, never from a
       )
     ).toEqual(['UNTYPED']);
     expect(
-      CURRENT_S98_M18_SITES.map((site) => CENSUS.find((row) => row.site === site)?.triggerClass)
+      SITES_BY_MISSION['s98-m18'].map(
+        (site) => CENSUS.find((row) => row.site === site)?.triggerClass
+      )
     ).toEqual(['UNTYPED', 'STATE', 'STATE', 'STATE', 'STATE']);
     for (const site of [
       ...SITES_BY_MISSION['s98-m09'],
       ...SITES_BY_MISSION['s98-m10'],
       ...SITES_BY_MISSION['s98-m11'],
       ...SITES_BY_MISSION['s98-m12'],
-      ...CURRENT_S98_M13_SITES,
-      ...CURRENT_S98_M15_SITES,
+      ...SITES_BY_MISSION['s98-m13'],
+      ...SITES_BY_MISSION['s98-m15'],
       ...SITES_BY_MISSION['s104-m01'],
-      ...CURRENT_S98_M16_SITES,
-      ...CURRENT_S98_M17_SITES,
-      ...CURRENT_S98_M18_SITES,
+      ...SITES_BY_MISSION['s98-m16'],
+      ...SITES_BY_MISSION['s98-m17'],
+      ...SITES_BY_MISSION['s98-m18'],
       ...SITES_BY_MISSION['s101-m01'],
       ...SITES_BY_MISSION['s101-m03'],
     ]) {
@@ -3079,16 +3121,24 @@ describe('s89-m08 CENSUS — the universe re-derives at build time, never from a
       'EXTERNAL',
     ]);
     expect(
-      CURRENT_S98_M13_SITES.map((site) => CENSUS.find((row) => row.site === site)?.triggerClass)
+      SITES_BY_MISSION['s98-m13'].map(
+        (site) => CENSUS.find((row) => row.site === site)?.triggerClass
+      )
     ).toEqual(['FAULT', 'FAULT', 'UNTYPED']);
     expect(
-      CURRENT_S98_M15_SITES.map((site) => CENSUS.find((row) => row.site === site)?.triggerClass)
+      SITES_BY_MISSION['s98-m15'].map(
+        (site) => CENSUS.find((row) => row.site === site)?.triggerClass
+      )
     ).toEqual(['STATE', 'STATE', 'STATE', 'STATE']);
     expect(
-      CURRENT_S98_M16_SITES.map((site) => CENSUS.find((row) => row.site === site)?.triggerClass)
+      SITES_BY_MISSION['s98-m16'].map(
+        (site) => CENSUS.find((row) => row.site === site)?.triggerClass
+      )
     ).toEqual(['STATE', 'STATE', 'STATE', 'STATE', 'UNTYPED', 'UNTYPED']);
     expect(
-      CURRENT_S98_M17_SITES.map((site) => CENSUS.find((row) => row.site === site)?.triggerClass)
+      SITES_BY_MISSION['s98-m17'].map(
+        (site) => CENSUS.find((row) => row.site === site)?.triggerClass
+      )
     ).toEqual([
       'STATE',
       'STATE',
@@ -3106,9 +3156,39 @@ describe('s89-m08 CENSUS — the universe re-derives at build time, never from a
     ]);
   });
 
+  it('labels every ledger site by a line its census holds, or by the removal that retired it (s107-m01)', () => {
+    const sites = new Set(CENSUS.map((row) => row.site));
+    const twice = (labels: readonly string[]): string[] => {
+      const named = labels.filter((site) => sites.has(site));
+      return named.filter((site, i) => named.indexOf(site) !== i);
+    };
+    expect(labelsCensusLacks(RATIFIED_SITE_ADDS, RATIFIED_SITE_REMOVALS, sites)).toEqual([]);
+    expect(twice(RATIFIED_SITE_ADDS)).toEqual([]);
+    // Each check fails on a wrong label in a fixture, never in the ledger. One real label moved
+    // down a line, as s94-m05's rbook-mission-add.ts labels had:
+    const real = SITES_BY_MISSION['s94-m05'][0];
+    const wrong = real.replace(/:(\d+)$/, (_match, line: string) => `:${Number(line) + 1}`);
+    expect(sites.has(real)).toBe(true);
+    expect(sites.has(wrong)).toBe(false);
+    expect(
+      labelsCensusLacks([...RATIFIED_SITE_ADDS, wrong], RATIFIED_SITE_REMOVALS, sites)
+    ).toEqual([expect.stringContaining(`${wrong} (the census holds`)]);
+    // a removal claimed by a second label, which it did not retire:
+    const [retired] = SITES_REMOVED_BY_MISSION['s102-m03'];
+    expect(
+      labelsCensusLacks([...RATIFIED_SITE_ADDS, retired], RATIFIED_SITE_REMOVALS, sites)
+    ).toEqual([expect.stringContaining(`${retired} (the census holds`)]);
+    // and a label moved onto another mission's site, as s97-m11's had onto s98-m16's:
+    expect(twice([...RATIFIED_SITE_ADDS, SITES_BY_MISSION['s98-m16'][4]])).toEqual([
+      SITES_BY_MISSION['s98-m16'][4],
+    ]);
+  });
+
   it('classifies every s102-m04 addition without widening the fault-code rules', () => {
     expect(
-      CURRENT_S102_M04_SITES.map((site) => CENSUS.find((row) => row.site === site)?.triggerClass)
+      SITES_BY_MISSION['s102-m04'].map(
+        (site) => CENSUS.find((row) => row.site === site)?.triggerClass
+      )
     ).toEqual(['STATE', 'STATE', 'STATE', 'UNTYPED', 'STATE', 'STATE']);
   });
 
@@ -3347,7 +3427,7 @@ describe('s89-m08 T5 — every authored suggestion naming a shipped tool yields 
       'src/tools/rbook/rbook-feedback.ts:560',
       'src/tools/rbook/rbook-learnings-reaffirm.ts:91',
       'src/tools/rbook/rbook-learnings-update.ts:104',
-      'src/tools/rbook/rbook-sprint-complete.ts:585',
+      'src/tools/rbook/rbook-sprint-complete.ts:587',
     ]);
   });
 
@@ -5817,7 +5897,7 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     'The ordinary exchange withholds changes from an older member after accepting its own push. This router matrix establishes no mixed-version exchange; separate transport and published-copy tests grant no examined-site or remedy-replay credit.',
   'src/tools/rbook/registration-error.ts:29':
     'An exact owner/name collision refuses detached first registration, including archived names and concurrent stores. This synchronous router-refusal matrix does not await close uploads; the separate real-store loopback and MCP-close suite grants no oracle-site credit.',
-  'src/tools/rbook/dashboard-client.ts:2433':
+  'src/tools/rbook/dashboard-client.ts:2437':
     'The create-only server incorrectly returns a re-registration success. The router matrix does not drive background first registration or synthesize that unsafe response; the focused client test verifies refusal without granting oracle-site credit.',
   'src/tools/rbook/rbook-project-init.ts:827':
     'A second initializer wins the id claim after the first read, with an id that conflicts with this caller explicit projectId. This single-call router matrix has no competing connection at that boundary; deterministic real-SQLite claim tests and two-process probes confer no oracle-site credit.',
@@ -6400,11 +6480,11 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
   // ── MASKED BY AN EARLIER REFUSAL ON EVERY PATH THIS MATRIX CAN DRIVE ─────────────────────────
   // s92-m02, s92-m05 and s92-m03 moved these two down (planned-end-date receipt fields; the
   // archive param; a comment on implicit sessions); same branches.
-  'src/tools/rbook/rbook-sprint-complete.ts:711':
+  'src/tools/rbook/rbook-sprint-complete.ts:713':
     'MEASURED: masked. With master_context deleted and the sprint made closable, closeout refuses at ' +
     'the shared errors.ts contextNotFound BEFORE reaching this sprint-local branch, so :709 is ' +
     'unreachable while that earlier guard stands.',
-  'src/tools/rbook/rbook-sprint-complete.ts:722': 'Same masking as :711, for project_context.',
+  'src/tools/rbook/rbook-sprint-complete.ts:724': 'Same masking as :713, for project_context.',
 };
 
 const FAULT_SHAPED_DRIVEABLE_RESIDUALS = new Set([
@@ -6682,6 +6762,8 @@ PRIVATE.describe(
         code: string;
         words: RegExp;
         remedy: (ctx: { projectRoot: string; dbPath: string }) => Call;
+        /** The newest decision's text once the remedy has run, where the chain checks it. */
+        stored?: string;
       }
       const DRAFT = 's106-m02 chain: keep one JSON file per decision, because diffs stay readable.';
       const REVISION = 's106-m02 chain: keep one JSON file per decision, and merge with a driver.';
@@ -6690,6 +6772,11 @@ PRIVATE.describe(
         'Keep <parameter> tags out of imported notes, the s106-m02 chain says, before recording.';
       const QUOTED =
         'Keep `<parameter>` tags out of imported notes, the s106-m02 chain says, before recording.';
+      // s107-m02: the tag opens the line, so its cut copy is empty and the quoted re-proposal opens
+      // with a code span, the shape whose opening backtick the reply grammar used to drop (#875).
+      const TAG = ['<', 'parameter', '>'].join('');
+      const TAG_FIRST = `${TAG} tags stay out of imported notes, the s107-m02 chain says, before recording.`;
+      const QUOTED_FIRST = `\`${TAG}\` tags stay out of imported notes, the s107-m02 chain says, before recording.`;
       const draft = (ctx: { dbPath: string }, text = DRAFT) => `P${draftIdOf(ctx.dbPath, text)}`;
       const seed = (ctx: { dbPath: string }) =>
         seedDraft(ctx.dbPath, DRAFT, 'decision', 0, 'pending');
@@ -6735,6 +6822,22 @@ PRIVATE.describe(
             seedDraft(ctx.dbPath, QUOTED, 'decision', 0, 'pending');
             return record(ctx.projectRoot, { fromDraft: draft(ctx, QUOTED) });
           },
+        },
+        {
+          // s107-m02 (#875): the remedy as an agent follows it. The line proposed again with the
+          // tag quoted first is read back by the reply grammar, never inserted straight into the
+          // store as the chain above does, and recorded by fromDraft alone with its text whole.
+          name: '#875: a re-proposal that opens with the quoted tag, recorded by fromDraft alone',
+          setup: (ctx) => seedDraft(ctx.dbPath, TAG_FIRST, 'decision', 0, 'pending'),
+          trigger: (ctx) => record(ctx.projectRoot, { fromDraft: draft(ctx, TAG_FIRST) }),
+          code: 'INVALID_PARAMETER',
+          words: /quotes the tag in backticks/,
+          remedy: (ctx) => {
+            const [line] = extractDraftLines(`Revised.\n\nWould record: ${QUOTED_FIRST}`);
+            seedDraft(ctx.dbPath, line.text, 'decision', 0, 'pending');
+            return record(ctx.projectRoot, { fromDraft: draft(ctx, line.text) });
+          },
+          stored: QUOTED_FIRST,
         },
         {
           name: '#870: a revised draft recorded in other words',
@@ -6892,12 +6995,23 @@ PRIVATE.describe(
           remedyTool,
           remedyParams
         );
+        const newest = () =>
+          withDb(
+            ctx.dbPath,
+            (db) =>
+              (
+                db
+                  .prepare('SELECT decision_text FROM strategic_decisions ORDER BY id DESC LIMIT 1')
+                  .get() as { decision_text: string } | undefined
+              )?.decision_text
+          );
         results.push({
           name: chain.name,
           refused: refused.outcome,
           code: refused.code,
           worded: chain.words.test(refused.suggestion ?? ''),
           remedy: remedied.outcome,
+          ...(chain.stored === undefined ? {} : { stored: newest() }),
         });
       }
       expect(results).toEqual(
@@ -6907,6 +7021,7 @@ PRIVATE.describe(
           code: chain.code,
           worded: true,
           remedy: 'SUCCEEDS',
+          ...(chain.stored === undefined ? {} : { stored: chain.stored }),
         }))
       );
     });

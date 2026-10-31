@@ -10,7 +10,7 @@ The Codex plugin below installs its own pinned runtime. For the other adapters,
 install the CLI before enabling hooks:
 
 ```sh
-npm install -g @aquex/reasonbook@4.8.0
+npm install -g @aquex/reasonbook@4.9.0
 reasonbook --version
 npm root -g
 ```
@@ -100,7 +100,7 @@ remove any other imported CMOS hook registration: the adapter and plugin can bot
 run, and duplicate delivery is not prevented without verified process identity.
 The plugin supplies its own MCP server; remove a duplicate manual Reasonbook server or
 set `pluginServer` to `off` in the Reasonbook user config when deliberately retaining the
-manual server.
+manual server. `reasonbook doctor` finds such a duplicate in Claude Code and in Codex.
 
 The hooks map `session_id`, `cwd`, `turn_id` and `last_assistant_message` into the
 shared CLI. They wire SessionStart, UserPromptSubmit, Stop, PreCompact and SessionEnd;

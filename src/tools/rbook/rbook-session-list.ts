@@ -14,10 +14,12 @@ import { createError, createSuccess } from './errors';
 import { authorNamesSince, authorReading } from './author-name';
 import { VALID_SESSION_TYPES, type SessionType } from './rbook-session-start';
 import { getProjectId, tableHasColumn } from './genesis-columns';
-import { frameInlineIfForeign, frameTextIfForeign } from '../../intelligence/provenance-frame';
+import { frameInlineIfForeign } from '../../intelligence/provenance-frame';
 import { appendWarnings } from './format-warnings';
 import { previewText } from './text-preview';
-import { nextPageCall } from './answer-page';
+import { callText, nextPageCall } from './answer-page';
+import { pagedSessionRead } from './session-read-pages';
+import { namedReadLines } from './session-read-render';
 
 /**
  * Valid session statuses.
@@ -67,6 +69,12 @@ export interface SessionListItem {
   /** Characters in the full summary, when it was cut. */
   summaryFullLength?: number;
 
+  /** s107-m05: a summary too large for one page is read in parts; this is the part's place. */
+  summaryPart?: number;
+
+  /** s107-m05: how many parts the summary was read in. */
+  summaryParts?: number;
+
   /** Number of captures in this session */
   captureCount: number;
 
@@ -95,6 +103,15 @@ export interface SessionListCapture {
   expiresAt?: string;
   /** The sprint a deferred capture materializes into. */
   sprintId?: string;
+  /**
+   * s107-m05: a capture too large for one page is read in parts that join back exactly; these
+   * give the part's place, how many there are, and the whole content's length. Its context rides
+   * whole on the first part, or, when it is too large for that, follows the content's parts in
+   * parts of its own with empty content; joining each field across the parts gives it back.
+   */
+  part?: number;
+  parts?: number;
+  fullLength?: number;
 }
 
 /**
@@ -110,7 +127,11 @@ export interface RbookSessionListResult {
   /** Page number returned */
   page: number;
 
-  /** Page size */
+  /**
+   * Page size: sessions a page. On a named read in pages (pageCount present) the caller's pageSize,
+   * when given, caps the captures a page holds; otherwise this is that default, and pages are
+   * bounded by the answer cap alone.
+   */
   pageSize: number;
 
   /** Whether there are more results */
@@ -121,6 +142,12 @@ export interface RbookSessionListResult {
 
   /** The call that reads the next page with the same filters, or null on the last page. */
   nextPageCall: string | null;
+
+  /** s107-m05: a named read that needs more than one page: how many pages the session takes. */
+  pageCount?: number;
+
+  /** s107-m05: where this page's captures sit in stored order (1-based), when it holds any. */
+  capturesShown?: { first: number; last: number };
 
   /** Applied filters */
   filters: {
@@ -314,7 +341,8 @@ export async function rbookSessionList(
          ${whereClause}
          ORDER BY julianday(started_at) DESC
          LIMIT ? OFFSET ?`,
-        [...queryParams, pageSize, offset]
+        // s107-m05: a named read's page picks a page of that session's entries, not of sessions.
+        [...queryParams, params.sessionId ? 1 : pageSize, params.sessionId ? 0 : offset]
       );
 
       if (!sessionsResult.success) {
@@ -356,33 +384,60 @@ export async function rbookSessionList(
         };
       });
 
+      const localProjectId = getProjectId(client);
+      const filters = {
+        ...(params.status && { status: params.status }),
+        ...(params.type && { type: params.type }),
+        ...(params.sprintId && { sprintId: params.sprintId }),
+        ...(params.sessionId && { sessionId: params.sessionId }),
+      };
+      const callArgs = {
+        action: 'list',
+        status: params.status,
+        type: params.type,
+        sprintId: params.sprintId,
+        sessionId: params.sessionId,
+        pageSize: params.pageSize,
+        projectRoot: params.projectRoot,
+      };
+      // s107-m05 (#879): a named read that needs more than one page answers one page of its
+      // entries; one that fits on one page answers exactly as before.
+      const paged =
+        params.sessionId && sessions.length === 1
+          ? pagedSessionRead({
+              item: sessions[0],
+              page,
+              pageSize,
+              maxCaptures: params.pageSize,
+              totalCount,
+              filters,
+              localProjectId,
+              callArgs,
+            })
+          : null;
+      if (paged?.result)
+        return createSuccess<RbookSessionListResult>(
+          paged.result,
+          paged.warning ? [paged.warning] : undefined
+        );
+
       const hasMore = offset + sessions.length < totalCount;
       const nextPage = hasMore ? page + 1 : null;
 
-      return createSuccess<RbookSessionListResult>({
-        sessions,
-        totalCount,
-        page,
-        pageSize,
-        hasMore,
-        nextPage,
-        nextPageCall: nextPageCall(nextPage, 'rbook_session', {
-          action: 'list',
-          status: params.status,
-          type: params.type,
-          sprintId: params.sprintId,
-          sessionId: params.sessionId,
-          pageSize: params.pageSize,
-          projectRoot: params.projectRoot,
-        }),
-        filters: {
-          ...(params.status && { status: params.status }),
-          ...(params.type && { type: params.type }),
-          ...(params.sprintId && { sprintId: params.sprintId }),
-          ...(params.sessionId && { sessionId: params.sessionId }),
+      return createSuccess<RbookSessionListResult>(
+        {
+          sessions,
+          totalCount,
+          page,
+          pageSize,
+          hasMore,
+          nextPage,
+          nextPageCall: nextPageCall(nextPage, 'rbook_session', callArgs),
+          filters,
+          localProjectId,
         },
-        localProjectId: getProjectId(client),
-      });
+        paged?.warning ? [paged.warning] : undefined
+      );
     },
     { projectRoot: params.projectRoot }
   );
@@ -469,7 +524,10 @@ export function formatSessionListForLLM(result: RbookToolResult<RbookSessionList
 
   for (const session of data.sessions) {
     const icon = statusIcon[session.status] ?? '📄';
-    const captureInfo = session.captureCount > 0 ? ` (${session.captureCount} captures)` : '';
+    // s107-m05: a read in pages says "1 capture"; a one-page read prints as it always has.
+    const noun =
+      data.pageCount !== undefined && session.captureCount === 1 ? 'capture' : 'captures';
+    const captureInfo = session.captureCount > 0 ? ` (${session.captureCount} ${noun})` : '';
     // s84-m03: a foreign (pull-merged) session's title/summary is untrusted DATA — frame
     // inline; a local/NULL-project session renders byte-identical to 2.3.0.
     const title = frameInlineIfForeign(session.title, session.projectId, data.localProjectId);
@@ -478,27 +536,21 @@ export function formatSessionListForLLM(result: RbookToolResult<RbookSessionList
       `   Type: ${session.type} | Status: ${session.status} | Agent: ${session.agent} | Author: ${session.author}`
     );
     if (session.captures) {
-      // s93-m11: one session named by id is read in full, summary and every capture.
-      if (session.summary) {
-        lines.push('   Summary:');
-        lines.push(frameTextIfForeign(session.summary, session.projectId, data.localProjectId));
-      }
-      if (session.captures.length > 0) {
-        lines.push('');
-        lines.push(`   Captures (${session.captures.length}):`);
-        for (const capture of session.captures) {
-          const when = capture.timestamp ? ` ${capture.timestamp}` : '';
-          const mission = capture.missionId ? ` {${capture.missionId}}` : '';
-          lines.push(`   - [${capture.category}]${when}${mission}`);
-          lines.push(frameTextIfForeign(capture.content, session.projectId, data.localProjectId));
-          if (capture.context) {
-            lines.push(
-              `     Context: ${frameTextIfForeign(capture.context, session.projectId, data.localProjectId)}`
-            );
-          }
-          if (capture.expiresAt) lines.push(`     Expires: ${capture.expiresAt}`);
-        }
-      }
+      // s93-m11: one session named by id is read in full, summary and every capture; s107-m05: a
+      // page at a time when it takes more than one, page 1 reading the summary.
+      lines.push(
+        ...namedReadLines(
+          session,
+          data.localProjectId,
+          data.pageCount === undefined
+            ? undefined
+            : {
+                page: data.page,
+                pageCount: data.pageCount,
+                shown: data.capturesShown,
+              }
+        )
+      );
     } else if (session.summary) {
       const shortSummary =
         session.summary.length > 80 ? session.summary.slice(0, 80) + '...' : session.summary;
@@ -509,7 +561,10 @@ export function formatSessionListForLLM(result: RbookToolResult<RbookSessionList
     lines.push('');
   }
 
-  if (data.hasMore) {
+  // s107-m05: a named read's pages are its own entries', not pages of sessions.
+  if (data.pageCount !== undefined) {
+    if (data.page <= data.pageCount) lines.push(`*Page ${data.page} of ${data.pageCount}.*`);
+  } else if (data.hasMore) {
     lines.push(`*Page ${data.page} of ${Math.ceil(data.totalCount / data.pageSize)}.*`);
   }
   if (data.nextPageCall) lines.push(`Next page: ${data.nextPageCall}.`);
@@ -522,7 +577,7 @@ export function formatSessionListForLLM(result: RbookToolResult<RbookSessionList
   if (cut) {
     lines.push(
       `Summaries are cut here. Read a session in full with ` +
-        `rbook_session(action="list", sessionId="${cut.id}").`
+        `${callText('rbook_session', { action: 'list', sessionId: cut.id })}.`
     );
   }
 

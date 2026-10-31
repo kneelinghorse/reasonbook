@@ -28,6 +28,7 @@ const HISTORICAL_FAILURES = [
   'tests/server-dual-era.test.ts',
   'tests/signals/feedback-regex.test.ts',
   'tests/tools/rbook/author-names.test.ts',
+  'tests/tools/rbook/dashboard-upload-auth.test.ts',
   'tests/tools/rbook/draft-real-store.test.ts',
   'tests/tools/rbook/feedback-fleet.test.ts',
   'tests/tools/rbook/lifecycle-decoupling.test.ts',

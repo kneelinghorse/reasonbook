@@ -81,9 +81,26 @@ async function freshnessPreference(value: unknown): Promise<void> {
   expect(updated.structuredContent).toMatchObject({ success: true });
 }
 
+/** Source newer than a build that wrote a manifest, the only kind of build that is checked (s107-m04). */
 function staleSource(): void {
   fs.mkdirSync(path.join(root, 'src'));
   fs.writeFileSync(path.join(root, 'src', 'main.ts'), 'export const value = 1;\n');
+  fs.mkdirSync(path.join(root, 'dist'));
+  fs.writeFileSync(
+    path.join(root, 'dist', '.build-manifest.json'),
+    JSON.stringify({ buildHash: 'x', buildTime: new Date(Date.now() - 60_000).toISOString() })
+  );
+}
+
+/** Build output with no manifest: a layout Reasonbook cannot see built, so it is not checked. */
+function unmanifestedBuild(): void {
+  fs.mkdirSync(path.join(root, 'src'));
+  fs.writeFileSync(path.join(root, 'src', 'main.ts'), 'export const value = 1;\n');
+  fs.mkdirSync(path.join(root, 'dist'));
+  const built = path.join(root, 'dist', 'index.js');
+  fs.writeFileSync(built, 'module.exports = {};\n');
+  const old = new Date(Date.now() - 60_000);
+  fs.utimesSync(built, old, old);
 }
 
 it('status carries the sprint focus once while retaining null in each mission sprint', async () => {
@@ -119,6 +136,31 @@ it('review honors a stored opt-out before walking a source-running project', asy
   }
 });
 
+it('without a manifest, review and close give no field, no action, no advisory and no src walk', async () => {
+  activeSprint();
+  unmanifestedBuild();
+  const walk = jest.spyOn(fs.promises, 'readdir');
+  try {
+    const review = await rbookReview({ projectRoot: root }, { offline: true });
+    expect(review.success).toBe(true);
+    expect(review.data?.buildFreshness).toBeUndefined();
+    expect(review.data?.next_actions.some((action) => action.command === 'npm run build')).toBe(
+      false
+    );
+    const close = await rbookSprintComplete({
+      projectRoot: root,
+      sprintId: 'sprint-answer',
+      summary: 'Built without a manifest',
+    });
+    expect(close.success).toBe(true);
+    expect(close.data?.buildFreshness).toBeUndefined();
+    expect(close.warnings?.join('\n') ?? '').not.toMatch(/build looks stale|Build freshness/);
+    expect(walk).not.toHaveBeenCalledWith(path.join(root, 'src'));
+  } finally {
+    walk.mockRestore();
+  }
+});
+
 it.each([true, null, 'false'])(
   'only explicit boolean false opts out; %p keeps the stale-source warning',
   async (value) => {
@@ -142,7 +184,7 @@ it('sprint close honors the same stored opt-out without suppressing its runtime 
   expect(result.success).toBe(true);
   expect(result.data?.buildFreshness).toBeUndefined();
   expect(result.warnings?.join('\n') ?? '').not.toMatch(
-    /Build is stale|dist\/ is missing|Server is running stale code/
+    /build looks stale|Build freshness could not be checked|Server is running stale code/
   );
   expect(result.data).toHaveProperty('startupBuildTime');
   expect(result.data).toHaveProperty('driftMinutes');

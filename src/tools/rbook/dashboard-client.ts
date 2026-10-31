@@ -27,6 +27,7 @@ import type { RbookToolError, RbookToolResult } from './types';
 import { dashboardHttpError } from './dashboard-http-error';
 import { registrationError } from './registration-error';
 import { createError, createSuccess, RbookErrors } from './errors';
+import { compareStoredTimes } from './stored-time';
 import {
   CredentialStore,
   type KeySource,
@@ -418,7 +419,10 @@ export function pickNewestUserScopedKey(
 ): { keyId: string; record: UserScopedKeyRecord } | undefined {
   const entries = Object.entries(keys);
   if (entries.length === 0) return undefined;
-  const best = entries.reduce((a, b) => ((b[1].issuedAt ?? '') > (a[1].issuedAt ?? '') ? b : a));
+  // s107-m01 (#788): by instant, as the upload fallback orders keys; the store keeps any spelling.
+  const best = entries.reduce((a, b) =>
+    compareStoredTimes(b[1].issuedAt, a[1].issuedAt) > 0 ? b : a
+  );
   return { keyId: best[0], record: best[1] };
 }
 

@@ -935,8 +935,8 @@ describe('rbook_sprint_complete', () => {
     }
 
     function writeDistIndex(mtime: Date): void {
-      // dist/index.js with NO manifest — exercises the manifest-absent build-dir
-      // walk in checkBuildFreshness (reason 'src-newer-than-build-dir', Sprint 74 m01).
+      // dist/index.js; with a manifest that will not parse beside it, checkBuildFreshness walks
+      // dist/ (reason 'src-newer-than-build-dir'); with no manifest it checks nothing (s107-m04).
       const distDir = path.join(tempDir, 'dist');
       fs.mkdirSync(distDir, { recursive: true });
       const indexPath = path.join(distDir, 'index.js');
@@ -1036,32 +1036,54 @@ describe('rbook_sprint_complete', () => {
       expect(countRows('context_snapshots')).toBeGreaterThan(0);
     });
 
-    it('completes with an advisory warning on dist-missing (does NOT block)', async () => {
+    it('completes with no advisory when there is no manifest, as there is no build to check (s107-m04)', async () => {
       seedMissions([{ id: 's22-m01', status: 'Completed' }]);
       seedContexts({}, {});
-      writeSrcFile('src/foo.ts');
+      writeDistIndex(new Date(Date.now() - 60_000));
+      writeSrcFile('src/foo.ts', new Date());
 
       const result = await rbookSprintComplete({
         sprintId: 'sprint-22',
-        summary: 'Missing dist is advisory',
+        summary: 'No manifest, no build check',
         projectRoot: getProjectRoot(),
       });
 
       expect(result.success).toBe(true);
-      expect(result.data?.buildFreshness?.reason).toBe('dist-missing');
+      expect(result.data?.buildFreshness).toBeUndefined();
+      expect(result.warnings?.join('\n') ?? '').not.toMatch(/build looks stale|freshness/i);
+      expect(readSprintStatus()).toBe('Completed');
+    });
+
+    it('keeps a failed freshness check and warns, never reading it as fresh (s107-m04)', async () => {
+      seedMissions([{ id: 's22-m01', status: 'Completed' }]);
+      seedContexts({}, {});
+      writeSrcFile('src/foo.ts', new Date());
+      fs.writeFileSync(path.join(tempDir, 'dist'), 'not a folder');
+
+      const result = await rbookSprintComplete({
+        sprintId: 'sprint-22',
+        summary: 'A failed check is said',
+        projectRoot: getProjectRoot(),
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.data?.buildFreshness?.reason).toMatch(/^freshness-check-failed: ENOTDIR/);
       expect(result.warnings).toEqual(
-        expect.arrayContaining([expect.stringMatching(/dist-missing/)])
+        expect.arrayContaining([
+          expect.stringMatching(/^Build freshness could not be checked: ENOTDIR/),
+        ])
       );
       expect(readSprintStatus()).toBe('Completed');
     });
 
     it('completes with an advisory warning on src-newer-than-build-dir (does NOT block)', async () => {
-      // No .build-manifest.json, but a dist/ build file exists older than src/.
-      // Detection is covered in build-freshness.test.ts; here we assert the e2e
+      // An interrupted build leaves a manifest that will not parse, so the newest dist/ file is
+      // the build time. Detection is covered in build-freshness.test.ts; here we assert the e2e
       // closeout treats it as advisory, not a block.
       seedMissions([{ id: 's22-m01', status: 'Completed' }]);
       seedContexts({}, {});
       writeDistIndex(new Date(Date.now() - 60_000));
+      fs.writeFileSync(path.join(tempDir, 'dist', '.build-manifest.json'), '{ "buildTime": ');
       writeSrcFile('src/foo.ts', new Date());
 
       const result = await rbookSprintComplete({

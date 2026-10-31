@@ -97,6 +97,33 @@ describe('generate-build-manifest', () => {
     expect(generate().buildHash).not.toBe(edited);
   });
 
+  const asRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+  (asRoot ? it.skip : it)(
+    'still writes a manifest when a source folder cannot be read (s107-m04: only the check is strict)',
+    () => {
+      // A project root whose dist/ is beside src/, as a build lays them out.
+      write(path.join('dist', 'index.js'), 'console.log(1);');
+      write(path.join('src', 'a.ts'), 'export const a = 1;');
+      write(path.join('src', 'locked', 'b.ts'), 'export const b = 2;');
+      const locked = path.join(distDir, 'src', 'locked');
+      fs.chmodSync(locked, 0o000);
+      try {
+        execFileSync(
+          process.execPath,
+          [SCRIPT, '--root', distDir, '--dist', path.join(distDir, 'dist')],
+          { stdio: 'pipe' }
+        );
+        const manifest = JSON.parse(
+          fs.readFileSync(path.join(distDir, 'dist', '.build-manifest.json'), 'utf8')
+        ) as Manifest & { srcHash?: string };
+        expect(manifest.fileCount).toBe(1);
+        expect(manifest.srcHash).toMatch(/^[a-f0-9]{64}$/);
+      } finally {
+        fs.chmodSync(locked, 0o755);
+      }
+    }
+  );
+
   it('writes nothing when the directory holds no .js files', () => {
     write('notes.txt', 'nothing to hash');
     execFileSync(process.execPath, [SCRIPT, '--root', distDir, '--dist', distDir], {

@@ -265,6 +265,11 @@ optional semantic-search package, its first embedding downloads a model from Hug
 dependencies can also download native libraries. These services receive the download requests and
 their own policies apply. Reasonbook's dashboard receives no install report.
 
+`reasonbook doctor` asks the npm registry for the latest Reasonbook version with one GET of
+`https://registry.npmjs.org/@aquex/reasonbook/latest`, limited to 5 seconds. The request carries
+nothing about your projects, paths or credentials; the registry sees it as it sees a download
+request. `--offline` skips it.
+
 ## The dashboard (optional)
 
 **What is collected.** The hosted service at [reasonbook.ai](https://reasonbook.ai) keeps:

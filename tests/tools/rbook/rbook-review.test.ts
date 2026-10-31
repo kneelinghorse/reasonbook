@@ -514,15 +514,51 @@ describe('rbook_review', () => {
       expect(digest.buildFreshness?.stale).toBe(true);
     });
 
-    it('attaches buildFreshness with dist-missing reason when dist/ is absent entirely', async () => {
-      writeSrcFile('src/foo.ts');
+    it('without a manifest there is no build to warn about: no field and no build action (s107-m04)', async () => {
+      writeSrcFile('src/foo.ts', new Date());
+      // Built before the source changed, so the old dist/ fallback called it stale.
+      fs.mkdirSync(path.join(tempDir, 'dist'), { recursive: true });
+      const built = path.join(tempDir, 'dist', 'index.js');
+      fs.writeFileSync(built, '');
+      const old = new Date(Date.now() - 60_000);
+      fs.utimesSync(built, old, old);
 
       const result = await rbookReview({ projectRoot: tempDir });
       const digest = result.data as RbookReviewResult;
 
-      expect(digest.buildFreshness?.stale).toBe(true);
-      expect(digest.buildFreshness?.reason).toBe('dist-missing');
-      expect(digest.next_actions[0].action).toContain('build output missing');
+      expect(digest.buildFreshness).toBeUndefined();
+      expect(digest.next_actions.find((a) => a.command === 'npm run build')).toBeUndefined();
+    });
+
+    it('a failed check in a project that is not a build project says nothing (s107-m04 critic)', async () => {
+      setProjectType('general');
+      writeSrcFile('src/foo.ts', new Date());
+      fs.writeFileSync(path.join(tempDir, 'dist'), 'not a folder');
+
+      const result = await rbookReview({ projectRoot: tempDir });
+      const digest = result.data as RbookReviewResult;
+
+      expect(digest.buildFreshness).toBeUndefined();
+      expect((result.warnings ?? []).join('\n')).not.toContain(
+        'Build freshness could not be checked'
+      );
+    });
+
+    it('a freshness check that fails is kept and warned, never read as fresh (s107-m04)', async () => {
+      writeSrcFile('src/foo.ts', new Date());
+      // dist/ is a file, so reading the manifest fails with ENOTDIR, not ENOENT.
+      fs.writeFileSync(path.join(tempDir, 'dist'), 'not a folder');
+
+      const result = await rbookReview({ projectRoot: tempDir });
+      const digest = result.data as RbookReviewResult;
+
+      expect(digest.buildFreshness?.stale).toBe(false);
+      expect(digest.buildFreshness?.reason).toMatch(/^freshness-check-failed: ENOTDIR/);
+      expect(result.warnings).toEqual(
+        expect.arrayContaining([
+          expect.stringMatching(/^Build freshness could not be checked: ENOTDIR/),
+        ])
+      );
     });
   });
 

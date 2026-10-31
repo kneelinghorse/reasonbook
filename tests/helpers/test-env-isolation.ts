@@ -15,6 +15,8 @@ const CONTROL_SUFFIXES = [
   'ANSWER_SHAPE_SOURCE_ROOT',
   'CODEX_REAL_STORE_ROOT',
   'ADDRESS_REAL_STORE_ROOT',
+  // s107-m04: the build-freshness fire test's source store.
+  'FRESHNESS_REAL_STORE_ROOT',
   // s96-m12: how many random orders the interleaving property tries (its default is 100).
   'INTERLEAVINGS',
   'INTERLEAVINGS_DEBUG',

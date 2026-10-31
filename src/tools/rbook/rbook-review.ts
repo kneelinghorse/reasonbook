@@ -80,6 +80,8 @@ import type { SelfCaptureGap } from './self-capture-guard';
 import { rbookMissionStatus, type StatusMissionItem } from './rbook-mission-status';
 import {
   checkBuildFreshness,
+  freshnessFailureWarning,
+  keepsFreshnessReport,
   projectChecksBuildFreshness,
   type BuildFreshnessReport,
 } from './build-freshness';
@@ -336,7 +338,7 @@ export interface RbookReviewResult {
    * even if it had been desirable.
    */
 
-  /** Build-freshness signal — present ONLY when stale=true (Sprint 67 m03).
+  /** Build-freshness signal — present only when stale, or when the check failed (s107-m04).
    *  Closes the s65 retro footgun where missions were marked Complete against
    *  stale runtime code because nobody had rebuilt dist/. */
   buildFreshness?: BuildFreshnessReport;
@@ -600,6 +602,11 @@ export async function rbookReview(
   // warnings — those live on the long-form rbook_agent_onboard payload.
   const reviewWarnings = filterReviewWarnings(onboardResult.warnings ?? []);
   if (sharedRecord?.warning) reviewWarnings.push(sharedRecord.warning);
+  // s107-m04: a freshness check that could not run is said, never read as fresh.
+  const freshnessFailure = gatedBuildFreshness
+    ? freshnessFailureWarning(gatedBuildFreshness)
+    : null;
+  if (freshnessFailure) reviewWarnings.push(freshnessFailure);
 
   return createSuccess(digest, reviewWarnings);
 }
@@ -761,7 +768,7 @@ function buildDigest(
     digestSizeBytes: 0,
   };
 
-  if (buildFreshness?.stale) {
+  if (buildFreshness && keepsFreshnessReport(buildFreshness)) {
     draft.buildFreshness = buildFreshness;
   }
 

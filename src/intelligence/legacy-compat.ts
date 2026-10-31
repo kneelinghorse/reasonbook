@@ -77,7 +77,7 @@ export function assertConfigDirectoryAvailable(configDir: string): void {
 export function resolveConfigDirectory(
   env: NodeJS.ProcessEnv = process.env,
   home = os.homedir(),
-  options: { readonly allowMigration?: boolean } = {}
+  options: { readonly allowMigration?: boolean; readonly quiet?: boolean } = {}
 ): string {
   if (
     !options.allowMigration &&
@@ -95,7 +95,8 @@ export function resolveConfigDirectory(
   const legacy = path.join(home, '.config', LEGACY.configDirectory);
   const currentRegistry = existsSync(path.join(current, 'project-graph.sqlite'));
   const legacyRegistry = existsSync(path.join(legacy, 'project-graph.sqlite'));
-  if (currentRegistry && legacyRegistry) {
+  // reasonbook doctor reports both registries itself, so it asks for no warning here.
+  if (currentRegistry && legacyRegistry && !options.quiet) {
     process.stderr.write(
       'Reasonbook: both config folders contain a registry; using ~/.config/rbook. Set RBOOK_CONFIG_DIR to choose explicitly.\n'
     );

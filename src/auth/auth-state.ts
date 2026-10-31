@@ -20,6 +20,7 @@ import {
   RBOOK_DASHBOARD_USER_ENV,
   RBOOK_DASHBOARD_PASSWORD_ENV,
 } from '../tools/rbook/dashboard-client';
+import { compareStoredTimes } from '../tools/rbook/stored-time';
 
 /**
  * Sprint 58 m02 — surfaces which auth arm a send would take right now.
@@ -137,7 +138,10 @@ function pickNewest(
 ): { keyId: string; record: UserScopedKeyRecord } | null {
   const entries = Object.entries(keys);
   if (entries.length === 0) return null;
-  const best = entries.reduce((a, b) => ((b[1].issuedAt ?? '') > (a[1].issuedAt ?? '') ? b : a));
+  // s107-m01 (#788): by instant, as the upload fallback orders keys; the store keeps any spelling.
+  const best = entries.reduce((a, b) =>
+    compareStoredTimes(b[1].issuedAt, a[1].issuedAt) > 0 ? b : a
+  );
   return { keyId: best[0], record: best[1] };
 }
 

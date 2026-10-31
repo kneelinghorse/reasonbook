@@ -29,9 +29,9 @@ import {
 import { PREVIEW_MAX_CHARS } from './text-preview';
 
 /**
- * s106-m03: OODS-Forge's review was 258,332 characters, every candidate on one answer, and 10 of
- * each list still 20,128. A page holds pageSize decisions and pageSize learnings; every count
- * covers all of them.
+ * s106-m03: a registered store's review was 258,332 characters, every candidate on one answer,
+ * and 10 of each list still 20,128. A page holds pageSize decisions and pageSize learnings; every
+ * count covers all of them.
  */
 export const REVIEW_PAGE_SIZE = 8;
 

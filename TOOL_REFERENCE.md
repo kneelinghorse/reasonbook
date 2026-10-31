@@ -381,9 +381,9 @@ Consolidated context tool with action parameter support. Actions: view, update, 
 | `action` | string | yes | Context action: view \| update \| condense \| snapshot \| history \| next_steps \| constraints \| search |
 | `query` | string | no | Search query string for search action |
 | `searchLimit` | integer | no | Max results for search action (default: 5) |
-| `searchTypes` | array | no | Content types to search (default: ['decision']) |
+| `searchTypes` | array | no | Content types to search (default: ['decision']); session is accepted but not searched: use rbook_session(action="search") |
 | `recencyWeight` | number | no | Recency boost weight 0–1 for search action (default: 0.5) |
-| `statusFilter` | array | no | Status values to include in search results (default: every status except superseded). Applies to decision and learning results ONLY — ignored for mission and session results. An empty array disables status filtering entirely rather than matching nothing. |
+| `statusFilter` | array | no | Status values to include in search results (default: every status except superseded). Applies to decision and learning results ONLY — ignored for mission results. An empty array disables status filtering entirely rather than matching nothing. |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
 
 ## rbook_session

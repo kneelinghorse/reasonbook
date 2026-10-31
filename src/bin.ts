@@ -40,6 +40,7 @@ export const CLI_VERBS: ReadonlySet<string> = new Set([
   'signals',
   'brief',
   'spin-out',
+  'doctor',
 ]);
 
 export type BinRoute =

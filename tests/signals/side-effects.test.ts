@@ -198,6 +198,7 @@ describe('the signals library has no side effects of its own (s97-m01)', () => {
     // the client, discovery, embeddings or the network.
     expect(ours).toEqual(
       [
+        'src/intelligence/content-sanitizer.ts',
         'src/intelligence/legacy-compat.ts',
         'src/intelligence/product-names.ts',
         'src/server-version.ts',

@@ -2,6 +2,7 @@
 // Sprint 66 m05: routes through HybridRetriever (BM25 + sqlite-vec via RRF k=60)
 // across decisions / learnings / missions. Async — see IAsyncRetriever.
 
+import { callText } from './answer-page';
 import { formatToolFailure } from './format-failure';
 import { withClientAsync } from './client';
 import type { RbookToolResult } from './types';
@@ -30,11 +31,11 @@ export interface ContextSearchHit extends RankedResult {
   fullLength: number;
 }
 
-/** The call that reads one hit in full. */
+/** The call that reads one hit in full; a mission's id is quoted by callText (s107-m05, #881). */
 export function showCallFor(hit: Pick<RankedResult, 'type' | 'id'>): string {
   if (hit.type === 'decision') return `rbook_decisions(action="show", decisionId=${hit.id})`;
   if (hit.type === 'learning') return `rbook_learnings(action="show", learningId=${hit.id})`;
-  return `rbook_mission(action="show", missionId="${hit.id}")`;
+  return callText('rbook_mission', { action: 'show', missionId: String(hit.id) });
 }
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -154,20 +155,34 @@ export async function rbookContextSearch(
         };
       });
 
-      return createSuccess<ContextSearchResult>({
-        query: params.query,
-        results: hits,
-        count: hits.length,
-        options: {
-          limit,
-          recencyWeight,
-          types,
-          statusFilter: statusFilter ?? [],
-          excludedStatuses: statusFilter === undefined ? [...DEFAULT_EXCLUDED_STATUSES] : [],
+      // s107-m05 (#887): the retriever reads decisions, learnings and missions only, so a session
+      // type is accepted but not searched; say so, and name the search that reads sessions.
+      const skipped = types.includes('session' as RankedResultType)
+        ? [
+            `searchTypes "session" is accepted but not searched here; search sessions with ${callText(
+              'rbook_session',
+              { action: 'search', query: params.query, projectRoot: params.projectRoot }
+            )}.`,
+          ]
+        : undefined;
+
+      return createSuccess<ContextSearchResult>(
+        {
+          query: params.query,
+          results: hits,
+          count: hits.length,
+          options: {
+            limit,
+            recencyWeight,
+            types,
+            statusFilter: statusFilter ?? [],
+            excludedStatuses: statusFilter === undefined ? [...DEFAULT_EXCLUDED_STATUSES] : [],
+          },
+          backend: caps.backend,
+          localProjectId: getProjectId(client),
         },
-        backend: caps.backend,
-        localProjectId: getProjectId(client),
-      });
+        skipped
+      );
     },
     { projectRoot: params.projectRoot }
   );
@@ -193,9 +208,16 @@ export function formatContextSearchForLLM(result: RbookToolResult<ContextSearchR
     lines.push('No matching results found.');
     lines.push('');
     lines.push('**Suggestions:**');
-    lines.push('- Try broader keywords or synonyms');
-    lines.push('- Check that relevant decisions have been captured in sessions');
-    lines.push('- Use rbook_decisions(action="list") to browse all decisions');
+    if (options.types.length === 1 && (options.types[0] as string) === 'session') {
+      // s107-m05 (#887): sessions are not searched here; their own search is the next step.
+      lines.push(
+        `- Search sessions with ${callText('rbook_session', { action: 'search', query })}`
+      );
+    } else {
+      lines.push('- Try broader keywords or synonyms');
+      lines.push('- Check that relevant decisions have been captured in sessions');
+      lines.push('- Use rbook_decisions(action="list") to browse all decisions');
+    }
     appendWarnings(lines, result);
     return lines.join('\n');
   }

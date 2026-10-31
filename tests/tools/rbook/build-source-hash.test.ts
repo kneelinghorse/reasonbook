@@ -149,11 +149,12 @@ describe('source hash build freshness', () => {
     });
   });
 
-  it('preserves the build-directory fallback when a project has no manifest', async () => {
+  it('a project with no manifest has no build to check (s107-m04, #812)', async () => {
     write('src/main.ts', 'export const value = 1;\n', newTime);
-    expect(await checkBuildFreshness(root)).toMatchObject({
-      stale: true,
-      reason: 'src-newer-than-build-dir',
+    expect(await checkBuildFreshness(root)).toEqual({
+      stale: false,
+      latestSrcMtime: null,
+      distBuildTime: null,
     });
   });
 

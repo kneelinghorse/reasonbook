@@ -19,14 +19,28 @@ export interface SrcFileMtime {
  * Walk src/ collecting (relativePath, mtime) for .ts/.tsx/.js files. Skips
  * node_modules / dist / .git / coverage / .next. Caps at SRC_WALK_CAP files
  * to avoid pathological repos. Returns [] when src/ is missing.
+ *
+ * `strict` (s107-m04, the freshness check): an entry that cannot be read for any reason but its
+ * being gone or a symlink cycle throws, since a newer file behind it would otherwise read as
+ * fresh. The manifest generator keeps the lenient walk, so a build is never refused for it.
  */
-export async function collectSrcMtimes(projectRoot: string): Promise<SrcFileMtime[]> {
+export async function collectSrcMtimes(
+  projectRoot: string,
+  options: { readonly strict?: boolean } = {}
+): Promise<SrcFileMtime[]> {
   const srcDir = path.join(projectRoot, 'src');
+  // Gone (ENOENT, ENOTDIR) or a symlink cycle's repeat (ELOOP: its deeper paths hold files
+  // already seen) are skipped even when strict; every other read error is the check failing.
+  const skip = (error: unknown): void => {
+    const code = (error as NodeJS.ErrnoException | null)?.code;
+    if (options.strict && code !== 'ENOENT' && code !== 'ENOTDIR' && code !== 'ELOOP') throw error;
+  };
   let exists = false;
   try {
     const stat = await fs.stat(srcDir);
     exists = stat.isDirectory();
-  } catch {
+  } catch (error) {
+    skip(error);
     return [];
   }
   if (!exists) return [];
@@ -38,7 +52,8 @@ export async function collectSrcMtimes(projectRoot: string): Promise<SrcFileMtim
     let entries: string[];
     try {
       entries = (await fs.readdir(dir)).sort();
-    } catch {
+    } catch (error) {
+      skip(error);
       continue;
     }
     for (const name of entries) {
@@ -47,8 +62,9 @@ export async function collectSrcMtimes(projectRoot: string): Promise<SrcFileMtim
       let stat: Awaited<ReturnType<typeof fs.stat>>;
       try {
         stat = await fs.stat(fullPath);
-      } catch {
-        // Permission error / symlink to nowhere — skip rather than crash.
+      } catch (error) {
+        // Permission error / symlink to nowhere — skipped, unless the walk is strict.
+        skip(error);
         continue;
       }
       if (stat.isDirectory()) {

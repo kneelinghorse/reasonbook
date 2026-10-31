@@ -47,10 +47,16 @@ describe('feedback regex cost contract', () => {
     // s102-m13: measure the product call alone. Jest's spies and deep-equality
     // matcher were inside the old 50 ms sample (68.8 ms in the failed load run).
     // Keep the same single-call wall-clock bound, then verify rule coverage separately.
-    const started = performance.now();
-    const result = classifyFeedback(text);
-    const elapsed = performance.now() - started;
-    expect(result).toEqual({ kind: 'unclassified', rule: null });
+    // s107-m06: the fastest of five calls, since one call can stall behind the load
+    // gate's spinners (82.1 ms on 4.9.0's candidate; the call itself takes about
+    // 0.13 ms), while a rule that turned super-linear would slow every call.
+    let elapsed = Infinity;
+    for (let sample = 0; sample < 5; sample += 1) {
+      const started = performance.now();
+      const result = classifyFeedback(text);
+      elapsed = Math.min(elapsed, performance.now() - started);
+      expect(result).toEqual({ kind: 'unclassified', rule: null });
+    }
     expect(elapsed).toBeLessThan(50);
     const spies = patterns.map(({ pattern }) => jest.spyOn(pattern, 'test'));
     try {

@@ -28,7 +28,7 @@
  */
 
 /** Tag names that trigger sanitization when they appear as literal XML/XML-like markup. */
-const ARTIFACT_TAG_NAMES = ['content', 'parameter', 'invoke', 'function_calls'] as const;
+export const ARTIFACT_TAG_NAMES = ['content', 'parameter', 'invoke', 'function_calls'] as const;
 
 /** Matches any `<tag …>` or `</tag …>` for one of the tracked tag names. */
 const ARTIFACT_PATTERN = new RegExp(`<\\/?(?:${ARTIFACT_TAG_NAMES.join('|')})\\b[^>]*>`, 'g');

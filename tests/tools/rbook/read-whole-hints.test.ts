@@ -22,6 +22,16 @@ import {
   rbookSessionSearch,
 } from '../../../src/tools/rbook/rbook-session-search';
 import {
+  formatSessionListForLLM,
+  rbookSessionList,
+} from '../../../src/tools/rbook/rbook-session-list';
+import {
+  formatContextSearchForLLM,
+  rbookContextSearch,
+  showCallFor,
+} from '../../../src/tools/rbook/rbook-context-search';
+import { rbookAgentOnboard } from '../../../src/tools/rbook/rbook-agent-onboard';
+import {
   formatSprintListForLLM,
   rbookSprintList,
 } from '../../../src/tools/rbook/rbook-sprint-list';
@@ -41,6 +51,7 @@ import { seedRbookDb } from '../../helpers/seedRbookDb';
 const SPRINT = 'sprint-9"`x';
 const MISSION = 's9-"m1`x';
 const SESSION = 'PS-"1`x';
+const BLOCKED = 's9-"m2`x';
 const LONG = 'word '.repeat(PREVIEW_MAX_CHARS).trim();
 
 let root: string;
@@ -56,14 +67,20 @@ beforeEach(() => {
       `INSERT INTO missions (id, sprint_id, name, status, objective, notes)
        VALUES (?, ?, 'One', 'In Progress', ?, ?)`
     ).run(MISSION, SPRINT, LONG, LONG);
+    db.prepare(
+      `INSERT INTO missions (id, sprint_id, name, status, objective)
+       VALUES (?, ?, 'Two', 'Blocked', 'Waits on one')`
+    ).run(BLOCKED, SPRINT);
     // Four matching captures, one more than a search result keeps.
     const capture = { category: 'learning', content: 'mentions zebra', timestamp: '2026-01-01' };
+    // s107-m05: a summary long enough that the list and search answers cut it (#881).
     db.prepare(
-      `INSERT INTO sessions (id, type, title, started_at, status, captures)
-       VALUES (?, 'review', 'Hints', ?, 'completed', ?)`
+      `INSERT INTO sessions (id, type, title, started_at, status, summary, captures)
+       VALUES (?, 'review', 'Hints', ?, 'completed', ?, ?)`
     ).run(
       SESSION,
       new Date(Date.now() - 86_400_000).toISOString(),
+      `zebra ${LONG}`,
       JSON.stringify(Array(4).fill(capture))
     );
   } finally {
@@ -121,4 +138,59 @@ it.each(HINTS)('%s names the full read of its previewed row', async (_name, answ
   const [key, id] = Object.entries(args)[1];
   expect(JSON.parse(call.slice(call.indexOf(`${key}=`) + key.length + 1, -1))).toBe(id);
   expect(await answer()).toContain(call);
+});
+
+// s107-m05 (#881): the five hints that still quoted an id by hand, each named by its own answer.
+const CUT_HINTS: ReadonlyArray<[string, () => Promise<string>, string]> = [
+  [
+    'session list, a cut summary',
+    async () => formatSessionListForLLM(await rbookSessionList({ projectRoot: root })),
+    `Read a session in full with ${callText('rbook_session', { action: 'list', sessionId: SESSION })}.`,
+  ],
+  [
+    'session search, a cut summary',
+    async () =>
+      formatSessionSearchForLLM(await rbookSessionSearch({ query: 'zebra', projectRoot: root })),
+    `Read a session in full with ${callText('rbook_session', { action: 'list', sessionId: SESSION })}.`,
+  ],
+  [
+    'context search, a mission hit',
+    async () =>
+      formatContextSearchForLLM(
+        await rbookContextSearch({ query: 'word', types: ['mission'], projectRoot: root })
+      ),
+    `Read one in full with ${callText('rbook_mission', { action: 'show', missionId: MISSION })}.`,
+  ],
+  [
+    'agent onboard, the blocked mission',
+    async () => JSON.stringify(await rbookAgentOnboard({ projectRoot: root })),
+    JSON.stringify(callText('rbook_mission', { action: 'show', missionId: BLOCKED })).slice(1, -1),
+  ],
+  [
+    'agent onboard, the mission in progress',
+    async () => JSON.stringify(await rbookAgentOnboard({ projectRoot: root })),
+    JSON.stringify(callText('rbook_mission', { action: 'show', missionId: MISSION })).slice(1, -1),
+  ],
+];
+
+it.each(CUT_HINTS)(
+  '%s names the full read with callText, never a hand-quoted id',
+  async (_name, answer, hint) => {
+    const shown = await answer();
+    expect(shown).toContain(hint);
+    // A hand-quoted id ends at its own quote: `sessionId="PS-"1`x"` names a call that reads nothing.
+    for (const id of [SESSION, MISSION, BLOCKED]) expect(shown).not.toContain(`Id="${id}"`);
+  }
+);
+
+it('showCallFor names the show call for each searchable type', () => {
+  expect(showCallFor({ type: 'decision', id: 12 })).toBe(
+    callText('rbook_decisions', { action: 'show', decisionId: 12 })
+  );
+  expect(showCallFor({ type: 'learning', id: 7 })).toBe(
+    callText('rbook_learnings', { action: 'show', learningId: 7 })
+  );
+  expect(showCallFor({ type: 'mission', id: MISSION })).toBe(
+    callText('rbook_mission', { action: 'show', missionId: MISSION })
+  );
 });

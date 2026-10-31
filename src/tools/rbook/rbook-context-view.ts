@@ -350,7 +350,7 @@ export async function rbookContextView(
       }
 
       // compact mode: return summary digest with limited entries. s106-m03: the default, since
-      // the full view was 871,683 characters on OODS-Forge; compact=false still returns it.
+      // the full view was 871,683 characters on a registered store; compact=false still returns it.
       if (params.compact ?? true) {
         const aggregated = buildAggregatedView(
           masterContext,

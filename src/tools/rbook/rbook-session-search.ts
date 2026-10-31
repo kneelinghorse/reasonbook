@@ -600,7 +600,7 @@ export function formatSessionSearchForLLM(
       }
       if (r.matchedCaptureCount > r.matchedCaptures.length) {
         lines.push(
-          `     ... and ${r.matchedCaptureCount - r.matchedCaptures.length} more: ${callText('rbook_session', { action: 'list', sessionId: r.id })} reads the session whole`
+          `     ... and ${r.matchedCaptureCount - r.matchedCaptures.length} more: ${callText('rbook_session', { action: 'list', sessionId: r.id })} reads the whole session, a page at a time`
         );
       }
     }
@@ -614,7 +614,7 @@ export function formatSessionSearchForLLM(
   if (cut) {
     lines.push(
       `Summaries and captures are cut at ${PREVIEW_MAX_CHARS} characters. Read a session in full ` +
-        `with rbook_session(action="list", sessionId="${cut.id}").`
+        `with ${callText('rbook_session', { action: 'list', sessionId: cut.id })}.`
     );
   }
 

@@ -22,8 +22,8 @@ import { callText, nextPageCall, pageFacts, pageRequest, shownLine } from './ans
 import { PREVIEW_MAX_CHARS, previewText } from './text-preview';
 
 /**
- * s106-m03: 20 rows were 56,988 characters on OODS-Forge, past the 20,000 cap; with previews, 8 rows
- * of its older missions still reached 21,750 on later pages.
+ * s106-m03: 20 rows were 56,988 characters on a registered store, past the 20,000 cap; with
+ * previews, 8 rows of its older missions still reached 21,750 on later pages.
  */
 export const MISSION_LIST_PAGE_SIZE = 6;
 
@@ -354,7 +354,7 @@ function parseMission(mission: Mission): MissionListItem {
 
 /**
  * s106-m03: the first MISSION_LIST_ITEMS of a mission's list, each a preview, beside its count.
- * oods-foundry.com's eight newest missions held 7 to 16 criteria each, 29,033 characters in all.
+ * A registered store's eight newest missions held 7 to 16 criteria each: 29,033 characters.
  */
 function listedItems<K extends 'successCriteria' | 'deliverables'>(
   key: K,

@@ -29,6 +29,7 @@ it.each([
   'brief',
   'stats',
   'migrate',
+  'doctor',
   'spin-out',
   'ambient',
   'import',

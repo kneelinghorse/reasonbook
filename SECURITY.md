@@ -226,6 +226,11 @@ Reasonbook runtime and plugin installation make outbound requests in these situa
    The dashboard runs the engine version it pins, and a fix to the engine reaches projects shared
    through it once it pins the release that carries it.
 
+6. **`reasonbook doctor`'s version lookup.** One HTTPS GET of
+   `https://registry.npmjs.org/@aquex/reasonbook/latest`, limited to 5 seconds, to compare this
+   machine's installs with the latest release. It sends no project, path or credential;
+   `--offline` skips it, and a failed lookup is reported in the answer, not treated as an error.
+
 ## Authentication model
 
 Dashboard authentication is **optional**. Device-code bootstrap uses the effective dashboard URL
@@ -561,4 +566,4 @@ subagent type (e.g. the `Explore` agent) — that is a mitigation, not the machi
 
 ---
 
-_Last verified against the source for release 4.8.0._
+_Last verified against the source for release 4.9.0._
