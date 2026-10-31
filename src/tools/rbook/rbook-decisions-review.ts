@@ -12,15 +12,53 @@
 
 import { withClientValidated } from './client';
 import type { RbookToolResult } from './types';
-import { reviewDecisionStaleness, type DecisionReviewResult } from './staleness-detection';
+import {
+  reviewDecisionStaleness,
+  type DecisionReviewResult,
+  type StaleDecisionDetail,
+} from './staleness-detection';
 import { buildUntaggedDecisionAdvisory } from './untagged-advisory';
 import { appendWarnings } from './format-warnings';
+import {
+  nextPageCall,
+  pageFacts,
+  pageRequest,
+  REREAD_AFTER_ACTING,
+  shownLine,
+} from './answer-page';
+import { PREVIEW_MAX_CHARS } from './text-preview';
 
-export type RbookDecisionsReviewResult = DecisionReviewResult;
+/**
+ * s106-m03: OODS-Forge's review was 258,332 characters, every candidate on one answer, and 10 of
+ * each list still 20,128. A page holds pageSize decisions and pageSize learnings; every count
+ * covers all of them.
+ */
+export const REVIEW_PAGE_SIZE = 8;
+
+export interface RbookDecisionsReviewResult extends DecisionReviewResult {
+  /** Decisions needing attention in all; `decisions` holds this page's, most stale first. */
+  decisionCount: number;
+  /** Learnings needing review in all; `learnings` holds this page's. */
+  learningCount: number;
+  /** Every candidate decision by its suggested action, not only this page's. */
+  countsByAction: Record<StaleDecisionDetail['suggestedAction'], number>;
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
+  nextPage: number | null;
+  /** The call that reads the next page, or null on the last page. */
+  nextPageCall: string | null;
+  /** While a page follows: archiving or confirming moves the later rows up; re-read first. */
+  pageNote: string | null;
+}
 
 export interface RbookDecisionsReviewParams {
   /** Include decisions approaching staleness (default true) */
   includeApproaching?: boolean;
+  /** s106-m03: page of decisions and learnings, 1-based */
+  page?: number;
+  /** s106-m03: decisions and learnings per page (default REVIEW_PAGE_SIZE) */
+  pageSize?: number;
   /** Optional project root */
   projectRoot?: string;
 }
@@ -40,9 +78,39 @@ export async function rbookDecisionsReview(
       // than let triage silently shrink.
       const untagged = buildUntaggedDecisionAdvisory(client);
 
+      const request = pageRequest(params.page, params.pageSize, REVIEW_PAGE_SIZE);
+      const longest = Math.max(result.decisions.length, result.learnings.length);
+      const facts = pageFacts(
+        request,
+        Math.min(request.pageSize, Math.max(0, longest - request.offset)),
+        longest
+      );
+      const countsByAction = { archive: 0, review: 0, confirm: 0 };
+      for (const decision of result.decisions) countsByAction[decision.suggestedAction] += 1;
+      const slice = <T>(rows: readonly T[]): T[] =>
+        rows.slice(request.offset, request.offset + request.pageSize);
+
       return {
         success: true as const,
-        data: result,
+        data: {
+          ...result,
+          decisions: slice(result.decisions),
+          learnings: slice(result.learnings),
+          decisionCount: result.decisions.length,
+          learningCount: result.learnings.length,
+          countsByAction,
+          page: facts.page,
+          pageSize: facts.pageSize,
+          hasMore: facts.hasMore,
+          nextPage: facts.nextPage,
+          nextPageCall: nextPageCall(facts.nextPage, 'rbook_decisions', {
+            action: 'review',
+            includeApproaching: params.includeApproaching,
+            pageSize: params.pageSize,
+            projectRoot: params.projectRoot,
+          }),
+          pageNote: facts.nextPage === null ? null : REREAD_AFTER_ACTING,
+        },
         ...(untagged ? { warnings: [untagged] } : {}),
       };
     },
@@ -75,18 +143,27 @@ export function formatDecisionsReviewForLLM(
     `Active: ${data.totalActive} | Stale: ${data.totalStale} | Threshold: ${data.threshold} sprints | Current Sprint: ${data.currentSprintNumber ?? 'unknown'}`
   );
 
-  if (data.decisions.length === 0 && learnings.length === 0) {
+  if (data.decisionCount === 0 && data.learningCount === 0) {
     lines.push('');
     lines.push('✅ No decisions or learnings need attention.');
     appendWarnings(lines, result);
     return lines.join('\n');
   }
 
+  // s106-m03: counts cover every candidate; the rows below are this page's.
+  const pageOf = (totalCount: number) => ({
+    page: data.page,
+    pageSize: data.pageSize,
+    totalCount,
+  });
   lines.push('');
-  if (data.decisions.length === 0) {
+  if (data.decisionCount === 0) {
     lines.push('✅ No decisions need attention.');
   } else {
-    lines.push(`**${data.decisions.length} decision(s) need attention:**`);
+    const all = data.countsByAction;
+    lines.push(
+      `**${data.decisionCount} decision(s) need attention** (archive ${all.archive}, review ${all.review}, confirm ${all.confirm}). ${shownLine(pageOf(data.decisionCount), data.decisions.length, 'decisions')}.`
+    );
   }
   lines.push('');
 
@@ -103,7 +180,7 @@ export function formatDecisionsReviewForLLM(
       lines.push(`  #${d.id} [${d.sprintId}] score=${d.stalenessScore} — ${d.text}`);
     }
     lines.push(
-      `  → rbook_decisions(action="batch_update", decisionIds=[${byAction.archive.map((d) => d.id).join(',')}], status="archived")`
+      `  → this page's ${byAction.archive.length}: rbook_decisions(action="batch_update", decisionIds=[${byAction.archive.map((d) => d.id).join(',')}], status="archived")`
     );
     lines.push('');
   }
@@ -125,8 +202,18 @@ export function formatDecisionsReviewForLLM(
     lines.push('');
   }
 
-  if (learnings.length > 0) {
-    lines.push(`**📚 Learnings (${learnings.length})**`);
+  const cut = data.decisions.find((d) => d.truncated);
+  if (cut) {
+    lines.push(
+      `Decision previews are cut at ${PREVIEW_MAX_CHARS} characters; read one whole with rbook_decisions(action="show", decisionId=${cut.id}).`
+    );
+    lines.push('');
+  }
+
+  if (data.learningCount > 0) {
+    lines.push(
+      `**📚 Learnings: ${shownLine(pageOf(data.learningCount), learnings.length, 'learnings').replace(/^S/, 's')}**`
+    );
     for (const l of learnings) {
       const age = l.sprintAge === null ? 'age unknown' : `${l.sprintAge} sprints old`;
       lines.push(`  #${l.id} [${l.sprintId ?? 'no sprint'}] ${l.status}, ${age} — ${l.text}`);
@@ -138,6 +225,9 @@ export function formatDecisionsReviewForLLM(
     );
     lines.push('');
   }
+
+  if (data.nextPageCall) lines.push(`Next page: ${data.nextPageCall}.`);
+  if (data.pageNote) lines.push(data.pageNote);
 
   appendWarnings(lines, result);
 

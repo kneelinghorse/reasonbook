@@ -133,11 +133,11 @@ describe('rbook_decisions_list', () => {
       expect(result.data?.hasMore).toBe(true);
     });
 
-    it('should use default pageSize of 20', async () => {
+    it('should use default pageSize of 12 (s106-m03: 15 previews still reached 19,354 characters)', async () => {
       const result = await rbookDecisionsListWithDb(dbPath, {});
 
       expect(result.success).toBe(true);
-      expect(result.data?.pageSize).toBe(20);
+      expect(result.data?.pageSize).toBe(12);
     });
 
     it('should order by created_at descending', async () => {
@@ -313,6 +313,17 @@ describe('rbook_decisions_list', () => {
         ...page3.data!.decisions.map((d) => d.id),
       ];
       expect(new Set(allIds).size).toBe(5);
+    });
+
+    it('names the next page with the caller’s filters, and none on the last page (s106-m03)', async () => {
+      const page1 = await rbookDecisionsListWithDb(dbPath, { pageSize: 2 });
+      expect(page1.data).toMatchObject({ nextPage: 2 });
+      expect(formatDecisionsListForLLM(page1)).toContain(
+        `Next page: rbook_decisions(action="list", pageSize=2, projectRoot=${JSON.stringify(path.dirname(path.dirname(path.dirname(dbPath))))}, page=2).`
+      );
+      const page3 = await rbookDecisionsListWithDb(dbPath, { page: 3, pageSize: 2 });
+      expect(page3.data).toMatchObject({ nextPage: null, nextPageCall: null });
+      expect(formatDecisionsListForLLM(page3)).not.toContain('Next page');
     });
   });
 

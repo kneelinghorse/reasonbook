@@ -4,9 +4,13 @@
 
 import { resolveRecordPaths } from '../../intelligence/legacy-compat';
 import { AsyncLocalStorage } from 'async_hooks';
-import * as path from 'path';
-import { rbookConfigDir } from './harness-session';
-import { appendTelemetry, targetForStore, type TelemetryTarget } from './local-telemetry';
+import { performance } from 'perf_hooks';
+import {
+  appendTelemetry,
+  targetForStore,
+  unattributedTarget,
+  type TelemetryTarget,
+} from './local-telemetry';
 import { currentSessionOwner } from './session-owner';
 import { processBusyTimeout } from './sqlite-busy';
 import { returnedIds, usedIds } from './telemetry-extract';
@@ -30,10 +34,34 @@ interface Observation {
   readonly args: unknown;
   readonly mode: 'read' | 'write';
   readonly client: string | null;
+  /** s106-m01: the tool's published parameter names, the only names a refusal row may record. */
+  readonly parameters?: readonly string[];
   readonly env?: NodeJS.ProcessEnv;
 }
 
 type McpResult = { isError?: boolean; structuredContent?: unknown };
+
+/**
+ * s106-m01 (design settled item 3): the parameter a refusal names, for close measure 11. A name the
+ * tool publishes is kept. An unknown-parameter refusal names the agent's own key, so a supplied key
+ * the tool does not publish is `unknown`. Anything else is `unspecified`: no field, a dotted schema
+ * path, or a constant such as `arguments`. The agent's own text is never returned.
+ */
+function refusedFieldOf(
+  error: unknown,
+  params: Readonly<Record<string, unknown>>,
+  parameters: readonly string[]
+): string {
+  const { code, field } = (error !== null && typeof error === 'object' ? error : {}) as {
+    code?: unknown;
+    field?: unknown;
+  };
+  if (typeof field !== 'string') return 'unspecified';
+  if (parameters.includes(field)) return field;
+  return code === 'INVALID_PARAMETER' && Object.prototype.hasOwnProperty.call(params, field)
+    ? 'unknown'
+    : 'unspecified';
+}
 
 /** Never changes the tool's result or exception, including when observation itself fails. */
 export async function withMcpTelemetry<T extends McpResult>(
@@ -69,12 +97,12 @@ export async function withMcpTelemetry<T extends McpResult>(
             : undefined);
         // s105-m03: as tolerant of a held store as the call it observes, which waits the store
         // client's own default budget (client.ts); a 100 ms lookup filed its row as unattributed.
-        const target: TelemetryTarget = (root
-          ? targetForStore(resolveRecordPaths(root).dbPath, processBusyTimeout() ?? 5000)
-          : null) ?? {
-          projectId: 'unattributed',
-          dbPath: path.join(rbookConfigDir(env), 'unattributed.sqlite'),
-        };
+        // s106-m01: the row carries the lookup's own time, so that wait is measured, not inferred.
+        const dbPath = root ? resolveRecordPaths(root).dbPath : null;
+        const started = performance.now();
+        const found = dbPath ? targetForStore(dbPath, processBusyTimeout() ?? 5000) : null;
+        const lookupMs = dbPath ? Math.round(performance.now() - started) : null;
+        const target: TelemetryTarget = found ?? unattributedTarget(env);
         const payload = result?.structuredContent;
         const structured =
           payload !== null && typeof payload === 'object' && !Array.isArray(payload)
@@ -104,6 +132,10 @@ export async function withMcpTelemetry<T extends McpResult>(
             refused: ok
               ? null
               : (error?.code ?? (protocol ? 'PROTOCOL_ERROR' : 'TOOL_EXECUTION_ERROR')),
+            refusedField: ok
+              ? null
+              : refusedFieldOf(structured?.error, params, observation.parameters ?? []),
+            lookupMs,
             failOpen: null,
             ambient: null,
             idsReturned: ok

@@ -17,6 +17,7 @@ import { getProjectId, tableHasColumn } from './genesis-columns';
 import { frameInlineIfForeign, frameTextIfForeign } from '../../intelligence/provenance-frame';
 import { appendWarnings } from './format-warnings';
 import { previewText } from './text-preview';
+import { nextPageCall } from './answer-page';
 
 /**
  * Valid session statuses.
@@ -115,6 +116,12 @@ export interface RbookSessionListResult {
   /** Whether there are more results */
   hasMore: boolean;
 
+  /** s106-m03: the next page's number, or null on the last page. */
+  nextPage: number | null;
+
+  /** The call that reads the next page with the same filters, or null on the last page. */
+  nextPageCall: string | null;
+
   /** Applied filters */
   filters: {
     status?: SessionStatus;
@@ -167,9 +174,9 @@ export const rbookSessionListSchema = z.object({
     .int()
     .min(1)
     .max(100)
-    .default(20)
+    .default(15)
     .optional()
-    .describe('Results per page (1-100, default: 20)'),
+    .describe('Results per page (1-100, default: 15)'),
 
   /** Optional project root */
   projectRoot: z
@@ -216,7 +223,7 @@ export const rbookSessionListToolDefinition = {
       },
       pageSize: {
         type: 'number',
-        description: 'Results per page (1-100, default: 20)',
+        description: 'Results per page (1-100, default: 15)',
         minimum: 1,
         maximum: 100,
       },
@@ -241,7 +248,8 @@ export async function rbookSessionList(
   params: RbookSessionListParams
 ): Promise<RbookToolResult<RbookSessionListResult>> {
   const page = params.page ?? 1;
-  const pageSize = params.pageSize ?? 20;
+  // s106-m03: 20 rows were 20,787 characters on a registered store, past the 20,000 cap.
+  const pageSize = params.pageSize ?? 15;
   const offset = (page - 1) * pageSize;
 
   return withClient(
@@ -349,6 +357,7 @@ export async function rbookSessionList(
       });
 
       const hasMore = offset + sessions.length < totalCount;
+      const nextPage = hasMore ? page + 1 : null;
 
       return createSuccess<RbookSessionListResult>({
         sessions,
@@ -356,6 +365,16 @@ export async function rbookSessionList(
         page,
         pageSize,
         hasMore,
+        nextPage,
+        nextPageCall: nextPageCall(nextPage, 'rbook_session', {
+          action: 'list',
+          status: params.status,
+          type: params.type,
+          sprintId: params.sprintId,
+          sessionId: params.sessionId,
+          pageSize: params.pageSize,
+          projectRoot: params.projectRoot,
+        }),
         filters: {
           ...(params.status && { status: params.status }),
           ...(params.type && { type: params.type }),
@@ -491,10 +510,9 @@ export function formatSessionListForLLM(result: RbookToolResult<RbookSessionList
   }
 
   if (data.hasMore) {
-    lines.push(
-      `*Page ${data.page} of ${Math.ceil(data.totalCount / data.pageSize)}. Use page parameter for more.*`
-    );
+    lines.push(`*Page ${data.page} of ${Math.ceil(data.totalCount / data.pageSize)}.*`);
   }
+  if (data.nextPageCall) lines.push(`Next page: ${data.nextPageCall}.`);
 
   // s93-m11 (#602): a plain list shows a summary's first 80 characters and carries a preview; say
   // once how to read a session whole.

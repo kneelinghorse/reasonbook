@@ -68,6 +68,48 @@ const cases: Record<string, { args: Record<string, unknown>; code: string; remed
     code: 'MISSING_PARAMETER',
     remedy: /keyId/,
   },
+  // s106-m02 (#871): add needs the new mission's id, which the planner chooses.
+  'rbook_mission /missionId#description desc-required': {
+    args: { action: 'add', name: 'A new mission' },
+    code: 'MISSING_PARAMETER',
+    remedy: /missionId/,
+  },
+  // s106-m05: the second pass's hints name the inputs each action cannot do without.
+  'rbook_context /query#description desc-required': {
+    args: { action: 'search' },
+    code: 'INVALID_PARAMETER',
+    remedy: /query/,
+  },
+  'rbook_decisions /query#description desc-required': {
+    args: { action: 'search' },
+    code: 'MISSING_PARAMETER',
+    remedy: /query/,
+  },
+  'rbook_learnings /query#description desc-required': {
+    args: { action: 'search' },
+    code: 'MISSING_PARAMETER',
+    remedy: /query/,
+  },
+  'rbook_session /query#description desc-required': {
+    args: { action: 'search' },
+    code: 'MISSING_PARAMETER',
+    remedy: /query/,
+  },
+  'rbook_session /title#description desc-required': {
+    args: { action: 'start' },
+    code: 'MISSING_PARAMETER',
+    remedy: /title/,
+  },
+  'rbook_session /content#description desc-required': {
+    args: { action: 'capture' },
+    code: 'MISSING_PARAMETER',
+    remedy: /content/,
+  },
+  'rbook_session /summary#description desc-required': {
+    args: { action: 'complete' },
+    code: 'MISSING_PARAMETER',
+    remedy: /summary/,
+  },
 };
 const rows = dispatchConstraints().filter((row) => row.kind.startsWith('desc-'));
 let project: SeededRbookProject;
@@ -80,7 +122,9 @@ afterEach(async () => {
 });
 
 it('covers every description promise exactly once', () => {
-  expect(rows).toHaveLength(11);
+  // s106-m02 adds rbook_mission's missionId promise (#871); s106-m05 adds the search queries of
+  // context, decisions, learnings and session, and session's title, content and summary.
+  expect(rows).toHaveLength(19);
   expect(rows.map(constraintKey).sort()).toEqual(Object.keys(cases).sort());
 });
 

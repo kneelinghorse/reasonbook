@@ -21,7 +21,8 @@ Consolidated mission tool with action parameter support. Actions: list, show, st
 | `action` | string | yes | Mission action: list \| show \| status \| add \| update \| move \| depends \| undepends |
 | `sprintId` | string \| null | no | Sprint ID for list filter; add: omitted infers the unique open sprint, null requests unscheduled |
 | `status` | string | no | Status filter for list action, or initial status for add action |
-| `limit` | integer | no | Maximum missions to return for list action, or across-project cap for status action |
+| `limit` | integer | no | Missions per page for list action (default 6), or across-project cap for status action |
+| `page` | integer | no | Page of list results, 1-based (default 1) |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
 
 ### rbook_mission(action="show")
@@ -37,7 +38,7 @@ Consolidated mission tool with action parameter support. Actions: list, show, st
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `action` | string | yes | Mission action: list \| show \| status \| add \| update \| move \| depends \| undepends |
-| `limit` | integer | no | Maximum missions to return for list action, or across-project cap for status action |
+| `limit` | integer | no | Missions per page for list action (default 6), or across-project cap for status action |
 | `includeBlocked` | boolean | no | Include blocked missions in status action |
 | `queuedLimit` | integer | no | Maximum queued missions for status action |
 | `acrossProjects` | boolean | no | status action: active missions (In Progress/Current) across all registered projects (cross-store portfolio view) |
@@ -196,7 +197,8 @@ Consolidated sprint tool with action parameter support. Actions: list, show, add
 | --- | --- | --- | --- |
 | `action` | string | yes | Sprint action: list \| show \| add \| update \| complete \| retro \| carry_forward \| analytics |
 | `status` | string | no | Filter or sprint status depending on action |
-| `limit` | integer | no | Maximum sprints to return for list/analytics actions |
+| `limit` | integer | no | Maximum sprints per list page (default 15), or the analytics window |
+| `page` | integer | no | Page of list, retro or analytics rows, 1-based |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
 
 ### rbook_sprint(action="show")
@@ -253,6 +255,7 @@ Consolidated sprint tool with action parameter support. Actions: list, show, add
 | --- | --- | --- | --- |
 | `action` | string | yes | Sprint action: list \| show \| add \| update \| complete \| retro \| carry_forward \| analytics |
 | `sprintId` | string | no | Sprint ID for show/add/update/complete/retro/carry_forward actions |
+| `page` | integer | no | Page of list, retro or analytics rows, 1-based |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
 
 ### rbook_sprint(action="carry_forward")
@@ -270,7 +273,8 @@ Consolidated sprint tool with action parameter support. Actions: list, show, add
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `action` | string | yes | Sprint action: list \| show \| add \| update \| complete \| retro \| carry_forward \| analytics |
-| `limit` | integer | no | Maximum sprints to return for list/analytics actions |
+| `limit` | integer | no | Maximum sprints per list page (default 15), or the analytics window |
+| `page` | integer | no | Page of list, retro or analytics rows, 1-based |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
 
 ## rbook_context
@@ -286,7 +290,9 @@ Consolidated context tool with action parameter support. Actions: view, update, 
 | `action` | string | yes | Context action: view \| update \| condense \| snapshot \| history \| next_steps \| constraints \| search |
 | `contextType` | string | no | Context type (defaults to master_context) |
 | `sizeOnly` | boolean | no | Return only size info for view action |
-| `compact` | boolean | no | Return compact view for view action |
+| `compact` | boolean | no | view: a digest by default, its documents' lists paged; false returns everything |
+| `page` | integer | no | Page number for history, the view digest, the next_steps list and constraints list/review |
+| `pageSize` | integer | no | Page size for history, the view digest (1), the next_steps list (15) and constraints (list 4, review 6) |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
 
 ### rbook_context(action="update")
@@ -335,8 +341,8 @@ Consolidated context tool with action parameter support. Actions: view, update, 
 | `since` | string | no | ISO date filter for update/history actions |
 | `sessionId` | string | no | Session ID for snapshot/history actions |
 | `until` | string | no | ISO date upper bound for history action |
-| `page` | integer | no | Page number for history action |
-| `pageSize` | integer | no | Page size for history action |
+| `page` | integer | no | Page number for history, the view digest, the next_steps list and constraints list/review |
+| `pageSize` | integer | no | Page size for history, the view digest (1), the next_steps list (15) and constraints (list 4, review 6) |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
 
 ### rbook_context(action="next_steps")
@@ -349,6 +355,8 @@ Consolidated context tool with action parameter support. Actions: view, update, 
 | `nextStepIds` | array | no | Next-step IDs for full show, historical list lookup (includes moved/dropped rows and pointers unless explicitly status-filtered), or complete/carry/drop/reopen |
 | `carryToSprint` | string | no | Existing target sprint ID for carry; missing targets are refused by name. Create one with rbook_sprint(action="add"), or omit to park with no target |
 | `missionId` | string | no | list/carry: only next steps recorded for this mission |
+| `page` | integer | no | Page number for history, the view digest, the next_steps list and constraints list/review |
+| `pageSize` | integer | no | Page size for history, the view digest (1), the next_steps list (15) and constraints (list 4, review 6) |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
 
 ### rbook_context(action="constraints")
@@ -362,6 +370,8 @@ Consolidated context tool with action parameter support. Actions: view, update, 
 | `constraintId` | integer | no | Constraint ID to reaffirm (bumps last_reviewed_at without changing status; resets its staleness clock) |
 | `evergreen` | boolean | no | On reaffirm, set or clear the evergreen flag (true = never flagged as stale, for standing rules). Omit to leave unchanged. |
 | `stalenessThresholdDays` | integer | no | Staleness threshold in days for review (default: 30) |
+| `page` | integer | no | Page number for history, the view digest, the next_steps list and constraints list/review |
+| `pageSize` | integer | no | Page size for history, the view digest (1), the next_steps list (15) and constraints (list 4, review 6) |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
 
 ### rbook_context(action="search")
@@ -372,7 +382,7 @@ Consolidated context tool with action parameter support. Actions: view, update, 
 | `query` | string | no | Search query string for search action |
 | `searchLimit` | integer | no | Max results for search action (default: 5) |
 | `searchTypes` | array | no | Content types to search (default: ['decision']) |
-| `recencyWeight` | number | no | Recency boost weight 0–1 for search action (default: 0.2) |
+| `recencyWeight` | number | no | Recency boost weight 0–1 for search action (default: 0.5) |
 | `statusFilter` | array | no | Status values to include in search results (default: every status except superseded). Applies to decision and learning results ONLY — ignored for mission and session results. An empty array disables status filtering entirely rather than matching nothing. |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
 
@@ -391,7 +401,7 @@ Consolidated session tool with action parameter support. Actions: list, start, c
 | `type` | string | no | Session type for list/start/search actions |
 | `sprintId` | string | no | Sprint ID filter for list action; for start and capture actions, an existing sprint (any status) to tag. A sprint that does not exist is refused by name |
 | `sessionId` | string | no | capture/complete: the session to write; omit it for the session your writes land in (an open explicit session, else your own implicit one). list: only this session, to read its summary in full |
-| `page` | integer | no | Page number for list action |
+| `page` | integer | no | Page number for list/search actions |
 | `pageSize` | integer | no | Page size for list action |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
 
@@ -450,7 +460,8 @@ Consolidated session tool with action parameter support. Actions: list, start, c
 | `query` | string | no | Search query for search action (keywords across titles, summaries, captures) |
 | `since` | string | no | Filter sessions started after this ISO date (search action) |
 | `until` | string | no | Filter sessions started before this ISO date (search action) |
-| `limit` | integer | no | Maximum sessions to return for search action (1-100, default: 20) |
+| `limit` | integer | no | Sessions per page for search action (1-100, default: 5) |
+| `page` | integer | no | Page number for list/search actions |
 | `type` | string | no | Session type for list/start/search actions |
 | `category` | string | no | Capture category for capture action, or category filter for search action |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
@@ -471,8 +482,8 @@ Consolidated decisions tool with action parameter support. Actions: list, search
 | `missionId` | string | no | Only rows recorded for this mission; for record, the mission to record it for (its sprint is used) |
 | `since` | string | no | ISO date lower bound for list action |
 | `until` | string | no | ISO date upper bound for list action |
-| `page` | integer | no | Page number for list action |
-| `pageSize` | integer | no | Page size for list action |
+| `page` | integer | no | Page number for list/review actions |
+| `pageSize` | integer | no | Page size for list (default 12) and review (default 8) actions |
 | `acrossProjects` | boolean | no | list action: fan out across all registered projects (cross-store portfolio view) |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
 
@@ -511,6 +522,8 @@ Consolidated decisions tool with action parameter support. Actions: list, search
 | --- | --- | --- | --- |
 | `action` | string | yes | Decisions action: list \| search \| show \| update \| review \| batch_update \| record |
 | `includeApproaching` | boolean | no | Include decisions approaching staleness in review (default true) |
+| `page` | integer | no | Page number for list/review actions |
+| `pageSize` | integer | no | Page size for list (default 12) and review (default 8) actions |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
 
 ### rbook_decisions(action="batch_update")
@@ -527,7 +540,7 @@ Consolidated decisions tool with action parameter support. Actions: list, search
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `action` | string | yes | Decisions action: list \| search \| show \| update \| review \| batch_update \| record |
-| `content` | string | no | Decision text for record action (required) |
+| `content` | string | no | Decision text for record action (required unless fromDraft names a draft, whose own words are then recorded) |
 | `fromDraft` | string | no | record action: the Reasonbook draft id (P<n>) the operator just answered; its kind decides what is written |
 | `context` | string | no | record: reasons and background |
 | `alternatives` | array | no | record: options considered |
@@ -877,7 +890,8 @@ Review agent feedback: list (status and tool filters, counts by kind, optional r
 | `action` | string | yes | Feedback action: list \| triage \| resolve \| archive |
 | `status` | string | no | Filter by status on list (default: "open") |
 | `toolName` | string | no | Filter by originating tool name on list |
-| `limit` | integer | no | Max entries to return on list (default 50, max 200) |
+| `limit` | integer | no | Max entries per page on list (default 10; with acrossProjects 5, or 2 at status resolved; max 200) |
+| `page` | integer | no | Page of list results, 1-based (default 1); each page holds limit entries |
 | `acrossProjects` | boolean | no | List active registered stores with project-qualified ids; full filtered counts accompany a capped newest-first list. Unavailable stores are named. Never writes siblings. |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
 

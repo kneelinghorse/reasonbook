@@ -48,6 +48,8 @@ it.each(['rbook-seed/templates/AGENTS-no-hooks.md', 'src/cli/commands.ts'])(
   }
 );
 
+// Decision #1713 raises the ceiling to 32,000 characters for sprint 106; 23,836 was decision
+// #1696's cap for one mission's planning.
 it('fits the ratified full-mode wire cap', () => {
-  expect(JSON.stringify(getToolDefinitions()).length).toBeLessThanOrEqual(23836);
+  expect(JSON.stringify(getToolDefinitions()).length).toBeLessThanOrEqual(32_000);
 });

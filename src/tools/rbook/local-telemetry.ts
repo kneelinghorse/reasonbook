@@ -25,6 +25,12 @@ import { storeProjectId, type StoreTarget } from './store-key';
  *
  * WHAT (fork 3): no prompt text and no record content, ever. Ids are typed (`d:` decision, `l:`
  * learning, `c:` constraint, `n:` next step) and capped at {@link TELEMETRY_ID_CAP} per field.
+ * s106-m01: an MCP row also carries `lookupMs`, how long its identity lookup took (null when none
+ * ran), and on a refusal `refusedField`: a parameter name the full edition publishes for the tool;
+ * `unknown` when an INVALID_PARAMETER refusal names a key the call supplied that the tool does not
+ * publish; otherwise `unspecified` (no field, a dotted schema path, a constant such as `arguments`,
+ * an unpublished name the call did not supply). The agent's own text never reaches it. Rows
+ * written before s106-m01 carry neither, which reads as unmeasured, never as zero.
  *
  * WRITES (fork 2): once per MCP tool call and once per CLI verb, best-effort: an append never fails
  * the call that makes it, and a write error is swallowed. s105-m03: an MCP call that resolved a
@@ -83,6 +89,17 @@ export interface TelemetryRecord {
   /** s93-m06, prompt: drafts offered with this message, and how the message reads. */
   readonly draftsOffered?: number;
   readonly draftReply?: 'approval' | 'decline' | 'question' | 'other';
+  /**
+   * s106-m01, MCP rows: the identity lookup's (`targetForStore`) elapsed time in whole milliseconds;
+   * null when no lookup ran. Absent on hook, CLI and legacy rows: unmeasured, never a zero.
+   */
+  readonly lookupMs?: number | null;
+  /**
+   * s106-m01, MCP rows: on a refusal, a parameter name the tool publishes, `unknown` for an
+   * INVALID_PARAMETER naming a supplied key the tool does not publish, or `unspecified`; null on a
+   * row that was not refused. Never the agent's own text. Absent on hook, CLI and legacy rows.
+   */
+  readonly refusedField?: string | null;
 }
 
 const DRAFT_COUNTS = [
@@ -116,6 +133,18 @@ export function telemetryDir(
   env: NodeJS.ProcessEnv = process.env
 ): string {
   return path.join(telemetryRoot(env), telemetryKey(target));
+}
+
+/**
+ * The anonymous bucket: MCP calls and CLI verbs that resolved no readable store, refusals made
+ * before resolution without a projectRoot among them. One definition, so both writers and the close
+ * measures' bound (s106-m01) always name the same file.
+ */
+export function unattributedTarget(env: NodeJS.ProcessEnv = process.env): TelemetryTarget {
+  return {
+    projectId: 'unattributed',
+    dbPath: path.join(rbookConfigDir(env), 'unattributed.sqlite'),
+  };
 }
 
 /** `YYYY-MM.jsonl`, the UTC month of `when`. */
@@ -252,6 +281,17 @@ function serializable(value: unknown): TelemetryRecord | null {
     ),
     ...(['approval', 'decline', 'question', 'other'].includes(v.draftReply as string)
       ? { draftReply: v.draftReply as TelemetryRecord['draftReply'] }
+      : {}),
+    // s106-m01: MCP rows only. A field is kept only on a refusal and only in a parameter's shape;
+    // the writer limits it further to the tool's published names and two markers.
+    ...(v.surface === 'mcp' &&
+    (v.lookupMs === null ||
+      (typeof v.lookupMs === 'number' && Number.isSafeInteger(v.lookupMs) && v.lookupMs >= 0))
+      ? { lookupMs: v.lookupMs as number | null }
+      : {}),
+    ...(v.surface === 'mcp' &&
+    (v.refusedField === null || (v.ok === false && bounded(v.refusedField, TOKEN)))
+      ? { refusedField: v.refusedField as string | null }
       : {}),
   };
 }

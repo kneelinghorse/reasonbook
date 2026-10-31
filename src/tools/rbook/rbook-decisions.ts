@@ -95,7 +95,7 @@ export const RBOOK_DECISIONS_ACTION_PARAMS: ActionParamMap<
   // s92-m08: expand one decision by id; retrieval answers carry previews.
   show: ['action', 'decisionId', 'projectRoot'],
   update: ['action', 'decisionId', 'supersededBy', 'status', 'projectRoot'],
-  review: ['action', 'includeApproaching', 'projectRoot'],
+  review: ['action', 'includeApproaching', 'page', 'pageSize', 'projectRoot'],
   batch_update: ['action', 'status', 'decisionIds', 'projectRoot'],
   record: [
     'action',
@@ -139,8 +139,14 @@ export const rbookDecisionsSchema = z
     // list params
     since: z.string().optional().describe('ISO date lower bound for list action'),
     until: z.string().optional().describe('ISO date upper bound for list action'),
-    page: z.number().int().positive().optional().describe('Page number for list action'),
-    pageSize: z.number().int().positive().max(100).optional().describe('Page size for list action'),
+    page: z.number().int().positive().optional().describe('Page number for list/review actions'),
+    pageSize: z
+      .number()
+      .int()
+      .positive()
+      .max(100)
+      .optional()
+      .describe('Page size for list (default 12) and review (default 8) actions'),
     acrossProjects: z
       .boolean()
       .optional()
@@ -186,7 +192,12 @@ export const rbookDecisionsSchema = z
       .optional()
       .describe('Array of decision IDs for batch_update action (max 100)'),
     // record params (s91-m04)
-    content: z.string().optional().describe('Decision text for record action (required)'),
+    content: z
+      .string()
+      .optional()
+      .describe(
+        'Decision text for record action (required unless fromDraft names a draft, whose own words are then recorded)'
+      ),
     context: z.string().optional().describe('record: reasons and background for the decision'),
     alternatives: z.array(z.string()).optional().describe('record: options considered'),
     consequences: z.string().optional().describe('record: effects and tradeoffs'),
@@ -263,7 +274,11 @@ export const rbookDecisionsToolDefinition = {
         description:
           'Only rows recorded for this mission; for record, the mission to record it for (its sprint is used)',
       },
-      content: { type: 'string', description: 'Decision text for record action (required)' },
+      content: {
+        type: 'string',
+        description:
+          'Decision text for record action (required unless fromDraft names a draft, whose own words are then recorded)',
+      },
       context: { type: 'string', description: 'record: reasons and background' },
       alternatives: {
         type: 'array',
@@ -312,12 +327,12 @@ export const rbookDecisionsToolDefinition = {
       },
       since: { type: 'string', description: 'ISO date lower bound for list action' },
       until: { type: 'string', description: 'ISO date upper bound for list action' },
-      page: { type: 'integer', minimum: 1, description: 'Page number for list action' },
+      page: { type: 'integer', minimum: 1, description: 'Page number for list/review actions' },
       pageSize: {
         type: 'integer',
         minimum: 1,
         maximum: 100,
-        description: 'Page size for list action',
+        description: 'Page size for list (default 12) and review (default 8) actions',
       },
       acrossProjects: {
         type: 'boolean',
@@ -431,6 +446,8 @@ export async function rbookDecisions(
     case 'review':
       return rbookDecisionsReview({
         includeApproaching: params.includeApproaching,
+        page: params.page,
+        pageSize: params.pageSize,
         projectRoot: params.projectRoot,
       } satisfies RbookDecisionsReviewParams);
     case 'batch_update':

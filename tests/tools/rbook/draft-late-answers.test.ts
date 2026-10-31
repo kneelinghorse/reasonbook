@@ -167,6 +167,52 @@ describe('a three-hour answer to the same live conversation', () => {
     ).toEqual({ approval_mode: 'agent-judged', approval_draft: 'P1', approval_words: 'yes' });
   });
 
+  // s106-m02 (#870): fromDraft alone takes the draft's own words, so a late yes is judged exactly as
+  // a verbatim restatement is, through the real dispatch; a later kind still needs a plain yes on time.
+  it.each([
+    ['restated', { content: CONTENT }],
+    ['fromDraft alone', {}],
+  ])('records a late yes %s as agent-judged through the dispatch', async (_form, extra) => {
+    propose();
+    answer('yes');
+    const context = await buildMissionProtocolContext();
+    setExternalSessionOwner(SESSION);
+    const response = await executeMissionProtocolTool(
+      'rbook_decisions',
+      { action: 'record', fromDraft: 'P1', projectRoot, ...extra },
+      context
+    );
+    expect(response.structuredContent).toMatchObject({ success: true });
+    expect(
+      query(
+        'SELECT approval_mode, approval_draft, approval_words FROM strategic_decisions WHERE decision_text = ?',
+        CONTENT
+      )
+    ).toEqual({ approval_mode: 'agent-judged', approval_draft: 'P1', approval_words: 'yes' });
+  });
+
+  it.each([
+    ['restated', CONTENT],
+    ['fromDraft alone', undefined],
+  ])('refuses a constraint after a late yes, %s', async (_form, content) => {
+    propose('constraint');
+    answer('yes');
+    const before = destinations();
+    setExternalSessionOwner(SESSION);
+    try {
+      const result = await rbookDecisions({
+        action: 'record',
+        fromDraft: 'P1',
+        projectRoot,
+        ...(content ? { content } : {}),
+      });
+      expect(result.error?.code).toBe('APPROVAL_REQUIRED');
+    } finally {
+      setExternalSessionOwner(null);
+    }
+    expect(destinations()).toEqual(before);
+  });
+
   it('does not let a direct record silently settle the late-answer draft', async () => {
     propose();
     answer('yes');

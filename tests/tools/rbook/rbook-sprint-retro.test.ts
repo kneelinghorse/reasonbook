@@ -17,6 +17,7 @@ import {
 } from '../../../src/tools/rbook/rbook-sprint';
 import { RbookDetector } from '../../../src/intelligence/rbook-detector';
 import type { SprintRetroResult } from '../../../src/tools/rbook/rbook-sprint-retro';
+import { PREVIEW_MAX_CHARS } from '../../../src/tools/rbook/text-preview';
 
 describe('rbook_sprint retro action', () => {
   let tempDir: string;
@@ -231,7 +232,8 @@ describe('rbook_sprint retro action', () => {
     expect(data.sprint.focus).toBe('Verify sync pipeline');
 
     // Missions
-    expect(data.missions).toHaveLength(4);
+    // s106-m03: a page holds three missions; the KPIs below count all four.
+    expect(data.missions).toHaveLength(3);
     expect(data.missions[0].id).toBe('s35-m01');
     expect(data.missions[0].status).toBe('Completed');
 
@@ -359,5 +361,101 @@ describe('rbook_sprint retro action', () => {
 
     // Mission rows follow
     expect(lines[2]).toContain('s35-m01');
+  });
+
+  describe('pages (s106-m03)', () => {
+    const longNotes = 'notes '.repeat(100).trim();
+
+    beforeEach(() => {
+      const db = new Database(dbPath);
+      // 3 + 22 = 25 decisions and 1 + 11 = 12 learnings, so page 3 still holds decisions alone.
+      const decision = db.prepare(
+        `INSERT INTO strategic_decisions (decision_text, created_at, sprint_id) VALUES (?, ?, 'sprint-35')`
+      );
+      for (let i = 0; i < 22; i++)
+        decision.run(`Later decision ${i + 1}`, new Date(Date.UTC(2026, 2, 2, 0, i)).toISOString());
+      const learning = db.prepare(
+        `INSERT INTO learnings (content, sprint_id, created_at) VALUES (?, 'sprint-35', ?)`
+      );
+      for (let i = 0; i < 11; i++)
+        learning.run(`Later learning ${i + 1}`, new Date(Date.UTC(2026, 2, 2, 0, i)).toISOString());
+      db.prepare("UPDATE missions SET notes = ? WHERE id = 's35-m04'").run(longNotes);
+      // Six missions in all, so the missions page too.
+      for (const id of ['s35-m05', 's35-m06'])
+        db.prepare(
+          `INSERT INTO missions (id, sprint_id, name, status) VALUES (?, 'sprint-35', ?, 'Queued')`
+        ).run(id, `Mission ${id}`);
+      db.close();
+    });
+
+    async function retro(page?: number) {
+      const result = await rbookSprint({
+        action: 'retro',
+        sprintId: 'sprint-35',
+        projectRoot: tempDir,
+        ...(page ? { page } : {}),
+      } as never);
+      return result as { success: boolean; data?: SprintRetroResult };
+    }
+
+    it('pages each list three at a time while every total covers the sprint', async () => {
+      // This repo's sprint-96 retro was 114,044 characters: 14 missions, 21 sessions, 123
+      // decisions and 39 learnings in full.
+      const first = await retro();
+      const data = first.data!;
+      expect(data.decisions).toHaveLength(3);
+      expect(data.learnings).toHaveLength(3);
+      expect(data.missions).toHaveLength(3);
+      expect(data.kpis).toMatchObject({ totalDecisions: 25, totalLearnings: 12, totalMissions: 6 });
+      // The commit summary still names every mission, the one past this page too.
+      expect(data.commitSummary).toContain('s35-m06');
+      expect(data).toMatchObject({ page: 1, hasMore: true, nextPage: 2 });
+      const text = formatSprintForLLM('retro', first as never);
+      expect(text).toContain('Missions: showing 1–3 of 6');
+      expect(text).toContain('Decisions: showing 1–3 of 25');
+      expect(text).toContain('Learnings: showing 1–3 of 12');
+      expect(text).toContain(
+        `Next page: rbook_sprint(action="retro", sprintId="sprint-35", projectRoot=${JSON.stringify(tempDir)}, page=2).`
+      );
+      // Every decision on the page is in the text, not only the first ten of the sprint.
+      for (const d of data.decisions) expect(text).toContain(`#${d.id}`);
+
+      const ids = {
+        missions: data.missions.map((m) => m.id),
+        decisions: data.decisions.map((d) => d.id),
+        learnings: data.learnings.map((l) => l.id),
+      };
+      let page: number | null = data.nextPage;
+      while (page !== null) {
+        const next = (await retro(page)).data!;
+        ids.missions.push(...next.missions.map((m) => m.id));
+        ids.decisions.push(...next.decisions.map((d) => d.id));
+        ids.learnings.push(...next.learnings.map((l) => l.id));
+        expect(next.kpis).toEqual(data.kpis);
+        expect(next.commitSummary).toBe(data.commitSummary);
+        page = next.nextPage;
+      }
+      expect(new Set(ids.missions).size).toBe(6);
+      expect(new Set(ids.decisions).size).toBe(25);
+      expect(new Set(ids.learnings).size).toBe(12);
+      expect(ids.decisions).toEqual([...ids.decisions].sort((a, b) => a - b));
+    });
+
+    it('previews mission notes and a carry-forward, and names the call that reads them whole', async () => {
+      const data = (await retro()).data!;
+      // The blocked mission is the fourth, so it is on page 2; its carry-forward is on every page.
+      const blocked = (await retro(2)).data!.missions.find((m) => m.id === 's35-m04')!;
+      expect(blocked).toMatchObject({ notesTruncated: true, notesFullLength: longNotes.length });
+      expect(blocked.notes!.length).toBeLessThanOrEqual(PREVIEW_MAX_CHARS);
+      expect(data.carryForwards[0]).toMatchObject({ missionId: 's35-m04', truncated: true });
+      // The commit summary's carry-forwards line holds the preview too, not the blocked notes whole.
+      expect(data.commitSummary).toContain(`Carry-forwards: ${data.carryForwards[0].description}`);
+      expect(data.commitSummary).not.toContain(longNotes);
+      expect(data.carryForwards[0].description.length).toBeLessThanOrEqual(PREVIEW_MAX_CHARS);
+      expect(data.decisions[0]).toMatchObject({ truncated: false });
+      expect(formatSprintForLLM('retro', { success: true, data } as never)).toContain(
+        'rbook_mission(action="show", missionId="s35-m04")'
+      );
+    });
   });
 });

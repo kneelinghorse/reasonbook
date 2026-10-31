@@ -5,6 +5,7 @@
 import * as path from 'path';
 import { currentCodexRequest } from '../../codex-request-context';
 import { formatCliRemedy } from '../../utils/cli-remedy';
+import { sanitizeContentField } from '../../intelligence/content-sanitizer';
 import type { RbookDatabaseClient } from './client';
 import { CONTENT_FLOOR, draftCoverage, recordStatesDraft, type ReplyClass } from './draft-grammar';
 import { openDraftRuntime, readExcerpt, startsSince, pendingDeclines } from './draft-runtime';
@@ -110,6 +111,19 @@ function approvalRequired(draft: DraftRow, label: string, why: string): RbookToo
   };
 }
 
+/**
+ * s106-m02 (#870): a draft's own text, for a fromDraft record sent without content. Null when the
+ * id is malformed or names no draft, so the evaluation that follows makes that refusal.
+ */
+export function draftOwnText(client: RbookDatabaseClient, fromDraft: unknown): string | null {
+  const id = parseDraftId(
+    typeof fromDraft === 'string' || typeof fromDraft === 'number' ? fromDraft : null
+  );
+  if (id === null) return null;
+  const run = clientRunner(client);
+  return proposalsTableExists(run) ? (getDraft(run, id)?.text ?? null) : null;
+}
+
 /** Which draft, whether it can still be recorded, and how its approval is known. */
 export function evaluateDraft(
   client: RbookDatabaseClient,
@@ -129,7 +143,8 @@ export function evaluateDraft(
         message: `fromDraft must be a draft id such as "P3"; got ${JSON.stringify(fromDraft)}.`,
         field: 'fromDraft',
         providedValue: fromDraft,
-        suggestion: 'Use the id Reasonbook gave the draft (P<n>), or record without fromDraft.',
+        suggestion:
+          "Use the id Reasonbook gave the draft (P<n>), or record without fromDraft, with the decision's text as content.",
       },
     };
   const label = draftLabel(id);
@@ -141,7 +156,7 @@ export function evaluateDraft(
       error: {
         code: RBOOK_ERROR_CODES.DRAFT_NOT_FOUND,
         message: `No draft ${label} in this project's store; nothing was recorded.`,
-        suggestion: `Check the project (projectRoot) and the id with ${formatCliRemedy('drafts list', { projectRoot: path.resolve(client.path, '../../..') })}, or record without fromDraft.`,
+        suggestion: `Check the project (projectRoot) and the id with ${formatCliRemedy('drafts list', { projectRoot: path.resolve(client.path, '../../..') })}, or record without fromDraft, with the decision's text as content.`,
       },
     };
   const runtime = openDraftRuntime(client.path, env, { readonly: true });
@@ -170,6 +185,13 @@ export function evaluateDraft(
           suggestion: 'Propose the choice again with a Would record line if it still matters.',
         },
       };
+    // s106-m02: a draft whose own text holds a tool-call tag outside backticks is cut by the content
+    // sanitizer however it is sent. Where the cut copy cannot pass a check, no resend in the draft's
+    // own words succeeds, so the refusal says why instead of naming one. Decided from the draft's
+    // text, whatever content the caller sent.
+    const cut = sanitizeContentField(draft.text);
+    const sentCut = cut.wasModified && content.trim() === cut.cleaned.trim();
+    const cutRemedy = `${label}'s own text holds a tool-call tag outside backticks, which the content sanitizer cuts, so it cannot be recorded in its own words. End your reply with a revised Would record${draft.kind === 'decision' ? '' : ` (${draft.kind})`} line that quotes the tag in backticks, so the operator approves that text.`;
     // s97-m12: a revision shown after the operator plainly approved this draft leaves that approval
     // with this draft's own words only (learning #481).
     if (draft.replacedBy !== null && !recordStatesDraft(draft.text, content)) {
@@ -182,10 +204,12 @@ export function evaluateDraft(
           code: RBOOK_ERROR_CODES.INVALID_PARAMETER,
           message: `Draft ${label} was revised by ${draftLabel(draft.replacedBy)} after the operator approved it, so their approval records only ${label}'s own words.`,
           field: 'content',
-          suggestion:
-            newest === draft.id
-              ? `Record ${label} exactly as the operator approved it.`
-              : `Record ${label} exactly as the operator approved it, or record ${draftLabel(newest)} once the operator answers it.`,
+          // s106-m02: fromDraft without content is the resend that states the draft exactly.
+          suggestion: cut.wasModified
+            ? cutRemedy
+            : newest === draft.id
+              ? `Send fromDraft without content to record ${label} exactly as the operator approved it.`
+              : `Send fromDraft without content to record ${label} exactly as the operator approved it, or record ${draftLabel(newest)} once the operator answers it.`,
         },
       };
     }
@@ -196,9 +220,14 @@ export function evaluateDraft(
         ok: false,
         error: {
           code: RBOOK_ERROR_CODES.INVALID_PARAMETER,
-          message: `The content does not state draft ${label} ("${draft.text.slice(0, 120)}"); the operator's approval covers only what the draft said.`,
+          message: sentCut
+            ? `Draft ${label}'s own text holds a tool-call tag outside backticks, which the content sanitizer cuts; what is left does not state the draft.`
+            : `The content does not state draft ${label} ("${draft.text.slice(0, 120)}"); the operator's approval covers only what the draft said.`,
           field: 'content',
-          suggestion: `Record ${label}'s decision, with any nuance folded in. If the decision itself changed, end your reply with a revised Would record line so the operator approves the new text, or record it without fromDraft.`,
+          suggestion:
+            cut.wasModified && draftCoverage(draft.text, cut.cleaned) < CONTENT_FLOOR
+              ? cutRemedy
+              : `Send fromDraft without content to record ${label} in its own words, or restate its decision with any nuance folded in. If the decision itself changed, end your reply with a revised Would record line so the operator approves the new text, or record it without fromDraft.`,
         },
       };
     const session = harnessSessionOf(client.path);

@@ -107,8 +107,14 @@ function privateExclusions(root) {
   return exclusions;
 }
 function isPublicMirror(root) {
+  // s106-m05: the private checkout's listing of the mirror exclusions passed execFileSync's 1 MiB default.
   const git = (args) =>
-    execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    execFileSync('git', args, {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      maxBuffer: 64 * 1024 * 1024,
+    });
   if (fs.realpathSync(git(['rev-parse', '--show-toplevel']).trim()) !== fs.realpathSync(root))
     throw new Error('benchmark root differs from Git root');
   const excludes = privateExclusions(root);

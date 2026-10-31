@@ -48,7 +48,9 @@ export function getServerInstructions(): string {
       .replace(
         'Record choices in your own remit directly.',
         'Record a decision when the user asks for it or approves it.'
-      ) +
+      )
+      // s106-m05: this edition deletes fromDraft and makes no drafts.
+      .replace('record it, with fromDraft when Reasonbook gave it an id.', 'record it.') +
     " This edition keeps this project's record on this machine only; sharing, the dashboard and messages need the full plugin."
   );
 }

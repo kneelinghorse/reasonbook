@@ -2,6 +2,75 @@
 
 All notable changes to Reasonbook (published as `@aquex/cmos-mcp` before 4.0.0) are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.8.0] - 2026-10-30
+
+### Changed
+
+- The tool descriptions `tools/list` sends say more of what an agent needs before a call: each
+  action's required inputs, the main things the calls write, delete or send (adding a sprint
+  demotes the other open sprints by default), and where to go instead (review, onboard and context;
+  mission and mission transition; where next steps live). Most parameters now carry a short hint,
+  `rbook_message`'s `messageId` first, since it drew the most refusals with no hint. Review, onboard
+  and status say why they are annotated destructive. The list is 31,964 characters, within the
+  32,000 ceiling; schemas, enums and annotations are unchanged, and the local directory edition gets
+  the same text where its actions exist.
+- Record an approved draft by sending `fromDraft` without `content`: `rbook_decisions` record takes
+  the draft's own words, with every approval check a verbatim restatement gets. The refusals on this
+  path now name that resend, a record without `fromDraft` names the content it needs, and a draft
+  whose own text holds a tool-call tag the sanitizer cuts, so that its cut copy cannot be recorded,
+  says it must be proposed again with the tag in backticks instead of naming a resend that fails. A
+  line that begins with a code span can still lose its opening backtick when stored; that case is
+  open.
+- A value the content sanitizer empties (a mission's `name`, a block or reopen `reason` made only of a
+  stray tool-call tag) is refused as `INVALID_PARAMETER` naming what happened, not as missing.
+- `rbook_mission` add without `missionId` says add needs the new id and shows its form; an unknown
+  parameter's refusal suggests the published parameters whose names end with it and that the call's
+  action uses (`limit` on a context search: `searchLimit`). The `missionId` and `fromDraft` hints say
+  the same.
+- MCP telemetry rows record the identity lookup's time (`lookupMs`) and, on a refusal, the published
+  parameter it named, or `unknown` for a key the tool does not publish, or `unspecified`
+  (`refusedField`, never the agent's own text). `reasonbook stats --export`
+  reports misuse refusals by tool, action and field, and lookups over 100 ms, each with the
+  anonymous bucket beside it as a bound.
+- List, search and report answers whose default ran past 20,000 characters on any registered store
+  now return a page: fewer rows, each with every field, the total for its filter, and a `Next page:`
+  line naming the call that reads the next page with the same filters and project root (`nextPage`
+  and `nextPageCall` in the structured answer). New `page` parameter on `rbook_feedback` list,
+  `rbook_mission` list, `rbook_sprint` list, retro and analytics, and `rbook_session` search;
+  `rbook_decisions` review and the `rbook_context` view, next-steps list and constraints list and
+  review take `page` and `pageSize`. Defaults per page: feedback 10 (with `acrossProjects` 5, or
+  2 at status resolved), missions 6, sprints 15, decisions 12 (8 in review), next steps 15,
+  constraints 4 (6 in review), sessions 15, session search 5, a retro's missions, sessions,
+  decisions and learnings 3 each, analytics rows 20 counted from the newest. Decisions search
+  returns its top 15 by default; its `Found` count is the candidates it ranked, which grows with
+  `limit`.
+- Long text is a preview of at most 300 characters with its full length wherever a show action
+  reads it whole: mission objectives and notes, a sprint's focus in the list, the work queue and the
+  retro, the objectives in sprint show, a retro's notes, decisions, learnings and carry-forwards (its
+  commit summary too), and the review's decisions (cut at 200 characters before, unflagged). A listed
+  mission keeps its first three success criteria and deliverables, with their counts.
+- On the lists you act on (feedback, the review, next steps, constraints), `pageNote` says that a
+  row you change leaves the list and moves the later rows up, so re-read a page after acting on it
+  before its Next page call. A feedback list whose count cannot be read now refuses, as the
+  next-steps list does, rather than ending its pages early.
+- Every count, total and figure still covers all the rows: a retro's KPIs, commit summary and
+  carry-forwards, analytics' aggregates and trends over its whole window, the review's counts by
+  suggested action. Session search ranks every match, where it used to rank only the newest
+  `limit + 10`, and keeps three matched captures per session with `matchedCaptureCount`; the rest
+  are in the session's whole read (`rbook_session` list with `sessionId`), which a large session
+  can put past the cap. The cross-project decisions list now pages and reports the true total
+  across readable stores.
+- `rbook_context` view defaults to its digest: the newest four decisions and learnings as previews,
+  and the context documents' constraints and next steps whole, one of each per page (no other read
+  returns them), with their totals and the calls that read further (`compact.reads`). A constraint
+  kept as an object now goes out as its JSON and counts in the total, and a `quality_standards` list
+  is read when `constraints` holds none. `compact=false` returns both context documents and every
+  row, as the default did before.
+- A `Next page:` call or a digest read escapes backticks and line separators in its values, as the
+  answer's `Project:` line does, so a crafted project folder name cannot open a code fence. The calls
+  added in this release that read a preview whole are written the same way, so an id holding a quote
+  still names its row.
+
 ## [4.7.1] — 2026-10-29
 
 - Clarify required inputs and effects for sprint and messaging actions, preserving safety guidance

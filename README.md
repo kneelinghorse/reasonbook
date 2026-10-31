@@ -37,7 +37,7 @@ Requires Node.js 20 or newer.
 1. Install the pinned CLI:
 
    ```sh
-   npm install -g @aquex/reasonbook@4.7.1
+   npm install -g @aquex/reasonbook@4.8.0
    ```
 
    Ensure the global npm bin directory is on your PATH. If the former package is installed globally, run `npm uninstall -g @aquex/cmos-mcp` first. Version 4 provides only the `reasonbook` command; update scripts and MCP configurations that use the old command.
@@ -64,8 +64,8 @@ of Git. Init preserves an existing ignore file. Shared records require the store
 untracked; exchange those records through Reasonbook's sharing commands.
 
 A plugin installation does not put `reasonbook` on your terminal PATH. Plugin-only users can
-replace `reasonbook` in these commands with `npx --prefer-offline -y @aquex/reasonbook@4.7.1`,
-for example `npx --prefer-offline -y @aquex/reasonbook@4.7.1 review --format=context`.
+replace `reasonbook` in these commands with `npx --prefer-offline -y @aquex/reasonbook@4.8.0`,
+for example `npx --prefer-offline -y @aquex/reasonbook@4.8.0 review --format=context`.
 
 ## Codex plugins
 
@@ -214,7 +214,7 @@ Recommended: a global install of this release. The server then starts from disk,
 lookup on launch:
 
 ```bash
-npm install -g @aquex/reasonbook@4.7.1
+npm install -g @aquex/reasonbook@4.8.0
 ```
 
 If the former package is installed globally, run `npm uninstall -g @aquex/cmos-mcp` first. Version 4 provides only the `reasonbook` command; update scripts and MCP configurations that use the old command.
@@ -223,7 +223,7 @@ Or run it on demand with `npx`. Pin the version and prefer the local cache: an u
 can look the package up again on every launch.
 
 ```bash
-npx --prefer-offline -y @aquex/reasonbook@4.7.1
+npx --prefer-offline -y @aquex/reasonbook@4.8.0
 ```
 
 Semantic (vector) search is optional. Without it, retrieval is keyword-only, and the install is
@@ -242,7 +242,7 @@ arguments (keep `--project-root` where an example has it).
 ### Claude Code
 
 ```bash
-claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.7.1"]}'
+claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.8.0"]}'
 ```
 
 ### Claude Desktop
@@ -257,7 +257,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
       "args": [
         "--prefer-offline",
         "-y",
-        "@aquex/reasonbook@4.7.1",
+        "@aquex/reasonbook@4.8.0",
         "--project-root",
         "/absolute/path/to/your/project"
       ]
@@ -281,7 +281,7 @@ Add to `~/.cursor/mcp.json`:
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.7.1"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.8.0"]
     }
   }
 }
@@ -294,7 +294,7 @@ Add to `~/.cursor/mcp.json`:
   "context_servers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.7.1"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.8.0"]
     }
   }
 }
@@ -315,7 +315,7 @@ your terminal PATH, so the terminal route needs the standalone Claude CLI.
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.7.1"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.8.0"]
     }
   }
 }

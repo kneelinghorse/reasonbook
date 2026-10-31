@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // ABOUTME: s92-m08 over stdio: initialize carries the server instructions, and tools/list arrives
-// ABOUTME: under its 6K-token ceiling in the declared order, from the built dist/index.js.
+// ABOUTME: under its 8K-token ceiling in the declared order, from the built dist/index.js.
 
 import { afterAll, describe, expect, it } from '@jest/globals';
 import * as fs from 'fs';
@@ -51,11 +51,12 @@ describe('s92-m08 harness surface over stdio', () => {
     expect(instructions!.slice(0, 512)).toContain(SERVER_INSTRUCTIONS_LOOP);
   });
 
-  it('tools/list arrives under 24,000 characters (6K tokens at four a token), in a stable order', async () => {
+  // Decision #1713 raised the ceiling from 24,000 to 32,000 characters for sprint 106.
+  it('tools/list arrives under 32,000 characters (8K tokens at four a token), in a stable order', async () => {
     const harness = await connect();
     const first = await harness.client.listTools();
     const second = await harness.client.listTools();
-    expect(JSON.stringify(first.tools).length).toBeLessThanOrEqual(24_000);
+    expect(JSON.stringify(first.tools).length).toBeLessThanOrEqual(32_000);
     expect(second.tools.map((t) => t.name)).toEqual(first.tools.map((t) => t.name));
     expect(first.tools[0].name).toBe('rbook_mission');
     expect(first.tools[first.tools.length - 1].name).toBe('rbook_review');

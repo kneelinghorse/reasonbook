@@ -23,3 +23,18 @@ export function spinOutQuery(
       .all(...params, ...visible.params, limitWithSentinel) as CrossStoreRow[];
   };
 }
+
+/** s106-m03: how many rows spinOutQuery would read without its cap, under the same visibility. */
+export function spinOutCount(
+  kind: SpinOutKind,
+  sql: string,
+  params: unknown[] = []
+): (db: Parameters<NonNullable<CrossStoreQueryOptions['perStoreQuery']>>[0]) => number {
+  return (db) => {
+    const visible = prepareSpinOutRead(spinOutSqliteReader(db)).predicate(kind, 'visible_row.id');
+    const row = db
+      .prepare(`SELECT COUNT(*) AS n FROM (${sql}) visible_row WHERE ${visible.sql}`)
+      .get(...params, ...visible.params) as { n: number };
+    return row.n;
+  };
+}

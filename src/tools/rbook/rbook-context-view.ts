@@ -24,6 +24,21 @@ import { getProjectId } from './genesis-columns';
 import { frameForeignText, provenanceTag } from '../../intelligence/provenance-frame';
 import { appendWarnings } from './format-warnings';
 import { storedTimeMs } from './stored-time';
+import { PREVIEW_MAX_CHARS, previewText } from './text-preview';
+import { callText, nextPageCall, pageFacts, pageRequest, shownLine } from './answer-page';
+
+/**
+ * s106-m03: entries per digest list; rbook_context(action="view", compact=false) returns all. Five
+ * of each were 20,248 characters on a registered store once the digest named its reads.
+ */
+export const DIGEST_ENTRIES = 4;
+
+/**
+ * s106-m03 (critic round 2): the documents' constraints and next steps per digest page, whole. Each
+ * goes out three times (two structured copies and the text): four of Shopify-Forge's constraints,
+ * up to 2,489 characters each, made page 2 27,808 characters, and two its page 7 22,523.
+ */
+export const DIGEST_DOCUMENT_ENTRIES = 1;
 
 /**
  * Parsed context content with type-safe structure.
@@ -108,7 +123,11 @@ export interface RbookContextViewResult {
   /** View mode used for this response */
   mode?: 'full' | 'sizeOnly' | 'compact';
 
-  /** Compact digest (only present when compact=true) */
+  /**
+   * Compact digest: s106-m03, the default. It holds the newest DIGEST_ENTRIES decisions and
+   * learnings as previews, and a page of the context documents' constraints and next steps whole
+   * (no other read returns those); totals count every entry, and compact=false returns everything.
+   */
   compact?: {
     activeMission: string | null;
     activeSprint: string | null;
@@ -116,6 +135,16 @@ export interface RbookContextViewResult {
     activeConstraints: string[];
     recentLearnings: string[];
     pendingNextSteps: string[];
+    totals: { decisions: number; learnings: number; constraints: number; nextSteps: number };
+    /** The calls that read every decision and every learning a page at a time, and the full view. */
+    reads: { decisions: string; learnings: string; everything: string };
+    /** The page of the documents' constraints and next steps, each pageSize entries at most. */
+    page: number;
+    pageSize: number;
+    hasMore: boolean;
+    nextPage: number | null;
+    /** The call that reads their next page, or null on the last page. */
+    nextPageCall: string | null;
   };
 }
 
@@ -140,8 +169,18 @@ export const rbookContextViewSchema = z.object({
     .boolean()
     .optional()
     .describe(
-      'Return summary digest (last 5 decisions, constraints, learnings, next_steps) instead of full content.'
+      "Summary digest (the newest 4 decisions and learnings as previews, a page of the documents' constraints and next steps, with totals); the default. false returns both documents and every row."
     ),
+
+  /** s106-m03: page of the digest's constraints and next steps, 1-based, and entries per page */
+  page: z.number().int().positive().optional().describe("Page of the digest documents' lists"),
+  pageSize: z
+    .number()
+    .int()
+    .positive()
+    .max(100)
+    .optional()
+    .describe('Entries per page (default 1)'),
 
   /** Optional: explicit project root to search from */
   projectRoot: z
@@ -174,7 +213,18 @@ export const rbookContextViewToolDefinition = {
       compact: {
         type: 'boolean',
         description:
-          'Return summary digest (last 5 decisions, constraints, learnings, next_steps) instead of full content.',
+          "Summary digest (the newest 4 decisions and learnings as previews, a page of the documents' constraints and next steps, with totals); the default. false returns both documents and every row.",
+      },
+      page: {
+        type: 'integer',
+        minimum: 1,
+        description: "Page of the digest documents' lists",
+      },
+      pageSize: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 100,
+        description: 'Entries per page (default 1)',
       },
       projectRoot: {
         type: 'string',
@@ -197,8 +247,8 @@ export const rbookContextViewToolDefinition = {
 export async function rbookContextView(
   params: RbookContextViewParams = {}
 ): Promise<RbookToolResult<RbookContextViewResult>> {
-  // Mutual exclusion validation
-  if (params.sizeOnly && params.compact) {
+  // Mutual exclusion validation: only an explicit compact=true conflicts with sizeOnly.
+  if (params.sizeOnly && params.compact === true) {
     return createError<RbookContextViewResult>({
       code: 'INVALID_PARAMETER',
       message: 'sizeOnly and compact are mutually exclusive. Use one or the other.',
@@ -299,9 +349,45 @@ export async function rbookContextView(
         );
       }
 
-      // compact mode: return summary digest with limited entries
-      if (params.compact) {
-        const aggregated = buildAggregatedView(masterContext, projectContext, client);
+      // compact mode: return summary digest with limited entries. s106-m03: the default, since
+      // the full view was 871,683 characters on OODS-Forge; compact=false still returns it.
+      if (params.compact ?? true) {
+        const aggregated = buildAggregatedView(
+          masterContext,
+          projectContext,
+          client,
+          DIGEST_ENTRIES
+        );
+        // s106-m03 (critic round 2): the documents' constraints and next steps have no other read
+        // (they are not the constraints and next_steps tables), so the digest pages them whole,
+        // as the compact view returned them before; compact=false is the whole view at once.
+        const request = pageRequest(params.page, params.pageSize, DIGEST_DOCUMENT_ENTRIES);
+        const onPage = (entries: string[]): string[] =>
+          entries.slice(request.offset, request.offset + request.pageSize);
+        const longest = Math.max(aggregated.constraints.length, aggregated.nextSteps.length);
+        const facts = pageFacts(
+          request,
+          Math.min(request.pageSize, Math.max(0, longest - request.offset)),
+          longest
+        );
+        const digest = {
+          decisions: aggregated.decisions,
+          constraints: onPage(aggregated.constraints),
+          learnings: aggregated.learnings,
+          nextSteps: onPage(aggregated.nextSteps),
+        };
+        const totals = {
+          decisions: healthMetrics?.activeDecisionCount ?? digest.decisions.length,
+          learnings: healthMetrics?.activeLearningCount ?? digest.learnings.length,
+          constraints: aggregated.constraints.length,
+          nextSteps: aggregated.nextSteps.length,
+        };
+        const at = { projectRoot: params.projectRoot };
+        const reads = {
+          decisions: callText('rbook_decisions', { action: 'list', ...at }),
+          learnings: callText('rbook_learnings', { action: 'list', ...at }),
+          everything: callText('rbook_context', { action: 'view', compact: false, ...at }),
+        };
 
         // Get active sprint info
         let activeSprint: string | null = null;
@@ -320,10 +406,7 @@ export async function rbookContextView(
             aggregated: {
               activeMission: aggregated.activeMission,
               sessionCount: aggregated.sessionCount,
-              decisions: aggregated.decisions.slice(0, 5),
-              constraints: aggregated.constraints,
-              learnings: aggregated.learnings.slice(0, 5),
-              nextSteps: aggregated.nextSteps,
+              ...digest,
             },
             contextSizes,
             staleness,
@@ -333,17 +416,29 @@ export async function rbookContextView(
             compact: {
               activeMission: aggregated.activeMission,
               activeSprint,
-              recentDecisions: aggregated.decisions.slice(0, 5),
-              activeConstraints: aggregated.constraints,
-              recentLearnings: aggregated.learnings.slice(0, 5),
-              pendingNextSteps: aggregated.nextSteps,
+              recentDecisions: digest.decisions,
+              activeConstraints: digest.constraints,
+              recentLearnings: digest.learnings,
+              pendingNextSteps: digest.nextSteps,
+              totals,
+              reads,
+              page: facts.page,
+              pageSize: facts.pageSize,
+              hasMore: facts.hasMore,
+              nextPage: facts.nextPage,
+              nextPageCall: nextPageCall(facts.nextPage, 'rbook_context', {
+                action: 'view',
+                contextType: params.contextType,
+                pageSize: params.pageSize,
+                projectRoot: params.projectRoot,
+              }),
             },
           },
           warnings
         );
       }
 
-      // Full mode (default)
+      // Full mode (compact=false)
       const aggregated = buildAggregatedView(masterContext, projectContext, client);
 
       return createSuccess<RbookContextViewResult>(
@@ -446,11 +541,18 @@ function frameIfForeign(
   return isForeign ? frameForeignText(text, provenanceTag(rowProjectId)) : text;
 }
 
+/**
+ * `digest` (s106-m03) reads only the newest `digest` decisions and learnings, each cut to a
+ * preview BEFORE it is framed, so a foreign row's fence always closes.
+ */
 function buildAggregatedView(
   masterContext: ParsedContext | null,
   projectContext: ParsedContext | null,
-  client?: RbookDatabaseClient
+  client?: RbookDatabaseClient,
+  digest?: number
 ): RbookContextViewResult['aggregated'] {
+  const cut = (text: string): string => (digest ? previewText(text).preview : text);
+  const limit = digest ? ` LIMIT ${Math.floor(digest)}` : '';
   const masterContent = masterContext?.content ?? {};
   const projectContent = projectContext?.content ?? {};
 
@@ -460,7 +562,7 @@ function buildAggregatedView(
 
   // Extract working memory next steps
   const workingMemory = extractObject(projectContent, 'working_memory');
-  const nextSteps = extractStringArray(workingMemory, 'next_steps');
+  const nextSteps = documentEntries(workingMemory, 'next_steps');
 
   // s83-m06 (review): after a rbook_db pull the active decisions/learnings can include
   // pull-merged FOREIGN rows (project_id != local). Frame those inside the untrusted
@@ -478,33 +580,33 @@ function buildAggregatedView(
       decision_text: string;
       project_id: string | null;
     }>(
-      `SELECT decision_text, ${decProjExpr} AS project_id FROM strategic_decisions WHERE status = 'active' ORDER BY julianday(created_at) DESC`,
+      `SELECT decision_text, ${decProjExpr} AS project_id FROM strategic_decisions WHERE status = 'active' ORDER BY julianday(created_at) DESC${limit}`,
       []
     );
     if (structuredDecisions.success && structuredDecisions.data) {
       decisions = structuredDecisions.data.map((row) =>
-        frameIfForeign(row.decision_text, row.project_id, localProjectId)
+        frameIfForeign(cut(row.decision_text), row.project_id, localProjectId)
       );
     }
   }
 
-  // Constraints remain in context JSON (low-volume, no dedicated table)
+  // Constraints remain in context JSON (low-volume, no dedicated table). s106-m03: a list in
+  // quality_standards is read when constraints holds none; an empty array used to win the ||.
+  const listed = documentEntries(masterContent, 'constraints');
   const constraints =
-    extractStringArray(masterContent, 'constraints') ||
-    extractStringArray(masterContent, 'quality_standards') ||
-    [];
+    listed.length > 0 ? listed : documentEntries(masterContent, 'quality_standards');
 
   // Pull learnings from structured table (learnings no longer stored in blob — Sprint 51)
   let learnings: string[] = [];
   if (client) {
     const learnProjExpr = tableHasColumn(client, 'learnings', 'project_id') ? 'project_id' : 'NULL';
     const structuredLearnings = client.getMany<{ content: string; project_id: string | null }>(
-      `SELECT content, ${learnProjExpr} AS project_id FROM learnings WHERE status = 'active' ORDER BY julianday(created_at) DESC`,
+      `SELECT content, ${learnProjExpr} AS project_id FROM learnings WHERE status = 'active' ORDER BY julianday(created_at) DESC${limit}`,
       []
     );
     if (structuredLearnings.success && structuredLearnings.data) {
       learnings = structuredLearnings.data.map((row) =>
-        frameIfForeign(row.content, row.project_id, localProjectId)
+        frameIfForeign(cut(row.content), row.project_id, localProjectId)
       );
     }
   }
@@ -607,14 +709,20 @@ function extractObject(obj: Record<string, unknown>, key: string): Record<string
 }
 
 /**
- * Safely extract a string array from an object.
+ * s106-m03 (critic round 3): a context document's list as text. Two registered stores keep
+ * constraints as objects ({constraint, status}, {constraint, source, type}), which the digest
+ * dropped and left out of its totals; an object goes out as its JSON, every field kept.
  */
-function extractStringArray(obj: Record<string, unknown>, key: string): string[] {
+function documentEntries(obj: Record<string, unknown>, key: string): string[] {
   const value = obj[key];
-  if (Array.isArray(value)) {
-    return value.filter((item): item is string => typeof item === 'string');
-  }
-  return [];
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) =>
+    typeof item === 'string'
+      ? [item]
+      : item !== null && typeof item === 'object'
+        ? [JSON.stringify(item)]
+        : []
+  );
 }
 
 /**
@@ -688,29 +796,51 @@ export function formatContextViewForLLM(result: RbookToolResult<RbookContextView
       lines.push(`**Active Sprint**: ${data.compact.activeSprint}`);
     }
 
+    // s106-m03: each list says how many there are and which call reads the rest.
+    const totals = data.compact.totals;
     if (data.compact.recentDecisions.length > 0) {
       lines.push('');
-      lines.push('**Recent Decisions**:');
+      lines.push(
+        `**Recent Decisions** (the newest ${data.compact.recentDecisions.length} of ${totals.decisions} active; ${data.compact.reads.decisions} pages through every decision):`
+      );
       data.compact.recentDecisions.forEach((d) => lines.push(`  • ${d}`));
     }
 
-    if (data.compact.activeConstraints.length > 0) {
+    const docPage = (totalCount: number, returned: number, noun: string): string =>
+      shownLine(
+        { page: data.compact!.page, pageSize: data.compact!.pageSize, totalCount },
+        returned,
+        noun
+      );
+    if (totals.constraints > 0) {
       lines.push('');
-      lines.push('**Constraints**:');
+      lines.push(
+        `**Constraints** (${docPage(totals.constraints, data.compact.activeConstraints.length, 'constraints')}, from the master context):`
+      );
       data.compact.activeConstraints.forEach((c) => lines.push(`  • ${c}`));
     }
 
     if (data.compact.recentLearnings.length > 0) {
       lines.push('');
-      lines.push('**Recent Learnings**:');
+      lines.push(
+        `**Recent Learnings** (the newest ${data.compact.recentLearnings.length} of ${totals.learnings} active; ${data.compact.reads.learnings} pages through every learning):`
+      );
       data.compact.recentLearnings.forEach((l) => lines.push(`  • ${l}`));
     }
 
-    if (data.compact.pendingNextSteps.length > 0) {
+    if (totals.nextSteps > 0) {
       lines.push('');
-      lines.push('**Next Steps**:');
+      lines.push(
+        `**Next Steps** (${docPage(totals.nextSteps, data.compact.pendingNextSteps.length, 'next steps')}, from the project context):`
+      );
       data.compact.pendingNextSteps.forEach((s) => lines.push(`  • ${s}`));
     }
+
+    lines.push('');
+    lines.push(
+      `Decisions and learnings are previews of at most ${PREVIEW_MAX_CHARS} characters; constraints and next steps are whole. ${data.compact.reads.everything} returns both context documents and every entry at once.`
+    );
+    if (data.compact.nextPageCall) lines.push(`Next page: ${data.compact.nextPageCall}.`);
 
     if (data.contextSizes) {
       lines.push('');

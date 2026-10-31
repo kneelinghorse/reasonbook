@@ -26,6 +26,22 @@ import { skipConflicted, skippedConflicts } from './record-conflict-skip';
 import { countWrite, type WriteFailure } from './write-guard';
 import { storedTimeMs } from './stored-time';
 import { recordedExecute } from './record-changes';
+import {
+  nextPageCall,
+  pageFacts,
+  pageRequest,
+  REREAD_AFTER_ACTING,
+  shownLine,
+  type PageRequest,
+} from './answer-page';
+
+/**
+ * s106-m03: rows per page. A constraint has no show action, so each goes out whole: a registered
+ * store's 14 active constraints answered 32,493 characters, 16 flagged ones 22,944, and Stage1's
+ * average about 3,700 characters a row across text and structured copy; 8 flagged reached 19,579.
+ */
+export const CONSTRAINTS_PAGE_SIZE = 4;
+export const CONSTRAINT_REVIEW_PAGE_SIZE = 6;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -58,6 +74,16 @@ export interface ConstraintsResult {
   reviewItems?: ConstraintReviewItem[];
   affected: number;
   message: string;
+  /** s106-m03, list and review: every matching row, this page's number and size. */
+  totalCount?: number;
+  page?: number;
+  pageSize?: number;
+  hasMore?: boolean;
+  nextPage?: number | null;
+  /** The call that reads the next page with the same filters, or null on the last page. */
+  nextPageCall?: string | null;
+  /** While a page follows: archiving or reaffirming moves the later rows up; re-read first. */
+  pageNote?: string | null;
   /** Constraint acted on by reaffirm (Sprint 82 m01). */
   constraintId?: number;
   /** ISO timestamp the reaffirm bumped last_reviewed_at to (Sprint 82 m01). */
@@ -85,6 +111,9 @@ export interface RbookConstraintsParams {
   evergreen?: boolean;
   /** Staleness threshold in days (for review, default: 30) */
   stalenessThresholdDays?: number;
+  /** s106-m03: page of list or review rows, 1-based, and rows per page */
+  page?: number;
+  pageSize?: number;
   /** Optional project root */
   projectRoot?: string;
 }
@@ -165,11 +194,24 @@ export async function rbookConstraints(
 
       switch (action) {
         case 'list':
-          return listConstraints(client, params.constraintStatus ?? 'active');
+          return listConstraints(client, params.constraintStatus ?? 'active', {
+            page: params.page,
+            pageSize: params.pageSize,
+            constraintStatus: params.constraintStatus,
+            stalenessThresholdDays: params.stalenessThresholdDays,
+            projectRoot: params.projectRoot,
+          });
         case 'review':
           return reviewConstraints(
             client,
-            params.stalenessThresholdDays ?? DEFAULT_STALENESS_THRESHOLD_DAYS
+            params.stalenessThresholdDays ?? DEFAULT_STALENESS_THRESHOLD_DAYS,
+            {
+              page: params.page,
+              pageSize: params.pageSize,
+              constraintStatus: params.constraintStatus,
+              stalenessThresholdDays: params.stalenessThresholdDays,
+              projectRoot: params.projectRoot,
+            }
           );
         case 'archive':
           return archiveConstraints(client, params.constraintIds);
@@ -187,10 +229,48 @@ export async function rbookConstraints(
   return attachWarnings(result, migrationWarnings);
 }
 
+/** What a list or review page reads from the call: its page and the filters its next call repeats. */
+type ConstraintsPaging = Pick<
+  RbookConstraintsParams,
+  'page' | 'pageSize' | 'constraintStatus' | 'stalenessThresholdDays' | 'projectRoot'
+>;
+
+/** The page fields of a list or review answer, its next call repeating the caller's filters. */
+function constraintsPage(
+  request: PageRequest,
+  returned: number,
+  totalCount: number,
+  params: ConstraintsPaging,
+  constraintAction: 'list' | 'review'
+): Pick<
+  ConstraintsResult,
+  'totalCount' | 'page' | 'pageSize' | 'hasMore' | 'nextPage' | 'nextPageCall' | 'pageNote'
+> {
+  const facts = pageFacts(request, returned, totalCount);
+  return {
+    totalCount,
+    page: facts.page,
+    pageSize: facts.pageSize,
+    hasMore: facts.hasMore,
+    nextPage: facts.nextPage,
+    nextPageCall: nextPageCall(facts.nextPage, 'rbook_context', {
+      action: 'constraints',
+      constraintAction: constraintAction === 'review' ? 'review' : undefined,
+      constraintStatus: params.constraintStatus,
+      stalenessThresholdDays: params.stalenessThresholdDays,
+      pageSize: params.pageSize,
+      projectRoot: params.projectRoot,
+    }),
+    pageNote: facts.nextPage === null ? null : REREAD_AFTER_ACTING,
+  };
+}
+
 function listConstraints(
   client: RbookDatabaseClient,
-  status: ConstraintStatus
+  status: ConstraintStatus,
+  params: ConstraintsPaging
 ): RbookToolResult<ConstraintsResult> {
+  const request = pageRequest(params.page, params.pageSize, CONSTRAINTS_PAGE_SIZE);
   const result = client.getMany<{
     id: number;
     content: string;
@@ -204,11 +284,15 @@ function listConstraints(
     evergreen: number | null;
   }>(
     `SELECT id, content, status, session_id, sprint_id, created_at, expires_at, archived_at, last_reviewed_at, evergreen
-     FROM constraints WHERE status = ? ORDER BY julianday(created_at) ASC`,
+     FROM constraints WHERE status = ? ORDER BY julianday(created_at) ASC, id ASC LIMIT ? OFFSET ?`,
+    [status, request.pageSize, request.offset]
+  );
+  const total = client.getOne<{ count: number }>(
+    'SELECT COUNT(*) AS count FROM constraints WHERE status = ?',
     [status]
   );
 
-  if (!result.success || !result.data) {
+  if (!result.success || !result.data || !total.success || !total.data) {
     return createError<ConstraintsResult>({
       code: 'DB_QUERY_FAILED',
       message: 'Failed to query constraints',
@@ -232,14 +316,17 @@ function listConstraints(
     constraintAction: 'list',
     items,
     affected: items.length,
-    message: `Found ${items.length} constraint(s) with status '${status}'`,
+    ...constraintsPage(request, items.length, total.data.count, params, 'list'),
+    message: `Found ${total.data.count} constraint(s) with status '${status}'`,
   });
 }
 
 function reviewConstraints(
   client: RbookDatabaseClient,
-  thresholdDays: number
+  thresholdDays: number,
+  params: ConstraintsPaging
 ): RbookToolResult<ConstraintsResult> {
+  const request = pageRequest(params.page, params.pageSize, CONSTRAINT_REVIEW_PAGE_SIZE);
   // Get all active constraints. s84-m05: EXCLUDE evergreen constraints — an institutional rule
   // (e.g. the ≤4KB review digest, constraint #2) must never surface as stale. The write-path
   // migration (rbookConstraints) guarantees the column exists here, so a bare reference is safe.
@@ -256,7 +343,7 @@ function reviewConstraints(
     evergreen: number | null;
   }>(
     `SELECT id, content, status, session_id, sprint_id, created_at, expires_at, archived_at, last_reviewed_at, evergreen
-     FROM constraints WHERE status = 'active' AND evergreen = 0 ORDER BY julianday(created_at) ASC`,
+     FROM constraints WHERE status = 'active' AND evergreen = 0 ORDER BY julianday(created_at) ASC, id ASC`,
     []
   );
 
@@ -292,13 +379,15 @@ function reviewConstraints(
     }
   }
 
-  // Sort by staleness score descending
+  // Sort by staleness score descending; the sort is stable, so equal scores keep the oldest first.
   reviewItems.sort((a, b) => b.stalenessScore - a.stalenessScore);
+  const pageItems = reviewItems.slice(request.offset, request.offset + request.pageSize);
 
   return createSuccess<ConstraintsResult>({
     constraintAction: 'review',
-    reviewItems,
-    affected: reviewItems.length,
+    reviewItems: pageItems,
+    affected: pageItems.length,
+    ...constraintsPage(request, pageItems.length, reviewItems.length, params, 'review'),
     message:
       reviewItems.length > 0
         ? `${reviewItems.length} constraint(s) flagged for review (threshold: ${thresholdDays} days)`
@@ -514,24 +603,48 @@ function renderConstraintsBody(result: RbookToolResult<ConstraintsResult>): stri
 
   const d = result.data;
 
+  // s106-m03: list and review state their page and total, and name the next page.
+  const paged =
+    d.page !== undefined && d.pageSize !== undefined && d.totalCount !== undefined
+      ? { page: d.page, pageSize: d.pageSize, totalCount: d.totalCount }
+      : null;
+  const next = d.nextPageCall
+    ? ['', `Next page: ${d.nextPageCall}.`, ...(d.pageNote ? [d.pageNote] : [])]
+    : [];
+
   if (d.constraintAction === 'list' && d.items) {
     if (d.items.length === 0) {
-      return 'No active constraints found.';
+      return paged && paged.totalCount > 0
+        ? `${shownLine(paged, 0, 'constraints')}.`
+        : 'No active constraints found.';
     }
-    const lines = [`**Constraints (${d.items.length})**`, ''];
+    const lines = [
+      paged
+        ? `**Constraints**: ${shownLine(paged, d.items.length, 'constraints')}`
+        : `**Constraints (${d.items.length})**`,
+      '',
+    ];
     for (const item of d.items) {
       const expiry = item.expiresAt ? ` [expires: ${item.expiresAt.split('T')[0]}]` : '';
       const sprint = item.sprintId ? ` (${item.sprintId})` : '';
       lines.push(`  #${item.id} [${item.status}]${sprint}${expiry}: ${item.content}`);
     }
+    lines.push(...next);
     return lines.join('\n');
   }
 
   if (d.constraintAction === 'review' && d.reviewItems) {
     if (d.reviewItems.length === 0) {
-      return 'No stale constraints found.';
+      return paged && paged.totalCount > 0
+        ? `${shownLine(paged, 0, 'flagged constraints')}.`
+        : 'No stale constraints found.';
     }
-    const lines = [`**Constraint Review (${d.reviewItems.length} flagged)**`, ''];
+    const lines = [
+      paged
+        ? `**Constraint Review**: ${shownLine(paged, d.reviewItems.length, 'flagged constraints')}`
+        : `**Constraint Review (${d.reviewItems.length} flagged)**`,
+      '',
+    ];
     for (const item of d.reviewItems) {
       const expiry = item.expiresAt
         ? ` [expires: ${item.expiresAt.split('T')[0]}]`
@@ -545,6 +658,7 @@ function renderConstraintsBody(result: RbookToolResult<ConstraintsResult>): stri
       'Use constraintAction="archive" with constraintIds to archive stale constraints, ' +
         'or constraintAction="reaffirm" with constraintId to reset a still-valid one.'
     );
+    lines.push(...next);
     return lines.join('\n');
   }
 

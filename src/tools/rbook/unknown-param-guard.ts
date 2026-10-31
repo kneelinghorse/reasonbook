@@ -70,6 +70,31 @@ export function findUnknownTopLevelParam(
     wrapper?.kind === 'array'
       ? `inside each \`${wrapper.name}\` entry`
       : `under \`${wrapper?.name ?? ''}\``;
+  // s106-m02: "remove it" drops what the agent meant, such as context's `limit` for `searchLimit`.
+  // The rule: published parameters whose names end with the unknown key, case-insensitive, all of
+  // them when several match, and only those the call's action uses (the applicability contract).
+  // An empty key would match every name, so it suggests none.
+  const action = (params as Record<string, unknown>).action;
+  const map = RBOOK_ACTION_PARAMS[toolName];
+  const used =
+    typeof action === 'string' && map && Object.prototype.hasOwnProperty.call(map, action)
+      ? map[action]
+      : undefined;
+  const meant =
+    unknownKey === ''
+      ? []
+      : Object.keys(properties).filter(
+          (name) =>
+            name.toLowerCase().endsWith(unknownKey.toLowerCase()) &&
+            (used === undefined || used.includes(name))
+        );
+  const didYouMean =
+    meant.length === 0
+      ? ''
+      : ` Did you mean ${meant
+          .map((name) => `\`${name}\``)
+          .join(', ')
+          .replace(/, ([^,]*)$/, ' or $1')}? If not, remove it.`;
 
   return {
     code: RBOOK_ERROR_CODES.INVALID_PARAMETER,
@@ -79,6 +104,8 @@ export function findUnknownTopLevelParam(
     validValues: Object.keys(properties),
     suggestion: wrapper
       ? `\`${unknownKey}\` is not a top-level parameter of ${toolName}; ${actionClause}it belongs ${placement}.`
-      : `\`${unknownKey}\` is not a parameter of ${toolName}; remove it. The published parameters are listed in validValues.`,
+      : didYouMean
+        ? `\`${unknownKey}\` is not a parameter of ${toolName}.${didYouMean} The published parameters are listed in validValues.`
+        : `\`${unknownKey}\` is not a parameter of ${toolName}; remove it. The published parameters are listed in validValues.`,
   };
 }

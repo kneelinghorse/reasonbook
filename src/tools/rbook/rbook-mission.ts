@@ -87,7 +87,7 @@ export type RbookMissionAction = (typeof RBOOK_MISSION_ACTIONS)[number];
 
 /** s86-m04 — which published parameter applies to which action (see action-params.ts). */
 export const RBOOK_MISSION_ACTION_PARAMS: ActionParamMap<RbookMissionAction, RbookMissionParams> = {
-  list: ['action', 'sprintId', 'status', 'limit', 'projectRoot'],
+  list: ['action', 'sprintId', 'status', 'limit', 'page', 'projectRoot'],
   show: ['action', 'missionId', 'projectRoot'],
   // `limit` reaches only the acrossProjects arm (rbook-mission.ts:321) and `queuedLimit` only the
   // local one, but both are genuinely settable on this action, so both are published for it.
@@ -177,8 +177,9 @@ export const rbookMissionSchema = z
       .max(100)
       .optional()
       .describe(
-        'Maximum missions to return for list action, or across-project cap for status action'
+        'Missions per page for list action (default 6), or across-project cap for status action'
       ),
+    page: z.number().int().min(1).optional().describe('Page of list results, 1-based (default 1)'),
     includeBlocked: z.boolean().optional().describe('Include blocked missions in status action'),
     acrossProjects: z
       .boolean()
@@ -264,7 +265,12 @@ export const rbookMissionToolDefinition = {
         minimum: 1,
         maximum: 100,
         description:
-          'Maximum missions to return for list action, or across-project cap for status action',
+          'Missions per page for list action (default 6), or across-project cap for status action',
+      },
+      page: {
+        type: 'integer',
+        minimum: 1,
+        description: 'Page of list results, 1-based (default 1)',
       },
       includeBlocked: {
         type: 'boolean',
@@ -404,6 +410,7 @@ export async function rbookMission(
         sprintId: params.sprintId ?? undefined,
         status: params.status as RbookMissionListParams['status'],
         limit: params.limit,
+        page: params.page,
         projectRoot: params.projectRoot,
       });
     case 'show':

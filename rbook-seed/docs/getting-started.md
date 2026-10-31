@@ -105,20 +105,20 @@ yourproject/                    # Project root
 
 ## Core MCP Tools
 
-| Call                                                                        | Purpose                                         |
-| --------------------------------------------------------------------------- | ----------------------------------------------- |
-| `rbook_review()`                                                            | Session-opener digest (start here)              |
-| `rbook_project(action="init", projectRoot="...", projectType="build")`      | Initialize a new Builder project                |
-| `rbook_agent_onboard()`                                                     | Get project context for cold-start              |
-| `rbook_db(action="health")`                                                 | Check database status                           |
-| `rbook_mission(action="status")`                                            | View work queue                                 |
-| `rbook_mission_transition(action="start", missionId="...")`                 | Begin mission                                   |
-| `rbook_mission_transition(action="complete", missionId="...", notes="...")` | Mark mission done                               |
-| `rbook_session(action="start", type="planning", title="...")`               | Start planning session                          |
-| `rbook_session(action="capture", category="decision", content="...")`       | Record decisions                                |
-| `rbook_session(action="complete", summary="...")`                           | Complete session                                |
-| `rbook_context(action="update")`                                            | Recover constraint captures into master_context |
-| `rbook_context(action="view")`                                              | View project or master context                  |
+| Call                                                                        | Purpose                                            |
+| --------------------------------------------------------------------------- | -------------------------------------------------- |
+| `rbook_review()`                                                            | Session-opener digest (start here)                 |
+| `rbook_project(action="init", projectRoot="...", projectType="build")`      | Initialize a new Builder project                   |
+| `rbook_agent_onboard()`                                                     | Get project context for cold-start                 |
+| `rbook_db(action="health")`                                                 | Check database status                              |
+| `rbook_mission(action="status")`                                            | View work queue                                    |
+| `rbook_mission_transition(action="start", missionId="...")`                 | Begin mission                                      |
+| `rbook_mission_transition(action="complete", missionId="...", notes="...")` | Mark mission done                                  |
+| `rbook_session(action="start", type="planning", title="...")`               | Start planning session                             |
+| `rbook_session(action="capture", category="decision", content="...")`       | Record decisions                                   |
+| `rbook_session(action="complete", summary="...")`                           | Complete session                                   |
+| `rbook_context(action="update")`                                            | Recover constraint captures into master_context    |
+| `rbook_context(action="view")`                                              | Context digest; `compact=false` for both documents |
 
 ---
 
@@ -165,5 +165,5 @@ It creates a snapshot only when it changes `master_context`; it is not a routine
 
 ---
 
-**Last Updated**: 2026-10-25
+**Last Updated**: 2026-10-29
 **Schema Version**: 2.1

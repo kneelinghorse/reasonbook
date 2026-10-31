@@ -7,6 +7,7 @@ import Database from 'better-sqlite3';
 import { rbookSprintAnalytics } from '../../../src/tools/rbook/rbook-sprint-analytics';
 import { formatSprintAnalyticsForLLM } from '../../../src/tools/rbook/rbook-sprint-analytics';
 import { RBOOK_SCHEMA } from '../../../src/tools/rbook/schema';
+import { rbookSprint } from '../../../src/tools/rbook/rbook-sprint';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
@@ -621,6 +622,67 @@ describe('rbookSprintAnalytics', () => {
 
       expect(formatted).toContain('Analytics failed');
       expect(formatted).toContain('Test error');
+    });
+  });
+
+  // ─── Pages (s106-m03) ───────────────────────────────────────────────
+
+  describe('pages of per-sprint rows (s106-m03)', () => {
+    const id = (n: number): string => `sprint-${String(n).padStart(2, '0')}`;
+
+    beforeEach(() => {
+      seedSprints(
+        Array.from({ length: 25 }, (_, i) => ({
+          id: id(i + 1),
+          title: `Sprint ${i + 1}`,
+          status: 'Completed',
+          missions: [{ id: `s${i + 1}-m01`, name: 'Work', status: 'Completed' }],
+        }))
+      );
+    });
+
+    async function analytics(params: Record<string, unknown>) {
+      return (await rbookSprint({
+        action: 'analytics',
+        projectRoot: tempDir,
+        ...params,
+      } as never)) as Awaited<ReturnType<typeof rbookSprintAnalytics>>;
+    }
+
+    it('shows the newest 20 rows, computes every figure over the whole window, and pages back', async () => {
+      // OODS-Forge's 219 sprints made the unbounded default 94,342 characters.
+      const first = await analytics({});
+      expect(first.data!.sprints.map((s) => s.sprintId)).toEqual(
+        Array.from({ length: 20 }, (_, i) => id(i + 6))
+      );
+      expect(first.data!.aggregates.totalSprints).toBe(25);
+      expect(first.data!.window).toMatchObject({
+        sprintCount: 25,
+        oldestSprintId: id(1),
+        newestSprintId: id(25),
+      });
+      expect(first.data).toMatchObject({ page: 1, hasMore: true, nextPage: 2 });
+      const text = formatSprintAnalyticsForLLM(first);
+      expect(text).toContain('Showing 1–20 of 25 sprints, counted from the newest');
+      expect(text).toContain(
+        `Next page: rbook_sprint(action="analytics", projectRoot=${JSON.stringify(tempDir)}, page=2).`
+      );
+
+      const second = await analytics({ page: 2 });
+      expect(second.data!.sprints.map((s) => s.sprintId)).toEqual([1, 2, 3, 4, 5].map(id));
+      expect(second.data!.aggregates).toEqual(first.data!.aggregates);
+      expect(second.data).toMatchObject({ page: 2, hasMore: false, nextPage: null });
+      expect(formatSprintAnalyticsForLLM(second)).not.toContain('Next page');
+    });
+
+    it('keeps a window of 20 or fewer on one page, with the window in the next-page call', async () => {
+      const small = await analytics({ limit: 10 });
+      expect(small.data!.sprints).toHaveLength(10);
+      expect(small.data).toMatchObject({ hasMore: false, nextPage: null });
+      const windowed = await analytics({ limit: 22 });
+      expect(formatSprintAnalyticsForLLM(windowed)).toContain(
+        `Next page: rbook_sprint(action="analytics", limit=22, projectRoot=${JSON.stringify(tempDir)}, page=2).`
+      );
     });
   });
 });

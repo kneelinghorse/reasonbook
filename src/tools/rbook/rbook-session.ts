@@ -91,7 +91,7 @@ export const RBOOK_SESSION_ACTION_PARAMS: ActionParamMap<RbookSessionAction, Rbo
     'agentFeedback',
     'projectRoot',
   ],
-  search: ['action', 'query', 'since', 'until', 'limit', 'type', 'category', 'projectRoot'],
+  search: ['action', 'query', 'since', 'until', 'limit', 'page', 'type', 'category', 'projectRoot'],
 };
 
 export type RbookSessionResult =
@@ -119,7 +119,7 @@ export const rbookSessionSchema = z
       .positive()
       .max(100)
       .optional()
-      .describe('Maximum sessions to return for search action (1-100, default: 20)'),
+      .describe('Sessions per page for search action (1-100, default: 5)'),
     // list params
     status: z
       .enum(VALID_SESSION_STATUSES)
@@ -135,7 +135,7 @@ export const rbookSessionSchema = z
       .describe(
         'Sprint ID filter for list action; for start and capture actions, an existing sprint (any status) to tag. A sprint that does not exist is refused by name'
       ),
-    page: z.number().int().positive().optional().describe('Page number for list action'),
+    page: z.number().int().positive().optional().describe('Page number for list/search actions'),
     pageSize: z.number().int().positive().max(100).optional().describe('Page size for list action'),
     // start params
     title: z.string().optional().describe('Session title for start action (required for start)'),
@@ -250,7 +250,7 @@ export const rbookSessionToolDefinition = {
         type: 'integer',
         minimum: 1,
         maximum: 100,
-        description: 'Maximum sessions to return for search action (1-100, default: 20)',
+        description: 'Sessions per page for search action (1-100, default: 5)',
       },
       status: {
         type: 'string',
@@ -267,7 +267,7 @@ export const rbookSessionToolDefinition = {
         description:
           'Sprint ID filter for list action; for start and capture actions, an existing sprint (any status) to tag. A sprint that does not exist is refused by name',
       },
-      page: { type: 'integer', minimum: 1, description: 'Page number for list action' },
+      page: { type: 'integer', minimum: 1, description: 'Page number for list/search actions' },
       pageSize: {
         type: 'integer',
         minimum: 1,
@@ -456,6 +456,7 @@ export async function rbookSession(
         since: params.since,
         until: params.until,
         limit: params.limit,
+        page: params.page,
         projectRoot: params.projectRoot,
       });
   }

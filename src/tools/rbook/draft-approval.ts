@@ -26,7 +26,12 @@ import { sanitizeContentField } from '../../intelligence/content-sanitizer';
 import { computeContentHash, SAME_TEXT_SQL } from './schema-migrations';
 import { harnessSessionOf, type DraftEvaluation } from './draft-evaluation';
 
-export { evaluateDraft, harnessSessionOf, type DraftEvaluation } from './draft-evaluation';
+export {
+  draftOwnText,
+  evaluateDraft,
+  harnessSessionOf,
+  type DraftEvaluation,
+} from './draft-evaluation';
 
 /**
  * Build plan B9–B12: hooks bind words by store/session/draft for two hours; subagents share that

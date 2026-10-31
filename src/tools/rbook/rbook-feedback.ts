@@ -18,6 +18,7 @@ import type { ProvenanceDescriptor } from '../../intelligence/provenance-frame';
 import { kindCounts, readFeedbackFleet, type FeedbackFleetCoverage } from './feedback-fleet';
 import { classifyFeedback, type FeedbackKind } from '../../signals/feedback-kinds';
 import { getProjectId } from './project-id';
+import { nextPageCall, pageFacts, pageRequest, REREAD_AFTER_ACTING } from './answer-page';
 
 /** Valid actions on the rbook_feedback consolidated tool. */
 export const RBOOK_FEEDBACK_ACTIONS = ['list', 'triage', 'resolve', 'archive'] as const;
@@ -25,6 +26,13 @@ export type RbookFeedbackAction = (typeof RBOOK_FEEDBACK_ACTIONS)[number];
 
 /** s97-m07: the most rows one resolve may name, so a call stays one bounded transaction. */
 export const FEEDBACK_BULK_RESOLVE_MAX = 200;
+
+/**
+ * s106-m03: rows per page of the local list; the fleet's are in feedback-fleet.ts. A row's body
+ * has no show action and goes out whole: 20 rows were 20,786 characters on a registered store, and
+ * 15 resolved rows with their notes 28,569 on this one.
+ */
+export const FEEDBACK_PAGE_SIZE = 10;
 
 /**
  * Hand-audited applicability: this tool dispatches with inline if blocks rather than a switch,
@@ -35,7 +43,7 @@ export const RBOOK_FEEDBACK_ACTION_PARAMS: ActionParamMap<
   RbookFeedbackAction,
   RbookFeedbackParams
 > = {
-  list: ['action', 'status', 'toolName', 'limit', 'acrossProjects', 'projectRoot'],
+  list: ['action', 'status', 'toolName', 'limit', 'page', 'acrossProjects', 'projectRoot'],
   triage: ['action', 'feedbackId', 'resolutionNote', 'projectRoot'],
   resolve: ['action', 'feedbackId', 'feedbackIds', 'resolutionNote', 'projectRoot'],
   archive: ['action', 'feedbackId', 'resolutionNote', 'projectRoot'],
@@ -78,8 +86,18 @@ export interface RbookFeedbackListResult<Id extends number | string = number> {
   countsByKind?: Record<FeedbackRowKind, number>;
   /** Total entries matching the filter (may exceed entries.length when limit was applied). */
   totalCount: number;
-  /** Limit that was applied. */
+  /** Rows per page: the limit that was applied. */
   limit: number;
+  /** s106-m03: this page's number, 1-based. */
+  page: number;
+  /** Whether rows past this page match the filter. */
+  hasMore: boolean;
+  /** The next page's number, or null on the last page. */
+  nextPage: number | null;
+  /** The call that reads the next page with the same filters, or null on the last page. */
+  nextPageCall: string | null;
+  /** Local list, while a page follows: triage or resolve moves the later rows up; re-read first. */
+  pageNote?: string | null;
   /** Full filtered per-store counts, including absent and unavailable stores. */
   fleet?: FeedbackFleetCoverage;
 }
@@ -151,7 +169,15 @@ export const rbookFeedbackSchema = z
       .min(1)
       .max(200)
       .optional()
-      .describe('Max entries to return on list (default 50, max 200)'),
+      .describe(
+        'Max entries per page on list (default 10; with acrossProjects 5, or 2 at status resolved; max 200)'
+      ),
+    page: z
+      .number()
+      .int()
+      .min(1)
+      .optional()
+      .describe('Page of list results, 1-based (default 1); each page holds limit entries'),
     resolutionNote: z
       .string()
       .max(1000)
@@ -208,7 +234,13 @@ export const rbookFeedbackToolDefinition = {
         type: 'integer',
         minimum: 1,
         maximum: 200,
-        description: 'Max entries to return on list (default 50, max 200)',
+        description:
+          'Max entries per page on list (default 10; with acrossProjects 5, or 2 at status resolved; max 200)',
+      },
+      page: {
+        type: 'integer',
+        minimum: 1,
+        description: 'Page of list results, 1-based (default 1); each page holds limit entries',
       },
       resolutionNote: {
         type: 'string',
@@ -398,7 +430,8 @@ export async function rbookFeedback(
           'Send an explicitly authorized message to the source project to request its feedback disposition.',
       });
     try {
-      return createSuccess(await readFeedbackFleet(params));
+      const fleet = await readFeedbackFleet(params);
+      return createSuccess({ ...fleet, nextPageCall: feedbackNextPage(params, fleet) });
     } catch (error) {
       return createError({
         code: RBOOK_ERROR_CODES.DB_QUERY_FAILED,
@@ -422,7 +455,9 @@ export async function rbookFeedback(
 
       if (action === 'list') {
         const status = params.status ?? 'open';
-        const limit = params.limit ?? 50;
+        // s106-m03: 50 rows were 35,736 characters on OODS-Forge, past the 20,000 cap.
+        const request = pageRequest(params.page, params.limit, FEEDBACK_PAGE_SIZE);
+        const limit = request.pageSize;
         const conditions: string[] = ['status = ?'];
         const args: unknown[] = [status];
         if (params.toolName) {
@@ -434,9 +469,9 @@ export async function rbookFeedback(
           `SELECT id, tool_name, body, status, session_id, sprint_id, mission_id, project_id,
                   created_at, resolved_at, resolution_note
            FROM agent_feedback ${where}
-           ORDER BY julianday(created_at) DESC
-           LIMIT ?`,
-          [...args, limit]
+           ORDER BY julianday(created_at) DESC, id DESC
+           LIMIT ? OFFSET ?`,
+          [...args, limit, request.offset]
         );
         if (!rowsResult.success) {
           return createError<RbookFeedbackResult>(
@@ -453,8 +488,15 @@ export async function rbookFeedback(
           `SELECT COUNT(*) as count FROM agent_feedback ${where}`,
           args
         );
-        const totalCount =
-          totalResult.success && totalResult.data ? totalResult.data.count : entries.length;
+        // s106-m03: a page's total says whether more pages follow, so an uncounted page refuses
+        // rather than ending the paging at its own length.
+        if (!totalResult.success || !totalResult.data)
+          return createError<RbookFeedbackResult>({
+            code: RBOOK_ERROR_CODES.DB_QUERY_FAILED,
+            message: 'Failed to count agent feedback',
+            suggestion: 'Check database access and retry the list.',
+          });
+        const totalCount = totalResult.data.count;
 
         const toolGroupsResult = client.getMany<{ tool_name: string; c: number }>(
           `SELECT tool_name, COUNT(*) as c FROM agent_feedback ${where}
@@ -493,6 +535,7 @@ export async function rbookFeedback(
           }
         }
 
+        const facts = pageFacts(request, entries.length, totalCount);
         return createSuccess<RbookFeedbackResult>({
           entries,
           countsByTool,
@@ -500,6 +543,11 @@ export async function rbookFeedback(
           ...(countsByKind ? { countsByKind } : {}),
           totalCount,
           limit,
+          page: facts.page,
+          hasMore: facts.hasMore,
+          nextPage: facts.nextPage,
+          nextPageCall: feedbackNextPage(params, facts),
+          pageNote: facts.nextPage === null ? null : REREAD_AFTER_ACTING,
         });
       }
 
@@ -577,6 +625,21 @@ export async function rbookFeedback(
     { projectRoot: params.projectRoot }
   );
   return attachWarnings(result, warnings);
+}
+
+/** The next page's call with the caller's own filters, so it reads the same rows onward. */
+function feedbackNextPage(
+  params: RbookFeedbackParams,
+  page: { readonly nextPage: number | null }
+): string | null {
+  return nextPageCall(page.nextPage, 'rbook_feedback', {
+    action: 'list',
+    acrossProjects: params.acrossProjects === true ? true : undefined,
+    status: params.status,
+    toolName: params.toolName,
+    limit: params.limit,
+    projectRoot: params.acrossProjects === true ? undefined : params.projectRoot,
+  });
 }
 
 export function formatFeedbackForLLM(

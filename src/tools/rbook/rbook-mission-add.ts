@@ -14,6 +14,7 @@ import { SPRINT_OPEN_STATUSES, statusInSql } from './terminal-status';
 import { withClientAsync } from './client';
 import { genesisColumns, getProjectId } from './genesis-columns';
 import type { RbookToolResult, MissionStatus, Sprint } from './types';
+import { emptiedParameter } from './emptied-parameter';
 import { createError, createSuccess, RbookErrors, VALID_MISSION_STATUSES } from './errors';
 import {
   sanitizeContentField,
@@ -249,11 +250,22 @@ export async function rbookMissionAdd(
 
   // Validate required parameters
   if (!missionId || missionId.trim() === '') {
-    return createError(RbookErrors.missingParameter('missionId'));
+    // s106-m02 (#871): planners choose ids such as s106-m01, which the record relies on, so add never
+    // derives one; the refusal says add needs it and shows the shape.
+    return createError({
+      ...RbookErrors.missingParameter('missionId'),
+      message:
+        "Required parameter 'missionId' is missing: add needs the new mission's id, which Reasonbook never derives.",
+      suggestion:
+        'Resend with missionId set to an id no mission in this project uses, in the form your plan uses (for example missionId="s12-m03").',
+    });
   }
 
   if (!name || name.trim() === '') {
-    return createError(RbookErrors.missingParameter('name'));
+    // s106-m02: a name supplied but emptied by the sanitizer says so; the router has typed it.
+    return createError(
+      params.name?.trim() ? emptiedParameter('name') : RbookErrors.missingParameter('name')
+    );
   }
 
   if (

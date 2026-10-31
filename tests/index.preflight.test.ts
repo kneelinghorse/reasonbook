@@ -142,6 +142,43 @@ describe('mission-protocol dispatcher preflight', () => {
     expect(handleSpy).not.toHaveBeenCalled();
   });
 
+  // s106-m02: "remove it" drops what the agent meant, such as a limit on a context search. The rule:
+  // the tool's published parameters whose names end with the unknown key, case-insensitive, all of
+  // them when several match, and only those the call's action uses.
+  it.each([
+    ['one match', 'rbook_context', { action: 'search', limit: 5 }, ['searchLimit']],
+    [
+      'several matches, only those the action uses',
+      'rbook_mission',
+      { action: 'depends', Id: 'x' },
+      ['fromId', 'toId'],
+    ],
+    [
+      'no name the action uses',
+      'rbook_context',
+      { action: 'next_steps', nextStepAction: 'list', limit: 5 },
+      [],
+    ],
+    ['a case-only difference', 'rbook_review', { projectroot: '/tmp/x' }, ['projectRoot']],
+    ['no match', 'rbook_review', { __s91_probe: 1 }, []],
+  ])(
+    'suggests published parameters ending with the unknown key: %s',
+    async (_case, tool, args, names) => {
+      const result = await executeMissionProtocolTool(tool, args, {} as never);
+      const { error } = result.structuredContent as StructuredError;
+      expect(error.code).toBe('INVALID_PARAMETER');
+      const meant = /Did you mean (.+)\?/.exec(error.suggestion ?? '')?.[1];
+      if (names.length === 0) expect(meant).toBeUndefined();
+      else
+        expect(
+          meant
+            ?.split(/, | or /)
+            .map((name) => name.replace(/`/g, ''))
+            .sort()
+        ).toEqual([...names].sort());
+    }
+  );
+
   it('names the wrapper when an unknown top-level key belongs to a nested object', async () => {
     const result = await executeMissionProtocolTool(
       'rbook_mission',

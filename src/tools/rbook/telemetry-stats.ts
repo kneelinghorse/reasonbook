@@ -5,12 +5,19 @@
 import { resolveRecordPaths } from '../../intelligence/legacy-compat';
 import * as fs from 'fs';
 import * as path from 'path';
-import { targetForStore, readTelemetryReport, telemetryKey } from './local-telemetry';
+import {
+  targetForStore,
+  readTelemetryReport,
+  telemetryKey,
+  unattributedTarget,
+  type TelemetryRecord,
+} from './local-telemetry';
 import {
   eventStatistics,
   EVENT_COUNTING_RULES,
   type ProjectEvents,
 } from './telemetry-stats-events';
+import { lookupMeasure, misuseMeasure, MISUSE_COUNTING_RULES } from './telemetry-stats-misuse';
 import { rulesStatistics, RULE_SCAN_SCOPE, type RulesStatistics } from './telemetry-stats-rules';
 import {
   storeStatistics,
@@ -36,6 +43,7 @@ export interface ProjectStatistics {
 export const STATS_COUNTING_RULES = {
   ...EVENT_COUNTING_RULES,
   ...STORE_COUNTING_RULES,
+  ...MISUSE_COUNTING_RULES,
   rulesFiles: RULE_SCAN_SCOPE,
 };
 
@@ -48,6 +56,12 @@ export async function collectTelemetryStats(
   const projects: ProjectStatistics[] = [];
   const streams: ProjectEvents[] = [];
   const seen = new Set<string>();
+  const inWindow = (records: readonly TelemetryRecord[]) =>
+    records.filter(
+      (record) =>
+        storedTimeMs(record.ts) >= storedTimeMs(window.since) &&
+        storedTimeMs(record.ts) <= storedTimeMs(window.until)
+    );
   for (const root of roots) {
     const dbPath = resolveRecordPaths(root).dbPath;
     let real = dbPath;
@@ -62,11 +76,7 @@ export async function collectTelemetryStats(
     const read = target
       ? readTelemetryReport(target, env)
       : { records: [], files: 0, available: false, warnings: ['target-unavailable'] };
-    const records = read.records.filter(
-      (record) =>
-        storedTimeMs(record.ts) >= storedTimeMs(window.since) &&
-        storedTimeMs(record.ts) <= storedTimeMs(window.until)
-    );
+    const records = inWindow(read.records);
     streams.push({ target: target ? telemetryKey(target) : real, records });
     projects.push({
       root: path.resolve(root),
@@ -94,9 +104,33 @@ export async function collectTelemetryStats(
   }
   const baselineRate = baseline.qualified ? baseline.endLoaded / baseline.qualified : null;
   const windowRate = current.qualified ? current.endLoaded / current.qualified : null;
+  // s106-m01: one read of the anonymous bucket, however many stores are pooled, so its bound
+  // beside measures 11 and 12 is never multiplied.
+  const anonymousRead = readTelemetryReport(unattributedTarget(env), env);
+  const anonymousRecords = inWindow(anonymousRead.records);
+  const storeRecords = streams.flatMap((stream) => stream.records);
+  // A store whose bucket is missing, unreadable or held past the reader's lookup counts zero rows;
+  // `available` says that zero was not measured.
+  const storesAvailable = projects.every((project) => project.telemetry.available);
   return {
     window,
     projects,
+    anonymous: {
+      available: anonymousRead.available,
+      files: anonymousRead.files,
+      records: anonymousRecords.length,
+      warnings: anonymousRead.warnings,
+    },
+    misuse: {
+      available: storesAvailable,
+      ...misuseMeasure(storeRecords),
+      anonymous: { available: anonymousRead.available, ...misuseMeasure(anonymousRecords) },
+    },
+    lookups: {
+      available: storesAvailable,
+      ...lookupMeasure(storeRecords),
+      anonymous: { available: anonymousRead.available, ...lookupMeasure(anonymousRecords) },
+    },
     rules: STATS_COUNTING_RULES,
     coverage: {
       status: 'not-established' as const,
@@ -231,5 +265,7 @@ export function exportTelemetryStats(report: TelemetryStatistics) {
     injection: e.injection,
     digestOff: e.digestOff,
     safety: e.safety,
+    misuse: report.misuse,
+    lookups: report.lookups,
   };
 }

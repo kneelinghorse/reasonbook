@@ -16,6 +16,7 @@ import type {
 } from './rbook-feedback';
 import type { AgentFeedbackStatus } from './schema-migrations';
 import { classifyFeedback, countFeedbackKinds } from '../../signals/feedback-kinds';
+import { pageFacts, pageRequest } from './answer-page';
 
 export interface FeedbackStoreCount {
   readonly projectId: string;
@@ -67,22 +68,43 @@ export interface FeedbackFleetOptions {
   readonly status?: AgentFeedbackStatus;
   readonly toolName?: string;
   readonly limit?: number;
+  /** s106-m03: 1-based page of the merged newest-first list; each page holds limit rows. */
+  readonly page?: number;
   readonly countOnly?: boolean;
   readonly deadlineAtMs?: number;
   readonly env?: NodeJS.ProcessEnv;
 }
 
+/**
+ * s106-m03: 50 rows across 26 stores were 86,243 characters, past the 20,000 cap, and 10 still
+ * 25,644: each row's whole framed body goes out in the text and again in the structured copy.
+ */
+export const FLEET_FEEDBACK_PAGE_SIZE = 5;
+
+/**
+ * s106-m03 (decision #1730): a resolved row goes out whole with its resolution note; at 5 a page,
+ * 4 of the fleet's 8 resolved pages passed the cap (largest 22,364), 3 and 4 rows still did, 2 fit.
+ */
+export const FLEET_RESOLVED_FEEDBACK_PAGE_SIZE = 2;
+
 /** No de-duplication or subject filter: every matching row in each active registered store counts. */
 export async function readFeedbackFleet(
   options: FeedbackFleetOptions = {}
-): Promise<RbookFeedbackListResult<string>> {
+): Promise<Omit<RbookFeedbackListResult<string>, 'nextPageCall'>> {
   const stores = listRegisteredStoresReadOnly(options.env);
-  const limit = options.limit ?? 50;
+  const request = pageRequest(
+    options.page,
+    options.limit,
+    options.status === 'resolved' ? FLEET_RESOLVED_FEEDBACK_PAGE_SIZE : FLEET_FEEDBACK_PAGE_SIZE
+  );
+  const limit = request.pageSize;
   const counts = new Map<string, FeedbackCounts>();
+  // A page's rows can all come from one store, so each store gives its first page × limit rows;
+  // the merge's order (time, row id, project) is total, so pages neither repeat nor skip a row.
   const result = await queryAcrossStores<FeedbackQueryRow>({
     sql: '',
     stores,
-    limit,
+    limit: request.offset + limit,
     timeoutMs: 0,
     deadlineAtMs: options.deadlineAtMs,
     perStoreQuery: (db, store, cap) =>
@@ -196,8 +218,9 @@ export async function readFeedbackFleet(
       for (const [key, n] of Object.entries(count.countsByKind) as Array<[FeedbackRowKind, number]>)
         countsByKind[key] += n;
   }
-  const entries: AgentFeedbackEntry<string>[] = result.results.map(
-    ({ occurred_at: _time, origin_seq: _seq, project_id: source, ...entry }) => ({
+  const entries: AgentFeedbackEntry<string>[] = result.results
+    .slice(request.offset)
+    .map(({ occurred_at: _time, origin_seq: _seq, project_id: source, ...entry }) => ({
       ...entry,
       id: `${encodeURIComponent(source)}:feedback:${entry.id}`,
       body: frameForeignText(entry.body, provenanceTag(source)),
@@ -208,8 +231,8 @@ export async function readFeedbackFleet(
           : frameForeignText(entry.resolutionNote, provenanceTag(source)),
       sourceProjectId: source,
       provenance: foreignDescriptor(provenanceTag(source)),
-    })
-  );
+    }));
+  const facts = pageFacts(request, entries.length, totalCount);
   return {
     entries,
     totalCount,
@@ -217,6 +240,9 @@ export async function readFeedbackFleet(
     countsByStatus,
     ...(countsByKind ? { countsByKind } : {}),
     limit,
+    page: facts.page,
+    hasMore: facts.hasMore,
+    nextPage: facts.nextPage,
     fleet: { complete: errors.size === 0, stores: coverage },
   };
 }

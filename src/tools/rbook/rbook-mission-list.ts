@@ -18,6 +18,17 @@ import { getProjectId, tableHasColumn } from './genesis-columns';
 import { frameInlineIfForeign } from '../../intelligence/provenance-frame';
 import { appendWarnings } from './format-warnings';
 import { sprintIdOrderSql } from './sprint-ordering';
+import { callText, nextPageCall, pageFacts, pageRequest, shownLine } from './answer-page';
+import { PREVIEW_MAX_CHARS, previewText } from './text-preview';
+
+/**
+ * s106-m03: 20 rows were 56,988 characters on OODS-Forge, past the 20,000 cap; with previews, 8 rows
+ * of its older missions still reached 21,750 on later pages.
+ */
+export const MISSION_LIST_PAGE_SIZE = 6;
+
+/** s106-m03: success criteria and deliverables a listed mission shows; show returns every one. */
+export const MISSION_LIST_ITEMS = 3;
 
 /**
  * Mission with parsed JSON fields for return to caller.
@@ -38,17 +49,31 @@ export interface MissionListItem {
   /** Completion timestamp */
   completedAt: string | null;
 
-  /** Notes about the mission */
+  /** Notes about the mission: a preview of at most 300 characters (s106-m03); show has them in full */
   notes: string | null;
 
-  /** Mission objective */
+  /** Mission objective: a preview of at most 300 characters (s106-m03); show has it in full */
   objective: string | null;
 
-  /** Success criteria (parsed from JSON) */
+  /** Whether the objective preview was cut, and the full objective's length (0 when null) */
+  objectiveTruncated: boolean;
+  objectiveFullLength: number;
+
+  /** Whether the notes preview was cut, and the full notes' length (0 when null) */
+  notesTruncated: boolean;
+  notesFullLength: number;
+
+  /** Success criteria (parsed from JSON): s106-m03, the first three, each a preview */
   successCriteria: string[] | null;
 
-  /** Deliverables (parsed from JSON) */
+  /** Every success criterion; rbook_mission show returns them all */
+  successCriteriaCount: number;
+
+  /** Deliverables (parsed from JSON): the first three, each a preview */
   deliverables: string[] | null;
+
+  /** Every deliverable; rbook_mission show returns them all */
+  deliverablesCount: number;
 
   /** s84-m03: source project_id (guarded read). A row whose projectId differs from the
    *  querying store's own is foreign (pull-merged) — its name/objective is framed untrusted. */
@@ -71,6 +96,13 @@ export interface RbookMissionListResult {
     sprintId: string | null;
     limit: number;
   };
+
+  /** s106-m03: this page's number, 1-based; each page holds filters.limit missions. */
+  page: number;
+  hasMore: boolean;
+  nextPage: number | null;
+  /** The call that reads the next page with the same filters, or null on the last page. */
+  nextPageCall: string | null;
 
   /** s84-m03: the querying store's own project_id. Rows whose projectId differs are
    *  foreign (pull-merged) and framed as untrusted in the render. */
@@ -97,7 +129,10 @@ export const rbookMissionListSchema = z.object({
     .positive()
     .max(100)
     .optional()
-    .describe('Maximum missions to return (1-100, default: 20)'),
+    .describe('Missions per page (1-100, default: 6)'),
+
+  /** s106-m03: page of results, 1-based */
+  page: z.number().int().min(1).optional().describe('Page of results, 1-based (default 1)'),
 
   /** Optional: explicit project root to search from */
   projectRoot: z
@@ -136,8 +171,13 @@ export const rbookMissionListToolDefinition = {
         type: 'number',
         minimum: 1,
         maximum: 100,
-        default: 20,
-        description: 'Maximum missions to return (1-100, default: 20)',
+        default: 6,
+        description: 'Missions per page (1-100, default: 6)',
+      },
+      page: {
+        type: 'integer',
+        minimum: 1,
+        description: 'Page of results, 1-based (default 1)',
       },
       projectRoot: {
         type: 'string',
@@ -168,7 +208,8 @@ export async function rbookMissionList(
     );
   }
 
-  const limit = params.limit ?? 20;
+  const request = pageRequest(params.page, params.limit, MISSION_LIST_PAGE_SIZE);
+  const limit = request.pageSize;
 
   return withClient(
     (client) => {
@@ -180,12 +221,13 @@ export async function rbookMissionList(
         params.status,
         params.sprintId,
         limit,
+        request.offset,
         hasProjectId,
         prepareSpinOutRead(client).predicate('mission', 'missions.id')
       );
 
       // Get total count first
-      const countResult = client.getOne<{ count: number }>(countSql, queryParams.slice(0, -1));
+      const countResult = client.getOne<{ count: number }>(countSql, queryParams.slice(0, -2));
       if (!countResult.success || !countResult.data) {
         return createError<RbookMissionListResult>(
           countResult.error ?? { code: 'DB_QUERY_FAILED', message: 'Failed to get mission count' }
@@ -204,6 +246,7 @@ export async function rbookMissionList(
       // Parse and transform missions
       const missions = missionsResult.data.map(parseMission);
 
+      const facts = pageFacts(request, missions.length, totalCount);
       return createSuccess({
         missions,
         totalCount,
@@ -212,6 +255,16 @@ export async function rbookMissionList(
           sprintId: params.sprintId ?? null,
           limit,
         },
+        page: facts.page,
+        hasMore: facts.hasMore,
+        nextPage: facts.nextPage,
+        nextPageCall: nextPageCall(facts.nextPage, 'rbook_mission', {
+          action: 'list',
+          sprintId: params.sprintId,
+          status: params.status,
+          limit: params.limit,
+          projectRoot: params.projectRoot,
+        }),
         localProjectId: getProjectId(client),
       });
     },
@@ -226,6 +279,7 @@ function buildQuery(
   status: MissionStatus | undefined,
   sprintId: string | undefined,
   limit: number,
+  offset: number,
   hasProjectId: boolean,
   visibility: { sql: string; params: string[] }
 ): { sql: string; countSql: string; queryParams: unknown[] } {
@@ -265,10 +319,10 @@ function buildQuery(
     ORDER BY
       ${sprintIdOrderSql('sprint_id', 'DESC')},
       id ASC
-    LIMIT ?
+    LIMIT ? OFFSET ?
   `;
 
-  queryParams.push(limit);
+  queryParams.push(limit, offset);
 
   return { sql, countSql, queryParams };
 }
@@ -278,18 +332,42 @@ function buildQuery(
  * Handles JSON field parsing with graceful fallbacks.
  */
 function parseMission(mission: Mission): MissionListItem {
+  const objective = mission.objective === null ? null : previewText(mission.objective);
+  const notes = mission.notes === null ? null : previewText(mission.notes);
   return {
     id: mission.id,
     sprintId: mission.sprint_id,
     name: mission.name,
     status: normalizeMissionStatus(mission.status),
     completedAt: mission.completed_at,
-    notes: mission.notes,
-    objective: mission.objective,
-    successCriteria: parseJsonArray(mission.success_criteria),
-    deliverables: parseJsonArray(mission.deliverables),
+    notes: notes?.preview ?? null,
+    objective: objective?.preview ?? null,
+    objectiveTruncated: objective?.truncated ?? false,
+    objectiveFullLength: objective?.fullLength ?? 0,
+    notesTruncated: notes?.truncated ?? false,
+    notesFullLength: notes?.fullLength ?? 0,
+    ...listedItems('successCriteria', parseJsonArray(mission.success_criteria)),
+    ...listedItems('deliverables', parseJsonArray(mission.deliverables)),
     projectId: (mission as unknown as Record<string, string | null>).project_id ?? null,
   };
+}
+
+/**
+ * s106-m03: the first MISSION_LIST_ITEMS of a mission's list, each a preview, beside its count.
+ * oods-foundry.com's eight newest missions held 7 to 16 criteria each, 29,033 characters in all.
+ */
+function listedItems<K extends 'successCriteria' | 'deliverables'>(
+  key: K,
+  items: string[] | null
+): Record<K, string[] | null> & Record<`${K}Count`, number> {
+  return {
+    [key]: items
+      ? items
+          .slice(0, MISSION_LIST_ITEMS)
+          .map((item) => (typeof item === 'string' ? previewText(item).preview : item))
+      : null,
+    [`${key}Count`]: items?.length ?? 0,
+  } as Record<K, string[] | null> & Record<`${K}Count`, number>;
 }
 
 /**
@@ -341,11 +419,16 @@ export function formatMissionListForLLM(result: RbookToolResult<RbookMissionList
   if (data.filters.sprintId) filterParts.push(`sprint=${data.filters.sprintId}`);
 
   const filterStr = filterParts.length > 0 ? ` (${filterParts.join(', ')})` : '';
-  lines.push(`**Missions${filterStr}**: ${data.missions.length} of ${data.totalCount}`);
+  const shown = shownLine(
+    { page: data.page, pageSize: data.filters.limit, totalCount: data.totalCount },
+    data.missions.length,
+    'missions'
+  );
+  lines.push(`**Missions${filterStr}**: ${shown[0].toLowerCase()}${shown.slice(1)}`);
   lines.push('');
 
   if (data.missions.length === 0) {
-    lines.push('No missions found matching the filters.');
+    if (data.page === 1) lines.push('No missions found matching the filters.');
     appendWarnings(lines, result);
     return lines.join('\n');
   }
@@ -379,6 +462,20 @@ export function formatMissionListForLLM(result: RbookToolResult<RbookMissionList
     }
     lines.push('');
   }
+
+  // s106-m03: objectives, notes and the first criteria are previews; a cut one names the full read.
+  const cut = data.missions.find(
+    (m) =>
+      m.objectiveTruncated ||
+      m.notesTruncated ||
+      m.successCriteriaCount > (m.successCriteria?.length ?? 0) ||
+      m.deliverablesCount > (m.deliverables?.length ?? 0)
+  );
+  if (cut)
+    lines.push(
+      `Objectives and notes are previews of at most ${PREVIEW_MAX_CHARS} characters, with the first ${MISSION_LIST_ITEMS} success criteria and deliverables; read a mission in full with ${callText('rbook_mission', { action: 'show', missionId: cut.id })}.`
+    );
+  if (data.nextPageCall) lines.push(`Next page: ${data.nextPageCall}.`);
 
   appendWarnings(lines, result);
 

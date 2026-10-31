@@ -768,6 +768,19 @@ function classifyCall(
         const t = checker.getTypeOfSymbolAtLocation(otherParam, call);
         if ((t.getFlags() & ts.TypeFlags.Object) === 0) return;
         if (t.getCallSignatures().length > 0) return;
+        // RULE 4 here too (s106-m03): a database client beside the literal is the same wiring
+        // seam the positional branch excludes by name, not 28 of its members as caller keys.
+        if (isInfrastructureType(t, checker)) {
+          const e: ExcludedKey = {
+            ...refOf(callee, ctx.paths),
+            key: otherParam.getName(),
+            rule: 'infrastructure-type',
+            reason: `parameter type ${checker.typeToString(t)} is a wiring seam supplied by the enclosing scope, not a caller value`,
+          };
+          excluded.push(e);
+          ctx.exclusions.push(e);
+          return;
+        }
         for (const propSym of t.getProperties()) {
           const e: ExcludedKey = {
             ...refOf(callee, ctx.paths),

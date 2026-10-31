@@ -4,6 +4,7 @@
 import { z } from 'zod';
 import { sanitizeContentField } from '../../intelligence/content-sanitizer';
 import { withClientValidated, type RbookDatabaseClient } from './client';
+import { emptiedParameter } from './emptied-parameter';
 import { createError, createSuccess, RbookErrors } from './errors';
 import { appendWarnings, attachWarnings } from './format-warnings';
 import { recordedExecute } from './record-changes';
@@ -58,7 +59,13 @@ export async function rbookMissionReopen(
   if (typeof params.reason !== 'string') return createError(RbookErrors.missingParameter('reason'));
   const sanitized = sanitizeContentField(params.reason);
   const reason = sanitized.cleaned.trim();
-  if (!reason) return createError(RbookErrors.missingParameter('reason'));
+  // s106-m02: a blank reason is missing; a supplied one the sanitizer emptied says so instead.
+  if (!reason)
+    return createError(
+      params.reason.trim() === ''
+        ? RbookErrors.missingParameter('reason')
+        : emptiedParameter('reason')
+    );
   const inputSanitized: SanitizedFieldReport[] = sanitized.wasModified
     ? [{ field: 'reason', reason: sanitized.reason ?? '' }]
     : [];

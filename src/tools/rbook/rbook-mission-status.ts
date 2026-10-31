@@ -31,6 +31,8 @@ import { appendWarnings } from './format-warnings';
 import { sprintIdOrderSql } from './sprint-ordering';
 import { firstReady, orderByRequires } from './work-queue-order';
 import { parkedMissionNotice } from './mission-status-parked';
+import { PREVIEW_MAX_CHARS, previewText } from './text-preview';
+import { callText } from './answer-page';
 
 /**
  * Mission item with sprint context for the status view.
@@ -80,8 +82,16 @@ export interface SprintContext {
   /** Sprint title */
   title: string;
 
-  /** Sprint focus area */
+  /**
+   * Sprint focus area. s106-m03: on the active sprint, a preview of at most 300 characters
+   * (rbook_sprint show reads it whole); a registered store's 9,296-character focus put its
+   * work queue at 23,183 characters.
+   */
   focus: string | null;
+
+  /** On the active sprint: whether the focus preview was cut, and the full focus's length. */
+  focusTruncated?: boolean;
+  focusFullLength?: number;
 
   /** Sprint status */
   status: string | null;
@@ -432,10 +442,13 @@ function parseJsonArray(jsonString: string | null): string[] | null {
  * Convert a Sprint record to SprintContext format.
  */
 function sprintToContext(sprint: Sprint): SprintContext {
+  const focus = sprint.focus === null ? null : previewText(sprint.focus);
   return {
     id: sprint.id,
     title: sprint.title,
-    focus: sprint.focus,
+    focus: focus?.preview ?? null,
+    focusTruncated: focus?.truncated ?? false,
+    focusFullLength: focus?.fullLength ?? 0,
     status: sprint.status,
     totalMissions: sprint.total_missions,
     completedMissions: sprint.completed_missions,
@@ -741,6 +754,10 @@ export function formatMissionStatusForLLM(
       lines.push(
         `  Focus: ${frameInlineIfForeign(data.activeSprint.focus, data.activeSprint.projectId, local)}`
       );
+      if (data.activeSprint.focusTruncated)
+        lines.push(
+          `  (a preview of at most ${PREVIEW_MAX_CHARS} characters; ${callText('rbook_sprint', { action: 'show', sprintId: data.activeSprint.id })} reads it whole)`
+        );
     }
     lines.push('');
   }

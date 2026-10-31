@@ -83,7 +83,7 @@ export type RbookSprintAction = (typeof RBOOK_SPRINT_ACTIONS)[number];
 
 /** s86-m04 — which published parameter applies to which action (see action-params.ts). */
 export const RBOOK_SPRINT_ACTION_PARAMS: ActionParamMap<RbookSprintAction, RbookSprintParams> = {
-  list: ['action', 'status', 'limit', 'projectRoot'],
+  list: ['action', 'status', 'limit', 'page', 'projectRoot'],
   show: ['action', 'sprintId', 'projectRoot'],
   add: ['action', 'sprintId', 'title', 'focus', 'status', 'startDate', 'endDate', 'projectRoot'],
   update: ['action', 'sprintId', 'fields', 'projectRoot'],
@@ -101,9 +101,9 @@ export const RBOOK_SPRINT_ACTION_PARAMS: ActionParamMap<RbookSprintAction, Rbook
     'archive',
     'projectRoot',
   ],
-  retro: ['action', 'sprintId', 'projectRoot'],
+  retro: ['action', 'sprintId', 'page', 'projectRoot'],
   carry_forward: ['action', 'sprintId', 'targetAddress', 'send', 'projectRoot'],
-  analytics: ['action', 'limit', 'projectRoot'],
+  analytics: ['action', 'limit', 'page', 'projectRoot'],
 };
 
 export type RbookSprintResult =
@@ -153,7 +153,13 @@ export const rbookSprintSchema = z
       .positive()
       .max(100)
       .optional()
-      .describe('Maximum sprints to return for list/analytics actions'),
+      .describe('Maximum sprints per list page (default 15), or the analytics window'),
+    page: z
+      .number()
+      .int()
+      .min(1)
+      .optional()
+      .describe('Page of list, retro or analytics rows, 1-based'),
     fields: rbookSprintFieldsSchema.optional().describe('Fields payload for update action'),
     summary: z.string().optional().describe('Closeout summary for complete action'),
     condensation: z
@@ -253,7 +259,12 @@ export const rbookSprintToolDefinition = {
         type: 'integer',
         minimum: 1,
         maximum: 100,
-        description: 'Maximum sprints to return for list/analytics actions',
+        description: 'Maximum sprints per list page (default 15), or the analytics window',
+      },
+      page: {
+        type: 'integer',
+        minimum: 1,
+        description: 'Page of list, retro or analytics rows, 1-based',
       },
       fields: {
         type: 'object',
@@ -355,6 +366,7 @@ export async function rbookSprint(
       return rbookSprintList({
         status: params.status,
         limit: params.limit,
+        page: params.page,
         projectRoot: params.projectRoot,
       } satisfies RbookSprintListParams);
     case 'show':
@@ -407,6 +419,7 @@ export async function rbookSprint(
     case 'retro':
       return rbookSprintRetro({
         sprintId: params.sprintId ?? '',
+        page: params.page,
         projectRoot: params.projectRoot,
       } satisfies RbookSprintRetroParams);
     case 'carry_forward':
@@ -419,6 +432,7 @@ export async function rbookSprint(
     case 'analytics':
       return rbookSprintAnalytics({
         limit: params.limit,
+        page: params.page,
         projectRoot: params.projectRoot,
       } satisfies RbookSprintAnalyticsParams);
   }

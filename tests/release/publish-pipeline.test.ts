@@ -119,9 +119,11 @@ function readTextFile(relativePath: string): string {
 }
 
 function trackedFiles(): string[] {
+  // s106-m05 (#1738): the whole tree's listing passed execFileSync's 1 MiB default.
   return execFileSync('git', ['ls-files', '-z'], {
     cwd: projectRoot,
     encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
   })
     .split('\0')
     .filter(Boolean);

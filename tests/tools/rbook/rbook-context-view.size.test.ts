@@ -107,7 +107,7 @@ describe('rbook_context_view size telemetry', () => {
   });
 
   it('reports per-context and combined size metrics', async () => {
-    const result = await rbookContextView({ projectRoot: tempDir });
+    const result = await rbookContextView({ compact: false, projectRoot: tempDir });
 
     expect(result.success).toBe(true);
     expect(result.data?.contextSizes).toBeDefined();
@@ -213,15 +213,17 @@ describe('rbook_context_view size telemetry', () => {
       expect(result.data?.compact?.recentLearnings.length).toBeLessThanOrEqual(5);
     });
 
-    it('includes all constraints in compact mode', async () => {
-      const result = await rbookContextView({ projectRoot: tempDir, compact: true });
+    it('reaches all constraints in compact mode, a page at a time (s106-m03)', async () => {
+      const first = await rbookContextView({ projectRoot: tempDir, compact: true });
+      const second = await rbookContextView({ projectRoot: tempDir, compact: true, page: 2 });
 
-      expect(result.success).toBe(true);
-      expect(result.data?.compact?.activeConstraints).toEqual(['c1', 'c2']);
+      expect(first.success).toBe(true);
+      expect(first.data?.compact).toMatchObject({ activeConstraints: ['c1'], nextPage: 2 });
+      expect(second.data?.compact).toMatchObject({ activeConstraints: ['c2'], nextPage: null });
     });
 
-    it('includes all next steps in compact mode', async () => {
-      const result = await rbookContextView({ projectRoot: tempDir, compact: true });
+    it('reaches all next steps in compact mode, and pageSize widens the page', async () => {
+      const result = await rbookContextView({ projectRoot: tempDir, compact: true, pageSize: 2 });
 
       expect(result.success).toBe(true);
       expect(result.data?.compact?.pendingNextSteps).toEqual(['n1', 'n2']);
@@ -287,9 +289,9 @@ describe('rbook_context_view size telemetry', () => {
     });
   });
 
-  describe('full mode (default)', () => {
+  describe('full mode (compact=false)', () => {
     it('returns full content with mode=full', async () => {
-      const result = await rbookContextView({ projectRoot: tempDir });
+      const result = await rbookContextView({ compact: false, projectRoot: tempDir });
 
       expect(result.success).toBe(true);
       expect(result.data?.mode).toBe('full');
@@ -298,12 +300,12 @@ describe('rbook_context_view size telemetry', () => {
       expect(result.data?.compact).toBeUndefined();
     });
 
-    it('is backward compatible when no mode params provided', async () => {
+    it('defaults to the digest, since the full view ran to 871,683 characters (s106-m03)', async () => {
       const result = await rbookContextView({ projectRoot: tempDir });
 
       expect(result.success).toBe(true);
-      expect(result.data?.masterContext?.content).toBeDefined();
-      expect(result.data?.projectContext?.content).toBeDefined();
+      expect(result.data?.mode).toBe('compact');
+      expect(result.data?.masterContext).toBeNull();
       expect(result.data?.aggregated.decisions.length).toBeGreaterThan(0);
     });
   });

@@ -11,7 +11,12 @@ import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { rbookContextView } from '../../../src/tools/rbook/rbook-context-view';
+import {
+  formatContextViewForLLM,
+  rbookContextView,
+} from '../../../src/tools/rbook/rbook-context-view';
+import { frameForeignText, provenanceTag } from '../../../src/intelligence/provenance-frame';
+import { previewText } from '../../../src/tools/rbook/text-preview';
 import { RbookDetector } from '../../../src/intelligence/rbook-detector';
 
 describe('computed context view', () => {
@@ -171,7 +176,7 @@ describe('computed context view', () => {
     );
     db.close();
 
-    const result = await rbookContextView({ projectRoot: tempDir });
+    const result = await rbookContextView({ compact: false, projectRoot: tempDir });
 
     expect(result.success).toBe(true);
     expect(result.data?.aggregated.constraints).toEqual(['Must use HTTPS', 'No vendor lock-in']);
@@ -313,5 +318,139 @@ describe('computed context view', () => {
     expect(result.data).toHaveProperty('staleness');
     expect(result.data).toHaveProperty('contextCount');
     expect(result.data).toHaveProperty('mode');
+  });
+
+  describe('the digest is the default (s106-m03)', () => {
+    const long = 'A long decision '.repeat(40).trim();
+    const longConstraint = 'A constraint stated at length '.repeat(20).trim();
+
+    beforeEach(() => {
+      const db = new Database(dbPath);
+      db.exec('ALTER TABLE strategic_decisions ADD COLUMN project_id TEXT');
+      db.prepare("INSERT INTO metadata (key, value) VALUES ('project_id', 'local')").run();
+      const decision = db.prepare(
+        `INSERT INTO strategic_decisions (decision_text, created_at, status, project_id)
+         VALUES (?, ?, 'active', ?)`
+      );
+      for (let i = 1; i <= 6; i++)
+        decision.run(`Decision ${i}`, `2026-01-0${i}T00:00:00Z`, 'local');
+      // The newest is long and pull-merged from another project.
+      decision.run(long, '2026-01-09T00:00:00Z', 'other');
+      const learning = db.prepare(`INSERT INTO learnings (content, created_at) VALUES (?, ?)`);
+      for (let i = 1; i <= 7; i++) learning.run(`Learning ${i}`, `2026-01-0${i}T00:00:00Z`);
+      db.prepare(
+        `INSERT INTO contexts (id, source_path, content) VALUES ('master_context', 'm.json', ?)`
+      ).run(
+        // The fifth is longer than a preview: the documents' entries have no other read.
+        JSON.stringify({
+          constraints: Array.from({ length: 8 }, (_, i) =>
+            i === 4 ? longConstraint : `Constraint ${i + 1}`
+          ),
+        })
+      );
+      db.prepare(
+        `INSERT INTO contexts (id, source_path, content) VALUES ('project_context', 'p.json', ?)`
+      ).run(
+        JSON.stringify({
+          working_memory: { next_steps: Array.from({ length: 7 }, (_, i) => `Step ${i + 1}`) },
+        })
+      );
+      db.close();
+    });
+
+    it("returns the newest four decisions and learnings, a page of the documents' lists, and every total", async () => {
+      // OODS-Forge's full view was 871,683 characters; its old compact digest 45,700.
+      const result = await rbookContextView({ projectRoot: tempDir });
+      expect(result.data?.mode).toBe('compact');
+      expect(result.data?.masterContext).toBeNull();
+      const digest = result.data!.compact!;
+      expect(digest.totals).toEqual({ decisions: 7, learnings: 7, constraints: 8, nextSteps: 7 });
+      expect(digest.recentDecisions).toHaveLength(4);
+      expect(digest.recentLearnings).toHaveLength(4);
+      // One whole entry of each document list a page: no other read returns them.
+      expect(digest.activeConstraints).toEqual(['Constraint 1']);
+      expect(digest.pendingNextSteps).toEqual(['Step 1']);
+      expect(digest).toMatchObject({ page: 1, pageSize: 1, hasMore: true, nextPage: 2 });
+      // A foreign row is cut before it is framed, so its fence still closes.
+      expect(digest.recentDecisions[0]).toBe(
+        frameForeignText(previewText(long).preview, provenanceTag('other'))
+      );
+      // The structured copy, which Claude Code shows, names the reads past the digest itself.
+      const at = `projectRoot=${JSON.stringify(tempDir)}`;
+      expect(digest.reads).toEqual({
+        decisions: `rbook_decisions(action="list", ${at})`,
+        learnings: `rbook_learnings(action="list", ${at})`,
+        everything: `rbook_context(action="view", compact=false, ${at})`,
+      });
+      const text = formatContextViewForLLM(result);
+      expect(text).toContain('the newest 4 of 7 active');
+      expect(text).toContain(`${digest.reads.decisions} pages through every decision`);
+      expect(text).toContain(digest.reads.learnings);
+      expect(text).toContain(digest.reads.everything);
+    });
+
+    it('reaches every constraint and next step whole through the digest pages (critic round 2)', async () => {
+      // Before m03 the compact view returned all of them; compact=false is too large to show on
+      // most stores, so the digest itself must reach the rest.
+      const constraints: string[] = [];
+      const steps: string[] = [];
+      let page: number | null = 1;
+      while (page !== null) {
+        const result = await rbookContextView({ page, projectRoot: tempDir });
+        const digest = result.data!.compact!;
+        constraints.push(...digest.activeConstraints);
+        steps.push(...digest.pendingNextSteps);
+        expect(JSON.stringify(result).length).toBeLessThan(20_000);
+        if (digest.nextPage !== null)
+          expect(formatContextViewForLLM(result)).toContain(
+            `Next page: rbook_context(action="view", projectRoot=${JSON.stringify(tempDir)}, page=${digest.nextPage}).`
+          );
+        page = digest.nextPage;
+      }
+      expect(constraints).toEqual(
+        Array.from({ length: 8 }, (_, i) => (i === 4 ? longConstraint : `Constraint ${i + 1}`))
+      );
+      expect(steps).toEqual(Array.from({ length: 7 }, (_, i) => `Step ${i + 1}`));
+    });
+
+    it('counts and pages constraints kept as objects, and reads quality_standards when constraints is empty', async () => {
+      // Two registered stores keep some constraints as {constraint, status} objects, which the
+      // digest dropped and left out of its totals (critic round 3).
+      const objectConstraint = { constraint: 'Keep the API stable', status: 'active' };
+      const db = new Database(dbPath);
+      db.prepare("UPDATE contexts SET content = ? WHERE id = 'master_context'").run(
+        JSON.stringify({ constraints: ['Plain rule', objectConstraint] })
+      );
+      db.close();
+      const first = await rbookContextView({ projectRoot: tempDir });
+      expect(first.data!.compact!.totals.constraints).toBe(2);
+      const second = await rbookContextView({ page: 2, projectRoot: tempDir });
+      expect(second.data!.compact!.activeConstraints).toEqual([JSON.stringify(objectConstraint)]);
+
+      const db2 = new Database(dbPath);
+      db2
+        .prepare("UPDATE contexts SET content = ? WHERE id = 'master_context'")
+        .run(JSON.stringify({ constraints: [], quality_standards: ['QS one', 'QS two'] }));
+      db2.close();
+      const standards = await rbookContextView({ pageSize: 2, projectRoot: tempDir });
+      expect(standards.data!.compact!.activeConstraints).toEqual(['QS one', 'QS two']);
+      expect(standards.data!.compact!.totals.constraints).toBe(2);
+    });
+
+    it('returns both documents and every row with compact=false', async () => {
+      const result = await rbookContextView({ compact: false, projectRoot: tempDir });
+      expect(result.data?.mode).toBe('full');
+      expect(result.data?.masterContext).not.toBeNull();
+      expect(result.data?.aggregated.decisions).toHaveLength(7);
+      expect(result.data?.aggregated.decisions[0]).toContain(long);
+    });
+
+    it('reads sizes alone with sizeOnly, and refuses only an explicit compact=true beside it', async () => {
+      expect((await rbookContextView({ sizeOnly: true, projectRoot: tempDir })).data?.mode).toBe(
+        'sizeOnly'
+      );
+      const both = await rbookContextView({ sizeOnly: true, compact: true, projectRoot: tempDir });
+      expect(both.success).toBe(false);
+    });
   });
 });

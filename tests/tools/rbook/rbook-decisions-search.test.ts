@@ -241,12 +241,25 @@ describe('rbook_decisions_search', () => {
       }
     });
 
-    it('should use default limit of 20', async () => {
-      // With only 6 decisions, we can't test the exact limit, but we can verify it returns all
-      const result = await rbookDecisionsSearchWithDb(dbPath, { query: 'all' });
+    it('returns the top 15 by default and says how to see the rest (s106-m03)', async () => {
+      // 20 results were 21,844 characters on a registered store, past the 20,000 cap.
+      const db = new Database(dbPath);
+      const insert = db.prepare(
+        `INSERT INTO strategic_decisions (decision_text, created_at, project_domain, sprint_id)
+         VALUES (?, ?, 'cmos-mcp', 'sprint-14')`
+      );
+      for (let i = 0; i < 20; i++)
+        insert.run(`Zebra crossing rule ${i + 1}`, new Date(Date.now() - i * 60_000).toISOString());
+      db.close();
+      RbookDetector.resetInstance();
+      const result = await rbookDecisionsSearchWithDb(dbPath, { query: 'zebra' });
 
       expect(result.success).toBe(true);
-      expect(result.data?.results.length).toBeLessThanOrEqual(20);
+      expect(result.data?.results).toHaveLength(15);
+      expect(result.data?.limited).toBe(true);
+      expect(formatDecisionsSearchForLLM(result)).toContain(
+        'raise limit or narrow the query to see more'
+      );
     });
   });
 

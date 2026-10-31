@@ -20,6 +20,7 @@ import {
   RBOOK_ERROR_CODES,
   transitionsFrom,
 } from './errors';
+import { emptiedParameter } from './emptied-parameter';
 import { ensureMissionTimestamps } from './schema-migrations';
 import { sanitizeContentField, sanitizeStringArray } from '../../intelligence/content-sanitizer';
 import { appendWarnings, attachWarnings } from './format-warnings';
@@ -143,8 +144,9 @@ export async function rbookMissionBlock(
     cleanedReason = reasonSanitize.cleaned;
     inputSanitized.push({ field: 'reason', reason: reasonSanitize.reason ?? '' });
   }
+  // s106-m02: a blank reason was refused above, so an empty one here was emptied by the sanitizer.
   if (!cleanedReason || cleanedReason.trim() === '') {
-    return createError(RbookErrors.missingParameter('reason'));
+    return createError(emptiedParameter('reason'));
   }
   let cleanedBlockers = params.blockers;
   if (Array.isArray(cleanedBlockers)) {

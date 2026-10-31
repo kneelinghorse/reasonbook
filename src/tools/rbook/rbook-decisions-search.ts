@@ -108,7 +108,7 @@ export interface RbookDecisionsSearchParams {
   /** Optional: filter by sprint ID */
   sprintId?: string;
 
-  /** Optional: maximum results to return (1-50, default: 20) */
+  /** Optional: maximum results to return (1-50, default: 15) */
   limit?: number;
 
   /** Optional: explicit project root to search from */
@@ -142,7 +142,7 @@ export const rbookDecisionsSearchToolDefinition = {
         type: 'number',
         minimum: 1,
         maximum: 50,
-        description: 'Maximum results to return (1-50, default: 20)',
+        description: 'Maximum results to return (1-50, default: 15)',
       },
       projectRoot: {
         type: 'string',
@@ -169,7 +169,8 @@ export async function rbookDecisionsSearch(
     return createError(RbookErrors.missingParameter('query'));
   }
 
-  const limit = params.limit ?? 20;
+  // s106-m03: 20 results were 21,844 characters on a registered store, past the 20,000 cap.
+  const limit = params.limit ?? 15;
   const query = params.query.trim();
 
   // Split query into keywords for better matching
@@ -342,7 +343,10 @@ export function formatDecisionsSearchForLLM(
   lines.push(`Query: "${data.query}"`);
   lines.push(`Found: ${data.totalMatches} match${data.totalMatches === 1 ? '' : 'es'}`);
   if (data.limited) {
-    lines.push(`(Showing top ${data.results.length} results)`);
+    // s106-m03: a search ranks a window of candidates, so it says how to widen it, not a page.
+    lines.push(
+      `(Showing the top ${data.results.length} of the ${data.totalMatches} ranked; the search ranks more candidates at a higher limit, so raise limit or narrow the query to see more)`
+    );
   }
   lines.push('');
 

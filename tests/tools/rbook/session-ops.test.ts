@@ -1250,7 +1250,10 @@ describe('rbook_session_list', () => {
       });
       const formatted = formatSessionListForLLM(result);
 
-      expect(formatted).toContain('page parameter');
+      // s106-m03: the answer names the call for the next page, with the same page size.
+      expect(formatted).toContain(
+        `Next page: rbook_session(action="list", pageSize=2, projectRoot=${JSON.stringify(testDb.tempDir)}, page=2).`
+      );
     });
 
     it('should show empty message when no sessions', async () => {

@@ -24,8 +24,9 @@ nodejs.org. Your AI client receives requested tool results under its own policy.
 It stores the selected project record, local snapshots and Reasonbook's own configuration, registry
 and usage files. Registry lookup can read path and identity/address metadata from registered stores;
 it does not aggregate their record content. The selected project's constraints are returned as data.
-Its MCP usage log contains timestamps, restricted tool/client/session tokens, outcomes and capped
-record identifiers, never argument/result prose; the three newest monthly files are retained. The
+Its MCP usage log contains timestamps, restricted tool/client/session tokens, outcomes, how long the
+project lookup took, the published parameter a refusal named and capped record identifiers, never
+argument/result prose; the three newest monthly files are retained. The
 legacy `telemetry_events` table can contain arbitrary imported JSON and is not this log. Existing
 records, backups and SQLite free-page contents have the retention limits described below.
 
@@ -42,7 +43,8 @@ available. On your machine it keeps:
 - your project's record in `rbook/db/rbook.sqlite`;
 - under `~/.config/rbook/`, the project registry, your operator profile and the author name you
   set (`config.json`), which each record you write carries;
-- a local usage log: tool names, identifiers, counts, error codes, which published prompt patterns
+- a local usage log: tool names, identifiers, counts, error codes, the published parameter a refusal
+  named, how long the project lookup took, which published prompt patterns
   a prompt matches and the slash command it starts with, without prompt text or record contents;
 - hook state: session identifiers as hashes, the folders and repositories you worked in, each
   session's Git commit and changed filenames, your next message after a displayed draft (up to

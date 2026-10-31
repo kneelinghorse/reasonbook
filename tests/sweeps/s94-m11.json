@@ -432,11 +432,11 @@
         {
           "id": "current-4",
           "file": "src/tools/rbook/draft-evaluation.ts",
-          "line": 140,
-          "text": "suggestion: `Check the project (projectRoot) and the id with ${formatCliRemedy('drafts list', { projectRoot: path.resolve(client.path, '../../..') })}, or record without fromDraft.`,",
+          "line": 159,
+          "text": "suggestion: `Check the project (projectRoot) and the id with ${formatCliRemedy('drafts list', { projectRoot: path.resolve(client.path, '../../..') })}, or record without fromDraft, with the decision's text as content.`,",
           "occurrence": 1,
           "class": "fixed",
-          "reason": "Required formatCliRemedy call at the corrected runtime remedy site."
+          "reason": "Required formatCliRemedy call at the corrected runtime remedy site. s106-m02 adds the content a record without fromDraft needs."
         },
         {
           "id": "current-5",

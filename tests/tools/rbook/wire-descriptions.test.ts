@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// ABOUTME: s92-m08 — what a client pays for: tools/list under a 6K-token ceiling in a fixed order,
+// ABOUTME: s92-m08 — what a client pays for: tools/list under an 8K-token ceiling in a fixed order,
 // ABOUTME: the same schemas as the long form, and server instructions whose first 512 chars stand alone.
 
 import { describe, expect, it } from '@jest/globals';
@@ -31,10 +31,11 @@ const wire = (): Definition[] => getToolDefinitions() as unknown as Definition[]
 
 /**
  * THE RULE: tokens are estimated as characters / 4 over the exact JSON tools/list returns. The
- * ceiling is 6,000 tokens, so 24,000 characters. Measured at s92-m08: 38,141 before, about 19,000
- * after; names, types and enums alone are about 13,000.
+ * ceiling is 8,000 tokens, so 32,000 characters, raised from 6,000 for sprint 106 (decision #1713).
+ * Measured at s92-m08: 38,141 before, about 19,000 after; names, types and enums alone are about
+ * 13,000.
  */
-const TOKEN_CEILING = 6_000;
+const TOKEN_CEILING = 8_000;
 const CHARS_PER_TOKEN = 4;
 
 /**
@@ -53,7 +54,16 @@ const CHARS_PER_TOKEN = 4;
 // s102-m08 describes the digest target honestly: -2 characters, leaving 458.
 // s104-m03 measures 23,536 before (6 below the old cap), adds 263, leaving 201.
 // Glama wording follow-up: +17 for sprint/message routing; preserves summary's parameter hint.
-const RESERVE = 184;
+// s106-m02: decision #1713 raises the ceiling to 32,000, so the reserve becomes 8,184 (32,000 less
+// the 23,816 measured); the missionId and fromDraft hints add 127, leaving 8,057.
+// s106-m03: page on rbook_feedback, rbook_mission and rbook_sprint, and the hint that the context
+// view's digest is now its default, add 190, leaving 7,867.
+// s106-m05: the second pass (each action's required inputs, what calls change, routing, and hints
+// toward 80% coverage, ordered by the misuse census) adds 7,597 (24,133 to 31,730), leaving 270;
+// its round-1 critic's corrections (four false claims, missing inputs and effects, two sprint
+// hints) add 192, leaving 78; round 2's (feedback resolve's wording, contextType's default and
+// sprint add's demotion of the other open sprints) add 42, leaving 36.
+const RESERVE = 36;
 
 function withoutDescriptions(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(withoutDescriptions);
@@ -238,6 +248,8 @@ describe('s92-m08 — tools/list', () => {
       }
     }
     expect(hints).toEqual([
+      // s106-m02 (#871): names the actions that require it, as requiredness hints may.
+      'rbook_mission.missionId',
       'rbook_mission_transition.reason',
       'rbook_context.nextStepIds',
       'rbook_context.missionId',

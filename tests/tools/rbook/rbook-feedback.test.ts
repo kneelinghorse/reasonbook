@@ -11,7 +11,9 @@ import { rbookSessionStart } from '../../../src/tools/rbook/rbook-session-start'
 import { rbookSessionComplete } from '../../../src/tools/rbook/rbook-session-complete';
 import { rbookMissionTransition } from '../../../src/tools/rbook/rbook-mission-transition';
 import { rbookAgentOnboard } from '../../../src/tools/rbook/rbook-agent-onboard';
+import { REREAD_AFTER_ACTING } from '../../../src/tools/rbook/answer-page';
 import {
+  formatFeedbackForLLM,
   rbookFeedback,
   type RbookFeedbackListResult,
   type RbookFeedbackMutationResult,
@@ -671,5 +673,149 @@ describe('rbook_feedback by kind and bulk resolve (s97-m07)', () => {
     expect(result.data).toMatchObject({
       resolved: [{ feedbackId: ids[2], previousStatus: 'open', currentStatus: 'resolved' }],
     });
+  });
+});
+
+describe('rbook_feedback list pages (s106-m03)', () => {
+  let t: TestDb;
+
+  /** Rows a second apart, newest last inserted, so newest-first is descending id. */
+  function seed(count: number, createdAt?: string): void {
+    const insert = t.db.prepare(
+      `INSERT INTO agent_feedback (tool_name, body, status, created_at) VALUES (?, ?, 'open', ?)`
+    );
+    const start = Date.now() - count * 1000;
+    for (let i = 0; i < count; i++)
+      insert.run(
+        i % 2 ? 'rbook_review' : 'rbook_mission',
+        `row ${i + 1}`,
+        createdAt ?? new Date(start + i * 1000).toISOString()
+      );
+  }
+
+  function ids(result: Awaited<ReturnType<typeof rbookFeedback>>): number[] {
+    return (result.data as RbookFeedbackListResult).entries.map((entry) => entry.id);
+  }
+
+  beforeEach(async () => {
+    t = createTestDb();
+    RbookDetector.resetInstance();
+    // The first list creates the table; rows go in beside the tool, as a long-lived store holds them.
+    await rbookFeedback({ action: 'list', projectRoot: t.tempDir });
+  });
+
+  afterEach(() => cleanup(t));
+
+  it('returns 10 rows by default, states the total and names the call for the rest', async () => {
+    // OODS-Forge's 260 open rows made the old 50-row default 35,736 characters, over the cap, and
+    // 20 long rows of another registered store still 20,786.
+    seed(25);
+    const result = await rbookFeedback({ action: 'list', projectRoot: t.tempDir });
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      totalCount: 25,
+      limit: 10,
+      page: 1,
+      hasMore: true,
+      nextPage: 2,
+    });
+    expect(ids(result)).toHaveLength(10);
+    const text = formatFeedbackForLLM('list', result);
+    expect(text).toContain('Showing 1–10 of 25 entries');
+    expect(text).toContain(
+      `Next page: rbook_feedback(action="list", projectRoot=${JSON.stringify(t.tempDir)}, page=2).`
+    );
+    // Every row of the page is in the text, not only the first ten.
+    for (const id of ids(result)) expect(text).toContain(`#${id} `);
+  });
+
+  it('reaches every row exactly once, newest first, by following the next page', async () => {
+    seed(25);
+    const seen: number[] = [];
+    let page: number | null = 1;
+    while (page !== null) {
+      const result = await rbookFeedback({
+        action: 'list',
+        limit: 10,
+        page,
+        projectRoot: t.tempDir,
+      });
+      seen.push(...ids(result));
+      page = (result.data as RbookFeedbackListResult).nextPage;
+    }
+    const all = (
+      t.db.prepare('SELECT id FROM agent_feedback ORDER BY id DESC').all() as Array<{ id: number }>
+    ).map((row) => row.id);
+    expect(seen).toEqual(all);
+  });
+
+  it('orders rows written in the same instant by id, so no page repeats or skips one', async () => {
+    seed(4, new Date().toISOString());
+    const first = await rbookFeedback({ action: 'list', limit: 2, projectRoot: t.tempDir });
+    const second = await rbookFeedback({
+      action: 'list',
+      limit: 2,
+      page: 2,
+      projectRoot: t.tempDir,
+    });
+    const all = [...ids(first), ...ids(second)];
+    expect(all).toEqual([...all].sort((a, b) => b - a));
+    expect(new Set(all).size).toBe(4);
+  });
+
+  it('carries the filters into the next-page call and ends without one', async () => {
+    seed(6);
+    const filtered = { action: 'list', toolName: 'rbook_review', limit: 2 } as const;
+    const first = await rbookFeedback({ ...filtered, projectRoot: t.tempDir });
+    expect(formatFeedbackForLLM('list', first)).toContain(
+      `Next page: rbook_feedback(action="list", toolName="rbook_review", limit=2, projectRoot=${JSON.stringify(t.tempDir)}, page=2).`
+    );
+    const last = await rbookFeedback({ ...filtered, page: 2, projectRoot: t.tempDir });
+    expect(last.data).toMatchObject({ totalCount: 3, page: 2, hasMore: false, nextPage: null });
+    expect(formatFeedbackForLLM('list', last)).not.toContain('Next page');
+  });
+
+  it('reaches every open row when a triaged page is read again, as its note says (critic B2)', async () => {
+    seed(25);
+    const ids = (
+      t.db.prepare("SELECT id FROM agent_feedback WHERE status = 'open'").all() as Array<{
+        id: number;
+      }>
+    ).map((row) => row.id);
+    const first = await rbookFeedback({ action: 'list', limit: 10, projectRoot: t.tempDir });
+    expect((first.data as RbookFeedbackListResult).pageNote).toBe(REREAD_AFTER_ACTING);
+    expect(formatFeedbackForLLM('list', first)).toContain(REREAD_AFTER_ACTING);
+    // Triage the even-numbered rows and leave the rest, reading a page again after acting: page 1
+    // fills with rows left alone, so the later rows are reached only through Next page calls.
+    const handled = new Set<number>();
+    const seen = new Set<number>();
+    let page = 1;
+    for (let calls = 0; calls < 60; calls++) {
+      const result = await rbookFeedback({
+        action: 'list',
+        limit: 10,
+        page,
+        projectRoot: t.tempDir,
+      });
+      const data = result.data as RbookFeedbackListResult;
+      data.entries.forEach((entry) => seen.add(entry.id));
+      const fresh = data.entries.filter((entry) => !handled.has(entry.id));
+      fresh.forEach((entry) => handled.add(entry.id));
+      const acted = fresh.filter((entry) => entry.id % 2 === 0);
+      for (const entry of acted)
+        await rbookFeedback({ action: 'triage', feedbackId: entry.id, projectRoot: t.tempDir });
+      if (acted.length > 0) continue;
+      if (data.nextPage === null) break;
+      page = data.nextPage;
+    }
+    expect(ids.filter((id) => !seen.has(id))).toEqual([]);
+    expect(page).toBeGreaterThanOrEqual(2);
+  });
+
+  it('says a page past the last holds no rows, and gives the total', async () => {
+    seed(3);
+    const result = await rbookFeedback({ action: 'list', page: 5, projectRoot: t.tempDir });
+    expect(result.data).toMatchObject({ totalCount: 3, page: 5, hasMore: false, nextPage: null });
+    expect(formatFeedbackForLLM('list', result)).toContain('No entries on page 5; 3 in all');
   });
 });

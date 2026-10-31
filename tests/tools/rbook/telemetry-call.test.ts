@@ -15,6 +15,7 @@ import { setProcessBusyTimeout } from '../../../src/tools/rbook/sqlite-busy';
 import { openDraftRuntime, recordSessionStart } from '../../../src/tools/rbook/draft-runtime';
 import { harnessSessionHash } from '../../../src/tools/rbook/harness-session';
 import { withCodexRequest } from '../../../src/codex-request-context';
+import { settingNames } from '../../../src/intelligence/legacy-compat';
 
 let dir: string;
 let project: string;
@@ -35,6 +36,14 @@ const unattributed = () =>
     { projectId: 'unattributed', dbPath: path.join(env.RBOOK_CONFIG_DIR!, 'unattributed.sqlite') },
     env
   );
+/** Every byte under this fixture's telemetry folder, every bucket included. */
+function rawTelemetry(file = path.join(env.RBOOK_CONFIG_DIR!, 'telemetry')): string {
+  if (!fs.statSync(file).isDirectory()) return fs.readFileSync(file, 'utf8');
+  return fs
+    .readdirSync(file)
+    .map((name) => rawTelemetry(path.join(file, name)))
+    .join('');
+}
 /**
  * Another process holds the store exclusively from before the call's observation until `afterMs`
  * after the call's last step, which is immediately before the observation's identity lookup.
@@ -122,8 +131,132 @@ it('records refusal and exception once each and never counts their intended cita
   const records = readTelemetry(targetForStore(dbPath)!, env);
   expect(records).toHaveLength(2);
   expect(records.map((r) => r.refused)).toEqual(['REFUSED', 'TOOL_EXECUTION_ERROR']);
+  // Neither names a field, so neither can say which parameter the agent got wrong.
+  expect(records.map((r) => r.refusedField)).toEqual(['unspecified', 'unspecified']);
   expect(records.every((r) => !r.ok && r.idsCited?.length === 0)).toBe(true);
   expect(JSON.stringify(records)).not.toContain('private');
+});
+
+// s106-m01 (design settled item 3): a refusal row says which published parameter the refusal named,
+// so a close can count misuse by parameter. The agent's own text never reaches the file: a key the
+// tool does not publish is `unknown`, and every other unnamed case is `unspecified`.
+it.each([
+  ['a published parameter', { code: 'MISSING_PARAMETER', field: 'decisionId' }, {}, 'decisionId'],
+  [
+    'an unknown parameter the call supplied',
+    { code: 'INVALID_PARAMETER', field: 'privateKey' },
+    { privateKey: 'private value' },
+    'unknown',
+  ],
+  ['no field', { code: 'INVALID_PARAMETER' }, {}, 'unspecified'],
+  [
+    'a dotted schema path',
+    { code: 'INVALID_PARAMETER', field: 'fields.privateKey' },
+    { fields: { privateKey: 1 } },
+    'unspecified',
+  ],
+  ['a constant', { code: 'INVALID_PARAMETER', field: 'arguments' }, {}, 'unspecified'],
+  [
+    'an unpublished name the call did not supply',
+    { code: 'MISSING_PARAMETER', field: 'privateName' },
+    {},
+    'unspecified',
+  ],
+  [
+    'a supplied unpublished key under a code that is not a parameter refusal',
+    { code: 'TOOL_EXECUTION_ERROR', field: 'privateKey' },
+    { privateKey: 'private value' },
+    'unspecified',
+  ],
+  ['a field that is not text', { code: 'INVALID_PARAMETER', field: 7 }, {}, 'unspecified'],
+])('records a refusal naming %s with that refusedField', async (_case, error, extra, expected) => {
+  const result = { isError: true, structuredContent: { success: false, error } };
+  const value = await withMcpTelemetry(
+    {
+      name: 'rbook_decisions',
+      args: { projectRoot: project, action: 'show', ...extra },
+      mode: 'read',
+      client: 'field/1',
+      parameters: ['projectRoot', 'action', 'decisionId'],
+      env,
+    },
+    async () => result
+  );
+  expect(value).toBe(result);
+  const [row] = readTelemetry(targetForStore(dbPath)!, env);
+  expect(row).toMatchObject({ ok: false, refusedField: expected });
+  expect(rawTelemetry()).not.toContain('private');
+});
+
+// s106-m01: the identity lookup's own time goes on every MCP row, so the wait sprint 105 put on the
+// response path is measured where it happens. Null means no lookup ran, never a zero.
+it('records how long the identity lookup took, and null when the call named no store', async () => {
+  const result = { structuredContent: { success: true } };
+  await withMcpTelemetry(
+    { name: 'rbook_review', args: { projectRoot: project }, mode: 'read', client: 'timed/1', env },
+    async () => result
+  );
+  await withMcpTelemetry(
+    { name: 'rbook_review', args: {}, mode: 'read', client: 'free/1', env },
+    async () => result
+  );
+  const [row] = readTelemetry(targetForStore(dbPath)!, env);
+  expect(Number.isSafeInteger(row.lookupMs)).toBe(true);
+  expect(row.lookupMs).toBeGreaterThanOrEqual(0);
+  expect(row.refusedField).toBeNull();
+  expect(unattributed()).toEqual([
+    expect.objectContaining({ client: 'free/1', lookupMs: null, refusedField: null }),
+  ]);
+});
+
+it('starts the lookup timer at the lookup, not at the call', async () => {
+  // A call that takes 200 ms of its own does not make its lookup look slow.
+  await withMcpTelemetry(
+    { name: 'rbook_review', args: { projectRoot: project }, mode: 'read', client: 'slow/1', env },
+    async () => {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      return { structuredContent: { success: true } };
+    }
+  );
+  expect(readTelemetry(targetForStore(dbPath)!, env)[0].lookupMs).toBeLessThan(100);
+});
+
+it('files an anonymous refusal under the explicit config directory when the environment names none', async () => {
+  // A regression to process.env would file the row under this test's own empty home instead.
+  const saved = Object.fromEntries(
+    [...settingNames('RBOOK_CONFIG_DIR'), 'HOME'].map((name) => [name, process.env[name]])
+  );
+  for (const name of settingNames('RBOOK_CONFIG_DIR')) delete process.env[name];
+  process.env.HOME = path.join(dir, 'home');
+  const result = {
+    isError: true,
+    structuredContent: {
+      success: false,
+      error: { code: 'INVALID_PARAMETER', field: 'privateKey' },
+    },
+  };
+  try {
+    await withMcpTelemetry(
+      {
+        name: 'rbook_decisions',
+        args: { action: 'show', privateKey: 1 },
+        mode: 'read',
+        client: 'explicit/1',
+        parameters: ['projectRoot', 'action', 'decisionId'],
+        env: { RBOOK_CONFIG_DIR: env.RBOOK_CONFIG_DIR },
+      },
+      async () => result
+    );
+  } finally {
+    for (const [name, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
+  expect(unattributed()).toEqual([
+    expect.objectContaining({ client: 'explicit/1', lookupMs: null, refusedField: 'unknown' }),
+  ]);
+  expect(fs.existsSync(path.join(dir, 'home'))).toBe(false);
 });
 
 it('does not leak a concurrent request target into another project', async () => {
@@ -211,6 +344,8 @@ it("waits out a store held for 1 s after the call, and keeps the call's row in i
   expect(readTelemetry(targetForStore(dbPath)!, env)).toEqual([
     expect.objectContaining({ client: 'held/1', ok: true }),
   ]);
+  // s106-m01: the wait the call paid is on its row, past measure 12's 100 ms line.
+  expect(readTelemetry(targetForStore(dbPath)!, env)[0].lookupMs).toBeGreaterThan(100);
   expect(unattributed()).toEqual([]);
 });
 
@@ -234,6 +369,11 @@ it.each([
     setProcessBusyTimeout(null);
     expect(readTelemetry(targetForStore(dbPath)!, env)).toHaveLength(bucket === 'project' ? 1 : 0);
     expect(unattributed()).toHaveLength(bucket === 'unattributed' ? 1 : 0);
+    // s106-m01: either way the row carries the wait, so a lookup that ran out its budget is
+    // visible in the anonymous bound rather than only as a row in the wrong bucket.
+    const [row] =
+      bucket === 'project' ? readTelemetry(targetForStore(dbPath)!, env) : unattributed();
+    expect(row.lookupMs).toBeGreaterThan(100);
   }
 );
 
@@ -277,6 +417,9 @@ it("keeps a Codex call's row with a null session when its draft runtime is held"
   expect(readTelemetry(targetForStore(dbPath)!, env)).toEqual([
     expect.objectContaining({ client: 'codex/1', ok: true, session: null }),
   ]);
+  // s106-m01: lookupMs times the store lookup alone. The owner lookup's 100 ms wait on the held
+  // runtime is not in it, so the row reads under that wait.
+  expect(readTelemetry(targetForStore(dbPath)!, env)[0].lookupMs).toBeLessThan(100);
 });
 
 // s105-m03, the six-path checklist on the real module: the call's budget only lengthens a wait for a
@@ -327,6 +470,9 @@ it.each([
       async () => result
     )
   ).toBe(result);
-  expect(unattributed()).toEqual([expect.objectContaining({ client: 'foreign/1' })]);
+  // s106-m01: the lookup ran and failed, so its time is a number, not the null of no lookup.
+  expect(unattributed()).toEqual([
+    expect.objectContaining({ client: 'foreign/1', lookupMs: expect.any(Number) }),
+  ]);
   expect(fs.readFileSync(dbPath)).toEqual(before);
 });

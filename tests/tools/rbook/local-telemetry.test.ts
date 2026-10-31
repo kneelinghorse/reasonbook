@@ -323,6 +323,83 @@ it('reports entirely corrupt files as unavailable rather than a measured zero', 
     warnings: [expect.stringContaining('corrupt')],
   });
 });
+// s106-m01: an MCP row carries its identity lookup's time and, on a refusal, the parameter the refusal
+// named. A row written before either existed has neither key, so a reader can tell an unmeasured row
+// from a measured zero; hook and CLI rows never carry them.
+it('keeps lookupMs and refusedField on MCP rows only, and leaves a legacy row unmeasured', () => {
+  const mcp = {
+    surface: 'mcp' as const,
+    tool: 'rbook_decisions',
+    action: 'record',
+    mode: 'write' as const,
+  };
+  const refusal = { ok: false, refused: 'INVALID_PARAMETER' };
+  telemetry.appendTelemetry(
+    record({ ...mcp, ...refusal, lookupMs: 4012, refusedField: 'content' }),
+    target,
+    env
+  );
+  telemetry.appendTelemetry(record({ ...mcp, lookupMs: null, refusedField: null }), target, env);
+  telemetry.appendTelemetry(record({ ...mcp, lookupMs: 0, refusedField: null }), target, env);
+  telemetry.appendTelemetry(record({ ...mcp, ...refusal }), target, env);
+  telemetry.appendTelemetry(record({ lookupMs: 7, refusedField: 'content' }), target, env);
+  telemetry.appendTelemetry(
+    record({ surface: 'cli', tool: 'review', lookupMs: 7, refusedField: 'content' }),
+    target,
+    env
+  );
+  const rows = telemetry.readTelemetry(target, env);
+  expect(rows).toHaveLength(6);
+  expect(rows[0]).toMatchObject({ lookupMs: 4012, refusedField: 'content' });
+  expect(rows[1]).toMatchObject({ lookupMs: null, refusedField: null });
+  expect(rows[2]).toMatchObject({ lookupMs: 0, refusedField: null });
+  for (const row of rows.slice(3)) {
+    expect(row).not.toHaveProperty('lookupMs');
+    expect(row).not.toHaveProperty('refusedField');
+  }
+});
+
+it.each([
+  ['a negative time', { lookupMs: -1 }],
+  ['a fractional time', { lookupMs: 1.5 }],
+  ['a time as text', { lookupMs: '12' }],
+  ['an unsafe integer', { lookupMs: Number.MAX_SAFE_INTEGER + 1 }],
+  ['a field holding free text', { refusedField: 'private free text' }],
+  ['an overlong field', { refusedField: `a${'b'.repeat(64)}` }],
+  ['an empty field', { refusedField: '' }],
+  ['a field that is not text', { refusedField: 42 }],
+  ['a field on a row that was not refused', { refusedField: 'content', ok: true, refused: null }],
+])('drops %s at the boundary instead of storing it', (_case, extra) => {
+  telemetry.appendTelemetry(
+    record({
+      surface: 'mcp',
+      tool: 'rbook_decisions',
+      action: 'record',
+      mode: 'write',
+      ok: false,
+      refused: 'INVALID_PARAMETER',
+      ...(extra as Partial<TelemetryRecord>),
+    }),
+    target,
+    env
+  );
+  const [row] = telemetry.readTelemetry(target, env);
+  for (const key of Object.keys(extra).filter((name) => !['ok', 'refused'].includes(name)))
+    expect(row).not.toHaveProperty(key);
+  const dir = telemetry.telemetryDir(target, env);
+  const raw = fs.readdirSync(dir).map((name) => fs.readFileSync(path.join(dir, name), 'utf8'));
+  expect(raw.join('')).not.toContain('private');
+});
+
+it('names one anonymous bucket that the writer and every reader share', () => {
+  const anonymous = telemetry.unattributedTarget(env);
+  expect(anonymous).toEqual({
+    projectId: 'unattributed',
+    dbPath: path.join(env.RBOOK_CONFIG_DIR!, 'unattributed.sqlite'),
+  });
+  expect(telemetry.telemetryKey(anonymous)).toMatch(/^[a-f0-9]{16}$/);
+});
+
 it('preserves technical pid/session fields and allows unassigned records under the config directory', () => {
   target = {
     projectId: 'unattributed',

@@ -155,10 +155,10 @@ Normal completed sessions need no follow-up update call.
 # Backfill constraint captures from a known point
 rbook_context(action="update", since="2026-08-01T00:00:00Z")
 
-# View updated context
-rbook_context(action="view", contextType="master_context")
+# View the updated master context in full (the view's default is a digest)
+rbook_context(action="view", contextType="master_context", compact=false)
 ```
 
 ---
 
-**Last Updated**: 2026-10-12
+**Last Updated**: 2026-10-29

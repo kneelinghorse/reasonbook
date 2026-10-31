@@ -204,9 +204,19 @@ PRIVATE.describe('analytics window — real-store positive fire (s86-m05)', () =
     db.close();
 
     const result = await rbookSprintAnalytics({ projectRoot });
-    expect(result.data?.sprints.map((s) => s.sprintId)).toEqual(allAsc);
     expect(result.data?.window.requestedLimit).toBeNull();
     expect(result.data?.window.sprintCount).toBe(allAsc.length);
+    // s106-m03: the rows come a page at a time, counted from the newest and oldest-first within
+    // a page; read back to front, the pages are the whole history, oldest first.
+    const rows: string[] = [];
+    let page: number | null = 1;
+    while (page !== null) {
+      const next = await rbookSprintAnalytics({ projectRoot, page });
+      rows.unshift(...next.data!.sprints.map((s) => s.sprintId));
+      expect(next.data?.window.sprintCount).toBe(allAsc.length);
+      page = next.data!.nextPage;
+    }
+    expect(rows).toEqual(allAsc);
   });
 });
 

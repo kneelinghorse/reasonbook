@@ -274,6 +274,20 @@ it('records a healthy observation and returns the same result', async () => {
   expect(rows('fixture')).toHaveLength(1);
 });
 
+it("s106-m01: the pause point waits before the lookup's timer starts, so lookupMs times the lookup alone", async () => {
+  seedStore();
+  // Armed and never released, so the pause waits out its 300 ms cap.
+  armPause(config, 'parallel-1/1');
+  const stderr = quietStderr();
+  const { value, returned } = await observe(load({ pause: true, pauseCapMs: 300 }));
+  expect(returned).toBe(value);
+  expect(onlyRecord().pause).toMatchObject({ released: false });
+  const [row] = rows('fixture');
+  expect(Number.isSafeInteger(row.lookupMs)).toBe(true);
+  expect(row.lookupMs).toBeLessThan(250);
+  expect(diagnostics(stderr)).toEqual([]);
+});
+
 it('leaf 1: a store another process holds until 1,000 ms after the lookup starts keeps its row', async () => {
   seedStore();
   const files = armPause(config, 'parallel-1/1');

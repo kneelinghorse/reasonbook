@@ -21,6 +21,8 @@ import { getSprintDecisionCounts } from './decision-memory';
 import { appendWarnings, attachWarnings } from './format-warnings';
 import { ensureSprintSummaryView } from './schema-migrations';
 import { parkedColumn } from './sprint-summary-read';
+import { PREVIEW_MAX_CHARS, previewText } from './text-preview';
+import { callText } from './answer-page';
 
 /**
  * Mission summary within a sprint.
@@ -35,8 +37,15 @@ export interface SprintMissionSummary extends SpinOutDetails {
   /** Mission status */
   status: MissionStatus;
 
-  /** Mission objective */
+  /**
+   * Mission objective: s106-m03, a preview of at most 300 characters; rbook_mission show reads it
+   * whole. A registered store's 12-mission sprint showed 41,257 characters of objectives in full.
+   */
   objective: string | null;
+
+  /** Whether the objective preview was cut, and the full objective's length (0 when null) */
+  objectiveTruncated: boolean;
+  objectiveFullLength: number;
 }
 
 /**
@@ -258,13 +267,18 @@ export async function rbookSprintShow(
         decisionsCount: decisionCounts.strategicDecisionsCount,
         sessionDecisionsCount: decisionCounts.sessionDecisionsCount,
         totalDecisionsCount: decisionCounts.totalDecisionsCount,
-        missions: missionsResult.data.map((m) => ({
-          ...spinOutDetails(visibility, 'mission', m.id),
-          id: m.id,
-          name: m.name,
-          status: m.status,
-          objective: m.objective,
-        })),
+        missions: missionsResult.data.map((m) => {
+          const objective = m.objective === null ? null : previewText(m.objective);
+          return {
+            ...spinOutDetails(visibility, 'mission', m.id),
+            id: m.id,
+            name: m.name,
+            status: m.status,
+            objective: objective?.preview ?? null,
+            objectiveTruncated: objective?.truncated ?? false,
+            objectiveFullLength: objective?.fullLength ?? 0,
+          };
+        }),
       };
 
       return createSuccess(result, viewMigration.warnings);
@@ -362,6 +376,12 @@ export function formatSprintShowForLLM(result: RbookToolResult<SprintShowResult>
         lines.push(`      └─ ${truncate(m.objective, 55)}`);
       }
     }
+    // s106-m03: a mission's objective is a preview here; mission show reads it whole.
+    const cut = s.missions.find((m) => m.objectiveTruncated);
+    if (cut)
+      lines.push(
+        `   Objectives are previews of at most ${PREVIEW_MAX_CHARS} characters; read one whole with ${callText('rbook_mission', { action: 'show', missionId: cut.id })}.`
+      );
   } else {
     lines.push('**Missions**: None');
   }

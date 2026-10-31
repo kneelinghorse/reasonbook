@@ -4,12 +4,12 @@
 
 import Database from 'better-sqlite3';
 import { createHash } from 'crypto';
-import * as path from 'path';
 
-import { rbookConfigDir, harnessSessionHash } from '../tools/rbook/harness-session';
+import { harnessSessionHash } from '../tools/rbook/harness-session';
 import {
   appendTelemetry,
   targetForStore,
+  unattributedTarget,
   type TelemetryRecord,
   type TelemetryTarget,
 } from '../tools/rbook/local-telemetry';
@@ -166,10 +166,7 @@ export class CliTelemetry {
       ambient: null,
       ...(hook ? { charsInjected: 0, idsInjected: [] } : {}),
     };
-    this.target = {
-      projectId: 'unattributed',
-      dbPath: path.join(rbookConfigDir(io.env), 'unattributed.sqlite'),
-    };
+    this.target = unattributedTarget(io.env);
     this.resolve(
       resolveCliProject({ projectRootArg: flags['project-root'], env: io.env, cwd: io.cwd })
     );
@@ -183,10 +180,7 @@ export class CliTelemetry {
   resolve(resolution: CliResolution): void {
     if (this.finished) return;
     this.resolution = resolution;
-    const unattributed = {
-      projectId: 'unattributed',
-      dbPath: path.join(rbookConfigDir(this.io.env), 'unattributed.sqlite'),
-    };
+    const unattributed = unattributedTarget(this.io.env);
     this.target =
       resolution.kind === 'store'
         ? (targetForStore(resolution.dbPath) ?? unattributed)

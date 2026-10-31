@@ -323,6 +323,47 @@ describe('rbook_mission_add', () => {
       expect(result.error?.field).toBe('missionId');
     });
 
+    // s106-m02 (#871): add takes the id the planner chooses, and nothing said so; the refusal now
+    // names the requirement with an example. Reasonbook never derives an id.
+    it('names the new-id requirement with an example, and derives no id', async () => {
+      const missions = () => testDb.db.prepare('SELECT COUNT(*) AS n FROM missions').get();
+      const before = missions();
+      const result = await callMissionAdd(testDb.dbPath, {
+        name: 'Test',
+        sprintId: 'sprint-14',
+      } as unknown as RbookMissionAddParams);
+      expect(result.error).toMatchObject({
+        code: RBOOK_ERROR_CODES.MISSING_PARAMETER,
+        field: 'missionId',
+      });
+      expect(result.error?.message).toMatch(/needs the new mission's id/);
+      expect(result.error?.suggestion).toMatch(/an id no mission in this project uses/);
+      expect(result.error?.suggestion).toMatch(/missionId="s\d+-m\d+"/);
+      expect(missions()).toEqual(before);
+    });
+
+    // s106-m02: a name made only of a stray tool-call tag is emptied by the content sanitizer.
+    // "Missing" would send the same text back, emptied again; the refusal says what happened.
+    it('says a supplied name was emptied by the sanitizer, and plain text then adds it', async () => {
+      const emptied = await callMissionAdd(testDb.dbPath, {
+        missionId: 's14-m01',
+        name: '<parameter name="objective">',
+        sprintId: 'sprint-14',
+      });
+      expect(emptied.error).toMatchObject({
+        code: RBOOK_ERROR_CODES.INVALID_PARAMETER,
+        field: 'name',
+      });
+      expect(emptied.error?.message).toMatch(/content sanitizer/);
+      expect(emptied.error?.suggestion).toMatch(/plain text/);
+      const added = await callMissionAdd(testDb.dbPath, {
+        missionId: 's14-m01',
+        name: 'Test',
+        sprintId: 'sprint-14',
+      });
+      expect(added.success).toBe(true);
+    });
+
     it('should return error for missing name', async () => {
       const result = await callMissionAdd(testDb.dbPath, {
         missionId: 's14-m01',

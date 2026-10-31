@@ -16,6 +16,11 @@ import { appendWarnings, attachWarnings } from './format-warnings';
 import { ensureSprintSummaryView } from './schema-migrations';
 import { sprintIdOrderSql } from './sprint-ordering';
 import { parkedColumn } from './sprint-summary-read';
+import { callText, nextPageCall, pageFacts, pageRequest, shownLine } from './answer-page';
+import { PREVIEW_MAX_CHARS, previewText } from './text-preview';
+
+/** s106-m03: sprints per page of the list. */
+export const SPRINT_LIST_PAGE_SIZE = 15;
 
 /**
  * Sprint list item with mission statistics.
@@ -27,8 +32,12 @@ export interface SprintListItem {
   /** Sprint title */
   title: string;
 
-  /** Strategic focus of the sprint */
+  /** Strategic focus of the sprint: a preview of at most 300 characters (s106-m03); show has it whole */
   focus: string | null;
+
+  /** Whether the focus preview was cut, and the full focus's length (0 when null) */
+  focusTruncated: boolean;
+  focusFullLength: number;
 
   /** Sprint status (e.g., "Active", "Completed") */
   status: string | null;
@@ -81,6 +90,13 @@ export interface RbookSprintListResult {
     status: string | null;
     limit: number;
   };
+
+  /** s106-m03: this page's number, 1-based; each page holds filters.limit sprints. */
+  page: number;
+  hasMore: boolean;
+  nextPage: number | null;
+  /** The call that reads the next page with the same filters, or null on the last page. */
+  nextPageCall: string | null;
 }
 
 /**
@@ -120,7 +136,10 @@ export const rbookSprintListSchema = z.object({
     .positive()
     .max(100)
     .optional()
-    .describe('Maximum sprints to return (1-100, default: 20)'),
+    .describe('Sprints per page (1-100, default: 15)'),
+
+  /** s106-m03: page of results, 1-based */
+  page: z.number().int().min(1).optional().describe('Page of results, 1-based (default 1)'),
 
   /** Optional: explicit project root to search from */
   projectRoot: z
@@ -151,8 +170,13 @@ export const rbookSprintListToolDefinition = {
         type: 'number',
         minimum: 1,
         maximum: 100,
-        default: 20,
-        description: 'Maximum sprints to return (1-100, default: 20)',
+        default: 15,
+        description: 'Sprints per page (1-100, default: 15)',
+      },
+      page: {
+        type: 'integer',
+        minimum: 1,
+        description: 'Page of results, 1-based (default 1)',
       },
       projectRoot: {
         type: 'string',
@@ -172,7 +196,9 @@ export const rbookSprintListToolDefinition = {
 export async function rbookSprintList(
   params: RbookSprintListParams = {}
 ): Promise<RbookToolResult<RbookSprintListResult>> {
-  const limit = params.limit ?? 20;
+  // s106-m03: 20 previewed rows were 20,513 characters on OODS-Forge; 30,351 before the previews.
+  const request = pageRequest(params.page, params.limit, SPRINT_LIST_PAGE_SIZE);
+  const limit = request.pageSize;
 
   const warnings: string[] = [];
   const result = await withClient(
@@ -187,11 +213,12 @@ export async function rbookSprintList(
       const { sql, countSql, queryParams } = buildQuery(
         params.status,
         limit,
+        request.offset,
         viewMigration.parkedAvailable
       );
 
       // Get total count first
-      const countResult = client.getOne<{ count: number }>(countSql, queryParams.slice(0, -1));
+      const countResult = client.getOne<{ count: number }>(countSql, queryParams.slice(0, -2));
       if (!countResult.success || !countResult.data) {
         return createError<RbookSprintListResult>(
           countResult.error ?? { code: 'DB_QUERY_FAILED', message: 'Failed to get sprint count' }
@@ -222,6 +249,7 @@ export async function rbookSprintList(
         if (missing > 0) omittedPlanned = missing;
       }
 
+      const facts = pageFacts(request, sprints.length, totalCount);
       return createSuccess(
         {
           sprints,
@@ -231,6 +259,15 @@ export async function rbookSprintList(
             status: params.status ?? null,
             limit,
           },
+          page: facts.page,
+          hasMore: facts.hasMore,
+          nextPage: facts.nextPage,
+          nextPageCall: nextPageCall(facts.nextPage, 'rbook_sprint', {
+            action: 'list',
+            status: params.status,
+            limit: params.limit,
+            projectRoot: params.projectRoot,
+          }),
         },
         // s86-m08: a store whose view could not be upgraded still answers — and says that its
         // totals are the OLD rule. Swallowing this would leave the answer reporting parked work
@@ -249,6 +286,7 @@ export async function rbookSprintList(
 function buildQuery(
   status: string | undefined,
   limit: number,
+  offset: number,
   parkedAvailable: boolean
 ): { sql: string; countSql: string; queryParams: unknown[] } {
   const conditions: string[] = [];
@@ -277,10 +315,10 @@ function buildQuery(
       CASE WHEN start_date IS NULL THEN 1 ELSE 0 END,
       julianday(start_date) DESC,
       ${sprintIdOrderSql('sprint_id', 'DESC')}
-    LIMIT ?
+    LIMIT ? OFFSET ?
   `;
 
-  queryParams.push(limit);
+  queryParams.push(limit, offset);
 
   return { sql, countSql, queryParams };
 }
@@ -289,10 +327,13 @@ function buildQuery(
  * Parse a sprint summary row into a SprintListItem.
  */
 function parseSprintRow(row: SprintSummaryRow): SprintListItem {
+  const focus = row.focus === null ? null : previewText(row.focus);
   return {
     id: row.sprint_id,
     title: row.title,
-    focus: row.focus,
+    focus: focus?.preview ?? null,
+    focusTruncated: focus?.truncated ?? false,
+    focusFullLength: focus?.fullLength ?? 0,
     status: row.status,
     startDate: row.start_date,
     endDate: row.end_date,
@@ -333,11 +374,16 @@ export function formatSprintListForLLM(result: RbookToolResult<RbookSprintListRe
   if (data.filters.status) filterParts.push(`status=${data.filters.status}`);
 
   const filterStr = filterParts.length > 0 ? ` (${filterParts.join(', ')})` : '';
-  lines.push(`**Sprints${filterStr}**: ${data.sprints.length} of ${data.totalCount}`);
+  const shown = shownLine(
+    { page: data.page, pageSize: data.filters.limit, totalCount: data.totalCount },
+    data.sprints.length,
+    'sprints'
+  );
+  lines.push(`**Sprints${filterStr}**: ${shown[0].toLowerCase()}${shown.slice(1)}`);
   lines.push('');
 
   if (data.sprints.length === 0) {
-    lines.push('No sprints found matching the filters.');
+    if (data.page === 1) lines.push('No sprints found matching the filters.');
     appendWarnings(lines, result);
     return lines.join('\n');
   }
@@ -375,6 +421,14 @@ export function formatSprintListForLLM(result: RbookToolResult<RbookSprintListRe
 
     lines.push('');
   }
+
+  // s106-m03: a cut focus names the call that reads it whole.
+  const cut = data.sprints.find((s) => s.focusTruncated);
+  if (cut)
+    lines.push(
+      `Focus is a preview of at most ${PREVIEW_MAX_CHARS} characters; read a sprint in full with ${callText('rbook_sprint', { action: 'show', sprintId: cut.id })}.`
+    );
+  if (data.nextPageCall) lines.push(`Next page: ${data.nextPageCall}.`);
 
   appendWarnings(lines, result);
 

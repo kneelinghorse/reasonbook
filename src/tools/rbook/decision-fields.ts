@@ -44,8 +44,10 @@ export function prepareDecisionFields(
       field: supplied[0],
       message:
         'fromDraft cannot be combined with mode or new decision fields that were not in the approved draft.',
+      // s106-m02 (#870): "record the draft alone" sent fromDraft without content, which was refused;
+      // name the resend exactly.
       suggestion:
-        'Record the approved draft alone. Record a separate superseding decision to add new reasoning or effects.',
+        "Resend without context, alternatives, consequences, deciders and mode: fromDraft without content records the draft in its own words. To add reasoning or effects, then record a separate decision with supersedes=[the recorded decision's id].",
     });
   }
   const fields: {

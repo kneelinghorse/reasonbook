@@ -494,6 +494,33 @@ describe('Content sanitizer wiring: rbook_mission_block (Sprint 60 m02)', () => 
     expect(dom.blockers).toEqual(['dashboard m04 deploy', CLEAN]);
     expect(dom.blocker).toBe('Waiting on dashboard endpoint.');
   });
+
+  // s106-m02: a reason made only of a stray tool-call tag was supplied, then emptied; "missing"
+  // would send the same text back. The refusal says what happened, and plain text then blocks.
+  it('says a supplied reason was emptied by the sanitizer, and plain text then blocks', async () => {
+    const refused = await rbookMissionBlock({
+      missionId: 's60-mb01',
+      reason: '<parameter name="blockers">',
+      projectRoot: testDb.tempDir,
+    });
+    expect(refused.error).toMatchObject({ code: 'INVALID_PARAMETER', field: 'reason' });
+    expect(refused.error?.message).toMatch(/content sanitizer/);
+    expect(refused.error?.suggestion).toMatch(/plain text/);
+    const status = () =>
+      (
+        testDb.db.prepare('SELECT status FROM missions WHERE id = ?').get('s60-mb01') as {
+          status: string;
+        }
+      ).status;
+    expect(status()).toBe('In Progress');
+    const blocked = await rbookMissionBlock({
+      missionId: 's60-mb01',
+      reason: 'Waiting on the dashboard endpoint.',
+      projectRoot: testDb.tempDir,
+    });
+    expect(blocked.success).toBe(true);
+    expect(status()).toBe('Blocked');
+  });
 });
 
 describe('Content sanitizer wiring: rbook_mission_defer (Sprint 60 m02)', () => {

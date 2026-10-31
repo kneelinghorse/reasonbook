@@ -21,6 +21,8 @@ import { RBOOK_ERROR_CODES } from '../../../src/tools/rbook/errors';
 import { RbookDetector } from '../../../src/intelligence/rbook-detector';
 import type { RbookToolResult } from '../../../src/tools/rbook/types';
 import { SPRINT_SUMMARY_VIEW_SQL } from '../../../src/tools/rbook/schema';
+import { rbookSprint } from '../../../src/tools/rbook/rbook-sprint';
+import { PREVIEW_MAX_CHARS } from '../../../src/tools/rbook/text-preview';
 
 describe('rbook_sprint_list', () => {
   let tempDir: string;
@@ -164,11 +166,11 @@ describe('rbook_sprint_list', () => {
       expect(result.data?.filters.limit).toBe(2);
     });
 
-    it('should use default limit of 20', async () => {
+    it('should use default limit of 15 (s106-m03: 20 previewed rows were 20,513 characters)', async () => {
       const result = await rbookSprintListWithDb(dbPath, {});
 
       expect(result.success).toBe(true);
-      expect(result.data?.filters.limit).toBe(20);
+      expect(result.data?.filters.limit).toBe(15);
     });
   });
 
@@ -250,6 +252,57 @@ describe('rbook_sprint_list', () => {
       // sprint-14 has most recent start_date, sprint-11 has null
       expect(ids?.[0]).toBe('sprint-14');
       expect(ids?.[ids.length - 1]).toBe('sprint-11'); // null dates last
+    });
+  });
+
+  describe('pages (s106-m03)', () => {
+    const longFocus = 'focus '.repeat(120).trim();
+
+    beforeEach(() => {
+      const db = new Database(dbPath);
+      db.prepare("UPDATE sprints SET focus = ? WHERE id = 'sprint-14'").run(longFocus);
+      db.close();
+    });
+
+    it('previews a long focus, says how to read it whole, and keeps every other field', async () => {
+      // OODS-Forge's sprint focus averages 1.7K characters; 20 of them made 30,351.
+      const result = await rbookSprintListWithDb(dbPath, {});
+      const sprint = result.data!.sprints.find((s) => s.id === 'sprint-14')!;
+      expect(sprint).toMatchObject({
+        focusTruncated: true,
+        focusFullLength: longFocus.length,
+        totalMissions: 2,
+        decisionsCount: 2,
+      });
+      expect(sprint.focus!.length).toBeLessThanOrEqual(PREVIEW_MAX_CHARS);
+      expect(result.data!.sprints.find((s) => s.id === 'sprint-13')).toMatchObject({
+        focus: 'Session Tools',
+        focusTruncated: false,
+      });
+      expect(formatSprintListForLLM(result)).toContain(
+        'rbook_sprint(action="show", sprintId="sprint-14")'
+      );
+    });
+
+    it('reaches every sprint once through the next pages, with the filters repeated', async () => {
+      const seen: string[] = [];
+      let page: number | null = 1;
+      while (page !== null) {
+        const result = (await rbookSprint({
+          action: 'list',
+          limit: 3,
+          page,
+          projectRoot: tempDir,
+        } as never)) as RbookToolResult<RbookSprintListResult>;
+        seen.push(...result.data!.sprints.map((s) => s.id));
+        expect(result.data!.totalCount).toBe(4);
+        page = result.data!.nextPage;
+        if (page !== null)
+          expect(formatSprintListForLLM(result)).toContain(
+            `Next page: rbook_sprint(action="list", limit=3, projectRoot=${JSON.stringify(tempDir)}, page=${page}).`
+          );
+      }
+      expect(seen).toEqual(['sprint-14', 'sprint-13', 'sprint-12', 'sprint-11']);
     });
   });
 

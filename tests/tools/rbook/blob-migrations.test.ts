@@ -371,7 +371,7 @@ describe('rbook_context_view — auto-migration integration', () => {
       context_health: { size_limit_kb: 100 },
     });
 
-    const result = await rbookContextView({ projectRoot: tempDir });
+    const result = await rbookContextView({ compact: false, projectRoot: tempDir });
 
     expect(result.success).toBe(true);
     const content = result.data?.masterContext?.content ?? {};
@@ -391,7 +391,7 @@ describe('rbook_context_view — auto-migration integration', () => {
       technical_context: { stack: 'Node.js' },
     });
     const dbPath = path.join(tempDir, 'rbook', 'db', 'rbook.sqlite');
-    const result = await rbookContextView({ projectRoot: tempDir });
+    const result = await rbookContextView({ compact: false, projectRoot: tempDir });
 
     expect(result.data?.masterContext?.content).not.toHaveProperty('completed_missions');
     const db = new Database(dbPath);
@@ -507,7 +507,7 @@ describe('rbook_context_view — auto-migration integration', () => {
     const minimal = { technical_context: { stack: 'Node.js' }, context_health: {} };
     tempDir = makeTempDb(minimal, BLOB_SCHEMA_VERSION);
 
-    const result = await rbookContextView({ projectRoot: tempDir });
+    const result = await rbookContextView({ compact: false, projectRoot: tempDir });
 
     expect(result.success).toBe(true);
     // Content unchanged

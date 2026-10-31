@@ -187,14 +187,28 @@ PRIVATE.describe('analytics window over stdio against the built dist (s86-m05)',
   }, 60000);
 
   it('leaves the unlimited call unbounded', async () => {
-    const res = await harness.callOk('rbook_sprint', { action: 'analytics', projectRoot });
-    const data = harness.dataOf(res) as {
+    type Analytics = {
       sprints: Array<{ sprintId: string }>;
-      window: { requestedLimit: number | null };
+      window: { requestedLimit: number | null; sprintCount: number; oldestSprintId: string | null };
+      nextPage: number | null;
     };
+    const res = await harness.callOk('rbook_sprint', { action: 'analytics', projectRoot });
+    const data = harness.dataOf(res) as Analytics;
     expect(data.window.requestedLimit).toBeNull();
-    expect(data.sprints.length).toBeGreaterThan(5);
+    expect(data.window.sprintCount).toBeGreaterThan(5);
     // Unbounded is still oldest-first, so the trend semantics are the same in both modes.
-    expect(data.sprints[0].sprintId).toBe(oldestFive[0]);
+    expect(data.window.oldestSprintId).toBe(oldestFive[0]);
+    // s106-m03: the rows come a page at a time counted from the newest, oldest-first within a
+    // page, so the last page begins with the oldest sprint.
+    let last = data;
+    while (last.nextPage !== null)
+      last = harness.dataOf(
+        await harness.callOk('rbook_sprint', {
+          action: 'analytics',
+          page: last.nextPage,
+          projectRoot,
+        })
+      ) as Analytics;
+    expect(last.sprints[0].sprintId).toBe(oldestFive[0]);
   }, 60000);
 });

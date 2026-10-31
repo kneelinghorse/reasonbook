@@ -14,7 +14,8 @@ https://github.com/kneelinghorse/reasonbook#readme.
 
 Read `rbook_review()`, the project's agent rules and its authoritative roadmap or foundational
 documents. Start with open carry-forwards from
-`rbook_context(action="next_steps", nextStepAction="list")`, then consider the roadmap's next arc.
+`rbook_context(action="next_steps", nextStepAction="list")`, following each answer's `Next page`
+call until an answer names none, then consider the roadmap's next arc.
 Explain which work is still needed, already done or obsolete; a surviving row is evidence to
 review, not a command to execute. Preserve the user's priorities and previously settled choices.
 

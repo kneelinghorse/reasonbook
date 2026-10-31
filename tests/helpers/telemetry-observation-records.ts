@@ -97,6 +97,7 @@ function s105Open(client: string | null, callStartedAt: string): Record<string, 
 function s105Pause(record: Record<string, any>): void {
   if (!S105_PAUSE || typeof record.client !== 'string') return;
   const fs = require('fs');
+  const path = require('path');
   const base = path.join(record.config, 's105-pause', encodeURIComponent(record.client));
   try {
     fs.renameSync(base + '.arm', base + '.paused');
@@ -114,7 +115,6 @@ function s105Pause(record: Record<string, any>): void {
   fs.writeFileSync(base + '.marker', String(process.pid));
 }
 function s105Lookup(record: Record<string, any>, dbPath: string, budgetMs: number): TelemetryTarget | null {
-  s105Pause(record);
   const found = s105Telemetry().s105IdentityLookup(dbPath, budgetMs);
   record.lookup = found.lookup;
   return found.target;
@@ -122,6 +122,7 @@ function s105Lookup(record: Record<string, any>, dbPath: string, budgetMs: numbe
 function s105Write(record: Record<string, any>): void {
   try {
     const fs = require('fs');
+    const path = require('path');
     record.observationEndedAt = new Date().toISOString();
     fs.mkdirSync(S105_RECORDS, { recursive: true });
     fs.appendFileSync(path.join(S105_RECORDS, process.pid + '.jsonl'), JSON.stringify(record) + '\\n');
@@ -177,9 +178,15 @@ export function instrumentObservation(
     '    } finally {\n      try {\n        const params =',
     '    } finally {\n      const s105Record = s105Open(observation.client, ts);\n      try {\n        const params ='
   );
+  // s106-m01: the pause runs before the lookup's timer starts, so lookupMs times the lookup alone,
+  // as it does in shipped code.
   replace(
-    '        const target: TelemetryTarget = (root\n          ? targetForStore(resolveRecordPaths(root).dbPath, processBusyTimeout() ?? 5000)\n',
-    '        s105Record.root = root ?? null;\n        s105Record.config = rbookConfigDir(env);\n        const target: TelemetryTarget = (root\n          ? s105Lookup(s105Record, resolveRecordPaths(root).dbPath, processBusyTimeout() ?? 5000)\n'
+    '        const started = performance.now();\n',
+    "        s105Record.root = root ?? null;\n        s105Record.config = require('./harness-session').rbookConfigDir(env);\n        if (dbPath) s105Pause(s105Record);\n        const started = performance.now();\n"
+  );
+  replace(
+    '        const found = dbPath ? targetForStore(dbPath, processBusyTimeout() ?? 5000) : null;\n',
+    '        const found = dbPath ? s105Lookup(s105Record, dbPath, processBusyTimeout() ?? 5000) : null;\n'
   );
   replace(
     '        } catch {\n          // The row is still recorded; only who made the call is unknown.\n',

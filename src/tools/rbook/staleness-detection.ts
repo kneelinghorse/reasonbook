@@ -240,8 +240,11 @@ function dueForReviewPredicates(
 export interface StaleDecisionDetail {
   /** Decision ID */
   id: number;
-  /** Decision text (truncated to 200 chars) */
+  /** s106-m03: a preview of at most 300 characters; rbook_decisions show reads it in full */
   text: string;
+  /** Whether the preview was cut, and the full text's length */
+  truncated: boolean;
+  fullLength: number;
   /** Current status */
   status: string;
   /** Sprint ID the decision belongs to */
@@ -377,12 +380,12 @@ export function reviewDecisionStaleness(
       suggestedReason = `${sprintAge} sprints old — approaching staleness threshold (${threshold})`;
     }
 
+    const { preview, truncated, fullLength } = previewText(row.decision_text);
     decisions.push({
       id: row.id,
-      text:
-        row.decision_text.length > 200
-          ? row.decision_text.slice(0, 197) + '...'
-          : row.decision_text,
+      text: preview,
+      truncated,
+      fullLength,
       status: row.status,
       sprintId: row.sprint_id,
       sprintAge,

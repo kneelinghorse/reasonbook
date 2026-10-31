@@ -23,6 +23,16 @@ import { frameInlineIfForeign } from '../../intelligence/provenance-frame';
 import { appendWarnings } from './format-warnings';
 import { PREVIEW_MAX_CHARS, previewText } from './text-preview';
 import { readTimeBounds } from './stored-time';
+import { callText, nextPageCall, pageFacts, pageRequest, shownLine } from './answer-page';
+
+/**
+ * s106-m03: sessions per page. 20 were 34,496 characters on this repo's store and 10 still 29,581:
+ * a result with three matched captures, each a preview and a snippet, is about 2,900 characters.
+ */
+export const SESSION_SEARCH_PAGE_SIZE = 5;
+
+/** s106-m03: matched captures shown per session; matchedCaptureCount counts them all. */
+export const MATCHED_CAPTURES_SHOWN = 3;
 
 // Re-export for convenience
 export { VALID_SESSION_TYPES };
@@ -91,8 +101,11 @@ export interface SessionSearchResult {
   /** Total captures in session */
   captureCount: number;
 
-  /** Matched captures (only those matching the query) */
+  /** Matched captures (only those matching the query): s106-m03, the first MATCHED_CAPTURES_SHOWN */
   matchedCaptures: MatchedCapture[];
+
+  /** Every capture that matched; rbook_session(action="list", sessionId) reads them all. */
+  matchedCaptureCount: number;
 
   /** Match location: where the query was found */
   matchedIn: ('title' | 'summary' | 'captures')[];
@@ -119,6 +132,14 @@ export interface RbookSessionSearchResult {
 
   /** Whether results were limited */
   limited: boolean;
+
+  /** s106-m03: this page's number, 1-based; each page holds pageSize sessions (the limit). */
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
+  nextPage: number | null;
+  /** The call that reads the next page with the same query and filters, or null on the last page. */
+  nextPageCall: string | null;
 
   /** Filters applied */
   filters: {
@@ -169,9 +190,12 @@ export const rbookSessionSearchSchema = z.object({
     .number()
     .min(1)
     .max(100)
-    .default(20)
+    .default(SESSION_SEARCH_PAGE_SIZE)
     .optional()
-    .describe('Maximum sessions to return (1-100, default: 20)'),
+    .describe('Sessions per page (1-100, default: 5)'),
+
+  /** s106-m03: page of results, 1-based */
+  page: z.number().int().min(1).optional().describe('Page of results, 1-based (default 1)'),
 
   /** Optional project root */
   projectRoot: z
@@ -233,7 +257,8 @@ export async function rbookSessionSearch(
     return createError(RbookErrors.missingParameter('query'));
   }
 
-  const limit = params.limit ?? 20;
+  const request = pageRequest(params.page, params.limit, SESSION_SEARCH_PAGE_SIZE);
+  const limit = request.pageSize;
   const query = params.query.trim().toLowerCase();
 
   // Split query into keywords for better matching
@@ -288,14 +313,14 @@ export async function rbookSessionSearch(
         ? 'project_id'
         : 'NULL AS project_id';
 
-      // Get matching sessions
+      // s106-m03: every matching session is ranked. This read used to stop at the newest
+      // limit + 10, so an older, stronger match never reached the ranking, nor the total.
       const result = client.getMany<SessionRow>(
         `SELECT id, type, title, status, sprint_id, started_at, completed_at, summary, captures, ${projectIdExpr}
            FROM sessions
            ${whereClause}
-          ORDER BY julianday(started_at) DESC
-          LIMIT ?`,
-        [...queryParams, limit + 10] // Fetch extra for filtering
+          ORDER BY julianday(started_at) DESC, id DESC`,
+        queryParams
       );
 
       const localProjectId = getProjectId(client);
@@ -306,6 +331,11 @@ export async function rbookSessionSearch(
           results: [],
           totalMatches: 0,
           limited: false,
+          page: request.page,
+          pageSize: limit,
+          hasMore: false,
+          nextPage: null,
+          nextPageCall: null,
           filters: {
             category: params.category,
             type: params.type,
@@ -415,25 +445,40 @@ export async function rbookSessionSearch(
               }))(previewText(row.summary))
             : { summary: null, summaryTruncated: false, summaryFullLength: 0 }),
           captureCount: captures.length,
-          matchedCaptures,
+          matchedCaptures: matchedCaptures.slice(0, MATCHED_CAPTURES_SHOWN),
+          matchedCaptureCount: matchedCaptures.length,
           matchedIn,
           relevance,
           projectId: row.project_id ?? null,
         });
       }
 
-      // Sort by relevance
+      // Sort by relevance; the sort is stable, so equal relevance keeps the newest first.
       processedResults.sort((a, b) => b.relevance - a.relevance);
 
-      // Apply limit
-      const limitedResults = processedResults.slice(0, limit);
+      const limitedResults = processedResults.slice(request.offset, request.offset + limit);
       const totalMatches = processedResults.length;
+      const facts = pageFacts(request, limitedResults.length, totalMatches);
 
       return createSuccess<RbookSessionSearchResult>({
         query: params.query,
         results: limitedResults,
         totalMatches,
-        limited: totalMatches > limit,
+        limited: facts.hasMore,
+        page: facts.page,
+        pageSize: limit,
+        hasMore: facts.hasMore,
+        nextPage: facts.nextPage,
+        nextPageCall: nextPageCall(facts.nextPage, 'rbook_session', {
+          action: 'search',
+          query: requested.query,
+          category: requested.category,
+          type: requested.type,
+          since: requested.since,
+          until: requested.until,
+          limit: requested.limit,
+          projectRoot: requested.projectRoot,
+        }),
         filters: {
           category: params.category,
           type: params.type,
@@ -516,8 +561,10 @@ export function formatSessionSearchForLLM(
     lines.push(`Filters: ${activeFilters.join(', ')}`);
   }
 
-  if (data.limited) {
-    lines.push(`(Showing top ${data.results.length} results)`);
+  if (data.page > 1 || data.hasMore) {
+    lines.push(
+      `(${shownLine({ page: data.page, pageSize: data.pageSize, totalCount: data.totalMatches }, data.results.length, 'sessions')}, by relevance)`
+    );
   }
   lines.push('');
 
@@ -546,13 +593,15 @@ export function formatSessionSearchForLLM(
     lines.push(`   Matched in: ${r.matchedIn.join(', ')} | Relevance: ${r.relevance}`);
 
     if (r.matchedCaptures.length > 0) {
-      lines.push(`   Matching captures (${r.matchedCaptures.length}):`);
-      for (const mc of r.matchedCaptures.slice(0, 3)) {
+      lines.push(`   Matching captures (${r.matchedCaptureCount}):`);
+      for (const mc of r.matchedCaptures) {
         const highlight = frameInlineIfForeign(mc.highlight, r.projectId, data.localProjectId);
         lines.push(`     - [${mc.category}] ${highlight}`);
       }
-      if (r.matchedCaptures.length > 3) {
-        lines.push(`     ... and ${r.matchedCaptures.length - 3} more`);
+      if (r.matchedCaptureCount > r.matchedCaptures.length) {
+        lines.push(
+          `     ... and ${r.matchedCaptureCount - r.matchedCaptures.length} more: ${callText('rbook_session', { action: 'list', sessionId: r.id })} reads the session whole`
+        );
       }
     }
     lines.push('');
@@ -568,6 +617,8 @@ export function formatSessionSearchForLLM(
         `with rbook_session(action="list", sessionId="${cut.id}").`
     );
   }
+
+  if (data.nextPageCall) lines.push(`Next page: ${data.nextPageCall}.`);
 
   appendWarnings(lines, result);
 

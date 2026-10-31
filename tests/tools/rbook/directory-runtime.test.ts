@@ -147,9 +147,14 @@ it('keeps successful and refused Codex MCP telemetry to permitted fields, never 
       'ambient',
       'idsReturned',
       'idsCited',
+      // s106-m01: the lookup's time, and on a refusal a published name or a marker, never text.
+      'lookupMs',
+      'refusedField',
     ];
     for (const record of records)
       expect(Object.keys(record).filter((key) => !allowed.includes(key))).toEqual([]);
+    // The directory edition's refusal of fromDraft names no field.
+    expect(records.map((row) => row.refusedField)).toEqual([null, 'unspecified']);
     expect(JSON.stringify(records)).not.toContain(canary);
     expect(JSON.stringify(records)).not.toContain('Synthetic conversation');
     expect(count()).toBe(before);

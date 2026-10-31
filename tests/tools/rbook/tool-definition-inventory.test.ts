@@ -90,7 +90,11 @@ interface DefinitionDeclaration {
 
 let trackedFilesCache: string[] | undefined;
 function trackedFiles(): string[] {
-  trackedFilesCache ??= execFileSync('git', ['ls-files', '-z'], { cwd: REPO_ROOT })
+  // s106-m05 (#1738): the whole tree's listing passed execFileSync's 1 MiB default.
+  trackedFilesCache ??= execFileSync('git', ['ls-files', '-z'], {
+    cwd: REPO_ROOT,
+    maxBuffer: 64 * 1024 * 1024,
+  })
     .toString('utf8')
     .split('\0')
     .filter(Boolean)

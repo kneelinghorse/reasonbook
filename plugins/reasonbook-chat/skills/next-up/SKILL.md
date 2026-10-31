@@ -6,8 +6,8 @@ description: Discuss the next useful actions from a project's Reasonbook record.
 Read `rbook_review()` in the chosen project, using its exact address as `projectRoot` when needed.
 Name the project from the receipt. If selection is unclear, call `rbook_project(action="list")`
 and let the user choose. Read open next steps with
-`rbook_context(action="next_steps", nextStepAction="list")`. Use mission status only when the
-project already uses missions.
+`rbook_context(action="next_steps", nextStepAction="list")`, following each answer's Next page
+call until an answer names none. Use mission status only when the project already uses missions.
 
 Talk through the most useful next actions, their dependencies and any recorded constraints.
 Distinguish a suggestion from an existing commitment. Do not create a sprint or mission simply

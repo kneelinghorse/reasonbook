@@ -188,6 +188,21 @@ test.each(['', '   ', '<parameter name="other">damaged'])(
   }
 );
 
+// s106-m02: a blank reason is missing, but one the sanitizer emptied was supplied; saying "missing"
+// would send the same text back. The refusal says what happened, and plain text then reopens.
+test.each([
+  ['a blank reason', '   ', 'MISSING_PARAMETER'],
+  ['a reason the sanitizer emptied', '<parameter name="other">damaged', 'INVALID_PARAMETER'],
+])('refuses %s with its own code and remedy', async (_case, reason, code) => {
+  const refused = await reopen(reason);
+  expect(refused.error).toMatchObject({ code, field: 'reason' });
+  if (code === 'INVALID_PARAMETER') {
+    expect(refused.error?.message).toMatch(/content sanitizer/);
+    expect(refused.error?.suggestion).toMatch(/plain text/);
+  }
+  expect((await reopen('The verification exposed another case')).success).toBe(true);
+});
+
 test('sanitizes a reason and reports the stripped input', async () => {
   const result = await reopen('Observed regression <parameter name="other">damaged');
   expect(result.success).toBe(true);

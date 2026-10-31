@@ -21,6 +21,7 @@ import { RBOOK_ERROR_CODES } from '../../../src/tools/rbook/errors';
 import { RbookDetector } from '../../../src/intelligence/rbook-detector';
 import type { RbookToolResult } from '../../../src/tools/rbook/types';
 import { SPRINT_SUMMARY_VIEW_SQL } from '../../../src/tools/rbook/schema';
+import { PREVIEW_MAX_CHARS } from '../../../src/tools/rbook/text-preview';
 
 describe('rbook_sprint_show', () => {
   let tempDir: string;
@@ -308,6 +309,30 @@ describe('rbook_sprint_show', () => {
       const formatted = formatSprintShowForLLM(result);
 
       expect(formatted).toMatch(/[○◉◐✓⊘]/);
+    });
+  });
+
+  describe('mission objectives are previews (s106-m03)', () => {
+    it('cuts a long objective with its full length and names mission show, keeping the focus whole', async () => {
+      // A registered store's 12-mission sprint showed 41,257 characters of objectives in full.
+      const long = 'objective '.repeat(80).trim();
+      const db = new Database(dbPath);
+      db.prepare("UPDATE missions SET objective = ? WHERE id = 's14-m02'").run(long);
+      db.prepare("UPDATE sprints SET focus = ? WHERE id = 'sprint-14'").run(long);
+      db.close();
+      const result = await rbookSprintShowWithDb(dbPath, { sprintId: 'sprint-14' });
+      const mission = result.data!.missions.find((m) => m.id === 's14-m02')!;
+      expect(mission).toMatchObject({ objectiveTruncated: true, objectiveFullLength: long.length });
+      expect(mission.objective!.length).toBeLessThanOrEqual(PREVIEW_MAX_CHARS);
+      expect(result.data!.missions.find((m) => m.id === 's14-m01')).toMatchObject({
+        objective: 'Remove deprecated tools',
+        objectiveTruncated: false,
+      });
+      // Show is where a sprint is read whole: its own focus is not cut.
+      expect(result.data!.focus).toBe(long);
+      expect(formatSprintShowForLLM(result)).toContain(
+        'rbook_mission(action="show", missionId="s14-m02")'
+      );
     });
   });
 });

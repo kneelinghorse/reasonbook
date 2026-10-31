@@ -96,7 +96,7 @@ export type RbookContextAction = (typeof RBOOK_CONTEXT_ACTIONS)[number];
  * that `rbook_context(action="view", evergreen=true)` does nothing at all.
  */
 export const RBOOK_CONTEXT_ACTION_PARAMS: ActionParamMap<RbookContextAction, RbookContextParams> = {
-  view: ['action', 'contextType', 'sizeOnly', 'compact', 'projectRoot'],
+  view: ['action', 'contextType', 'sizeOnly', 'compact', 'page', 'pageSize', 'projectRoot'],
   update: ['action', 'contextType', 'mode', 'arrayUpdates', 'fieldUpdates', 'since', 'projectRoot'],
   condense: ['action', 'contextType', 'strategy', 'targetSizePercent', 'dryRun', 'projectRoot'],
   snapshot: ['action', 'contextType', 'source', 'sessionId', 'projectRoot'],
@@ -117,6 +117,8 @@ export const RBOOK_CONTEXT_ACTION_PARAMS: ActionParamMap<RbookContextAction, Rbo
     'nextStepIds',
     'carryToSprint',
     'missionId',
+    'page',
+    'pageSize',
     'projectRoot',
   ],
   constraints: [
@@ -127,6 +129,8 @@ export const RBOOK_CONTEXT_ACTION_PARAMS: ActionParamMap<RbookContextAction, Rbo
     'constraintId',
     'evergreen',
     'stalenessThresholdDays',
+    'page',
+    'pageSize',
     'projectRoot',
   ],
   search: [
@@ -164,7 +168,10 @@ export const rbookContextSchema = z
       .describe('Context type (defaults to master_context)'),
     // view params
     sizeOnly: z.boolean().optional().describe('Return only size info for view action'),
-    compact: z.boolean().optional().describe('Return compact view for view action'),
+    compact: z
+      .boolean()
+      .optional()
+      .describe("view: a digest by default, its documents' lists paged; false returns everything"),
     // update params
     mode: z.enum(['aggregate', 'manual']).optional().describe('Update mode for update action'),
     // s86-m04: `decisions_made` and `learnings` DELETED. Dead since Sprint 51's blob reduction —
@@ -214,14 +221,23 @@ export const rbookContextSchema = z
     sessionId: z.string().optional().describe('Session ID for snapshot/history actions'),
     // history params
     until: z.string().optional().describe('ISO date upper bound for history action'),
-    page: z.number().int().positive().optional().describe('Page number for history action'),
+    page: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe(
+        'Page number for history, the view digest, the next_steps list and constraints list/review'
+      ),
     pageSize: z
       .number()
       .int()
       .positive()
       .max(100)
       .optional()
-      .describe('Page size for history action'),
+      .describe(
+        'Page size for history, the view digest (1), the next_steps list (15) and constraints (list 4, review 6)'
+      ),
     // next_steps params
     nextStepAction: z
       .enum(NEXT_STEP_ACTIONS)
@@ -303,7 +319,7 @@ export const rbookContextSchema = z
       .min(0)
       .max(1)
       .optional()
-      .describe('Recency boost weight 0–1 for search action (default: 0.2)'),
+      .describe('Recency boost weight 0–1 for search action (default: 0.5)'),
     // s86-m03: DELIBERATELY NOT AN ENUM, and m04's enum-tightening pass must not tighten it.
     // The filter spans two tables whose live status vocabularies differ (this store: decisions
     // active/archived/stale/superseded, learnings active/archived/superseded) and Reasonbook ITSELF
@@ -346,7 +362,11 @@ export const rbookContextToolDefinition = {
         description: 'Context type (defaults to master_context)',
       },
       sizeOnly: { type: 'boolean', description: 'Return only size info for view action' },
-      compact: { type: 'boolean', description: 'Return compact view for view action' },
+      compact: {
+        type: 'boolean',
+        description:
+          "view: a digest by default, its documents' lists paged; false returns everything",
+      },
       mode: {
         type: 'string',
         enum: ['aggregate', 'manual'],
@@ -411,12 +431,18 @@ export const rbookContextToolDefinition = {
       source: { type: 'string', description: 'Snapshot source label for snapshot action' },
       sessionId: { type: 'string', description: 'Session ID for snapshot/history actions' },
       until: { type: 'string', description: 'ISO date upper bound for history action' },
-      page: { type: 'integer', minimum: 1, description: 'Page number for history action' },
+      page: {
+        type: 'integer',
+        minimum: 1,
+        description:
+          'Page number for history, the view digest, the next_steps list and constraints list/review',
+      },
       pageSize: {
         type: 'integer',
         minimum: 1,
         maximum: 100,
-        description: 'Page size for history action',
+        description:
+          'Page size for history, the view digest (1), the next_steps list (15) and constraints (list 4, review 6)',
       },
       nextStepAction: {
         type: 'string',
@@ -494,7 +520,7 @@ export const rbookContextToolDefinition = {
         type: 'number',
         minimum: 0,
         maximum: 1,
-        description: 'Recency boost weight 0–1 for search action (default: 0.2)',
+        description: 'Recency boost weight 0–1 for search action (default: 0.5)',
       },
       statusFilter: {
         type: 'array',
@@ -550,6 +576,8 @@ export async function rbookContext(
         contextType: params.contextType as 'master_context' | 'project_context' | undefined,
         sizeOnly: params.sizeOnly,
         compact: params.compact,
+        page: params.page,
+        pageSize: params.pageSize,
         projectRoot: params.projectRoot,
       } as RbookContextViewParams);
     case 'update':
@@ -623,6 +651,8 @@ export async function rbookContext(
         missionId: params.missionId,
         nextStepIds: params.nextStepIds,
         carryToSprint: params.carryToSprint,
+        page: params.page,
+        pageSize: params.pageSize,
         projectRoot: params.projectRoot,
       } as RbookNextStepsParams);
     case 'constraints':
@@ -633,6 +663,8 @@ export async function rbookContext(
         constraintIds: params.constraintIds,
         constraintId: params.constraintId,
         stalenessThresholdDays: params.stalenessThresholdDays,
+        page: params.page,
+        pageSize: params.pageSize,
         projectRoot: params.projectRoot,
       } as RbookConstraintsParams);
   }

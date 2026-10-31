@@ -85,6 +85,8 @@ function humanReport(report: TelemetryStatistics): string {
         injection: counts.injection,
         digestOff: counts.digestOff,
         safety: counts.safety,
+        misuse: counts.misuse,
+        lookups: counts.lookups,
       },
       null,
       2
@@ -117,6 +119,13 @@ function humanReport(report: TelemetryStatistics): string {
     ])
       lines.push(`Unavailable/diagnostic: ${oneLine(warning)}`);
   }
+  // s106-m01: the bucket measures 11 and 12 report beside each count as a bound.
+  lines.push(
+    `Anonymous bucket: ${report.anonymous.records} window records in ${report.anonymous.files} retained monthly files; ${report.anonymous.available ? 'available' : 'unavailable'}.`,
+    ...report.anonymous.warnings.map(
+      (warning) => `Anonymous bucket diagnostic: ${oneLine(warning)}`
+    )
+  );
   for (const item of report.events.repeatedNeverCited.items)
     lines.push(
       `Repeated without observed use: store ${oneLine(item.target)}, ${oneLine(item.id)}, ${item.sessions} sessions.`

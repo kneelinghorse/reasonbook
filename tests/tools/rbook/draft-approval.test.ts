@@ -1020,7 +1020,9 @@ describe('the approval chain settles through declined, answered and recorded dra
     await say('s-one', 'no');
     const refused = await record({ content: REVISED, fromDraft: 'P1' });
     expect(refused.error?.message).toMatch(/revised by P2 after the operator approved it/);
-    expect(refused.error?.suggestion).toBe('Record P1 exactly as the operator approved it.');
+    expect(refused.error?.suggestion).toBe(
+      'Send fromDraft without content to record P1 exactly as the operator approved it.'
+    );
   });
 
   // Verification round 2: the walk to the chain's newest pending draft passed a follow-on line, a
@@ -1139,5 +1141,242 @@ describe('stores from before this mission', () => {
     await proposeAndAnswer('approved');
     const result = await record({ content: DRAFT, fromDraft: 'P1' });
     expect(decision(idOf(result)).approval_mode).toBe('approved');
+  });
+});
+
+// s106-m02 (#870, design settled item 1). Agents told "Record the approved draft alone" sent
+// fromDraft without content and were refused for missing content (learning #598). The handler now
+// takes the draft's own text before sanitizing it, so every later check sees what a verbatim
+// restatement gives, and each refusal on this path names a resend that succeeds when followed.
+describe('fromDraft alone records the draft in its own words (s106-m02)', () => {
+  const OTHER = 'Keep the decision folder under rbook/decisions, never at the repository root.';
+  const REVISED =
+    'Store project decisions as one JSON file per decision, because diffs stay readable and merge cleanly.';
+
+  /** What a record leaves behind, so the two ways of recording can be compared whole. */
+  function outcome(result: Awaited<ReturnType<typeof record>>): unknown {
+    if (!result.success) return { refused: result.error?.code, proposal: proposal() };
+    const id = idOf(result);
+    return {
+      decision: decision(id),
+      text: row<{ decision_text: string }>(
+        'SELECT decision_text FROM strategic_decisions WHERE id = ?',
+        id
+      ).decision_text,
+      proposal: proposal(),
+    };
+  }
+
+  const cases: Array<[string, () => Promise<void>, string | null, unknown]> = [
+    [
+      'a plain approval of this draft alone',
+      () => proposeAndAnswer('approved'),
+      's-one',
+      { mode: 'approved', words: 'approved' },
+    ],
+    [
+      'one plain approval over several drafts',
+      () => proposeAndAnswer('approved', reply(DRAFT, OTHER)),
+      's-one',
+      { mode: 'agent-judged', words: 'approved' },
+    ],
+    [
+      'a reply that does not approve',
+      () => proposeAndAnswer('let us look at the export command first'),
+      's-one',
+      { mode: 'agent-judged', words: 'let us look at the export command first' },
+    ],
+    [
+      'no harness session',
+      async () => {
+        await start('s-one');
+        await stop('s-one', reply(DRAFT));
+      },
+      null,
+      { mode: 'agent-attested', words: null },
+    ],
+    [
+      'a harness session with no answer',
+      async () => {
+        await start('s-one');
+        await stop('s-one', reply(DRAFT));
+      },
+      's-one',
+      { refused: 'APPROVAL_REQUIRED' },
+    ],
+    [
+      "another conversation's answer",
+      () => proposeAndAnswer('approved'),
+      's-other',
+      { refused: 'APPROVAL_REQUIRED' },
+    ],
+  ];
+
+  it.each(
+    cases.flatMap(([name, setup, session, expected]) =>
+      (['with the draft restated', 'with fromDraft alone'] as const).map(
+        (form) => [name, form, setup, session, expected] as const
+      )
+    )
+  )('%s, recorded %s, gives the same record', async (_name, form, setup, session, expected) => {
+    await setup();
+    const before = recordState();
+    const result = await record(
+      form === 'with fromDraft alone' ? { fromDraft: 'P1' } : { content: DRAFT, fromDraft: 'P1' },
+      session
+    );
+    const want = expected as { refused?: string; mode?: string; words?: string | null };
+    if (want.refused) {
+      expect(outcome(result)).toEqual({
+        refused: want.refused,
+        proposal: { outcome: 'pending', approval_mode: null, record_id: null },
+      });
+      expect(recordState()).toEqual(before);
+      return;
+    }
+    expect(outcome(result)).toEqual({
+      decision: { approval_mode: want.mode, approval_draft: 'P1', approval_words: want.words },
+      text: DRAFT,
+      proposal: {
+        outcome: 'approved',
+        record_id: `d:${idOf(result)}`,
+        approval_mode: want.mode,
+      },
+    });
+  });
+
+  it('treats blank content as omitted', async () => {
+    await proposeAndAnswer('approved');
+    const result = await record({ fromDraft: 'P1', content: '   ' });
+    expect(result.success).toBe(true);
+    expect(decision(idOf(result)).approval_mode).toBe('approved');
+  });
+
+  it('the added-fields refusal names a resend that records when followed literally', async () => {
+    await proposeAndAnswer('approved');
+    const refused = await record({ fromDraft: 'P1', context: 'Because diffs stay readable.' });
+    expect(refused.error).toMatchObject({ code: 'INVALID_PARAMETER', field: 'context' });
+    expect(refused.error?.suggestion).toMatch(
+      /without context, alternatives, consequences, deciders and mode: fromDraft without content/
+    );
+    expect(refused.error?.suggestion).toMatch(/supersedes/);
+    // Exactly the resend it names: the added field dropped, fromDraft without content.
+    const result = await record({ fromDraft: 'P1' });
+    expect(result.success).toBe(true);
+    expect(decision(idOf(result)).approval_mode).toBe('approved');
+  });
+
+  it('a draft revised after a plain approval records in its own words, without a refusal', async () => {
+    await proposeAndAnswer('approved');
+    await stop('s-one', reply(REVISED));
+    const result = await record({ fromDraft: 'P1' });
+    expect(result.success).toBe(true);
+    expect(outcome(result)).toMatchObject({ decision: { approval_mode: 'approved' }, text: DRAFT });
+  });
+
+  it("the revised draft's refusal names fromDraft without content, and that resend records", async () => {
+    await proposeAndAnswer('approved');
+    await stop('s-one', reply(REVISED));
+    await say('s-one', 'no');
+    const refused = await record({ content: REVISED, fromDraft: 'P1' });
+    expect(refused.error?.message).toMatch(/revised by P2 after the operator approved it/);
+    expect(refused.error?.suggestion).toMatch(/fromDraft without content/);
+    const result = await record({ fromDraft: 'P1' });
+    expect(outcome(result)).toMatchObject({ decision: { approval_mode: 'approved' }, text: DRAFT });
+  });
+
+  it('the coverage refusal names fromDraft without content, and that resend records', async () => {
+    await proposeAndAnswer('approved');
+    const refused = await record({
+      content: 'Adopt Postgres for the analytics store, because the team already runs it.',
+      fromDraft: 'P1',
+    });
+    expect(refused.error?.code).toBe('INVALID_PARAMETER');
+    expect(refused.error?.suggestion).toMatch(/fromDraft without content/);
+    const result = await record({ fromDraft: 'P1' });
+    expect(outcome(result)).toMatchObject({ decision: { approval_mode: 'approved' }, text: DRAFT });
+  });
+
+  it.each([
+    ['an id that is not a draft id', 'D1', 'INVALID_PARAMETER'],
+    ['an id with no draft', 'P99', 'DRAFT_NOT_FOUND'],
+  ])(
+    'fromDraft alone with %s is refused for the id, and its "without fromDraft" names the content',
+    async (_case, fromDraft, code) => {
+      await proposeAndAnswer('approved');
+      const refused = await record({ fromDraft });
+      expect(refused.error?.code).toBe(code);
+      expect(refused.error?.suggestion).toMatch(
+        /without fromDraft, with the decision's text as content/
+      );
+      // Followed as written: no fromDraft, the decision's text as content.
+      expect((await record({ content: DRAFT })).success).toBe(true);
+    }
+  );
+
+  // A draft whose own text holds a tool-call tag outside backticks is cut by the content sanitizer
+  // however it is sent, so no resend in its own words can pass. Whatever content the caller sent,
+  // its refusal must say why rather than name a resend that is refused again (round-2 critic).
+  const TAGGED = 'Strip stray <parameter> tags from imported notes before recording them.';
+  it.each([
+    ['restated', { content: TAGGED }],
+    ['fromDraft alone', {}],
+    [
+      'other content',
+      { content: 'Adopt Postgres for the analytics store, because the team runs it.' },
+    ],
+  ])(
+    'a draft whose own text the sanitizer cuts is refused with the reason, %s',
+    async (_form, extra) => {
+      await proposeAndAnswer('approved', reply(TAGGED));
+      const refused = await record({ fromDraft: 'P1', ...extra });
+      expect(refused.error?.code).toBe('INVALID_PARAMETER');
+      expect(refused.error?.suggestion).toMatch(/quotes the tag in backticks/);
+      expect(refused.error?.suggestion).not.toMatch(/fromDraft without content/);
+      expect(proposal().outcome).toBe('pending');
+    }
+  );
+
+  it('a revised draft whose own text the sanitizer cuts is refused with the reason', async () => {
+    await proposeAndAnswer('approved', reply(TAGGED));
+    const revision = `${TAGGED.slice(0, -1)}, and log each one.`;
+    await stop('s-one', reply(revision));
+    await say('s-one', 'no');
+    // The tag in backticks, which the sanitizer keeps: different content from the cut words.
+    const refused = await record({
+      fromDraft: 'P1',
+      content: TAGGED.replace('<parameter>', '`<parameter>`'),
+    });
+    expect(refused.error?.message).toMatch(/revised by P2 after the operator approved it/);
+    expect(refused.error?.suggestion).toMatch(/quotes the tag in backticks/);
+    expect(refused.error?.suggestion).not.toMatch(/fromDraft without content/);
+  });
+
+  it("names the draft's own kind in the line it asks for again", async () => {
+    // The tag comes early, so the cut copy keeps too little of the draft to pass.
+    const tagged = 'Keep <parameter> tags out of imported notes, quoting any that must stay.';
+    await proposeAndAnswer('approved', `Proposed.\n\nWould record (constraint): ${tagged}`);
+    const refused = await record({ fromDraft: 'P1' });
+    expect(refused.error?.suggestion).toMatch(/revised Would record \(constraint\) line/);
+  });
+
+  it.each([
+    ['constraint', 'Never push to main without a green CI run on the branch.'],
+    ['rule', 'Run the full suite before every commit that touches the hook CLI.'],
+    ['profile', 'Ask before running any command that spends money on an API.'],
+  ])('a %s draft recorded by fromDraft alone writes its own text', async (kind, text) => {
+    await proposeAndAnswer('approved', `Proposed.\n\nWould record (${kind}): ${text}`);
+    const result = await record({ fromDraft: 'P1' });
+    expect(result.success).toBe(true);
+    expect(result.warnings ?? []).not.toContainEqual(expect.stringMatching(/differs/));
+    expect(proposal()).toMatchObject({ outcome: 'approved', approval_mode: 'approved' });
+    if (kind === 'profile')
+      expect(fs.readFileSync(profilePath(process.env), 'utf8').trim()).toBe(text);
+    else {
+      const table = kind === 'constraint' ? 'constraints' : 'learnings';
+      expect(
+        row<{ n: number }>(`SELECT COUNT(*) AS n FROM ${table} WHERE content = ?`, text).n
+      ).toBe(1);
+    }
   });
 });

@@ -198,16 +198,16 @@ const PRIVATE = requiresPrivateEvidence({
  */
 const RATIFIED_AUTHORED_BASE = 181;
 const SITES_BY_MISSION = {
-  's90-m05': ['src/tools/rbook/rbook-next-steps.ts:318'],
+  's90-m05': ['src/tools/rbook/rbook-next-steps.ts:330'],
   's90-m07': [],
-  's91-m02': ['src/tools/rbook/unknown-param-guard.ts:80'],
+  's91-m02': ['src/tools/rbook/unknown-param-guard.ts:105'],
   's91-m03': [
     'src/tools/rbook/rbook-mission-complete.ts:232',
     'src/tools/rbook/rbook-session-complete.ts:333',
   ],
   's91-m04': [
-    'src/tools/rbook/rbook-decisions-record.ts:153',
-    'src/tools/rbook/rbook-decisions-record.ts:179',
+    'src/tools/rbook/rbook-decisions-record.ts:166',
+    'src/tools/rbook/rbook-decisions-record.ts:192',
   ],
   // s92-m01: the no-project refusal (one site, three situations), driven below in the first-run
   // instrument through the mirrored resolver and refusal classifier.
@@ -260,43 +260,43 @@ const SITES_BY_MISSION = {
     'src/cli/feedback.ts:83',
     'src/cli/feedback.ts:94',
     'src/cli/feedback.ts:126',
-    'src/tools/rbook/rbook-feedback.ts:229',
-    'src/tools/rbook/rbook-feedback.ts:238',
+    'src/tools/rbook/rbook-feedback.ts:232',
+    'src/tools/rbook/rbook-feedback.ts:242',
   ],
   // s93-m06: recording a draft. Six refusals are driven in axis 2 below (an id that is not a draft
   // id, no such draft, an answered draft, an expired one, content that does not state the draft, a
   // constraint draft with no operator words in this session); four need a harness session or a
   // race and are named residuals, each driven in tests/tools/rbook/draft-approval.test.ts.
   's93-m06': [
-    'src/tools/rbook/draft-approval.ts:113',
-    'src/tools/rbook/draft-approval.ts:156',
-    'src/tools/rbook/draft-approval.ts:168',
-    'src/tools/rbook/draft-approval.ts:185',
-    'src/tools/rbook/draft-approval.ts:216',
-    'src/tools/rbook/draft-approval.ts:227',
-    'src/tools/rbook/draft-approval.ts:133',
-    'src/tools/rbook/draft-approval.ts:379',
-    'src/tools/rbook/draft-approval.ts:450',
-    'src/tools/rbook/rbook-decisions-record.ts:366',
+    'src/tools/rbook/draft-approval.ts:118',
+    'src/tools/rbook/draft-approval.ts:161',
+    'src/tools/rbook/draft-approval.ts:173',
+    'src/tools/rbook/draft-approval.ts:190',
+    'src/tools/rbook/draft-approval.ts:221',
+    'src/tools/rbook/draft-approval.ts:232',
+    'src/tools/rbook/draft-approval.ts:138',
+    'src/tools/rbook/draft-approval.ts:384',
+    'src/tools/rbook/draft-approval.ts:455',
+    'src/tools/rbook/rbook-decisions-record.ts:379',
   ],
   // s94-m04: shape preflight at six writer boundaries, immutable retry comparison and draft-field conflict.
   's94-m04': [
-    'src/tools/rbook/rbook-decisions-record.ts:186',
-    'src/tools/rbook/rbook-decisions-record.ts:285',
+    'src/tools/rbook/rbook-decisions-record.ts:199',
+    'src/tools/rbook/rbook-decisions-record.ts:298',
     'src/tools/rbook/rbook-mission-complete.ts:346',
     'src/tools/rbook/rbook-session-capture.ts:517',
     'src/tools/rbook/rbook-session-complete.ts:453',
     'src/tools/rbook/sync-bootstrap.ts:149',
     'src/tools/rbook/sync-pull.ts:219',
-    'src/tools/rbook/decision-fields.ts:48',
+    'src/tools/rbook/decision-fields.ts:50',
   ],
   // s94-m05: eight explicit remedies replace one retired pre-lock parent-inspection fallback.
   's94-m05': [
-    'src/tools/rbook/rbook-mission-add.ts:286',
-    'src/tools/rbook/rbook-mission-add.ts:302',
+    'src/tools/rbook/rbook-mission-add.ts:298',
+    'src/tools/rbook/rbook-mission-add.ts:314',
     'src/tools/rbook/rbook-mission-start.ts:254',
     'src/tools/rbook/rbook-mission-start.ts:268',
-    'src/tools/rbook/rbook-mission-status.ts:261',
+    'src/tools/rbook/rbook-mission-status.ts:271',
     'src/tools/rbook/rbook-mission-update.ts:326',
     'src/tools/rbook/rbook-mission-update.ts:466',
     'src/tools/rbook/rbook-mission-update.ts:478',
@@ -304,7 +304,7 @@ const SITES_BY_MISSION = {
   // s94-m06: six authored fault remedies cover required citation preflight/materialization and
   // rollback. The inline capture-permissions suggestion retires into shared failure handling.
   's94-m06': [
-    'src/tools/rbook/rbook-decisions-record.ts:383',
+    'src/tools/rbook/rbook-decisions-record.ts:396',
     'src/tools/rbook/record-link-write.ts:26',
     'src/tools/rbook/record-link-write.ts:83',
     'src/tools/rbook/record-links.ts:22',
@@ -598,7 +598,7 @@ const SITES_BY_MISSION = {
     'src/tools/rbook/record-membership.ts:291',
     'src/tools/rbook/record-membership.ts:277',
   ],
-  's97-m12': ['src/tools/rbook/draft-approval.ts:201'],
+  's97-m12': ['src/tools/rbook/draft-approval.ts:206'],
   // s100-m01: the sharing fixes' refusals: the owner's other copies at a share, a removed member's
   // route the dashboard ended, a re-judge off the owner's copy, a join and a recovery of a newer
   // protocol, a handover to a copy behind a move or from one, a removed copy's sync, and a member's
@@ -625,7 +625,7 @@ const SITES_BY_MISSION = {
   's100-m03': ['src/tools/rbook/rbook-session-capture.ts:498'],
   // s97-m07: a bulk resolve whose feedbackIds is not a list of row ids, and one naming a row that
   // does not exist, which resolves none.
-  's97-m07': ['src/tools/rbook/rbook-feedback.ts:278', 'src/tools/rbook/rbook-feedback.ts:350'],
+  's97-m07': ['src/tools/rbook/rbook-feedback.ts:282', 'src/tools/rbook/rbook-feedback.ts:354'],
   // s98-m09: protected identity clears, invalid explicit snapshot retention, and the shared
   // whole-schema validator's type/bound remedy. The validator spreads `error`, so this census's
   // sibling-code rule classifies its site UNTYPED; its separate unit/dispatch tests grant this
@@ -744,19 +744,19 @@ const SITES_BY_MISSION = {
   // postcondition sites are fault-shaped STATE residuals under the unchanged code rule.
   // Reopen's two eligibility sites are driven below, including its sequential successor remedy.
   's102-m04': [
-    'src/tools/rbook/rbook-mission-block.ts:317',
+    'src/tools/rbook/rbook-mission-block.ts:319',
     'src/tools/rbook/rbook-mission-unblock.ts:323',
     'src/tools/rbook/rbook-mission-update.ts:481',
-    'src/tools/rbook/rbook-mission-reopen.ts:50',
-    'src/tools/rbook/rbook-mission-reopen.ts:121',
-    'src/tools/rbook/rbook-mission-reopen.ts:138',
+    'src/tools/rbook/rbook-mission-reopen.ts:51',
+    'src/tools/rbook/rbook-mission-reopen.ts:128',
+    'src/tools/rbook/rbook-mission-reopen.ts:145',
   ],
   // s102-m05: an operator decline awaiting its store write blocks records across sessions.
   // The marker is identifier-only, and the existing row-presence axis drives this refusal.
-  's102-m05': ['src/tools/rbook/draft-evaluation.ts:160'],
+  's102-m05': ['src/tools/rbook/draft-evaluation.ts:175'],
   // s102-m06: unreadable next-step provenance refuses instead of silently counting foreign use.
   // DB_QUERY_FAILED is FAULT; the real-store API suite injects the schema-inspection failure.
-  's102-m06': ['src/tools/rbook/next-steps-read.ts:80'],
+  's102-m06': ['src/tools/rbook/next-steps-read.ts:94'],
   // s102-m07: failure to inspect parked work refuses instead of claiming an exhausted queue.
   's102-m07': ['src/tools/rbook/mission-status-parked.ts:23'],
   // s104-m01: selected tail evidence cannot re-admit a recovered removed member.
@@ -764,13 +764,23 @@ const SITES_BY_MISSION = {
   's104-m01': ['src/referee/recovery.ts:281'],
   // s104-m04: one shared local-edition refusal, driven by the directory boundary suites.
   's104-m04': ['src/edition.ts:20'],
+  // s106-m02: the sanitizer-emptied refusal (one factory, three callers) and rbook_mission add's
+  // missing-id refusal with its example (#871); both are driven below.
+  's106-m02': [
+    'src/tools/rbook/emptied-parameter.ts:17',
+    'src/tools/rbook/rbook-mission-add.ts:260',
+  ],
+  // s106-m03: the paged next-steps and feedback lists refuse when their count cannot be read,
+  // rather than state a total they did not take or end the paging at a page's own length.
+  // DB_QUERY_FAILED is FAULT, like s102-m06's provenance refusal beside the first.
+  's106-m03': ['src/tools/rbook/next-steps-read.ts:136', 'src/tools/rbook/rbook-feedback.ts:497'],
 } as const satisfies Readonly<Record<string, readonly string[]>>;
 const RATIFIED_SITE_ADDS = Object.values(SITES_BY_MISSION).flat();
 // Warning propagation moved reopen's eligibility sites after their initial addition.
 const CURRENT_S102_M04_SITES = [
   ...SITES_BY_MISSION['s102-m04'].slice(0, 4),
-  'src/tools/rbook/rbook-mission-reopen.ts:124',
-  'src/tools/rbook/rbook-mission-reopen.ts:141',
+  'src/tools/rbook/rbook-mission-reopen.ts:131',
+  'src/tools/rbook/rbook-mission-reopen.ts:148',
 ];
 const CURRENT_S98_M15_SITES = [
   'src/referee/recovery.ts:72',
@@ -2319,6 +2329,43 @@ const MATRIX: MatrixCase[] = [
   },
 
   // ── AXIS 6 — parameter VALUE violations ───────────────────────────────────────────────────────
+  // s106-m02: one refusal for a supplied value the content sanitizer emptied, at each of its three
+  // callers. Each check runs before any store read, so no mission state is needed.
+  {
+    axis: '6 parameter-value',
+    name: 's106-m02: a text parameter made only of a stray tool-call tag',
+    reachable:
+      "ordinary: a harness drops a closing tag and a sibling parameter's opening tag becomes the value",
+    calls: (ctx) => [
+      {
+        tool: 'rbook_mission_transition',
+        params: {
+          action: 'block',
+          missionId: ctx.missionId,
+          reason: '<parameter name="blockers">',
+          projectRoot: ctx.projectRoot,
+        },
+      },
+      {
+        tool: 'rbook_mission_transition',
+        params: {
+          action: 'reopen',
+          missionId: ctx.missionId,
+          reason: '</parameter>',
+          projectRoot: ctx.projectRoot,
+        },
+      },
+      {
+        tool: 'rbook_mission',
+        params: {
+          action: 'add',
+          missionId: 'S106M02-EMPTIED',
+          name: '<parameter name="objective">',
+          projectRoot: ctx.projectRoot,
+        },
+      },
+    ],
+  },
   {
     axis: '6 parameter-value',
     name: 'bad enum, empty string, out-of-range and malformed dot-notation paths',
@@ -3289,13 +3336,15 @@ describe('s89-m08 T5 — every authored suggestion naming a shipped tool yields 
     // s97-m07: rbook-feedback.ts's witness (the missing-feedbackId suggestion) moved from :324 to
     // :497 when the bulk-resolve helpers were added above it; s97-m08 moved it to :485 when
     // kindCounts left the file for feedback-fleet.ts; s98-m09 moved it to :484 by removing the
-    // unpublished feedbackIds minimum from the schema. The text is unchanged.
+    // unpublished feedbackIds minimum from the schema. The text is unchanged. s106-m03 moved it to
+    // :557 by adding the list's page parameter, its next-page call, its re-read note and its count
+    // refusal above it, then to :560 when the limit description named the resolved page size.
     expect(narrowOffenders).toEqual([
       'src/tools/rbook/errors.ts:399',
       'src/tools/rbook/errors.ts:408',
       'src/tools/rbook/rbook-db-backfill.ts:234',
       'src/tools/rbook/rbook-decisions-update.ts:81',
-      'src/tools/rbook/rbook-feedback.ts:512',
+      'src/tools/rbook/rbook-feedback.ts:560',
       'src/tools/rbook/rbook-learnings-reaffirm.ts:91',
       'src/tools/rbook/rbook-learnings-update.ts:104',
       'src/tools/rbook/rbook-sprint-complete.ts:585',
@@ -6055,9 +6104,9 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
   // These spread the underlying database error; their nonliteral code is classified STATE by
   // the syntax census, but the trigger is a database fault, exercised in lifecycle-decoupling.
   // s96-m01 (fold): down one line (the sharedStoreWrite import).
-  'src/tools/rbook/rbook-mission-add.ts:287':
+  'src/tools/rbook/rbook-mission-add.ts:299':
     'Database read/write/transaction failure branch; the healthy-store axis cannot cause it. Fault cases live in lifecycle-decoupling.test.ts and the integration failure suites.',
-  'src/tools/rbook/rbook-mission-add.ts:303':
+  'src/tools/rbook/rbook-mission-add.ts:315':
     'Database read/write/transaction failure branch; the healthy-store axis cannot cause it. Fault cases live in lifecycle-decoupling.test.ts and the integration failure suites.',
   // s102-m03: session-link setup moves start's two database-fault branches; status is unchanged.
   'src/tools/rbook/rbook-mission-start.ts:300':
@@ -6066,7 +6115,7 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     'Database read/write/transaction failure branch; the healthy-store axis cannot cause it. Fault cases live in lifecycle-decoupling.test.ts and the integration failure suites.',
   'src/tools/rbook/mission-status-parked.ts:23':
     'Database read failure while checking parked work; the healthy-store axis cannot cause it. status-advisory-truth.test.ts covers the failure boundary.',
-  'src/tools/rbook/rbook-mission-status.ts:270':
+  'src/tools/rbook/rbook-mission-status.ts:280':
     'Database read/write/transaction failure branch; the healthy-store axis cannot cause it. Fault cases live in lifecycle-decoupling.test.ts and the integration failure suites.',
   'src/tools/rbook/rbook-mission-update.ts:327':
     'Database read/write/transaction failure branch; the healthy-store axis cannot cause it. Fault cases live in lifecycle-decoupling.test.ts and the integration failure suites.',
@@ -6076,7 +6125,7 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     'Database read/write/transaction failure branch; the healthy-store axis cannot cause it. Fault cases live in lifecycle-decoupling.test.ts and the integration failure suites.',
 
   // s102-m04: healthy-store calls cannot produce a trigger-altered transition postcondition.
-  'src/tools/rbook/rbook-mission-block.ts:317':
+  'src/tools/rbook/rbook-mission-block.ts:319':
     'A trigger changed the committed blocking episode or note. queued-block-lifecycle.test.ts injects transition corruption and proves rollback; this healthy-store matrix cannot reach it.',
   'src/tools/rbook/rbook-mission-unblock.ts:323':
     'A trigger changed the unblocking status or metadata. queued-block-lifecycle.test.ts injects transition corruption and proves rollback; this healthy-store matrix cannot reach it.',
@@ -6102,22 +6151,22 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
   // s102-m05 extracted evaluation; these are current locations, unlike the mission history above.
   // The matrix drives routers in process with no harness link, so the server writes as a process
   // and no operator words can be bound to it; these are driven by name in draft-approval.test.ts.
-  'src/tools/rbook/draft-evaluation.ts:186':
-    "A fromDraft record, in other words than the draft's, of a draft revised after the operator approved it. The record path only; draft-approval.test.ts records a declined revision's text under the earlier approval.",
-  'src/tools/rbook/draft-evaluation.ts:212':
+  'src/tools/rbook/draft-evaluation.ts:208':
+    "A fromDraft record, in other words than the draft's, of a draft revised after the operator approved it. The record path only; draft-approval.test.ts records a declined revision's text under the earlier approval, and the s106-m02 chain test replays it after this ledger is computed, for no examined-site credit.",
+  'src/tools/rbook/draft-evaluation.ts:241':
     'The operator plainly declined but the prompt hook could not write the decline, so only the ' +
     'runtime words say so. Needs a harness-linked server and hook runtime words; driven in ' +
     'draft-approval.test.ts ("refuses a decline the hook could not write to the store").',
-  'src/tools/rbook/draft-approval.ts:176':
+  'src/tools/rbook/draft-approval.ts:181':
     'Two records of one constraint, rule or profile draft at once: the guarded claim lets one ' +
     'through. A race needs the operator words bound in a harness session; driven in ' +
     'draft-approval.test.ts ("claims a constraint draft once when two records race").',
-  'src/tools/rbook/draft-approval.ts:247':
+  'src/tools/rbook/draft-approval.ts:252':
     'An approved profile draft whose line cannot be written (past the profile cap) releases its ' +
     'claim. Needs the operator words bound in a harness session; driven in draft-approval.test.ts ' +
     '("releases the claim when an approved profile line cannot be written").',
   // s102-m05: pending-decline settlement moves the unchanged draft-race refusal again.
-  'src/tools/rbook/rbook-decisions-record.ts:357':
+  'src/tools/rbook/rbook-decisions-record.ts:370':
     'Two records of one decision draft at once: the in-transaction guard approves it once and ' +
     'rolls the other back. Driven in draft-approval.test.ts ("records a draft once").',
   // ── s96-m01: the shared record's refusals of a copy, which need a second copy or a restore ─────
@@ -6336,7 +6385,7 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     'AFTER a write that already succeeded.',
 
   // ── DISPATCHER-PREFLIGHT SITES (false-negative item 7: this matrix drives routers, not stdio) ──
-  'src/tools/rbook/unknown-param-guard.ts:80':
+  'src/tools/rbook/unknown-param-guard.ts:105':
     's91-m02 unknown top-level parameter refusal. It runs in src/index.ts preflight BEFORE any ' +
     'router, so the in-process router matrix cannot reach it. Driven instead over real stdio on ' +
     'every tools/list pair by tests/e2e/wire-preflight.e2e.ts, and in process by ' +
@@ -6360,7 +6409,7 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
 
 const FAULT_SHAPED_DRIVEABLE_RESIDUALS = new Set([
   // s102-m04: mandatory blocking-episode postcondition checks require trigger faults.
-  'src/tools/rbook/rbook-mission-block.ts:317',
+  'src/tools/rbook/rbook-mission-block.ts:319',
   'src/tools/rbook/rbook-mission-unblock.ts:323',
   'src/tools/rbook/rbook-mission-update.ts:481',
   // s98-m17: unreadable stored observation, STATE only by the sibling-expression rule.
@@ -6369,11 +6418,11 @@ const FAULT_SHAPED_DRIVEABLE_RESIDUALS = new Set([
   'src/tools/rbook/rbook-mission-drop.ts:93',
   'src/tools/rbook/rbook-mission-drop.ts:221',
   'src/tools/rbook/rbook-mission-drop.ts:260',
-  'src/tools/rbook/rbook-mission-add.ts:287',
-  'src/tools/rbook/rbook-mission-add.ts:303',
+  'src/tools/rbook/rbook-mission-add.ts:299',
+  'src/tools/rbook/rbook-mission-add.ts:315',
   'src/tools/rbook/rbook-mission-start.ts:300',
   'src/tools/rbook/rbook-mission-start.ts:314',
-  'src/tools/rbook/rbook-mission-status.ts:270',
+  'src/tools/rbook/rbook-mission-status.ts:280',
   'src/tools/rbook/mission-status-parked.ts:23',
   'src/tools/rbook/rbook-mission-update.ts:327',
   'src/tools/rbook/rbook-mission-update.ts:516',
@@ -6619,6 +6668,247 @@ PRIVATE.describe(
         );
       }
       expect(undisclosed.map((r) => r.site)).toEqual([]);
+    });
+
+    // s106-m02: the repaired chains (tests/sweeps/s106-m02). Their remedies are prose, which the
+    // replay pass cannot execute, so each case states the call its suggestion words and replays it
+    // from the refusal's own fresh store; it must succeed.
+    it("s106-m02 CHAINS — each repaired refusal's remedy, sent as its suggestion words it, succeeds", async () => {
+      type Call = [string, Record<string, unknown>];
+      interface Chain {
+        name: string;
+        setup?: (ctx: { projectRoot: string; dbPath: string }) => void;
+        trigger: (ctx: { projectRoot: string; dbPath: string }) => Call;
+        code: string;
+        words: RegExp;
+        remedy: (ctx: { projectRoot: string; dbPath: string }) => Call;
+      }
+      const DRAFT = 's106-m02 chain: keep one JSON file per decision, because diffs stay readable.';
+      const REVISION = 's106-m02 chain: keep one JSON file per decision, and merge with a driver.';
+      // The tag comes early, so the cut copy keeps too little of the draft to pass coverage.
+      const TAGGED =
+        'Keep <parameter> tags out of imported notes, the s106-m02 chain says, before recording.';
+      const QUOTED =
+        'Keep `<parameter>` tags out of imported notes, the s106-m02 chain says, before recording.';
+      const draft = (ctx: { dbPath: string }, text = DRAFT) => `P${draftIdOf(ctx.dbPath, text)}`;
+      const seed = (ctx: { dbPath: string }) =>
+        seedDraft(ctx.dbPath, DRAFT, 'decision', 0, 'pending');
+      const record = (projectRoot: string, extra: Record<string, unknown>): Call => [
+        'rbook_decisions',
+        { action: 'record', projectRoot, ...extra },
+      ];
+      const PLAIN = 'Use one JSON file per decision because diffs stay readable.';
+      const chains: Chain[] = [
+        {
+          name: '#870: fromDraft with a field the draft did not hold',
+          setup: seed,
+          trigger: (ctx) =>
+            record(ctx.projectRoot, { fromDraft: draft(ctx), context: 'Unapproved addition.' }),
+          code: 'INVALID_PARAMETER',
+          words: /fromDraft without content/,
+          remedy: (ctx) => record(ctx.projectRoot, { fromDraft: draft(ctx) }),
+        },
+        {
+          name: '#870: content that does not state the draft',
+          setup: seed,
+          trigger: (ctx) =>
+            record(ctx.projectRoot, {
+              fromDraft: draft(ctx),
+              content: 'Adopt Postgres for the analytics warehouse, the team already runs it.',
+            }),
+          code: 'INVALID_PARAMETER',
+          words: /fromDraft without content/,
+          remedy: (ctx) => record(ctx.projectRoot, { fromDraft: draft(ctx) }),
+        },
+        {
+          name: '#870: a draft whose own text the sanitizer cuts, sent with other content',
+          setup: (ctx) => seedDraft(ctx.dbPath, TAGGED, 'decision', 0, 'pending'),
+          trigger: (ctx) =>
+            record(ctx.projectRoot, {
+              fromDraft: draft(ctx, TAGGED),
+              content: 'Adopt Postgres for the analytics warehouse, the team already runs it.',
+            }),
+          code: 'INVALID_PARAMETER',
+          words: /quotes the tag in backticks/,
+          // The remedy it names: the line proposed again with the tag in backticks, then recorded.
+          remedy: (ctx) => {
+            seedDraft(ctx.dbPath, QUOTED, 'decision', 0, 'pending');
+            return record(ctx.projectRoot, { fromDraft: draft(ctx, QUOTED) });
+          },
+        },
+        {
+          name: '#870: a revised draft recorded in other words',
+          setup: (ctx) => {
+            seed(ctx);
+            seedDraft(ctx.dbPath, REVISION, 'decision', 0, 'pending');
+            withDb(ctx.dbPath, (db) =>
+              db
+                .prepare('UPDATE proposals SET replaced_by = ? WHERE id = ?')
+                .run(draftIdOf(ctx.dbPath, REVISION), draftIdOf(ctx.dbPath, DRAFT))
+            );
+          },
+          trigger: (ctx) => record(ctx.projectRoot, { fromDraft: draft(ctx), content: REVISION }),
+          code: 'INVALID_PARAMETER',
+          words: /fromDraft without content/,
+          remedy: (ctx) => record(ctx.projectRoot, { fromDraft: draft(ctx) }),
+        },
+        {
+          name: '#870: a replaced draft, whose refusal names its pending revision',
+          setup: (ctx) => {
+            seedDraft(ctx.dbPath, DRAFT, 'decision', 0, 'replaced');
+            seedDraft(ctx.dbPath, REVISION, 'decision', 0, 'pending');
+            withDb(ctx.dbPath, (db) =>
+              db
+                .prepare('UPDATE proposals SET replaced_by = ? WHERE id = ?')
+                .run(draftIdOf(ctx.dbPath, REVISION), draftIdOf(ctx.dbPath, DRAFT))
+            );
+          },
+          trigger: (ctx) => record(ctx.projectRoot, { fromDraft: draft(ctx) }),
+          code: 'DRAFT_NOT_PENDING',
+          words: /Record the revision instead, with fromDraft="P\d+"/,
+          // Followed as written: the revision's id, and nothing else the refusal did not name.
+          remedy: (ctx) => record(ctx.projectRoot, { fromDraft: draft(ctx, REVISION) }),
+        },
+        {
+          name: '#870: fromDraft alone with an id that is not a draft id',
+          trigger: (ctx) => record(ctx.projectRoot, { fromDraft: 'D1' }),
+          code: 'INVALID_PARAMETER',
+          words: /without fromDraft, with the decision's text as content/,
+          remedy: (ctx) => record(ctx.projectRoot, { content: PLAIN }),
+        },
+        {
+          name: '#870: fromDraft alone naming no draft',
+          trigger: (ctx) => record(ctx.projectRoot, { fromDraft: 'P987654' }),
+          code: 'DRAFT_NOT_FOUND',
+          words: /without fromDraft, with the decision's text as content/,
+          remedy: (ctx) => record(ctx.projectRoot, { content: PLAIN }),
+        },
+        {
+          name: 'a block reason the content sanitizer emptied',
+          setup: (ctx) => setMissionStatus(ctx.dbPath, driverMissionId, 'In Progress'),
+          trigger: (ctx) => [
+            'rbook_mission_transition',
+            {
+              action: 'block',
+              missionId: driverMissionId,
+              reason: '<parameter name="blockers">',
+              projectRoot: ctx.projectRoot,
+            },
+          ],
+          code: 'INVALID_PARAMETER',
+          words: /plain text/,
+          remedy: (ctx) => [
+            'rbook_mission_transition',
+            {
+              action: 'block',
+              missionId: driverMissionId,
+              reason: 'Waiting on the dashboard endpoint.',
+              projectRoot: ctx.projectRoot,
+            },
+          ],
+        },
+        {
+          name: 'a reopen reason the content sanitizer emptied',
+          setup: (ctx) =>
+            withDb(ctx.dbPath, (db) => {
+              db.prepare("UPDATE sprints SET status = 'Active' WHERE id = ?").run(driverSprintId);
+              db.prepare(
+                "UPDATE missions SET status = 'Completed', sprint_id = ?, completed_at = ? WHERE id = ?"
+              ).run(driverSprintId, new Date(Date.now() - 60_000).toISOString(), driverMissionId);
+            }),
+          trigger: (ctx) => [
+            'rbook_mission_transition',
+            {
+              action: 'reopen',
+              missionId: driverMissionId,
+              reason: '</parameter>',
+              projectRoot: ctx.projectRoot,
+            },
+          ],
+          code: 'INVALID_PARAMETER',
+          words: /plain text/,
+          remedy: (ctx) => [
+            'rbook_mission_transition',
+            {
+              action: 'reopen',
+              missionId: driverMissionId,
+              reason: 'The verification exposed another case.',
+              projectRoot: ctx.projectRoot,
+            },
+          ],
+        },
+        {
+          name: 'a mission name the content sanitizer emptied',
+          trigger: (ctx) => [
+            'rbook_mission',
+            {
+              action: 'add',
+              missionId: 'S106M02-CHAIN',
+              name: '<parameter name="objective">',
+              projectRoot: ctx.projectRoot,
+            },
+          ],
+          code: 'INVALID_PARAMETER',
+          words: /plain text/,
+          remedy: (ctx) => [
+            'rbook_mission',
+            {
+              action: 'add',
+              missionId: 'S106M02-CHAIN',
+              name: 'A plain-text name',
+              projectRoot: ctx.projectRoot,
+            },
+          ],
+        },
+        {
+          name: '#871: add without its new id',
+          trigger: (ctx) => [
+            'rbook_mission',
+            { action: 'add', name: 'A new mission', projectRoot: ctx.projectRoot },
+          ],
+          code: 'MISSING_PARAMETER',
+          words: /an id no mission in this project uses/,
+          remedy: (ctx) => [
+            'rbook_mission',
+            {
+              action: 'add',
+              missionId: 'S106M02-NEW',
+              name: 'A new mission',
+              projectRoot: ctx.projectRoot,
+            },
+          ],
+        },
+      ];
+      const results = [];
+      for (const chain of chains) {
+        const ctx = freshStore();
+        chain.setup?.(ctx);
+        const [tool, params] = chain.trigger(ctx);
+        const refused = await driveMirrored(chain.name, 's106-m02 chain', tool, params);
+        const [remedyTool, remedyParams] = chain.remedy(ctx);
+        const remedied = await driveMirrored(
+          chain.name,
+          's106-m02 chain',
+          remedyTool,
+          remedyParams
+        );
+        results.push({
+          name: chain.name,
+          refused: refused.outcome,
+          code: refused.code,
+          worded: chain.words.test(refused.suggestion ?? ''),
+          remedy: remedied.outcome,
+        });
+      }
+      expect(results).toEqual(
+        chains.map((chain) => ({
+          name: chain.name,
+          refused: 'REFUSES',
+          code: chain.code,
+          worded: true,
+          remedy: 'SUCCEEDS',
+        }))
+      );
     });
 
     it('publishes the CALL-BEARING subset as its OWN, SECOND number — never conflated with EXAMINED', () => {

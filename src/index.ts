@@ -319,6 +319,21 @@ interface PublishedToolSchema {
   readonly properties?: Readonly<Record<string, PublishedSchemaProperty | undefined>>;
 }
 
+/**
+ * s106-m01: the parameter names the full edition publishes for a tool. A telemetry refusal row may
+ * name only these, so it never records the agent's own text. A legacy `cmos_` name is refused
+ * before any handler runs (as an unknown tool, or by the directory edition), so its row names no
+ * field.
+ */
+function publishedParameterNames(name: string): readonly string[] {
+  const definition = (RBOOK_TOOL_DEFINITIONS as readonly ToolDefinition[]).find(
+    (candidate) => candidate.name === name
+  );
+  return Object.keys(
+    (definition?.inputSchema as PublishedToolSchema | undefined)?.properties ?? {}
+  );
+}
+
 /** Return a known, schema-derived refusal before sender resolution; unknown tools pass through. */
 function preflightMissionProtocolTool(name: string, args: unknown): RbookToolError | null {
   const definition = (
@@ -744,6 +759,7 @@ export function registerToolHandlers(
             args,
             mode: classifyAction(name, extractActionArg(args)),
             client,
+            parameters: publishedParameterNames(name),
           },
           async () => {
             try {

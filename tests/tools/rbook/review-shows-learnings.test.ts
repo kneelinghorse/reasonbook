@@ -86,7 +86,8 @@ describe('s93-m11 — the review shows the learnings the advisory counts', () =>
     );
     const text = textOf(review);
     expect(review.isError).not.toBe(true);
-    expect(text).toContain('**📚 Learnings (2)**');
+    // s106-m03: the review pages; this one page holds both, and says they are all of them.
+    expect(text).toContain('**📚 Learnings: showing 1–2 of 2 learnings**');
     expect(text).toContain(
       '#1 [sprint-3] active, 27 sprints old — Old learning nobody has reviewed.'
     );
@@ -112,6 +113,6 @@ describe('s93-m11 — the review shows the learnings the advisory counts', () =>
       context
     );
     expect(review.isError).not.toBe(true);
-    expect(textOf(review)).toContain('**📚 Learnings (2)**');
+    expect(textOf(review)).toContain('**📚 Learnings: showing 1–2 of 2 learnings**');
   });
 });

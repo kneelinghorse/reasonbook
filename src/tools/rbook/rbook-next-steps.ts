@@ -92,6 +92,16 @@ export interface NextStepsResult {
   localProjectId?: string;
   /** Count of items affected */
   affected: number;
+  /** s106-m03, a list without named ids: every matching row, this page's number and size. */
+  totalCount?: number;
+  page?: number;
+  pageSize?: number;
+  hasMore?: boolean;
+  nextPage?: number | null;
+  /** The call that reads the next page with the same filters, or null on the last page. */
+  nextPageCall?: string | null;
+  /** While a page follows: acting on a row moves the later rows up, so re-read before paging. */
+  pageNote?: string | null;
   /** s86-m02b — writes an action ATTEMPTED and the database REJECTED. Emitted by every write
    *  action (complete/carry/drop/reopen), `[]` on the happy path; absent on `list` and `show`, which write
    *  nothing. `affected` above counts rows the UPDATE actually changed, so a non-empty array
@@ -128,6 +138,9 @@ export interface RbookNextStepsParams {
   nextStepIds?: number[];
   /** Target sprint for carry action */
   carryToSprint?: string;
+  /** s106-m03: page of the list, 1-based, and rows per page (default NEXT_STEPS_PAGE_SIZE) */
+  page?: number;
+  pageSize?: number;
   /** Optional project root */
   projectRoot?: string;
 }
@@ -169,7 +182,8 @@ export async function rbookNextSteps(
             params.nextStepStatus,
             params.missionId,
             params.nextStepIds,
-            action
+            action,
+            { page: params.page, pageSize: params.pageSize, projectRoot: params.projectRoot }
           );
         case 'complete':
           return transitionNextSteps(client, params.nextStepIds ?? [], 'completed');

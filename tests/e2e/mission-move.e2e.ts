@@ -231,10 +231,25 @@ PRIVATE.describe('rbook_mission(move) + parked_missions over stdio (s86-m08)', (
     const s85List = list.sprints.find((s) => s.id === 'sprint-85')!;
     expect(s85List).toMatchObject({ totalMissions: 5, parkedMissions: 4 });
 
-    const analytics = harness!.dataOf(
-      await harness!.callOk('rbook_sprint', { action: 'analytics', limit: 100, projectRoot })
-    ) as { sprints: Array<{ sprintId: string; totalMissions: number; parkedMissions: number }> };
-    const s85Analytics = analytics.sprints.find((s) => s.sprintId === 'sprint-85')!;
+    // s106-m03: analytics rows come a page at a time, so read pages until sprint-85's row.
+    type Analytics = {
+      sprints: Array<{ sprintId: string; totalMissions: number; parkedMissions: number }>;
+      nextPage: number | null;
+    };
+    let page: number | null = 1;
+    let s85Analytics: Analytics['sprints'][number] | undefined;
+    while (page !== null && !s85Analytics) {
+      const analytics = harness!.dataOf(
+        await harness!.callOk('rbook_sprint', {
+          action: 'analytics',
+          limit: 100,
+          page,
+          projectRoot,
+        })
+      ) as Analytics;
+      s85Analytics = analytics.sprints.find((s) => s.sprintId === 'sprint-85');
+      page = analytics.nextPage;
+    }
     expect(s85Analytics).toMatchObject({ totalMissions: 5, parkedMissions: 4 });
 
     const retro = harness!.dataOf(

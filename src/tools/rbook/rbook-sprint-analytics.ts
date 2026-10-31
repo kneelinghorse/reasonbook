@@ -18,6 +18,7 @@ import { appendWarnings, attachWarnings } from './format-warnings';
 import { ensureSprintSummaryView } from './schema-migrations';
 import { sprintIdOrderSql } from './sprint-ordering';
 import { parkedColumn } from './sprint-summary-read';
+import { nextPageCall, pageFacts, pageRequest, shownLine } from './answer-page';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -53,8 +54,19 @@ export interface SprintAnalyticsResult {
    */
   countingRule: string;
 
-  /** Per-sprint data points (chronological) */
+  /**
+   * Per-sprint data points on this page, chronological. s106-m03: a page holds
+   * ANALYTICS_PAGE_SIZE sprints counted from the newest; every aggregate, trend and highlight
+   * still covers the whole window.
+   */
   sprints: SprintDataPoint[];
+
+  /** s106-m03: this page's number, 1-based, counted from the newest sprint. */
+  page: number;
+  hasMore: boolean;
+  nextPage: number | null;
+  /** The call that reads the next (older) page of rows, or null on the last page. */
+  nextPageCall: string | null;
 
   /** Aggregated cross-sprint KPIs */
   aggregates: {
@@ -107,7 +119,12 @@ export interface RbookSprintAnalyticsParams {
   projectRoot?: string;
   /** Limit to last N sprints (default: all completed) */
   limit?: number;
+  /** s106-m03: page of per-sprint rows, 1-based, counted from the newest */
+  page?: number;
 }
+
+/** s106-m03: per-sprint rows on a page. 219 rows were 94,342 characters on OODS-Forge. */
+export const ANALYTICS_PAGE_SIZE = 20;
 
 const ANALYTICS_COUNTING_RULE =
   'Decision, learning, and session counts use raw sprint_id membership at read time and are not clipped to the sprint end_date; mission totals and cycle-time metrics retain their existing status and timestamp rules.';
@@ -144,6 +161,10 @@ export async function rbookSprintAnalytics(
           {
             countingRule: ANALYTICS_COUNTING_RULE,
             sprints: [],
+            page: params.page ?? 1,
+            hasMore: false,
+            nextPage: null,
+            nextPageCall: null,
             aggregates: {
               totalSprints: 0,
               completedSprints: 0,
@@ -198,11 +219,24 @@ export async function rbookSprintAnalytics(
       const aggregates = computeAggregates(sprints);
       const trends = computeTrends(sprints);
       const highlights = generateHighlights(sprints, aggregates, trends);
+      // s106-m03: the page is cut after every figure above was computed over the whole window.
+      const request = pageRequest(params.page, undefined, ANALYTICS_PAGE_SIZE);
+      const end = sprints.length - request.offset;
+      const rows = end > 0 ? sprints.slice(Math.max(0, end - request.pageSize), end) : [];
+      const facts = pageFacts(request, rows.length, sprints.length);
 
       return createSuccess<SprintAnalyticsResult>(
         {
           countingRule: ANALYTICS_COUNTING_RULE,
-          sprints,
+          sprints: rows,
+          page: facts.page,
+          hasMore: facts.hasMore,
+          nextPage: facts.nextPage,
+          nextPageCall: nextPageCall(facts.nextPage, 'rbook_sprint', {
+            action: 'analytics',
+            limit: params.limit,
+            projectRoot: params.projectRoot,
+          }),
           aggregates,
           trends,
           highlights,
@@ -650,6 +684,11 @@ export function formatSprintAnalyticsForLLM(
   if (d.sprints.length > 0) {
     lines.push('');
     lines.push('**Per-Sprint Data**');
+    // s106-m03: a page of rows counted from the newest; the figures above cover the window.
+    if (d.page > 1 || d.hasMore)
+      lines.push(
+        `${shownLine({ page: d.page, pageSize: ANALYTICS_PAGE_SIZE, totalCount: d.window.sprintCount }, d.sprints.length, 'sprints')}, counted from the newest (${d.sprints[0].sprintId} → ${d.sprints[d.sprints.length - 1].sprintId}).`
+      );
     lines.push('Sprint          | Missions | Done | Rate | Decisions | Sessions | Cycle');
     lines.push('----------------|----------|------|------|-----------|----------|------');
     for (const s of d.sprints) {
@@ -659,6 +698,8 @@ export function formatSprintAnalyticsForLLM(
       );
     }
   }
+
+  if (d.nextPageCall) lines.push(`Next page: ${d.nextPageCall}.`);
 
   // Highlights
   if (d.highlights.length > 0) {

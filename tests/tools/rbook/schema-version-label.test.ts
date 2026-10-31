@@ -557,8 +557,9 @@ const EXPECTED_WRITER_KEYS: readonly WriterKeySite[] = sortSourceSites([
     // s93-m11: the first-write staleness repair's ledger — a constant key, never the label.
     // s96-m03: down three lines (a shared record skips the restore).
     // s97-m13: up four (the close-time clock replaced the label cutoff).
+    // s106-m03: down three (a reviewed decision's text is a preview with its full length).
     file: 'tools/rbook/staleness-detection.ts',
-    line: 777,
+    line: 780,
     role: 'writeStalenessRepairLedger',
     callee: 'metadata.execute',
     key: 'STALENESS_REPAIR_LEDGER_KEY',

@@ -599,11 +599,12 @@ describe('first-run E2E: pack -> install -> drive quickstart over stdio (s77-m10
       expect(s.dataOf(done)?.missionDecisionCount).toBe(1);
     });
 
-    it('tools/list from the installed package stays under its 24,000-character ceiling', async () => {
+    // Decision #1713 raised the ceiling from 24,000 to 32,000 characters for sprint 106.
+    it('tools/list from the installed package stays under its 32,000-character ceiling', async () => {
       const s = await server(mkTmp('rbook-e2e-clean-list-'));
       const tools = await s.client.listTools();
       expect(tools.tools).toHaveLength(15);
-      expect(JSON.stringify(tools.tools).length).toBeLessThanOrEqual(24_000);
+      expect(JSON.stringify(tools.tools).length).toBeLessThanOrEqual(32_000);
     });
   });
 });

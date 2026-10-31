@@ -7,7 +7,8 @@
  * @module tools/rbook/rbook-decisions-list
  */
 
-import { spinOutQuery } from '../../intelligence/spin-out-query';
+import { spinOutCount, spinOutQuery } from '../../intelligence/spin-out-query';
+import { nextPageCall, pageFacts, pageRequest, shownLine } from './answer-page';
 import { withClient } from './client';
 import type { RbookToolResult } from './types';
 import { createError, createSuccess } from './errors';
@@ -110,6 +111,12 @@ export interface RbookDecisionsListResult {
   /** Whether there are more results */
   hasMore: boolean;
 
+  /** s106-m03: the next page's number, or null on the last page (portfolio pages too). */
+  nextPage: number | null;
+
+  /** The call that reads the next page with the same filters, or null on the last page. */
+  nextPageCall: string | null;
+
   /** s69-m06: true when results were fanned out across the project portfolio. */
   acrossProjects?: boolean;
 
@@ -146,7 +153,7 @@ export interface RbookDecisionsListParams {
   /** Optional: page number (1-indexed, default: 1) */
   page?: number;
 
-  /** Optional: results per page (1-100, default: 20) */
+  /** Optional: results per page (1-100, default: 12) */
   pageSize?: number;
 
   /** Optional: explicit project root to search from */
@@ -159,10 +166,10 @@ export interface RbookDecisionsListParams {
    * the recency-ordered `list` action (not FTS5 `search`) for the cross-store hook
    * because the merge key is `(occurred_at, origin_seq, project_id)`, not relevance.
    *
-   * Two deliberate divergences from the single-store path (documented, not bugs):
-   * - **No offset pagination.** This returns a single bounded top-`pageSize` page;
-   *   `page` is ignored (cursor pagination across the k-way merge is a follow-up).
-   *   `hasMore` still signals there is more — widen `pageSize` rather than paging.
+   * s106-m03: pages too. Each store gives its first `page × pageSize` rows to the k-way merge,
+   * whose order is total, and `totalCount` sums each read store's count of matching rows.
+   *
+   * A deliberate divergence from the single-store path (documented, not a bug):
    * - **`sprintId`/`domain` filter the RAW columns**, not the single-store path's
    *   `effective_sprint_id` (which COALESCEs in the decision's mission/session
    *   sprint). A decision with NULL `sprint_id` whose sprint is only inherited via
@@ -209,7 +216,7 @@ export const rbookDecisionsListToolDefinition = {
         type: 'number',
         minimum: 1,
         maximum: 100,
-        description: 'Results per page (1-100, default: 20)',
+        description: 'Results per page (1-100, default: 12)',
       },
       projectRoot: {
         type: 'string',
@@ -246,12 +253,11 @@ export async function rbookDecisionsList(
   // registry and merge decisions newest-first across the whole portfolio. Bypasses
   // the single-store withClient path entirely.
   if (params.acrossProjects) {
-    return listAcrossProjects(params);
+    return listAcrossProjects(params, requested);
   }
 
-  const page = params.page ?? 1;
-  const pageSize = params.pageSize ?? 20;
-  const offset = (page - 1) * pageSize;
+  const request = pageRequest(params.page, params.pageSize, DECISIONS_PAGE_SIZE);
+  const { page, pageSize, offset } = request;
 
   return withClient(
     (client) => {
@@ -285,12 +291,15 @@ export async function rbookDecisionsList(
           author: row.author,
         }));
 
+      const facts = pageFacts(request, decisions.length, totalCount);
       return createSuccess<RbookDecisionsListResult>({
         decisions,
         totalCount,
         page,
         pageSize,
-        hasMore: offset + decisions.length < totalCount,
+        hasMore: facts.hasMore,
+        nextPage: facts.nextPage,
+        nextPageCall: decisionsNextPage(requested, facts.nextPage),
         localProjectId: getProjectId(client),
       });
     },
@@ -318,9 +327,10 @@ interface CrossStoreDecisionRow extends CrossStoreRow {
  * the result.
  */
 async function listAcrossProjects(
-  params: RbookDecisionsListParams
+  params: RbookDecisionsListParams,
+  requested: RbookDecisionsListParams
 ): Promise<RbookToolResult<RbookDecisionsListResult>> {
-  const pageSize = params.pageSize ?? 20;
+  const request = pageRequest(params.page, params.pageSize, DECISIONS_PAGE_SIZE);
 
   const conditions = [`event_type = 'decision_captured'`];
   const sqlParams: unknown[] = [];
@@ -352,15 +362,25 @@ async function listAcrossProjects(
                  category, status, evidence, created_at, occurred_at, origin_seq
           FROM strategic_decisions
           WHERE ${conditions.join(' AND ')}`;
+  const counts = new Map<string, number>();
+  const rows = spinOutQuery('decision', sql, sqlParams);
+  const count = spinOutCount('decision', sql, sqlParams);
   const fanout = await queryAcrossStores<CrossStoreDecisionRow>({
     sql,
-    perStoreQuery: spinOutQuery('decision', sql, sqlParams),
+    perStoreQuery: (db, store, cap) => {
+      counts.set(store.project_id, count(db));
+      return rows(db, store, cap);
+    },
     params: sqlParams,
     order: 'desc',
-    limit: pageSize,
+    limit: request.offset + request.pageSize,
   });
+  // A store that failed contributes no rows, so it contributes no count either.
+  const failed = new Set(fanout.errors.map((error) => error.projectId));
+  let totalCount = 0;
+  for (const [projectId, n] of counts) if (!failed.has(projectId)) totalCount += n;
 
-  const decisions: StrategicDecision[] = fanout.results.map((row) => ({
+  const decisions: StrategicDecision[] = fanout.results.slice(request.offset).map((row) => ({
     id: row.id,
     ...decisionPreview(row.decision_text),
     domain: row.project_domain,
@@ -376,15 +396,42 @@ async function listAcrossProjects(
     projectId: row.project_id,
   }));
 
+  const facts = pageFacts(request, decisions.length, totalCount);
   return createSuccess<RbookDecisionsListResult>({
     decisions,
-    totalCount: decisions.length,
-    page: 1,
-    pageSize,
-    hasMore: fanout.metadata.truncated,
+    totalCount,
+    page: request.page,
+    pageSize: request.pageSize,
+    hasMore: facts.hasMore,
+    nextPage: facts.nextPage,
+    nextPageCall: decisionsNextPage(requested, facts.nextPage),
     acrossProjects: true,
     errors: fanout.errors,
     crossStoreMetadata: fanout.metadata,
+  });
+}
+
+/**
+ * s106-m03: 20 previews were 20,777 characters on OODS-Forge and 23,957 across projects; measured
+ * on every registered store, 15 still reached 19,354, so a page holds 12.
+ */
+export const DECISIONS_PAGE_SIZE = 12;
+
+/** The next page's call with the caller's own filters, as they were sent. */
+function decisionsNextPage(
+  requested: RbookDecisionsListParams,
+  nextPage: number | null
+): string | null {
+  return nextPageCall(nextPage, 'rbook_decisions', {
+    action: 'list',
+    acrossProjects: requested.acrossProjects === true ? true : undefined,
+    domain: requested.domain,
+    sprintId: requested.sprintId,
+    missionId: requested.missionId,
+    since: requested.since,
+    until: requested.until,
+    pageSize: requested.pageSize,
+    projectRoot: requested.acrossProjects === true ? undefined : requested.projectRoot,
   });
 }
 
@@ -422,7 +469,7 @@ export function formatDecisionsListForLLM(
     lines.push(
       `Across ${m.storesSucceeded}/${m.storesQueried} project(s)` +
         (m.storesFailed > 0 ? ` (${m.storesFailed} unreadable)` : '') +
-        ` — ${data.decisions.length} decisions, fan-in ${m.overallMs}ms`
+        ` — ${shownLine(data, data.decisions.length, 'decisions').replace(/^S/, 's')}, fan-in ${m.overallMs}ms`
     );
   } else {
     lines.push(
@@ -481,16 +528,8 @@ export function formatDecisionsListForLLM(
     );
   }
 
-  // Pagination info. The cross-store path returns a single bounded top-N page (no
-  // offset/cursor — see listAcrossProjects), so do NOT advertise a `page=N+1` that
-  // would silently re-return the same rows; tell the operator to widen pageSize.
-  if (data.hasMore) {
-    lines.push(
-      data.acrossProjects
-        ? 'More results available — this is a bounded top-N portfolio view; increase pageSize to see more.'
-        : `More results available. Use page=${data.page + 1} to see next page.`
-    );
-  }
+  // s106-m03: the portfolio list pages as the local one does, so both name the same call.
+  if (data.nextPageCall) lines.push(`Next page: ${data.nextPageCall}.`);
 
   appendWarnings(lines, result);
 

@@ -194,6 +194,9 @@ function resolveRevision(repoRoot: string, revision: string): string | null {
   }
 }
 
+/** s106-m05 (#1738): the excluded tree's listing passed execFileSync's 1 MiB default; the mirror uses 64 MiB. */
+const GIT_LISTING_BUFFER = 64 * 1024 * 1024;
+
 function splitNullTerminated(output: string): string[] {
   return output.split('\0').filter(Boolean);
 }
@@ -215,6 +218,7 @@ function trackedMirrorMarkers(repoRoot: string, exclusions: MirrorExclusions): s
         cwd: repoRoot,
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
+        maxBuffer: GIT_LISTING_BUFFER,
       })
     );
     const committed = splitNullTerminated(
@@ -222,6 +226,7 @@ function trackedMirrorMarkers(repoRoot: string, exclusions: MirrorExclusions): s
         cwd: repoRoot,
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
+        maxBuffer: GIT_LISTING_BUFFER,
       })
     );
     const tracked = new Set([...indexed, ...committed]);

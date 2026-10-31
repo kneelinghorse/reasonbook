@@ -27,9 +27,12 @@ mission merely to make closeout succeed. Keep any mission-completion call notes-
 material decisions, learnings and feedback separately. Counts in the close summary state the
 filter or counting rule.
 
-Read open next steps with `rbook_context(action="next_steps", nextStepAction="list")`. Complete what
+Read open next steps with `rbook_context(action="next_steps", nextStepAction="list")`, which answers
+15 at a time; make each answer's `Next page` call until an answer names none. Complete what
 was done, drop what is deliberately obsolete, and carry what remains useful with
-`rbook_context(action="next_steps", nextStepAction="carry", nextStepIds=[<ids>])`.
+`rbook_context(action="next_steps", nextStepAction="carry", nextStepIds=[<ids>])`. Completing or
+dropping a row moves the later rows up, so after acting on a page, read it again before its
+`Next page` call.
 Add `carryToSprint` only for an existing target sprint; omit it to park work without inventing a
 sprint. Carry renews the lease, so do not carry everything automatically. Local next-step carry
 does not require cross-project messages. A closeout request alone does not authorize sending them.

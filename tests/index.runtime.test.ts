@@ -742,6 +742,100 @@ describe('Mission Protocol entry lifecycle', () => {
     }
   });
 
+  // s106-m01, practice 4's real-store positive fire: the real dispatch writes both instruments, and
+  // close measure 11 counts a misuse refusal by the parameter it named, with a refusal made before
+  // resolution and naming no project counted in the anonymous bound beside it.
+  test('the actual MCP boundary feeds close measures 11 and 12 and their anonymous bound', async () => {
+    const project = await createSeededRbookProject(
+      {
+        dashboardProjectId: '0b0c9b5e-6b8e-4b8f-9d0a-6d1f3e2a7c41',
+        rbookAddress: 'rbook://test/misuse',
+        owner: 'test',
+      },
+      'rbook-misuse-'
+    );
+    const config = await fs.mkdtemp(path.join(os.tmpdir(), 'rbook-misuse-config-'));
+    const previous = process.env.RBOOK_CONFIG_DIR;
+    process.env.RBOOK_CONFIG_DIR = config;
+    const moduleData = await loadIndexModule();
+    try {
+      const { indexModule, mockServer } = moduleData;
+      const telemetry = await import('../src/tools/rbook/local-telemetry');
+      const stats = await import('../src/tools/rbook/telemetry-stats');
+      indexModule.__test__.registerToolHandlers(createMockContext());
+      const handler = mockServer.setRequestHandler.mock.calls[1][1] as (
+        request: any
+      ) => Promise<any>;
+      const since = new Date(Date.now() - 1000).toISOString();
+      const missing = await handler({
+        params: {
+          name: 'rbook_decisions',
+          arguments: { projectRoot: project.projectRoot, action: 'show' },
+        },
+      });
+      expect(missing.structuredContent.error).toMatchObject({
+        code: 'MISSING_PARAMETER',
+        field: 'decisionId',
+      });
+      const unknown = await handler({
+        params: { name: 'rbook_decisions', arguments: { action: 'show', privateKey: 1 } },
+      });
+      expect(unknown.structuredContent.error).toMatchObject({
+        code: 'INVALID_PARAMETER',
+        field: 'privateKey',
+      });
+      const until = new Date(Date.now() + 1000).toISOString();
+
+      const target = telemetry.targetForStore(
+        path.join(project.projectRoot, 'rbook/db/rbook.sqlite')
+      )!;
+      const rows = telemetry.readTelemetry(target);
+      expect(rows).toEqual([
+        expect.objectContaining({ refused: 'MISSING_PARAMETER', refusedField: 'decisionId' }),
+      ]);
+      expect(Number.isSafeInteger(rows[0].lookupMs)).toBe(true);
+      const anonymous = telemetry.readTelemetry(telemetry.unattributedTarget());
+      expect(anonymous).toEqual([
+        expect.objectContaining({
+          refused: 'INVALID_PARAMETER',
+          refusedField: 'unknown',
+          lookupMs: null,
+        }),
+      ]);
+      expect(JSON.stringify(anonymous)).not.toContain('privateKey');
+
+      const window = { since, until, baselineSince: since, baselineUntil: until };
+      const exported = stats.exportTelemetryStats(
+        await stats.collectTelemetryStats([project.projectRoot], window, process.env)
+      );
+      expect(exported.misuse).toMatchObject({
+        rows: 1,
+        refusals: 1,
+        byField: [
+          { tool: 'rbook_decisions', action: 'show', refusedField: 'decisionId', refusals: 1 },
+        ],
+        anonymous: {
+          available: true,
+          refusals: 1,
+          byField: [
+            { tool: 'rbook_decisions', action: 'show', refusedField: 'unknown', refusals: 1 },
+          ],
+        },
+      });
+      expect(exported.lookups).toMatchObject({
+        rows: 1,
+        measured: 1,
+        anonymous: { rows: 1, noLookup: 1 },
+      });
+    } finally {
+      moduleData.cleanup();
+      if (previous === undefined) delete process.env.RBOOK_CONFIG_DIR;
+      else process.env.RBOOK_CONFIG_DIR = previous;
+      await project.cleanup();
+      await fs.rm(config, { recursive: true, force: true });
+    }
+  });
+
   test('registerToolHandlers preserves MethodNotFound for an unknown tool', async () => {
     const moduleData = await loadIndexModule();
     const { indexModule, mockServer, ErrorHandler } = moduleData;

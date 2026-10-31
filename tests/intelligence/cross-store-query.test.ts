@@ -33,7 +33,10 @@ import {
   ProjectGraphRegistry,
   type ProjectGraphEntry,
 } from '../../src/intelligence/project-graph-registry';
-import { rbookDecisionsList } from '../../src/tools/rbook/rbook-decisions-list';
+import {
+  formatDecisionsListForLLM,
+  rbookDecisionsList,
+} from '../../src/tools/rbook/rbook-decisions-list';
 
 interface DecisionSeed {
   id: number;
@@ -684,5 +687,36 @@ describe('cross-store fan-out read API (Sprint 69 m06)', () => {
     expect(data.decisions.map((d) => d.projectId)).toEqual(['proj-a', 'proj-b']);
     expect(data.decisions[0].domain).toBe('da');
     expect(data.crossStoreMetadata?.storesSucceeded).toBe(2);
+  });
+
+  it('pages rbook_decisions list acrossProjects in merge order with a true total (s106-m03)', async () => {
+    // The portfolio list ignored page and reported its page's length as the total.
+    const seed = (n: number, at: number) => ({
+      id: n,
+      text: `decision ${n}`,
+      occurred_at: at,
+      origin_seq: n,
+    });
+    const a = makeStore('proj-a', { decisions: [seed(1, 600), seed(2, 400), seed(3, 200)] });
+    const b = makeStore('proj-b', { decisions: [seed(1, 500), seed(2, 300), seed(3, 100)] });
+    const reg = await ProjectGraphRegistry.create();
+    reg.register({ project_id: 'proj-a', store_path: a, name: 'proj-a' });
+    reg.register({ project_id: 'proj-b', store_path: b, name: 'proj-b' });
+
+    const seen: string[] = [];
+    let page: number | null = 1;
+    while (page !== null) {
+      const result = await rbookDecisionsList({ acrossProjects: true, pageSize: 2, page });
+      const data = result.data!;
+      expect(data.totalCount).toBe(6);
+      expect(data.page).toBe(page);
+      seen.push(...data.decisions.map((d) => `${d.projectId}:${d.id}`));
+      if (data.nextPage !== null)
+        expect(formatDecisionsListForLLM(result)).toContain(
+          `Next page: rbook_decisions(action="list", acrossProjects=true, pageSize=2, page=${data.nextPage}).`
+        );
+      page = data.nextPage;
+    }
+    expect(seen).toEqual(['proj-a:1', 'proj-b:1', 'proj-a:2', 'proj-b:2', 'proj-a:3', 'proj-b:3']);
   });
 });

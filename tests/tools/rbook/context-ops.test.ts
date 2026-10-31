@@ -149,11 +149,12 @@ function projectRootOf(dbPath: string): string {
   return path.dirname(path.dirname(path.dirname(dbPath)));
 }
 
+/** These cases read the documents, so they ask for the full view (s106-m03: the digest is the default). */
 async function callContextView(
   dbPath: string,
   params: { contextType?: 'master_context' | 'project_context' } = {}
 ): Promise<RbookToolResult<RbookContextViewResult>> {
-  return rbookContextView({ ...params, projectRoot: projectRootOf(dbPath) });
+  return rbookContextView({ ...params, compact: false, projectRoot: projectRootOf(dbPath) });
 }
 
 async function callContextSnapshot(

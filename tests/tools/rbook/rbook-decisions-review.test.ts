@@ -20,6 +20,8 @@ import {
 } from '../../../src/tools/rbook/staleness-detection';
 import { withClient } from '../../../src/tools/rbook/client';
 import { RbookDetector } from '../../../src/intelligence/rbook-detector';
+import { PREVIEW_MAX_CHARS } from '../../../src/tools/rbook/text-preview';
+import { REREAD_AFTER_ACTING } from '../../../src/tools/rbook/answer-page';
 
 describe('rbook_decisions review & batch_update', () => {
   let tempDir: string;
@@ -300,6 +302,147 @@ describe('rbook_decisions review & batch_update', () => {
       expect(formatted).toContain('Decision Lifecycle Review');
       expect(formatted).toContain('Archive');
       expect(formatted).toContain('batch_update');
+    });
+  });
+
+  describe('review pages (s106-m03)', () => {
+    const long = 'Archive candidate '.repeat(30).trim();
+
+    beforeEach(() => {
+      const db = new Database(dbPath);
+      const insert = db.prepare(
+        `INSERT INTO strategic_decisions (decision_text, created_at, sprint_id, status)
+         VALUES (?, '2025-01-02T00:00:00Z', 'sprint-5', 'active')`
+      );
+      for (let i = 0; i < 25; i++) insert.run(i === 0 ? long : `Old decision ${i + 1}`);
+      db.close();
+    });
+
+    async function review(params: Record<string, unknown> = {}) {
+      return rbookDecisions({ action: 'review', projectRoot: tempDir, ...params } as never);
+    }
+
+    it('returns 8 decisions a page, with every count over all of them, and pages to the last', async () => {
+      // OODS-Forge's review was 258,332 characters: every candidate, in full, on one answer; 10 a
+      // page still reached 20,128.
+      const whole = await withClient(
+        (client) => ({ success: true as const, data: reviewDecisionStaleness(client) }),
+        { projectRoot: tempDir }
+      );
+      const all = whole.data!.decisions;
+      const count = (action: string) => all.filter((d) => d.suggestedAction === action).length;
+      const first = await review();
+      const data = first.data as any;
+      expect(all.length).toBeGreaterThan(20);
+      expect(data.decisions).toHaveLength(8);
+      expect(data.decisionCount).toBe(all.length);
+      expect(data.countsByAction).toEqual({
+        archive: count('archive'),
+        review: count('review'),
+        confirm: count('confirm'),
+      });
+      expect(data).toMatchObject({ page: 1, pageSize: 8, hasMore: true, nextPage: 2 });
+      const text = formatDecisionsForLLM('review', first);
+      expect(text).toContain(`${all.length} decision(s) need attention`);
+      expect(text).toContain(`Showing 1–8 of ${all.length} decisions`);
+      expect(text).toContain(
+        `Next page: rbook_decisions(action="review", projectRoot=${JSON.stringify(tempDir)}, page=2).`
+      );
+      // The archive call names only the ids on this page, and says so.
+      const archiveIds = data.decisions
+        .filter((d: StaleDecisionDetail) => d.suggestedAction === 'archive')
+        .map((d: StaleDecisionDetail) => d.id);
+      expect(text).toContain(`decisionIds=[${archiveIds.join(',')}]`);
+      expect(text).toContain(`this page's ${archiveIds.length}`);
+
+      const seen: number[] = data.decisions.map((d: StaleDecisionDetail) => d.id);
+      let page: number | null = data.nextPage;
+      while (page !== null) {
+        const next = (await review({ page })).data as any;
+        expect(next.countsByAction).toEqual(data.countsByAction);
+        seen.push(...next.decisions.map((d: StaleDecisionDetail) => d.id));
+        page = next.nextPage;
+      }
+      expect(seen).toEqual(all.map((d) => d.id));
+    });
+
+    it('skips candidates when a page is acted on and the Next page call follows (critic B2)', async () => {
+      // Why the note exists: archiving page 1 moves the later candidates up, so page 2 starts past
+      // rows no page showed. If paging ever stops shifting rows, this fails and the note can go.
+      const first = (await review()).data as any;
+      const archive = first.decisions
+        .filter((d: StaleDecisionDetail) => d.suggestedAction === 'archive')
+        .map((d: StaleDecisionDetail) => d.id);
+      expect(archive.length).toBeGreaterThan(0);
+      const before = await withClient(
+        (client) => ({ success: true as const, data: reviewDecisionStaleness(client) }),
+        { projectRoot: tempDir }
+      );
+      await rbookDecisions({
+        action: 'batch_update',
+        decisionIds: archive,
+        status: 'archived',
+        projectRoot: tempDir,
+      });
+      const seen = new Set<number>(first.decisions.map((d: StaleDecisionDetail) => d.id));
+      let page: number | null = first.nextPage;
+      while (page !== null) {
+        const next = (await review({ page })).data as any;
+        next.decisions.forEach((d: StaleDecisionDetail) => seen.add(d.id));
+        page = next.nextPage;
+      }
+      expect(before.data!.decisions.some((d) => !seen.has(d.id))).toBe(true);
+    });
+
+    it('reaches every candidate when each acted-on page is read again, as its note says', async () => {
+      const first = (await review()).data as any;
+      expect(first.pageNote).toBe(REREAD_AFTER_ACTING);
+      expect(formatDecisionsForLLM('review', { success: true, data: first } as never)).toContain(
+        REREAD_AFTER_ACTING
+      );
+      const all = await withClient(
+        (client) => ({ success: true as const, data: reviewDecisionStaleness(client) }),
+        { projectRoot: tempDir }
+      );
+      // Archive the even-numbered archive candidates and leave the rest: acting on a property of
+      // the row, not its place, leaves page 1 full of rows left alone, so Next page must be used.
+      const seen = new Set<number>();
+      const handled = new Set<number>();
+      let page = 1;
+      for (let calls = 0; calls < 60; calls++) {
+        const data = (await review({ page })).data as any;
+        data.decisions.forEach((d: StaleDecisionDetail) => seen.add(d.id));
+        const fresh = data.decisions.filter((d: StaleDecisionDetail) => !handled.has(d.id));
+        fresh.forEach((d: StaleDecisionDetail) => handled.add(d.id));
+        const archive = fresh
+          .filter((d: StaleDecisionDetail) => d.suggestedAction === 'archive' && d.id % 2 === 0)
+          .map((d: StaleDecisionDetail) => d.id);
+        if (archive.length > 0) {
+          await rbookDecisions({
+            action: 'batch_update',
+            decisionIds: archive,
+            status: 'archived',
+            projectRoot: tempDir,
+          });
+          continue; // read the same page again
+        }
+        if (data.nextPage === null) break;
+        page = data.nextPage;
+      }
+      expect(all.data!.decisions.filter((d) => !seen.has(d.id))).toEqual([]);
+      expect(page).toBeGreaterThanOrEqual(2);
+    });
+
+    it('previews a long decision with its full length, and pageSize sets the page', async () => {
+      const data = (await review({ pageSize: 50 })).data as any;
+      expect(data.decisions).toHaveLength(data.decisionCount);
+      expect(data.hasMore).toBe(false);
+      const cut = data.decisions.find((d: { truncated: boolean }) => d.truncated);
+      expect(cut).toMatchObject({ fullLength: long.length });
+      expect(cut.text.length).toBeLessThanOrEqual(PREVIEW_MAX_CHARS);
+      expect(formatDecisionsForLLM('review', { success: true, data } as never)).toContain(
+        `rbook_decisions(action="show", decisionId=${cut.id})`
+      );
     });
   });
 

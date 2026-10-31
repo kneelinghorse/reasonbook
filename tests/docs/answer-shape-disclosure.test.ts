@@ -273,14 +273,26 @@ const EXPECTED_TOTALS = {
   // s102-m07: refusal bounds and parked-status helpers add files; answer types stay unchanged.
   // s104-m04 adds the directory guard and separates local/full status result declarations.
   // Local status exposes edition/address/health and declares absent dashboard fields as never.
-  files: 327,
+  // s106-m01: telemetry-stats-misuse.ts (close measures 11 and 12) adds one file, no answer type.
+  // s106-m02: emptied-parameter.ts (a refusal kept out of the sealed errors.ts) adds one file, no
+  // answer type.
+  // s106-m03: answer-page.ts (the shared page arithmetic) adds one file, no answer type.
+  files: 330,
   roots: 151,
   declarations: 350,
   compositions: 350,
   // s98-m11: bulk feedback receipts name the project and list already resolved skips.
   // s98-m12: ProjectTypeFields gains optional build_freshness_check, disclosed in CHANGELOG.
   // s98-m13: sprint-close adds implicitSessionsAtClose beside the direct-membership list.
-  rows: 1966,
+  // s106-m03: capped answers gain their page (page, hasMore, nextPage, nextPageCall, and pageSize
+  // where the page size is not already stated), each previewed text field its truncated and full
+  // length, the review its counts over every candidate, session search its matchedCaptureCount,
+  // and the context digest its totals: 52 rows, disclosed in the CHANGELOG. Its critic fold adds
+  // the next-steps and constraints pages, the re-read note on lists the reader acts on, listed
+  // item counts, sprint show's and the work queue's preview flags and the digest's reads, and
+  // takes back onboard's guide preview: 22 rows. Round 2 adds the session list's nextPage and
+  // nextPageCall, and pages the digest's document lists (compact's page fields): 2 rows.
+  rows: 2042,
 } as const;
 const EXPLICIT_OPAQUE_LEDGER = [
   'RbookToolError.providedValue = ANY',

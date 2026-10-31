@@ -394,7 +394,11 @@ describe('ACTION_PARAMS vacuity floor (s86-m04)', () => {
       // s94-m04: record adds context, alternatives, consequences, deciders and mode.
       // s97-m13: start adds targetStatus (Current promotes without starting).
       // s97-m07: rbook_feedback resolve adds feedbackIds (many rows in one call): 456 -> 457.
-      expect(entryCount).toBe(461);
+      // s106-m03: page on feedback list, mission list, sprint list, retro and analytics, and
+      // session search; page and pageSize on decisions review: 461 -> 469; page and pageSize on
+      // the next_steps and constraints actions: 469 -> 473; and on view, whose digest pages the
+      // context documents' constraints and next steps: 473 -> 475.
+      expect(entryCount).toBe(475);
 
       // Floors, so a walker that silently stops producing branches fails here rather than passing
       // every applicability case with nothing to check.

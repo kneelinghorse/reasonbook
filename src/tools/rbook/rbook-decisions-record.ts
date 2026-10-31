@@ -26,6 +26,7 @@ import {
 import {
   approvalEcho,
   directRecordAnswers,
+  draftOwnText,
   evaluateDraft,
   settlePendingDeclines,
   recordDraftOfKind,
@@ -146,8 +147,20 @@ export async function rbookDecisionsRecord(
   if (!prepared.success || !prepared.data) return createError(prepared.error!);
   const fields = prepared.data.fields;
   // A wrong-typed `content` is refused by the router's boundary guard (param-type-guard.ts).
-  const rawContent = (params.content ?? '').trim();
-  if (rawContent === '') {
+  let rawContent = (params.content ?? '').trim();
+  const fromDraft = params.fromDraft !== undefined && params.fromDraft !== null;
+  // s106-m02 (#870, design settled item 1): fromDraft without content records the draft in its own
+  // words. The text is taken before sanitizing, so every later check sees what a verbatim
+  // restatement gives. An id that is malformed or names no draft is refused by the evaluation below.
+  if (rawContent === '' && fromDraft) {
+    const own = await withClientAsync(
+      async (client) => createSuccess(draftOwnText(client, params.fromDraft)),
+      { projectRoot: params.projectRoot }
+    );
+    if (!own.success) return createError(own.error!);
+    rawContent = (own.data ?? '').trim();
+  }
+  if (rawContent === '' && !fromDraft) {
     return createError(RbookErrors.missingParameter('content'));
   }
 

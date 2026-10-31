@@ -387,3 +387,82 @@ it('serves fleet reads through MCP without requiring a local project or mutating
     else process.env.RBOOK_PROJECT_ROOT = savedRoot;
   }
 });
+
+it('pages the merged fleet list newest first, five rows by default, each row once (s106-m03)', async () => {
+  // The old 50-row default was 86,243 characters across 26 stores, and ten rows still 25,644.
+  const a = store('alpha');
+  const b = store('beta');
+  for (let id = 1; id <= 8; id++) insert(a, id);
+  for (let id = 1; id <= 7; id++) insert(b, id);
+  const first = await list();
+  expect(first.data).toMatchObject({
+    totalCount: 15,
+    limit: 5,
+    page: 1,
+    hasMore: true,
+    nextPage: 2,
+  });
+  const text = formatFeedbackForLLM('list', first);
+  expect(text).toContain('Showing 1–5 of 15 matching rows');
+  expect(text).toContain('Next page: rbook_feedback(action="list", acrossProjects=true, page=2).');
+  const ids = (result: typeof first): string[] =>
+    (result.data as unknown as { entries: Array<{ id: string }> }).entries.map((entry) => entry.id);
+  const seen = ids(first);
+  let page = (first.data as unknown as { nextPage: number | null }).nextPage;
+  while (page !== null) {
+    const next = await list({ page });
+    seen.push(...ids(next));
+    page = (next.data as unknown as { nextPage: number | null }).nextPage;
+    if (page === null) expect(formatFeedbackForLLM('list', next)).not.toContain('Next page');
+  }
+  // insert(project, n) writes n seconds before now, so the stores interleave; a tie goes to alpha.
+  const expected = [1, 2, 3, 4, 5, 6, 7].flatMap((n) => [
+    `alpha:feedback:${n}`,
+    `beta:feedback:${n}`,
+  ]);
+  expect(seen).toEqual([...expected, 'alpha:feedback:8']);
+});
+
+it('pages resolved feedback two rows at a time, the other statuses five (s106-m03, decision #1730)', async () => {
+  // A resolved row goes out whole with its resolution note: at five a page, 4 of the fleet's 8
+  // resolved pages passed 20,000 characters (largest 22,364), and three or four rows still did.
+  const a = store('alpha');
+  const b = store('beta');
+  for (let id = 1; id <= 3; id++) insert(a, id, 'resolved');
+  for (let id = 1; id <= 2; id++) insert(b, id, 'resolved');
+  for (let id = 4; id <= 9; id++) insert(a, id, 'archived');
+  const first = await list({ status: 'resolved' });
+  expect(first.data).toMatchObject({
+    totalCount: 5,
+    limit: 2,
+    page: 1,
+    hasMore: true,
+    nextPage: 2,
+  });
+  expect(formatFeedbackForLLM('list', first)).toContain(
+    'Next page: rbook_feedback(action="list", acrossProjects=true, status="resolved", page=2).'
+  );
+  const ids = (result: typeof first): string[] =>
+    (result.data as unknown as { entries: Array<{ id: string }> }).entries.map((entry) => entry.id);
+  const seen = ids(first);
+  let page = (first.data as unknown as { nextPage: number | null }).nextPage;
+  while (page !== null) {
+    const next = await list({ status: 'resolved', page });
+    seen.push(...ids(next));
+    page = (next.data as unknown as { nextPage: number | null }).nextPage;
+  }
+  expect(seen).toEqual([
+    'alpha:feedback:1',
+    'beta:feedback:1',
+    'alpha:feedback:2',
+    'beta:feedback:2',
+    'alpha:feedback:3',
+  ]);
+  for (const status of ['open', 'triaged', 'archived'])
+    expect((await list({ status })).data).toMatchObject({ limit: 5 });
+  expect((await list({ status: 'archived' })).data).toMatchObject({ totalCount: 6, hasMore: true });
+  expect((await list({ status: 'resolved', limit: 5 })).data).toMatchObject({
+    limit: 5,
+    hasMore: false,
+  });
+});
