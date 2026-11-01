@@ -403,6 +403,25 @@ export async function rbookMissionUpdate(
           if (!fieldKeys.includes('domainFields')) fieldKeys.push('domainFields');
         }
 
+        // s108-m03: an update to Deferred is a new deferral, so it stamps deferredAt, as defer does; a
+        // date that belonged to an earlier deferral (checkAfterDeferredAt) then no longer counts as due.
+        if (newStatus === 'Deferred') {
+          let existing: Record<string, unknown> = {};
+          try {
+            const parsed: unknown = JSON.parse(mission.domain_fields ?? '{}');
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+              existing = parsed as Record<string, unknown>;
+            }
+          } catch {
+            /* Malformed fields hold no date to keep. */
+          }
+          fields.domainFields = {
+            ...(fields.domainFields ?? existing),
+            deferredAt: new Date().toISOString(),
+          };
+          if (!fieldKeys.includes('domainFields')) fieldKeys.push('domainFields');
+        }
+
         // Build dynamic UPDATE query
         const setClauses: string[] = [];
         const queryParams: (string | null)[] = [];

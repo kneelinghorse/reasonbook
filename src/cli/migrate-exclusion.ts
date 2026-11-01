@@ -8,7 +8,10 @@ import { createHash } from 'crypto';
 import Database from 'better-sqlite3';
 
 export function migrationCoordinatorPath(root: string): string {
-  const canonical = fs.realpathSync(root);
+  // s108-m05: one folder by device and inode, so every spelling of it (a case variant, a symlink,
+  // macOS's /System/Volumes/Data firmlink) shares one coordinator; a typed realpath kept the case.
+  const folder = fs.statSync(root);
+  const canonical = `${folder.dev}:${folder.ino}`;
   const owner = process.getuid?.() ?? os.userInfo().username;
   const directory = path.join(os.tmpdir(), `reasonbook-migration-locks-${owner}`);
   fs.mkdirSync(directory, { recursive: true, mode: 0o700 });

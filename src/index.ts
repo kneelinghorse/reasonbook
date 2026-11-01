@@ -13,7 +13,7 @@
  */
 
 import { isDirectoryEdition, directoryCallError } from './edition';
-import { getSetting, settingIsOff } from './intelligence/legacy-compat';
+import { getSetting, RecordMigrationError, settingIsOff } from './intelligence/legacy-compat';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getServerVersion } from './server-version';
@@ -111,7 +111,7 @@ import {
   ReadOnlyAgentGuardError,
 } from './tools/rbook/read-only-agent-guard';
 import { classifyAction } from './tools/rbook/action-taxonomy';
-import { toolEffectMetadata } from './tools/rbook/tool-effects';
+import { fullEditionAnnotations, toolEffectMetadata } from './tools/rbook/tool-effects';
 import {
   captureToolCall,
   setToolProjectResolution,
@@ -300,7 +300,11 @@ export function getToolDefinitions(): ToolDefinition[] {
     ...toWireDefinition(definition),
     ...toolEffectMetadata(definition.name),
   }));
-  return local ? directoryWire(definitions) : definitions;
+  if (local) return directoryWire(definitions);
+  return definitions.map((definition) => ({
+    ...definition,
+    annotations: fullEditionAnnotations(definition.annotations),
+  }));
 }
 
 /**
@@ -399,14 +403,21 @@ export async function buildMissionProtocolContext(options?: {
   // Detect Reasonbook in the project (respects RBOOK_PROJECT_ROOT env var)
   const projectRoot = resolveProjectRoot();
   const detector = RbookDetector.getInstance({ cacheTtlMs: 60_000 });
-  const rbookResult = await detector.detect(projectRoot);
-  const rbookDetected = rbookResult.hasRbookDirectory && rbookResult.hasDatabase;
+  let rbookResult: Awaited<ReturnType<RbookDetector['detect']>> | undefined;
+  try {
+    rbookResult = await detector.detect(projectRoot);
+  } catch (error) {
+    // s108-m05: a server that starts while its record moves starts; each call refuses through the
+    // same guard until the move ends (E5 F7). This detection only feeds a startup log line.
+    if (!(error instanceof RecordMigrationError)) throw error;
+  }
+  const rbookDetected = Boolean(rbookResult?.hasRbookDirectory && rbookResult.hasDatabase);
 
   return {
     defaultModel,
     tokenCounter,
     rbookDetected,
-    rbookDatabasePath: rbookResult.databasePath,
+    rbookDatabasePath: rbookResult?.databasePath,
   };
 }
 
@@ -806,6 +817,19 @@ export function registerToolHandlers(
               // keep their JSON-RPC error shape — they already carry a clear message.
               if (originalError instanceof ProtocolError) {
                 throw originalError;
+              }
+              // s108-m05: a record mid-move refuses the call, as the guard means it to; the same
+              // call works once the move ends, so this is no fault to report.
+              if (originalError instanceof RecordMigrationError) {
+                return attachProjectIdentityDisclosures(
+                  buildKnownToolErrorResult({
+                    code: RBOOK_ERROR_CODES.DB_CONNECTION_FAILED,
+                    message: originalError.message,
+                    suggestion:
+                      'Retry the call once the move ends. If no reasonbook migrate is running, run reasonbook migrate --apply in this project to finish or roll back the interrupted move.',
+                  }),
+                  projectIdentityDisclosuresForError(error)
+                );
               }
               return attachProjectIdentityDisclosures(
                 buildToolExecutionErrorResult(name, args, originalError),
@@ -1547,6 +1571,15 @@ async function runStartupAttributionSelfTest(): Promise<StartupAttributionSelfTe
         warning: null,
       };
     }
+    // s108-m05: a record mid-move is expected, not a failure; its calls refuse until it ends.
+    if (error instanceof RecordMigrationError) {
+      return {
+        projectRoot: null,
+        source: null,
+        errorCode: 'RECORD_MIGRATION_IN_PROGRESS',
+        warning: null,
+      };
+    }
 
     const message = error instanceof Error ? error.message : 'unknown error';
     return {
@@ -1606,8 +1639,20 @@ async function initializeServer(): Promise<MissionProtocolContext> {
     // s92-m01: say which defaults a contextless call can use, and which it cannot.
     const serverProjectRoot = getServerProjectRoot();
     if (serverProjectRoot) {
-      const configured = findEnclosingStore(serverProjectRoot);
-      if (configured?.hasDatabase && configured.root === serverProjectRoot) {
+      let configured: ReturnType<typeof findEnclosingStore> | undefined;
+      let moving = false;
+      try {
+        configured = findEnclosingStore(serverProjectRoot);
+      } catch (error) {
+        // s108-m05: a server started with --project-root while that record moves starts too.
+        if (!(error instanceof RecordMigrationError)) throw error;
+        moving = true;
+      }
+      if (moving) {
+        console.error(
+          `[WARN] ${PROJECT_ROOT_ARG}: ${serverProjectRoot} is being moved, or its move needs recovery; its calls are refused until reasonbook migrate finishes it.`
+        );
+      } else if (configured?.hasDatabase && configured.root === serverProjectRoot) {
         debugLog(
           `[INFO] ${PROJECT_ROOT_ARG}: ${serverProjectRoot} (used for calls with no project context)`
         );

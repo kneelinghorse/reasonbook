@@ -45,6 +45,8 @@ import {
 } from './implicit-session-lifecycle';
 import { recordedTransaction } from './record-changes';
 import { LEASED_STATUS_SQL } from './next-step-lease';
+import { readCheckAfter, SHARED_DATE_NOTE } from './next-step-dates';
+import { isGiven } from './inapplicable-param';
 import { storedTimeMs } from './stored-time';
 
 /**
@@ -124,6 +126,8 @@ export interface RbookSessionCaptureResult {
 
   /** s100-m03: real next_steps row ID for a new or de-duplicated next-step capture. */
   nextStepId?: number;
+  /** s108-m02: the day a new next-step row waits until, as stored. */
+  checkAfter?: string;
 
   /** Number of decisions extracted (present for decision category captures) */
   decisionExtractionCount?: number;
@@ -269,6 +273,14 @@ export const rbookSessionCaptureSchema = z.object({
       'Learning IDs this capture cites. Bumps last_reviewed_at on each — applies to category=decision|learning.'
     ),
 
+  /** s108-m02: the day a next-step capture waits until (next-step-dates.ts). */
+  checkAfter: z
+    .string()
+    .optional()
+    .describe(
+      'The day a next-step capture waits until, after today and at most 180 days ahead. Applies only to next-step captures.'
+    ),
+
   /** Optional never-stale flag for learning captures. */
   evergreen: z
     .boolean()
@@ -364,6 +376,11 @@ export const rbookSessionCaptureToolDefinition = {
         description:
           'Learning IDs this capture cites. Bumps last_reviewed_at on each — applies to category=decision|learning.',
       },
+      checkAfter: {
+        type: 'string',
+        description:
+          'The day a next-step capture waits until, after today and at most 180 days ahead. Applies only to next-step captures.',
+      },
       evergreen: {
         type: 'boolean',
         description:
@@ -420,6 +437,23 @@ export async function rbookSessionCapture(
       providedValue: params.evergreen,
       suggestion: 'Remove evergreen or capture the content as category="learning"',
     });
+  }
+
+  // s108-m02: a date belongs to a next step, as evergreen belongs to a learning. Only a future day is
+  // stored, so the row never starts out due or lapsing (design, settled item 5).
+  let checkAfter: string | undefined;
+  if (isGiven(params.checkAfter)) {
+    if (params.category !== 'next-step')
+      return createError<RbookSessionCaptureResult>({
+        code: RBOOK_ERROR_CODES.INVALID_PARAMETER,
+        message: "Parameter 'checkAfter' applies only to category='next-step' captures",
+        field: 'checkAfter',
+        providedValue: params.checkAfter,
+        suggestion: 'Remove checkAfter or capture the content as category="next-step"',
+      });
+    const day = readCheckAfter(String(params.checkAfter), 'capture');
+    if ('error' in day) return createError<RbookSessionCaptureResult>(day.error);
+    checkAfter = day.day;
   }
 
   const category = params.category;
@@ -640,6 +674,7 @@ export async function rbookSessionCapture(
           context?: string;
           missionId?: string;
           expiresAt?: string;
+          checkAfter?: string;
           sprintId?: string;
         } = {
           timestamp: now,
@@ -659,6 +694,11 @@ export async function rbookSessionCapture(
         // permanently undefined. A test exercising only capture would report the bug fixed.
         if (params.expiresAt) {
           newCapture.expiresAt = params.expiresAt;
+        }
+        // s108-m02: the second leg for checkAfter, as above for expiresAt: the session close that
+        // rebuilds a row whose write here failed reads the date off this stored capture.
+        if (checkAfter) {
+          newCapture.checkAfter = checkAfter;
         }
         // s92-m03: the sprint of a row this capture leaves to its session's close is decided now, by
         // the rule the immediate rows follow: the mission's sprint, else the explicit sprintId. With
@@ -970,8 +1010,12 @@ export async function rbookSessionCapture(
           // a kept capture from the step it repeats (the write-path critic's round 2).
           const trimmed = content.trim();
           const hash = computeContentHash(trimmed, 'next-step');
-          const existing = client.getOne<{ id: number; status: string }>(
-            `SELECT n.id, n.status FROM next_steps n
+          const existing = client.getOne<{
+            id: number;
+            status: string;
+            resolved_at: string | null;
+          }>(
+            `SELECT n.id, n.status, n.resolved_at FROM next_steps n
               WHERE n.session_id = ? AND ${SAME_TEXT_SQL}
               ORDER BY CASE WHEN ${LEASED_STATUS_SQL} THEN 0 ELSE 1 END, n.id LIMIT 1`,
             [sessionId, hash, trimmed]
@@ -991,6 +1035,11 @@ export async function rbookSessionCapture(
                 `Next step #${id} has this text in this session and is ${status}, so this capture opened nothing. ` +
                   `To open it again: rbook_context(action="next_steps", nextStepAction="reopen", nextStepIds=[${id}]).`
               );
+            else if (checkAfter && existing.data.resolved_at !== checkAfter)
+              warnings.push(
+                `Next step #${id} already has this text in this session, so this capture changed nothing, its date included. ` +
+                  `To make it wait until ${checkAfter}: rbook_context(action="next_steps", nextStepAction="carry", nextStepIds=[${id}], checkAfter="${checkAfter}").`
+              );
           } else if (trimmed) {
             // The close's sprint rule, applied at capture: an implicit session carries no sprint.
             const sprintId =
@@ -998,15 +1047,31 @@ export async function rbookSessionCapture(
               session.sprint_id ??
               (session.implicit === 1 ? resolveOpenSprintIdForWrite(client) : null);
             const g = genesisColumns(client, 'next_steps', getProjectId(client));
+            // s108-m02 (settled item 4): a dated row is the parked carry, `carried` with no target
+            // sprint, its day written as the lease anchor in the bare spelling that marks it.
             const insertResult = client.execute(
-              `INSERT INTO next_steps (content, status, session_id, sprint_id, mission_id, created_at, content_hash, ${g.columns.join(', ')})
-             VALUES (?, 'pending', ?, ?, ?, ?, ?, ${g.placeholders})`,
-              [trimmed, sessionId, sprintId, missionId ?? null, now, hash, ...g.values]
+              `INSERT INTO next_steps (content, status, session_id, sprint_id, mission_id, created_at, resolved_at, content_hash, ${g.columns.join(', ')})
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ${g.placeholders})`,
+              [
+                trimmed,
+                checkAfter ? 'carried' : 'pending',
+                sessionId,
+                sprintId,
+                missionId ?? null,
+                now,
+                checkAfter ?? null,
+                hash,
+                ...g.values,
+              ]
             );
             if (checkWrite(insertResult, writeSink, 'next_steps.insert')) {
               const lastId = insertResult.data?.lastInsertRowid;
               if (lastId !== undefined) resultData.nextStepId = Number(lastId);
               resultData.structuredMaterialization.outcome = 'materialized';
+              if (checkAfter) {
+                resultData.checkAfter = checkAfter;
+                if (isRecordedStore(client)) warnings.push(SHARED_DATE_NOTE);
+              }
             }
           } else {
             warnings.push(
@@ -1253,6 +1318,11 @@ export function formatSessionCaptureForLLM(
 
   if (data.nextStepId !== undefined) {
     lines.push(`Next step ID: #${data.nextStepId}`);
+  }
+  if (data.checkAfter !== undefined) {
+    lines.push(
+      `Waits until ${data.checkAfter}: it is left out of the open work and no close drops it before then; from that day it is due.`
+    );
   }
 
   // s100-m03: a rejected row is not a lost next step; the capture holds it for the session's close.

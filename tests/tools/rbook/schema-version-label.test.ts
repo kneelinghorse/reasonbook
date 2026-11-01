@@ -200,15 +200,16 @@ const EXPECTED_SCHEMA_VERSION_LITERALS: readonly SourceSite[] = sortSourceSites(
   // record_links_schema joins only the generic-writer/key ledgers below.
   // s96-m01 (fold): the registry's confirmedCopy option moves these sites down 6 lines.
   // s96-m03 (fold): its configDirectory getter, for the replay base, moves them down 5 more.
-  { file: 'intelligence/project-graph-registry.ts', line: 349, role: 'ensureSchema' },
+  // s108-m05: down one line (the import of recordPathsUnlessMoving).
+  { file: 'intelligence/project-graph-registry.ts', line: 350, role: 'ensureSchema' },
   // Read-only registry projection; does not branch on or write the schema label.
   {
     file: 'intelligence/registered-stores-readonly.ts',
     line: 31,
     role: 'listRegisteredStoresReadOnly',
   },
-  { file: 'intelligence/project-graph-registry.ts', line: 427, role: 'register' },
   { file: 'intelligence/project-graph-registry.ts', line: 428, role: 'register' },
+  { file: 'intelligence/project-graph-registry.ts', line: 429, role: 'register' },
   // s95-m06 moved every rbook-project-init.ts site down 6 lines (the seed copy moved to
   // level-files.ts; the level is settled, and an unreadable store refused, before the identity
   // reads) and rbook-project-update.ts's writer down 10; no role was added, removed or changed.
@@ -362,11 +363,21 @@ function metadataWriterKeySites(sources: SourceMap): WriterKeySite[] {
 
 const EXPECTED_WRITER_KEYS: readonly WriterKeySite[] = sortSourceSites([
   {
+    // s108-m04: the feedback fix ledger, a constant key, never the label.
+    file: 'tools/rbook/feedback-fix-apply.ts',
+    line: 213,
+    role: 'appendLedger',
+    callee: 'metadata.execute',
+    key: 'FEEDBACK_FIX_LEDGER_KEY',
+  },
+  {
     // s93-m01: the hook CLI's ambient switch — a constant key, never the label.
     // s96-m12: down 14 lines (relevant marks a row whose fields are in conflict).
     // s98-m09: down 12 lines (capture validates before its handler); writer and key unchanged.
+    // s108-m02: down 6 lines (capture passes --check-after and refuses it bare); writer and key
+    // unchanged.
     file: 'cli/commands.ts',
-    line: 389,
+    line: 395,
     role: 'ambient',
     callee: 'metadata.execute',
     key: 'AMBIENT_METADATA_KEY',
@@ -704,6 +715,9 @@ const EXPECTED_VARIABLE_WRITER_FILES = [
   'tools/rbook/blob-migrations.ts',
   // s94-m04: the atomic decision-fields migration's own completion marker.
   'tools/rbook/decision-shape-migration.ts',
+  // s108-m04: the feedback fix ledger (key FEEDBACK_FIX_LEDGER_KEY, a constant), appended by
+  // `reasonbook feedback resolve-fixed --apply` and `reopen-fixed`.
+  'tools/rbook/feedback-fix-apply.ts',
   'tools/rbook/owner-resolution.ts',
   'tools/rbook/rbook-project-init.ts',
   'tools/rbook/rbook-project-update.ts',

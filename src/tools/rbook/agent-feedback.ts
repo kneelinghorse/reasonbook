@@ -3,6 +3,8 @@
 
 import type { RbookDatabaseClient } from './client';
 import { ensureAgentFeedbackTable } from './schema-migrations';
+import { ensureAgentFeedbackFixColumns } from './agent-feedback-columns';
+import { getServerVersion } from '../../server-version';
 import { sanitizeContentField } from '../../intelligence/content-sanitizer';
 import type { SanitizedFieldReport } from './types';
 import { checkWrite } from './write-guard';
@@ -63,10 +65,15 @@ export function recordAgentFeedback(
   }
 
   const now = new Date().toISOString();
+  // s108-m04: a new row records the release it was filed on, so a later fix rule can compare
+  // versions rather than dates; a table the column could not be added to keeps its old shape.
+  const columns = ensureAgentFeedbackFixColumns(client);
+  warnings.push(...columns.warnings);
+  const versioned = columns.present.has('reasonbook_version');
   const insertResult = client.execute(
     `INSERT INTO agent_feedback (
-      tool_name, body, status, session_id, sprint_id, mission_id, project_id, created_at
-    ) VALUES (?, ?, 'open', ?, ?, ?, ?, ?)`,
+      tool_name, body, status, session_id, sprint_id, mission_id, project_id, created_at${versioned ? ', reasonbook_version' : ''}
+    ) VALUES (?, ?, 'open', ?, ?, ?, ?, ?${versioned ? ', ?' : ''})`,
     [
       context.toolName,
       cleaned,
@@ -75,6 +82,7 @@ export function recordAgentFeedback(
       context.missionId ?? null,
       context.projectId ?? null,
       now,
+      ...(versioned ? [getServerVersion()] : []),
     ]
   );
 

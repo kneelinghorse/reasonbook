@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-// ABOUTME: The signals report's contract (rbook.signals/1): nine signals of what needs a person in one store, with their
+// ABOUTME: The signals report's contract (rbook.signals/1): ten signals of what needs a person in one store, with their
 // ABOUTME: counts, ranked row ids and rules, the window's new rows and new feedback by kind. Additive changes keep the schema.
 
 import type { FeedbackKind } from './feedback-kinds';
+import type { FeedbackGroup } from './feedback-fixes';
 
 export const SIGNALS_SCHEMA = 'rbook.signals/1';
 export const SIGNALS_LIBRARY_NAME = '@aquex/reasonbook/signals';
 
-/** The nine signals, in the order every report lists them. */
+/** The ten signals, in the order every report lists them; s108-m03 adds work_due, last. */
 export const SIGNAL_KINDS = [
   'drafts_pending',
   'next_steps_lapsing',
@@ -18,6 +19,7 @@ export const SIGNAL_KINDS = [
   'quiet_days',
   'constraints_expiring',
   'shared_conflicts',
+  'work_due',
 ] as const;
 export type SignalKind = (typeof SIGNAL_KINDS)[number];
 
@@ -74,6 +76,13 @@ export interface SignalEntry {
   readonly unclassified?: number;
   /** shared_conflicts: whether a peer has said this copy's member was removed. */
   readonly removed?: boolean;
+  /**
+   * s108-m03, work_due: the soonest date still ahead, so a stored report that is read again later
+   * still shows work that became due after it was computed.
+   */
+  readonly nextDueAt?: string;
+  /** s108-m04, feedback_open: the same rows in the three groups of FEEDBACK_GROUPS_RULE. */
+  readonly groups?: Readonly<Record<FeedbackGroup, number>>;
 }
 
 /** New rows in the window; null where the table or its time column is absent, never a zero. */

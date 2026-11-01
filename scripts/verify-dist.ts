@@ -1053,6 +1053,47 @@ async function main(): Promise<void> {
       'statusFilter is published WITHOUT an enum (fleet-wide status vocabularies differ)',
       ctxProps.statusFilter?.enum === undefined && ctxProps.statusFilter?.items?.enum === undefined
     );
+    // s108-m06: m03's dated deferUntil hint, and #888's effects with the usage line, as the built
+    // dist publishes them (m02's own check, below, covers reason and checkAfter).
+    const deferHint = (
+      propsOf('rbook_mission_transition').deferUntil as { description?: string } | undefined
+    )?.description;
+    check(
+      "dist's deferUntil hint says a day makes the mission due",
+      deferHint?.includes('A day makes it due then') === true,
+      String(deferHint)
+    );
+    const describedAs = (tool: string) =>
+      distTools.tools.find((t) => t.name === tool)?.description ?? '';
+    check(
+      "dist states sprint complete's lease drops, snapshots and upload",
+      [
+        'drops next steps whose lease lapsed',
+        '(dated ones wait)',
+        'two DB snapshots (oldest may be deleted)',
+        'and may upload',
+      ].every((effect) => describedAs('rbook_sprint').includes(effect)),
+      describedAs('rbook_sprint')
+    );
+    check(
+      "dist states the transitions' sprint, writes and upload",
+      [
+        'start may activate its Planned sprint',
+        'complete writes decisions[]',
+        'updates and snapshots the context',
+        'Any may upload',
+      ].every((effect) => describedAs('rbook_mission_transition').includes(effect)),
+      describedAs('rbook_mission_transition')
+    );
+    const unlined = distTools.tools
+      .filter((t) => !['rbook_review', 'rbook_agent_onboard', 'rbook_status'].includes(t.name))
+      .filter((t) => !(t.description ?? '').includes('Calls may log usage.'))
+      .map((t) => t.name);
+    check(
+      'dist puts the usage line on every multi-action tool',
+      unlined.length === 0,
+      unlined.join(', ')
+    );
 
     const distDb = path.join(projectDir, 'rbook', 'db', 'rbook.sqlite');
     const readDb = <T>(fn: (db: Database.Database) => T): T => {
@@ -1202,9 +1243,9 @@ async function main(): Promise<void> {
     // --- s86-m04 Part A: the published schema states what the server does ----------------
     //
     // ALL THREE OF THESE ARE WIRE-LEVEL CLAIMS, so they are checked at the wire. The published
-    // JSON inputSchema is the ONLY enforcement any consumer ever sees — the consolidated zod
-    // schemas are never parsed at runtime — so a parity fix that is green in a unit test but
-    // absent from `tools/list` would have fixed nothing that matters.
+    // JSON inputSchema is the only contract a consumer reads; dispatch also parses the zod schema
+    // (src/index.ts, corrected by s108-m06), but a parity fix that is green in a unit test and
+    // absent from `tools/list` would still fix nothing a client sees.
     const m04Tools = await h.client.listTools();
     const m04Props = (tool: string) =>
       (m04Tools.tools.find((t) => t.name === tool)?.inputSchema?.properties ?? {}) as Record<
@@ -2381,6 +2422,149 @@ async function main(): Promise<void> {
       'the catch-all boundary still asserts a cause it has no way to determine'
     );
 
+    // s108-m02: the new parameters reach the built schema, and a client that sends null for every
+    // declared key is answered as 4.9.0 answered it, at every rbook_session and rbook_context action
+    // and next_steps or constraints sub-action, over stdio against the built server. The fixture was
+    // recorded once at 51de697c (rbook/research/2026-10-s108-a-record-that-keeps-itself/m02/
+    // record-null-sweep.test.ts says how).
+    const propertiesOf = (name: string): Record<string, unknown> =>
+      (tools.tools.find((tool) => tool.name === name)?.inputSchema.properties ?? {}) as Record<
+        string,
+        unknown
+      >;
+    check(
+      's108-m02: dist advertises checkAfter on rbook_session and reason and checkAfter on rbook_context',
+      'checkAfter' in propertiesOf('rbook_session') &&
+        'reason' in propertiesOf('rbook_context') &&
+        'checkAfter' in propertiesOf('rbook_context')
+    );
+    const sweep = JSON.parse(
+      fs.readFileSync(path.join(REPO_ROOT, 'tests', 'fixtures', 'null-sweep-51de697c.json'), 'utf8')
+    ) as {
+      calls: Array<{
+        tool: string;
+        args: Record<string, unknown>;
+        isError: boolean;
+        code: string | null;
+        affected?: number;
+      }>;
+    };
+    const sweepRoot = mkTmp('rbook-verify-null-sweep-');
+    await h.callOk('rbook_project', {
+      action: 'init',
+      projectRoot: sweepRoot,
+      projectName: 'null-sweep',
+      projectType: 'build',
+    });
+    const swept: unknown[] = [];
+    for (const { tool, args } of sweep.calls) {
+      const declared = Object.keys(propertiesOf(tool));
+      const res = await h.callTool(tool, {
+        ...Object.fromEntries(declared.map((key) => [key, null])),
+        ...args,
+        projectRoot: sweepRoot,
+      });
+      // The envelope itself: dataOf would return only its data.
+      const envelope = res.structuredContent as
+        | { error?: { code?: string }; data?: { affected?: unknown } }
+        | undefined;
+      const affected = envelope?.data?.affected;
+      swept.push({
+        tool,
+        args,
+        isError: res.isError === true,
+        code: envelope?.error?.code ?? null,
+        ...(typeof affected === 'number' ? { affected } : {}),
+      });
+    }
+    const differs = swept.filter(
+      (answer, index) => JSON.stringify(answer) !== JSON.stringify(sweep.calls[index])
+    );
+    check(
+      `s108-m02: dist answers all ${sweep.calls.length} null-filled calls as 4.9.0 did`,
+      differs.length === 0,
+      JSON.stringify(differs.slice(0, 3))
+    );
+
+    // s108-m03: the built defer stores a day after today as the mission's date and says it comes
+    // back as due then; free text stays the hint it always was, and the answer says so.
+    const deferRoot = mkTmp('rbook-verify-defer-date-');
+    await h.callOk('rbook_project', {
+      action: 'init',
+      projectRoot: deferRoot,
+      projectName: 'defer-date',
+      projectType: 'build',
+    });
+    const deferDay = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10);
+    const deferred: Record<string, { checkAfter: unknown; text: string }> = {};
+    for (const [missionId, deferUntil] of [
+      ['dated', deferDay],
+      ['hinted', 'after the API ships'],
+    ]) {
+      await h.callOk('rbook_mission', {
+        action: 'add',
+        missionId,
+        name: missionId,
+        projectRoot: deferRoot,
+      });
+      const res = await h.callTool('rbook_mission_transition', {
+        action: 'defer',
+        missionId,
+        deferUntil,
+        projectRoot: deferRoot,
+      });
+      const envelope = res.structuredContent as { data?: { checkAfter?: unknown } } | undefined;
+      deferred[missionId] = { checkAfter: envelope?.data?.checkAfter, text: textOf(res) };
+    }
+    check(
+      's108-m03: dist stores a deferUntil day as checkAfter and says the mission comes back due',
+      deferred.dated.checkAfter === deferDay &&
+        deferred.dated.text.includes(`Due again: ${deferDay}`),
+      deferred.dated.text.slice(0, 200)
+    );
+    check(
+      's108-m03: dist keeps a free-text deferUntil as a hint and says nothing brings it back',
+      deferred.hinted.checkAfter === null &&
+        deferred.hinted.text.includes('nothing brings the mission back on its own'),
+      deferred.hinted.text.slice(0, 200)
+    );
+
+    // s108-m04: the built list labels a row a shipped release fixed, and counts the three groups.
+    const fixRoot = mkTmp('rbook-verify-feedback-fix-');
+    await h.callOk('rbook_project', {
+      action: 'init',
+      projectRoot: fixRoot,
+      projectName: 'feedback-fix',
+      projectType: 'build',
+    });
+    await h.callOk('rbook_agent_onboard', {
+      agentFeedback:
+        'cmos_mission show walked the whole registry and returned one entry per registered project.',
+      projectRoot: fixRoot,
+    });
+    // Filed before 2.1.0, as the rows that release fixed were.
+    const fixDb = new Database(resolveRecordPaths(fixRoot).dbPath);
+    fixDb.prepare("UPDATE agent_feedback SET created_at = '2026-06-01T00:00:00.000Z'").run();
+    fixDb.close();
+    const fixList = await h.callTool('rbook_feedback', { action: 'list', projectRoot: fixRoot });
+    const fixData = (
+      fixList.structuredContent as
+        | {
+            data?: {
+              countsByGroup?: Record<string, number>;
+              entries?: Array<{ fix?: { rule?: string; state?: string } }>;
+            };
+          }
+        | undefined
+    )?.data;
+    check(
+      's108-m04: dist labels a row a shipped release fixed and counts the three groups',
+      fixData?.countsByGroup?.fixed === 1 &&
+        fixData?.entries?.[0]?.fix?.rule === 'reads.fan-out-every-project' &&
+        textOf(fixList).includes('fixed in 2.1.0 (reads.fan-out-every-project)'),
+      JSON.stringify(fixData?.countsByGroup)
+    );
+
     // s107-m03: the built doctor, run once with HOME at an empty fixture, catches module-level
     // effects a unit test cannot: it must load, find nothing to fix and write nothing under HOME.
     // --offline, because a child process is outside jest's network guard.
@@ -2410,6 +2594,71 @@ async function main(): Promise<void> {
       's107-m03: dist doctor leaves its HOME empty',
       fs.readdirSync(doctorHome).length === 0,
       fs.readdirSync(doctorHome).join(', ')
+    );
+
+    // s108-m05: the built migrate, with this machine's sessions running and its real process list.
+    // The dry run lists what the apply would refuse; the apply then does what the dry run said, so
+    // on a machine with no runtime older than 4.0 it moves the record. The built doctor states the
+    // rule for a record's move. The list is the whole machine's: a test suite running at the same
+    // time, whose fixtures include a runtime from before 4.0, can change it between the two calls.
+    const legacyRoot = mkTmp('rbook-verify-migrate-');
+    const legacyDb = path.join(legacyRoot, LEGACY.recordDirectory, 'db', LEGACY.databaseFile);
+    fs.mkdirSync(path.dirname(legacyDb), { recursive: true });
+    const seed = new Database(legacyDb);
+    seed.exec(
+      "CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT); INSERT INTO metadata VALUES ('project_id', 'verify-migrate');"
+    );
+    seed.pragma('journal_mode = WAL');
+    seed.close();
+    const migrateEnv = {
+      HOME: mkTmp('rbook-verify-migrate-home-'),
+      PATH: process.env.PATH ?? '',
+      RBOOK_CONFIG_DIR: mkTmp('rbook-verify-migrate-config-'),
+      TMPDIR: os.tmpdir(),
+    };
+    const built = (args: string[]) =>
+      spawnSync(process.execPath, [path.join(REPO_ROOT, 'dist', 'bin.js'), ...args], {
+        cwd: legacyRoot,
+        encoding: 'utf8',
+        env: migrateEnv,
+        timeout: 120_000,
+      });
+    const parsed = (stdout: string) => {
+      try {
+        return JSON.parse(stdout) as {
+          success?: boolean;
+          data?: { dryRun?: boolean; moved?: boolean; blocked?: string[] };
+        };
+      } catch {
+        return {};
+      }
+    };
+    const preview = built(['migrate', '--project', legacyRoot]);
+    const blocked = parsed(preview.stdout).data?.blocked;
+    check(
+      's108-m05: dist migrate dry run lists what the apply would refuse',
+      preview.status === 0 &&
+        parsed(preview.stdout).data?.dryRun === true &&
+        Array.isArray(blocked),
+      preview.stdout.slice(0, 300) || preview.stderr.slice(0, 300)
+    );
+    const report = built(['doctor', '--offline', '--format', 'json', '--project-root', legacyRoot]);
+    check(
+      's108-m05: dist doctor says a record moves while Reasonbook 4.0 or later runs',
+      report.stdout.includes('migrate-waits-for-old-runtimes') &&
+        report.stdout.includes('keeps running, even in that project') &&
+        !report.stdout.includes('migrate-needs-quiet-machine'),
+      report.stdout.slice(0, 300) || report.stderr.slice(0, 300)
+    );
+    const applied = built(['migrate', '--apply', '--project', legacyRoot]);
+    check(
+      's108-m05: dist migrate --apply does what its dry run said, here moving the record',
+      blocked?.length === 0
+        ? parsed(applied.stdout).success === true &&
+            parsed(applied.stdout).data?.moved === true &&
+            fs.existsSync(path.join(legacyRoot, 'rbook', 'db', 'rbook.sqlite'))
+        : parsed(applied.stdout).success === false,
+      `blocked: ${JSON.stringify(blocked)}; apply: ${applied.stdout.slice(0, 300)}`
     );
   } finally {
     await h.close();

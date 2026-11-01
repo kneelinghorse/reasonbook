@@ -12,6 +12,7 @@ import { formatToolFailure } from './format-failure';
 import { z } from 'zod';
 import { createError, RbookErrors } from './errors';
 import { findWrongTypedStringParam } from './param-type-guard';
+import { inapplicableParam } from './inapplicable-param';
 import { appendWarnings } from './format-warnings';
 import type { ActionParamMap, RbookToolResult } from './types';
 import {
@@ -116,6 +117,8 @@ export const RBOOK_CONTEXT_ACTION_PARAMS: ActionParamMap<RbookContextAction, Rbo
     'nextStepStatus',
     'nextStepIds',
     'carryToSprint',
+    'reason',
+    'checkAfter',
     'missionId',
     'page',
     'pageSize',
@@ -260,6 +263,18 @@ export const rbookContextSchema = z
       .optional()
       .describe(
         'Existing target sprint ID for carry; missing targets are refused by name. Create one with rbook_sprint(action="add"), or omit to park with no target'
+      ),
+    reason: z
+      .string()
+      .optional()
+      .describe(
+        'complete/drop: why, at most 500 characters, shown with the row while it keeps that status and time. Exchanges do not send it to the other copies of a shared record; a whole-store copy or upload carries it'
+      ),
+    checkAfter: z
+      .string()
+      .optional()
+      .describe(
+        'carry with nextStepIds: the day the rows wait until (YYYY-MM-DD, a month, or a date-time reduced to its UTC day), after today and at most 180 days ahead. They leave the open work until then and are due from it'
       ),
     // constraints params
     constraintAction: z
@@ -468,6 +483,16 @@ export const rbookContextToolDefinition = {
         description:
           'Existing target sprint ID for carry; missing targets are refused by name. Create one with rbook_sprint(action="add"), or omit to park with no target',
       },
+      reason: {
+        type: 'string',
+        description:
+          'complete/drop: why, at most 500 characters, shown with the row while it keeps that status and time. Exchanges do not send it to the other copies of a shared record; a whole-store copy or upload carries it',
+      },
+      checkAfter: {
+        type: 'string',
+        description:
+          'carry with nextStepIds: the day the rows wait until (YYYY-MM-DD, a month, or a date-time reduced to its UTC day), after today and at most 180 days ahead. They leave the open work until then and are due from it',
+      },
       constraintAction: {
         type: 'string',
         enum: ['list', 'review', 'archive', 'reaffirm'],
@@ -569,6 +594,18 @@ export async function rbookContext(
   );
   if (wrongTypedParam) return createError<RbookContextResult>(wrongTypedParam);
 
+  // s108-m02: the new keys, and next_steps' since and until, refused on an action that would ignore
+  // them (inapplicable-param.ts). The pairs come from RBOOK_CONTEXT_ACTION_PARAMS, not a list.
+  const inapplicable = inapplicableParam(
+    `rbook_context(action="${actionValue}")`,
+    RBOOK_CONTEXT_ACTION_PARAMS[actionValue],
+    params,
+    actionValue === 'next_steps'
+      ? ['reason', 'checkAfter', 'since', 'until']
+      : ['reason', 'checkAfter']
+  );
+  if (inapplicable) return createError<RbookContextResult>(inapplicable);
+
   switch (actionValue) {
     case 'view':
       // project_identity gets its own view handler
@@ -654,6 +691,8 @@ export async function rbookContext(
         missionId: params.missionId,
         nextStepIds: params.nextStepIds,
         carryToSprint: params.carryToSprint,
+        reason: params.reason,
+        checkAfter: params.checkAfter,
         page: params.page,
         pageSize: params.pageSize,
         projectRoot: params.projectRoot,

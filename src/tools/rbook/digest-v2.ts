@@ -48,6 +48,15 @@ export interface DigestV2Model {
   readonly learnings: { readonly rows: readonly DigestRow[]; readonly total: number };
   readonly work: readonly DigestRow[];
   readonly nextSteps?: { readonly rows: readonly DigestRow[]; readonly total: number };
+  /** s108-m02: open next steps waiting until a date, which the work rows leave out. */
+  readonly waitingSteps?: number;
+  /** s108-m03: Deferred missions whose current date has come: how many, and the earliest's id and day. */
+  readonly dueMissions?: {
+    readonly count: number;
+    readonly first: string;
+    readonly name: string;
+    readonly since: string;
+  };
   /** s93-m06: pending, unexpired drafts awaiting the operator, oldest first. */
   readonly drafts?: readonly DigestDraft[];
   readonly feedback?: string | null;
@@ -262,21 +271,100 @@ function draftsSection(
   return short.length <= cap ? section([{ text: short }]) : null;
 }
 
+/** s108-m02: how many next steps wait until a date, which the rows above leave out. */
+function waitingLine(count: number | undefined): Line[] {
+  if (!count) return [];
+  return [{ text: `  ${count} more next step${count === 1 ? ' waits' : 's wait'} until a date.` }];
+}
+
+/**
+ * s108-m03: Deferred missions whose date has come, on a line of their own after the waiting line:
+ * how many, and the earliest by its id and day, or for Planner as a task by its name. No row's text
+ * is cut in it, so the count and day stay whole. A Ledger keeps no missions, so it has none.
+ */
+function dueLine(due: DigestV2Model['dueMissions'], level: ProjectLevel): Line[] {
+  if (!due || level === 'ledger') return [];
+  const [one, many, first] =
+    level === 'planner'
+      ? ['task', 'tasks', cut(due.name.replace(/\s+/g, ' ').trim(), 48)]
+      : ['mission', 'missions', cut(due.first, 48)];
+  return [
+    {
+      text:
+        due.count === 1
+          ? `  1 deferred ${one} is due: ${first}, since ${due.since}.`
+          : `  ${due.count} deferred ${many} are due; the first, ${first}, since ${due.since}.`,
+    },
+  ];
+}
+
 /** Builder keeps its mission and next steps inside one 400-character section. */
 function openWork(model: DigestV2Model): Section | null {
   const next = model.nextSteps;
-  if (!next?.rows.length) return rowsSection('Open work', model.work, 400, 5, model.localProjectId);
-  const lines: Line[] = [{ text: 'Open work:' }];
+  const waiting = waitingLine(model.waitingSteps);
+  // s108-m03: the waiting line, then the due line, close the section, counted inside its 400.
+  const due = dueLine(model.dueMissions, model.project.level);
+  const tail = [...waiting, ...due];
+  if (!next?.rows.length) {
+    // The rows get m02's room unless the lines after them would then pass 400; then they share
+    // what those lines leave, which keeps Ledger's and Planner's five rows inside the cap.
+    const reserved = tail.reduce((sum, line) => sum + line.text.length + 1, 0);
+    const listed = (room: number) =>
+      rowsSection('Open work', model.work, room, 5, model.localProjectId);
+    let rows = listed(400);
+    if (rows && rows.text.length + reserved > 400) rows = listed(400 - reserved);
+    if (!tail.length) return rows;
+    return rows
+      ? { text: [rows.text, ...tail.map((line) => line.text)].join('\n'), items: rows.items }
+      : section([{ text: 'Open work:' }, ...tail]);
+  }
+  const open: Line = { text: 'Open work:' };
   const selected = next.rows.slice(0, 3);
-  const heading = `Next steps (${selected.length} of ${next.total}):`;
+  const heading = (count: number): Line => ({ text: `Next steps (${count} of ${next.total}):` });
   // The mission receives the room left after three bounded next-step lines, including IDs.
   const stepLines = selected
     .map((row) => rowLine(row, 100, model.localProjectId))
     .filter((line): line is Line => !!line);
-  const fixed = section([...lines, { text: heading }, ...stepLines]).text.length;
-  const mission = model.work[0] && rowLine(model.work[0], 400 - fixed - 1, model.localProjectId);
-  if (mission) lines.push(mission);
-  return section([...lines, { text: heading }, ...stepLines]);
+  const fixed = section([open, heading(selected.length), ...stepLines, ...waiting]).text.length;
+  let mission =
+    (model.work[0] && rowLine(model.work[0], 400 - fixed - 1, model.localProjectId)) || null;
+  // The heading stays even when every step line has given way, so the count of open steps does.
+  const render = (steps: readonly Line[], missionLine: Line | null): Section =>
+    section([
+      open,
+      ...(missionLine ? [missionLine] : []),
+      heading(steps.length),
+      ...steps,
+      ...tail,
+    ]);
+  // s108-m03: the mission keeps that room. The due line takes the room of the last next steps it
+  // needs, down to one, so the section still shows that steps are open.
+  let steps = stepLines;
+  while (due.length && steps.length > 1 && render(steps, mission).text.length > 400)
+    steps = steps.slice(0, -1);
+  if (mission && render(steps, mission).text.length > 400) {
+    // Then the mission's line takes the room the rest leaves; only if even that cannot render, as
+    // with a very long project id, does the last step line give way too, its heading staying, and
+    // m02's own line returns if it then fits.
+    const m02Line = mission;
+    const refit = (rest: readonly Line[]) =>
+      rowLine(model.work[0], 400 - render(rest, null).text.length - 1, model.localProjectId);
+    mission = refit(steps);
+    if (!mission && steps.length) {
+      // The step line goes only when a mission line takes its place.
+      const fitted = render([], m02Line).text.length <= 400 ? m02Line : refit([]);
+      if (fitted) {
+        steps = [];
+        mission = fitted;
+      } else {
+        // No mission line fits at all: the steps it was given way for come back, as many as fit.
+        steps = stepLines;
+        while (steps.length > 1 && render(steps, null).text.length > 400)
+          steps = steps.slice(0, -1);
+      }
+    }
+  }
+  return render(steps, mission);
 }
 
 /** Empty sections vanish; all caps include headings, except the profile's approved text allowance. */

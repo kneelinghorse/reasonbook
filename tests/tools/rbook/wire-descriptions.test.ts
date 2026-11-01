@@ -12,7 +12,7 @@ import {
   SERVER_INSTRUCTIONS_PROPOSALS,
 } from '../../../src/server-instructions';
 import { RBOOK_ACTION_PARAMS, RBOOK_TOOL_DEFINITIONS } from '../../../src/tools/rbook';
-import { WIRE_TEXT } from '../../../src/tools/rbook/wire-descriptions';
+import { USAGE_LINE, WIRE_TEXT } from '../../../src/tools/rbook/wire-descriptions';
 
 // The shared renderer is plain JS under scripts/; required the way the freshness test does.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -63,7 +63,17 @@ const CHARS_PER_TOKEN = 4;
 // its round-1 critic's corrections (four false claims, missing inputs and effects, two sprint
 // hints) add 192, leaving 78; round 2's (feedback resolve's wording, contextType's default and
 // sprint add's demotion of the other open sprints) add 42, leaving 36.
-const RESERVE = 36;
+// s108-m01 (#809, narrowed): the full edition omits readOnlyHint:false and idempotentHint:false on
+// all 15 tools, -660 characters (31,964 to 31,304), leaving 696.
+// s108-m02: reason on next_steps (+62), checkAfter on capture with its hint (+78) and on carry with
+// none (+31) add 171 (31,304 to 31,475), leaving 525.
+// s108-m03: defer's hint names the date ("A day makes it due then; else a hint", +12), 31,475 to
+// 31,487, leaving 513.
+// s108-m06 (#888): sprint complete's lease drops, snapshots and upload, and the transitions' writes
+// and upload (+256, with "may" where an effect is conditional), and the usage line on the twelve
+// multi-action tools (+252), 31,487 to 31,995, leaving 5; no cut under settled item 8 was needed, so
+// the usage line ships (decision #1743's cut).
+const RESERVE = 5;
 
 function withoutDescriptions(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(withoutDescriptions);
@@ -109,6 +119,47 @@ describe('s92-m08 — tools/list', () => {
     expect(project.parameters.confirm).toMatch(/true uploads now; get operator approval first/);
     expect(WIRE_TEXT.rbook_auth.description).toMatch(/URL\/code for browser approval/);
     expect(WIRE_TEXT.rbook_auth.parameters.maxWaitSeconds).toMatch(/retry same code/);
+  });
+
+  it("states #888's effects in the published definitions, and the usage line on every multi-action tool (s108-m06)", () => {
+    const published = Object.fromEntries(wire().map((tool) => [tool.name, tool.description]));
+    // Sprint complete: its lease drops under m02's date rule, two snapshots and their retention, and
+    // an upload; decision #1743 had left these out for room.
+    for (const effect of [
+      'drops next steps whose lease lapsed',
+      '(dated ones wait)',
+      'two DB snapshots (oldest may be deleted)',
+      'and may upload',
+    ])
+      expect({ effect, stated: published.rbook_sprint.includes(effect) }).toEqual({
+        effect,
+        stated: true,
+      });
+    // Transitions: start's sprint, complete's decisions[], context and snapshot, any one's upload.
+    for (const effect of [
+      'start may activate its Planned sprint',
+      'complete writes decisions[]',
+      'updates and snapshots the context',
+      'Any may upload owed checkpoints',
+    ])
+      expect({ effect, stated: published.rbook_mission_transition.includes(effect) }).toEqual({
+        effect,
+        stated: true,
+      });
+    // The upload is a transition's effect, so it comes before the pointer to rbook_mission: after the
+    // pointer it would read as that tool's (round 1). Only the snapshot held the order (round 2).
+    expect(published.rbook_mission_transition).toContain(
+      'the context. Any may upload owed checkpoints. Plan or edit'
+    );
+    const multiAction = wire()
+      .map((tool) => tool.name)
+      .filter((name) => !['rbook_review', 'rbook_agent_onboard', 'rbook_status'].includes(name));
+    expect(multiAction).toHaveLength(12);
+    // The literal, not the module's constant: an emptied constant is in every string (round 1).
+    expect(USAGE_LINE).toBe(' Calls may log usage.');
+    expect(
+      multiAction.filter((name) => !published[name].includes(' Calls may log usage.'))
+    ).toEqual([]);
   });
 
   it('describes the digest size as a target, not a guaranteed hard ceiling', () => {
@@ -252,6 +303,8 @@ describe('s92-m08 — tools/list', () => {
       'rbook_mission.missionId',
       'rbook_mission_transition.reason',
       'rbook_context.nextStepIds',
+      // s108-m02: the two sub-actions that take a reason, as requiredness hints may name them.
+      'rbook_context.reason',
       'rbook_context.missionId',
       'rbook_db.confirm',
       'rbook_project.name',

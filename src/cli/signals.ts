@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// ABOUTME: reasonbook signals: the nine signals for every project this machine registers, or one with --project-root, read
+// ABOUTME: reasonbook signals: the ten signals for every project this machine registers, or one with --project-root, read
 // ABOUTME: read-only through the signals library with this machine's draft runtime; --format json prints the reports whole.
 
 import { oneLine, parseArgs, resolveCliProject, type CliIo } from './core';

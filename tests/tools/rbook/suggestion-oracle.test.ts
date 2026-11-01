@@ -203,12 +203,12 @@ const PRIVATE = requiresPrivateEvidence({
  */
 const RATIFIED_AUTHORED_BASE = 181;
 const SITES_BY_MISSION = {
-  's90-m05': ['src/tools/rbook/rbook-next-steps.ts:310'],
+  's90-m05': ['src/tools/rbook/rbook-next-steps.ts:472'],
   's90-m07': [],
   's91-m02': ['src/tools/rbook/unknown-param-guard.ts:105'],
   's91-m03': [
     'src/tools/rbook/rbook-mission-complete.ts:253',
-    'src/tools/rbook/rbook-session-complete.ts:352',
+    'src/tools/rbook/rbook-session-complete.ts:370',
   ],
   's91-m04': [
     'src/tools/rbook/rbook-decisions-record.ts:247',
@@ -260,13 +260,13 @@ const SITES_BY_MISSION = {
   // standalone CLI refusals and two fleet refusals. The CLI's write-failure and sanitized-empty
   // branches share one site. Portable cases drive every non-fault site and execute CLI remedies.
   's93-m08': [
-    'src/cli/feedback.ts:59',
-    'src/cli/feedback.ts:81',
-    'src/cli/feedback.ts:98',
-    'src/cli/feedback.ts:109',
-    'src/cli/feedback.ts:141',
-    'src/tools/rbook/rbook-feedback.ts:430',
-    'src/tools/rbook/rbook-feedback.ts:440',
+    'src/cli/feedback.ts:64',
+    'src/cli/feedback.ts:86',
+    'src/cli/feedback.ts:103',
+    'src/cli/feedback.ts:114',
+    'src/cli/feedback.ts:146',
+    'src/tools/rbook/rbook-feedback.ts:445',
+    'src/tools/rbook/rbook-feedback.ts:455',
   ],
   // s93-m06: recording a draft. Six refusals are driven in axis 2 below (an id that is not a draft
   // id, no such draft, an answered draft, an expired one, content that does not state the draft, a
@@ -289,8 +289,8 @@ const SITES_BY_MISSION = {
     'src/tools/rbook/rbook-decisions-record.ts:218',
     'src/tools/rbook/rbook-decisions-record.ts:300',
     'src/tools/rbook/rbook-mission-complete.ts:356',
-    'src/tools/rbook/rbook-session-capture.ts:578',
-    'src/tools/rbook/rbook-session-complete.ts:465',
+    'src/tools/rbook/rbook-session-capture.ts:612',
+    'src/tools/rbook/rbook-session-complete.ts:483',
     'src/tools/rbook/sync-bootstrap.ts:151',
     'src/tools/rbook/sync-pull.ts:221',
     'src/tools/rbook/decision-fields.ts:50',
@@ -303,8 +303,8 @@ const SITES_BY_MISSION = {
     'src/tools/rbook/rbook-mission-start.ts:314',
     'src/tools/rbook/rbook-mission-status.ts:280',
     'src/tools/rbook/rbook-mission-update.ts:327',
-    'src/tools/rbook/rbook-mission-update.ts:516',
-    'src/tools/rbook/rbook-mission-update.ts:528',
+    'src/tools/rbook/rbook-mission-update.ts:535',
+    'src/tools/rbook/rbook-mission-update.ts:547',
   ],
   // s94-m06: six authored fault remedies cover required citation preflight/materialization and
   // rollback. The inline capture-permissions suggestion retires into shared failure handling.
@@ -317,8 +317,10 @@ const SITES_BY_MISSION = {
     'src/tools/rbook/sync-pull.ts:230',
   ],
   // s94-m08: four mandatory mission-drop fault remedies and two CLI spin-out refusals.
+  // s108-m05: down seven lines (a server that starts mid-move starts), then 13 more in round 1 (a
+  // call mid-move is a refusal, and so is --project-root's check).
   's95-m13': [
-    'src/index.ts:1380',
+    'src/index.ts:1404',
     'src/tools/rbook/rbook-message.ts:798',
     'src/tools/rbook/sender-refusal.ts:90',
   ],
@@ -334,7 +336,10 @@ const SITES_BY_MISSION = {
   's99-m06': [
     'src/tools/rbook/client.ts:517',
     'src/tools/rbook/rbook-project-init.ts:640',
-    'src/cli/migrate.ts:176',
+    // s108-m05: down 41 lines (the dry run's list of what would block, the registry by any spelling),
+    // then six more in round 1 (a store with no metadata table), three in round 2 (shared records)
+    // and five in round 3 (the import of mayHaveSynced).
+    'src/cli/migrate.ts:231',
     'src/cli/migrate-config.ts:156',
     'src/cli/migrate-config.ts:166',
   ],
@@ -589,14 +594,14 @@ const SITES_BY_MISSION = {
     'src/tools/rbook/record-dashboard-move.ts:186',
     'src/tools/rbook/record-dashboard-peer.ts:219',
     'src/tools/rbook/record-dashboard-peer.ts:272',
-    'src/tools/rbook/record-dashboard-share.ts:105',
+    'src/tools/rbook/record-dashboard-share.ts:107',
     'src/tools/rbook/record-dashboard-share-state.ts:67',
     'src/tools/rbook/record-dashboard-share-state.ts:84',
     'src/tools/rbook/record-dashboard-share-state.ts:105',
     'src/tools/rbook/record-dashboard-share-state.ts:178',
-    'src/tools/rbook/record-dashboard-share.ts:139',
-    'src/tools/rbook/record-dashboard-share.ts:229',
-    'src/tools/rbook/record-dashboard-share.ts:270',
+    'src/tools/rbook/record-dashboard-share.ts:141',
+    'src/tools/rbook/record-dashboard-share.ts:231',
+    'src/tools/rbook/record-dashboard-share.ts:272',
     'src/tools/rbook/record-membership.ts:279',
     'src/tools/rbook/record-membership.ts:270',
     'src/tools/rbook/record-membership.ts:285',
@@ -627,10 +632,10 @@ const SITES_BY_MISSION = {
   ],
   // s100-m03: a next-step capture whose table or genesis columns cannot be prepared before the
   // write lock, now that the capture writes its row (#712).
-  's100-m03': ['src/tools/rbook/rbook-session-capture.ts:510'],
+  's100-m03': ['src/tools/rbook/rbook-session-capture.ts:544'],
   // s97-m07: a bulk resolve whose feedbackIds is not a list of row ids, and one naming a row that
   // does not exist, which resolves none.
-  's97-m07': ['src/tools/rbook/rbook-feedback.ts:307', 'src/tools/rbook/rbook-feedback.ts:382'],
+  's97-m07': ['src/tools/rbook/rbook-feedback.ts:322', 'src/tools/rbook/rbook-feedback.ts:397'],
   // s98-m09: protected identity clears, invalid explicit snapshot retention, and the shared
   // whole-schema validator's type/bound remedy. The validator spreads `error`, so this census's
   // sibling-code rule classifies its site UNTYPED; its separate unit/dispatch tests grant this
@@ -643,7 +648,7 @@ const SITES_BY_MISSION = {
   // s98-m10: manual backfill refuses before any upload when checkpoint sync is explicitly off.
   's98-m10': ['src/tools/rbook/rbook-db-backfill.ts:151'],
   // s98-m11: reject unreadable expiry before a capture opens or writes a store.
-  's98-m11': ['src/tools/rbook/rbook-session-capture.ts:411'],
+  's98-m11': ['src/tools/rbook/rbook-session-capture.ts:428'],
   // s98-m12: an already-answered message refuses another response with a read-current-message
   // remedy. The portable HTTP arm drives its 409 and executes that exact message's get remedy.
   's98-m12': ['src/tools/rbook/dashboard-client.ts:1497'],
@@ -652,8 +657,8 @@ const SITES_BY_MISSION = {
   // code, so it is UNTYPED by this gate's sibling-code rule. member-remedies.test.ts covers its
   // five host-code branches plus fallback and caller-safe controls; no router or wire credit.
   's98-m13': [
-    'src/tools/rbook/rbook-sprint-complete.ts:622',
-    'src/tools/rbook/rbook-sprint-complete.ts:638',
+    'src/tools/rbook/rbook-sprint-complete.ts:650',
+    'src/tools/rbook/rbook-sprint-complete.ts:666',
     'src/referee/member-answer.ts:58',
   ],
   // s98-m15: hosted recovery offers, intake/finalization refusal and confirmed-membership guard,
@@ -676,7 +681,7 @@ const SITES_BY_MISSION = {
     'src/tools/rbook/record-dashboard-join.ts:260',
     'src/tools/rbook/record-dashboard-join.ts:271',
     'src/tools/rbook/record-dashboard-move.ts:153',
-    'src/tools/rbook/record-dashboard-share.ts:218',
+    'src/tools/rbook/record-dashboard-share.ts:220',
   ],
   // s98-m17: permanent-copy cutoffs, recent-call consent, returning-copy admission and version
   // floors. Twelve sites are STATE by the unchanged sibling-expression rule, including the
@@ -688,7 +693,7 @@ const SITES_BY_MISSION = {
     'src/referee/set-aside.ts:49',
     'src/referee/set-aside.ts:56',
     'src/tools/rbook/record-dashboard-join.ts:293',
-    'src/tools/rbook/record-dashboard-share.ts:209',
+    'src/tools/rbook/record-dashboard-share.ts:211',
     'src/tools/rbook/record-decide.ts:92',
     'src/tools/rbook/record-moves.ts:114',
     'src/tools/rbook/record-set-aside.ts:66',
@@ -700,7 +705,7 @@ const SITES_BY_MISSION = {
   // s98-m18: one upload capacity refusal and four incompatible/incomplete-reader refusals.
   // Separate transport fixtures give this existing MCP matrix no examined-site credit.
   's98-m18': [
-    'src/tools/rbook/record-dashboard-share.ts:262',
+    'src/tools/rbook/record-dashboard-share.ts:264',
     'src/tools/rbook/record-dashboard-stream.ts:35',
     'src/tools/rbook/record-reader-gate.ts:25',
     'src/tools/rbook/record-since.ts:82',
@@ -759,7 +764,7 @@ const SITES_BY_MISSION = {
   's102-m04': [
     'src/tools/rbook/rbook-mission-block.ts:319',
     'src/tools/rbook/rbook-mission-unblock.ts:323',
-    'src/tools/rbook/rbook-mission-update.ts:481',
+    'src/tools/rbook/rbook-mission-update.ts:500',
     'src/tools/rbook/rbook-mission-reopen.ts:51',
     'src/tools/rbook/rbook-mission-reopen.ts:131',
     'src/tools/rbook/rbook-mission-reopen.ts:148',
@@ -769,9 +774,9 @@ const SITES_BY_MISSION = {
   's102-m05': ['src/tools/rbook/draft-evaluation.ts:175'],
   // s102-m06: unreadable next-step provenance refuses instead of silently counting foreign use.
   // DB_QUERY_FAILED is FAULT; the real-store API suite injects the schema-inspection failure.
-  's102-m06': ['src/tools/rbook/next-steps-read.ts:109'],
+  's102-m06': ['src/tools/rbook/next-steps-read.ts:111'],
   // s102-m07: failure to inspect parked work refuses instead of claiming an exhausted queue.
-  's102-m07': ['src/tools/rbook/mission-status-parked.ts:23'],
+  's102-m07': ['src/tools/rbook/mission-status-parked.ts:73'],
   // s104-m01: selected tail evidence cannot re-admit a recovered removed member.
   // This hosted-library refusal is driven by recovery-census tests, not this router matrix.
   's104-m01': ['src/referee/recovery.ts:281'],
@@ -786,10 +791,49 @@ const SITES_BY_MISSION = {
   // s106-m03: the paged next-steps and feedback lists refuse when their count cannot be read,
   // rather than state a total they did not take or end the paging at a page's own length.
   // DB_QUERY_FAILED is FAULT, like s102-m06's provenance refusal beside the first.
-  's106-m03': ['src/tools/rbook/next-steps-read.ts:136', 'src/tools/rbook/rbook-feedback.ts:497'],
+  's106-m03': ['src/tools/rbook/next-steps-read.ts:138', 'src/tools/rbook/rbook-feedback.ts:526'],
   // s107-m02 (#876): a draft the content sanitizer cuts is refused before anything is written,
   // with the propose-it-quoted remedy; driven in axis 2 (decision kind, fromDraft alone).
   's107-m02': ['src/tools/rbook/draft-evaluation.ts:256'],
+  // s108-m02: dates and reasons on next steps. A key given to an action that would ignore it; the
+  // three readings of a date; a reason over 500 characters, for a row with no stable id, or a date on
+  // a broad carry or a capture that is not a next step; the three failures to prepare the reasons
+  // (one a foreign object holding the table's name), and the list's refusal when it cannot read them.
+  's108-m02': [
+    'src/tools/rbook/inapplicable-param.ts:54',
+    'src/tools/rbook/next-step-dates.ts:109',
+    'src/tools/rbook/next-step-dates.ts:119',
+    'src/tools/rbook/next-step-dates.ts:128',
+    'src/tools/rbook/next-step-reasons.ts:80',
+    'src/tools/rbook/next-step-reasons.ts:98',
+    'src/tools/rbook/next-step-reasons.ts:104',
+    'src/tools/rbook/next-steps-read.ts:161',
+    'src/tools/rbook/rbook-next-steps.ts:229',
+    'src/tools/rbook/rbook-next-steps.ts:242',
+    'src/tools/rbook/rbook-next-steps.ts:345',
+    'src/tools/rbook/rbook-session-capture.ts:452',
+  ],
+  // s108-m03: mission status reads Deferred missions to name those whose date has come; its read
+  // failure, beside the parked notice's.
+  's108-m03': ['src/tools/rbook/mission-status-parked.ts:35'],
+  // s108-m04: resolving feedback a shipped release fixed. The CLI's six refusals (--rule and --dry-run
+  // where they would be read past, reopen-fixed without --rule, a write from a review-role session,
+  // no project, a rule nothing knows) and the one remedy every store failure of the dry run, the
+  // apply and the reopen shares.
+  's108-m04': [
+    'src/cli/feedback-fixes.ts:74',
+    'src/cli/feedback-fixes.ts:86',
+    'src/cli/feedback-fixes.ts:96',
+    'src/cli/feedback-fixes.ts:105',
+    'src/cli/feedback-fixes.ts:123',
+    'src/cli/feedback-fixes.ts:136',
+    // s108-m04 (round 3): down one line (parseRevision's import).
+    'src/tools/rbook/feedback-fix-apply.ts:83',
+  ],
+  // s108-m05 (round 1): a call that meets a record mid-move is refused, with when to retry. Its
+  // code is the client's for a record it may not open, so the census reads it as a fault; no router
+  // call makes the guard, and migrate-cutover.test.ts checks the answer during a real move.
+  's108-m05': ['src/index.ts:829'],
 } as const satisfies Readonly<Record<string, readonly string[]>>;
 const RATIFIED_SITE_ADDS = Object.values(SITES_BY_MISSION).flat();
 
@@ -3424,10 +3468,10 @@ describe('s89-m08 T5 — every authored suggestion naming a shipped tool yields 
       'src/tools/rbook/errors.ts:408',
       'src/tools/rbook/rbook-db-backfill.ts:234',
       'src/tools/rbook/rbook-decisions-update.ts:81',
-      'src/tools/rbook/rbook-feedback.ts:560',
+      'src/tools/rbook/rbook-feedback.ts:597',
       'src/tools/rbook/rbook-learnings-reaffirm.ts:91',
       'src/tools/rbook/rbook-learnings-update.ts:104',
-      'src/tools/rbook/rbook-sprint-complete.ts:587',
+      'src/tools/rbook/rbook-sprint-complete.ts:615',
     ]);
   });
 
@@ -5005,6 +5049,96 @@ describe('s90-m07 PORTABLE EXTERNAL + FIRST-RUN LEDGER — loopback, never live 
         argv: ['--content', 'Report friction.', '--project-root', projectRoot],
       }),
     });
+    // s108-m04: resolve-fixed and reopen-fixed, each refusal followed by the call it prescribes.
+    await runPortableCase({
+      name: 'feedback reopen-fixed names no rule',
+      family: 'driveable',
+      expectedCode: 'INVALID_PARAMETER',
+      expectsHttp: false,
+      scenario: noHttpScenario,
+      tool: 'cli_feedback',
+      params: ({ projectRoot }) => ({ projectRoot, argv: ['reopen-fixed'] }),
+      remedyParams: ({ projectRoot }) => ({
+        projectRoot,
+        argv: ['reopen-fixed', '--rule', 'completion.decisions-advisory'],
+      }),
+    });
+    await runPortableCase({
+      name: 'feedback resolve-fixed takes no --rule',
+      family: 'driveable',
+      expectedCode: 'INVALID_PARAMETER',
+      expectsHttp: false,
+      scenario: noHttpScenario,
+      tool: 'cli_feedback',
+      params: ({ projectRoot }) => ({
+        projectRoot,
+        argv: ['resolve-fixed', '--apply', '--rule', 'reads.fan-out-every-project'],
+      }),
+      remedyParams: ({ projectRoot }) => ({ projectRoot, argv: ['resolve-fixed'] }),
+    });
+    await runPortableCase({
+      name: 'feedback resolve-fixed --apply and --dry-run contradict',
+      family: 'driveable',
+      expectedCode: 'INVALID_PARAMETER',
+      expectsHttp: false,
+      scenario: noHttpScenario,
+      tool: 'cli_feedback',
+      params: ({ projectRoot }) => ({
+        projectRoot,
+        argv: ['resolve-fixed', '--apply', '--dry-run'],
+      }),
+      remedyParams: ({ projectRoot }) => ({ projectRoot, argv: ['resolve-fixed'] }),
+    });
+    await runPortableCase({
+      name: 'feedback reopen-fixed names a rule nothing knows',
+      family: 'driveable',
+      expectedCode: 'INVALID_PARAMETER',
+      expectsHttp: false,
+      scenario: noHttpScenario,
+      tool: 'cli_feedback',
+      params: ({ projectRoot }) => ({
+        projectRoot,
+        argv: ['reopen-fixed', '--rule', 'reads.fanout'],
+      }),
+      remedyParams: ({ projectRoot }) => ({
+        projectRoot,
+        argv: ['reopen-fixed', '--rule', 'reads.fan-out-every-project'],
+      }),
+    });
+    await runPortableCase({
+      name: 'feedback resolve-fixed --apply refuses the review role',
+      family: 'driveable',
+      expectedCode: 'READ_ONLY_AGENT',
+      expectsHttp: false,
+      scenario: noHttpScenario,
+      tool: 'cli_feedback',
+      params: ({ projectRoot }) => ({
+        projectRoot,
+        argv: ['resolve-fixed', '--apply'],
+        env: { RBOOK_AGENT_ROLE: 'review' },
+      }),
+      remedyParams: ({ projectRoot }) => ({
+        projectRoot,
+        argv: ['resolve-fixed'],
+        env: { RBOOK_AGENT_ROLE: 'review' },
+      }),
+    });
+    await runPortableCase({
+      name: 'feedback resolve-fixed points at a missing project',
+      family: 'first-run',
+      expectedCode: 'RBOOK_NOT_DETECTED',
+      expectsHttp: false,
+      scenario: noHttpScenario,
+      tool: 'cli_feedback',
+      params: ({ projectRoot, caseRoot }) => ({
+        projectRoot,
+        argv: ['resolve-fixed', '--project-root', path.join(caseRoot, 'missing')],
+      }),
+      remedyParams: ({ projectRoot }) => ({
+        projectRoot,
+        argv: ['resolve-fixed', '--project-root', projectRoot],
+      }),
+    });
     await runPortableCase({
       name: 'fleet feedback cannot mutate a sibling',
       family: 'driveable',
@@ -5890,6 +6024,19 @@ interface Replay {
  * The shape is `migration-warning-reachability.test.ts`'s.
  */
 const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
+  // s108-m02: the matrix sends no key outside its action's applicability and has no date axis. The
+  // named suites drive each refusal at the dispatch boundary or in its handler and run its remedy;
+  // they grant no examined-site or remedy-replay credit here.
+  'src/tools/rbook/inapplicable-param.ts:54':
+    'A published key given to an action that would ignore it (checkAfter, reason, or since and until on next_steps). next-step-param-refusals.test.ts drives all 29 pairs at dispatch, derived from the applicability tables; next-step-dated-lifecycle.test.ts runs the dated capture and carry, and the reasoned complete and drop, that the remedy names.',
+  'src/tools/rbook/rbook-next-steps.ts:229':
+    'A reason over 500 characters. next-step-dated-lifecycle.test.ts refuses a 501-character reason and completes rows with shorter ones; the cap is enforced in the handler so that zod publishes no maxLength.',
+  'src/tools/rbook/rbook-next-steps.ts:242':
+    'A broad carry given a date. next-step-param-refusals.test.ts refuses it with nextStepIds omitted and empty; next-step-dated-lifecycle.test.ts runs the remedy, a carry by id with checkAfter.',
+  'src/tools/rbook/rbook-next-steps.ts:345':
+    'A reason for a row whose stable id is NULL, which only a hand-built table can hold: the genesis preparation rebuilds and backfills any table it migrates. next-step-dates-stores.test.ts builds one, refuses the reason and runs the remedy, the same call without it.',
+  'src/tools/rbook/rbook-session-capture.ts:452':
+    'A date on a capture that is not a next step. next-step-param-refusals.test.ts refuses it on a constraint capture; next-step-dated-lifecycle.test.ts captures dated next steps, the remedy.',
   // s101-m02: incompatible copies are constructed by separate interop fixtures, not this matrix.
   'src/tools/rbook/record-exchange-steps.ts:83':
     'An authority catch-up withholds changes from an older recipient after applying the readable prefix. This router matrix establishes no mixed-version exchange or authority catch-up; separate transport and published-copy tests grant no examined-site or remedy-replay credit.',
@@ -6049,7 +6196,7 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     'A first copy the dashboard sent that this version builds no store from, such as a damaged file. rbook_project reaches it; no test sends a damaged first copy.',
   'src/tools/rbook/record-dashboard-peer.ts:272':
     'A dashboard that lists the project but no longer shares it, after its owner moved it back. A sync through the dashboard only; dashboard-sharing.test.ts syncs a member after the move back.',
-  'src/tools/rbook/record-dashboard-share.ts:105':
+  'src/tools/rbook/record-dashboard-share.ts:107':
     "A share or a join through the dashboard on a machine whose switch is not on. rbook_project reaches it; dashboard-sharing.test.ts shares and joins with the switch off, and the healthy-store matrix runs without the dashboard's routes.",
   'src/tools/rbook/record-dashboard-share-state.ts:67':
     'A share through the dashboard of a project it already referees, with no answer kept from a share that stopped. rbook_project reaches it; dashboard-sharing.test.ts shares a second time only to finish one that stopped.',
@@ -6175,7 +6322,8 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     "A fresh copy's own schema that the sharing preparation cannot make current, which only a broken install leaves. The referee library and the share's upload build it, never a router; no test constructs one.",
   // The CLI's offline migration is outside the router matrix; its refusal/retry cases run
   // against real SQLite stores and child processes in tests/cli/migrate*.test.ts.
-  'src/cli/migrate.ts:176':
+  // s108-m05: down 55 lines.
+  'src/cli/migrate.ts:231':
     'CLI-only migration refusal and deferred-follow-up retry, outside MCP routers; covered by migrate and recovery suites.',
   'src/cli/migrate-config.ts:156':
     'CLI-only failed-rollback recovery requires conflicting filesystem state; migrate-config.test.ts retains the guard and proves retry.',
@@ -6193,15 +6341,17 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     'Database read/write/transaction failure branch; the healthy-store axis cannot cause it. Fault cases live in lifecycle-decoupling.test.ts and the integration failure suites.',
   'src/tools/rbook/rbook-mission-start.ts:314':
     'Database read/write/transaction failure branch; the healthy-store axis cannot cause it. Fault cases live in lifecycle-decoupling.test.ts and the integration failure suites.',
-  'src/tools/rbook/mission-status-parked.ts:23':
+  'src/tools/rbook/mission-status-parked.ts:73':
     'Database read failure while checking parked work; the healthy-store axis cannot cause it. status-advisory-truth.test.ts covers the failure boundary.',
+  'src/tools/rbook/mission-status-parked.ts:35':
+    'Database read failure while checking Deferred work for a date that has come; the healthy-store axis cannot cause it. status-advisory-truth.test.ts covers the failure boundary.',
   'src/tools/rbook/rbook-mission-status.ts:280':
     'Database read/write/transaction failure branch; the healthy-store axis cannot cause it. Fault cases live in lifecycle-decoupling.test.ts and the integration failure suites.',
   'src/tools/rbook/rbook-mission-update.ts:327':
     'Database read/write/transaction failure branch; the healthy-store axis cannot cause it. Fault cases live in lifecycle-decoupling.test.ts and the integration failure suites.',
-  'src/tools/rbook/rbook-mission-update.ts:516':
+  'src/tools/rbook/rbook-mission-update.ts:535':
     'Database read/write/transaction failure branch; the healthy-store axis cannot cause it. Fault cases live in lifecycle-decoupling.test.ts and the integration failure suites.',
-  'src/tools/rbook/rbook-mission-update.ts:528':
+  'src/tools/rbook/rbook-mission-update.ts:547':
     'Database read/write/transaction failure branch; the healthy-store axis cannot cause it. Fault cases live in lifecycle-decoupling.test.ts and the integration failure suites.',
 
   // s102-m04: healthy-store calls cannot produce a trigger-altered transition postcondition.
@@ -6209,7 +6359,7 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     'A trigger changed the committed blocking episode or note. queued-block-lifecycle.test.ts injects transition corruption and proves rollback; this healthy-store matrix cannot reach it.',
   'src/tools/rbook/rbook-mission-unblock.ts:323':
     'A trigger changed the unblocking status or metadata. queued-block-lifecycle.test.ts injects transition corruption and proves rollback; this healthy-store matrix cannot reach it.',
-  'src/tools/rbook/rbook-mission-update.ts:481':
+  'src/tools/rbook/rbook-mission-update.ts:500':
     'A trigger changed the update blocking episode. queued-block-lifecycle.test.ts injects transition corruption and proves rollback; this healthy-store matrix cannot reach it.',
 
   // s94-m08: mandatory drop schema/audit/postcondition failures require fault injection.
@@ -6480,18 +6630,18 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
   // ── MASKED BY AN EARLIER REFUSAL ON EVERY PATH THIS MATRIX CAN DRIVE ─────────────────────────
   // s92-m02, s92-m05 and s92-m03 moved these two down (planned-end-date receipt fields; the
   // archive param; a comment on implicit sessions); same branches.
-  'src/tools/rbook/rbook-sprint-complete.ts:713':
+  'src/tools/rbook/rbook-sprint-complete.ts:741':
     'MEASURED: masked. With master_context deleted and the sprint made closable, closeout refuses at ' +
     'the shared errors.ts contextNotFound BEFORE reaching this sprint-local branch, so :709 is ' +
     'unreachable while that earlier guard stands.',
-  'src/tools/rbook/rbook-sprint-complete.ts:724': 'Same masking as :713, for project_context.',
+  'src/tools/rbook/rbook-sprint-complete.ts:752': 'Same masking as :713, for project_context.',
 };
 
 const FAULT_SHAPED_DRIVEABLE_RESIDUALS = new Set([
   // s102-m04: mandatory blocking-episode postcondition checks require trigger faults.
   'src/tools/rbook/rbook-mission-block.ts:319',
   'src/tools/rbook/rbook-mission-unblock.ts:323',
-  'src/tools/rbook/rbook-mission-update.ts:481',
+  'src/tools/rbook/rbook-mission-update.ts:500',
   // s98-m17: unreadable stored observation, STATE only by the sibling-expression rule.
   'src/referee/set-aside.ts:49',
   'src/tools/rbook/rbook-mission-drop.ts:70',
@@ -6503,10 +6653,11 @@ const FAULT_SHAPED_DRIVEABLE_RESIDUALS = new Set([
   'src/tools/rbook/rbook-mission-start.ts:300',
   'src/tools/rbook/rbook-mission-start.ts:314',
   'src/tools/rbook/rbook-mission-status.ts:280',
-  'src/tools/rbook/mission-status-parked.ts:23',
+  'src/tools/rbook/mission-status-parked.ts:35',
+  'src/tools/rbook/mission-status-parked.ts:73',
   'src/tools/rbook/rbook-mission-update.ts:327',
-  'src/tools/rbook/rbook-mission-update.ts:516',
-  'src/tools/rbook/rbook-mission-update.ts:528',
+  'src/tools/rbook/rbook-mission-update.ts:535',
+  'src/tools/rbook/rbook-mission-update.ts:547',
 
   'src/tools/rbook/client.ts:876',
   'src/tools/rbook/client.ts:887',

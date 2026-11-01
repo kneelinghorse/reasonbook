@@ -37,6 +37,20 @@ export {
   type FeedbackKindRule,
   type FoldedFeedbackKind,
 } from './feedback-kinds';
+export {
+  FEEDBACK_FIX_RULES,
+  FEEDBACK_FIXES_RULE,
+  FEEDBACK_GROUPS_RULE,
+  FEEDBACK_SECOND_ITEM,
+  feedbackFixByRule,
+  feedbackFixOf,
+  feedbackGroupOf,
+  firstSentence,
+  type FeedbackFixRow,
+  type FeedbackFixRule,
+  type FeedbackFixVerdict,
+  type FeedbackGroup,
+} from './feedback-fixes';
 export { ACTIVITY_TABLES, CONSTRAINTS_EXPIRING_DAYS, QUIET_SILENT_DAYS } from './rules-activity';
 export {
   BRIEF_LINE_IDS,

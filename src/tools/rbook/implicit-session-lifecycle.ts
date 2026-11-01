@@ -6,7 +6,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import { withClientAsync, type RbookDatabaseClient } from './client';
-import { rbookSessionComplete } from './rbook-session-complete';
+import { datesPassedLine, rbookSessionComplete } from './rbook-session-complete';
 import { createSuccess } from './errors';
 import {
   automaticCloseSummary,
@@ -50,6 +50,8 @@ export interface ClosedSessionReceipt {
   closed: boolean;
   /** Why the close failed, when it did. */
   error?: string;
+  /** s108-m02: dated captures whose day had come, written by this close without their date. */
+  datesPassed?: Array<{ id: number | null; checkAfter: string }>;
 }
 
 export interface LifecycleOutcome {
@@ -115,6 +117,9 @@ async function closeEach(
       summary,
       closed: closed.success,
       ...(closed.success ? {} : { error: closed.error?.message ?? 'unknown error' }),
+      ...(closed.success && closed.data?.datesPassed?.length
+        ? { datesPassed: closed.data.datesPassed }
+        : {}),
     });
   }
   return receipts;
@@ -275,7 +280,7 @@ export async function closeHarnessSession(
 export function closedSessionLines(receipts: readonly ClosedSessionReceipt[]): string[] {
   return receipts.map((receipt) =>
     receipt.closed
-      ? `Closed ${receipt.implicit ? 'implicit' : 'explicit'} session ${receipt.sessionId} (${receipt.title}): ${receipt.summary}`
+      ? `Closed ${receipt.implicit ? 'implicit' : 'explicit'} session ${receipt.sessionId} (${receipt.title}): ${receipt.summary}${receipt.datesPassed?.length ? ` ${datesPassedLine(receipt.datesPassed)}` : ''}`
       : `Could not close ${receipt.implicit ? 'implicit' : 'explicit'} session ${receipt.sessionId}: ${receipt.error}`
   );
 }

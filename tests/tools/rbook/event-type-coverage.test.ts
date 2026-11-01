@@ -131,6 +131,12 @@ const DYNAMIC_TABLE_INSERTS: Record<string, { count: number; firehose: boolean; 
     firehose: false,
     why: 'the vector tables (decisions_vec, learnings_vec)',
   },
+  // s108-m02: next_step_reasons is a local table outside the firehose, keyed by a row's stable id.
+  'tools/rbook/next-step-reasons.ts#NEXT_STEP_REASONS': {
+    count: 1,
+    firehose: false,
+    why: 'the next-step reasons, which no exchange sends and which carry no event_type',
+  },
   'tools/rbook/record-apply.ts#APPLY_TOKEN_TABLE': {
     count: 1,
     firehose: false,
@@ -196,7 +202,8 @@ describe('inserts whose table is interpolated (s97-m13, #701)', () => {
         Object.entries(DYNAMIC_TABLE_INSERTS).map(([key, site]) => [key, site.count])
       )
     );
-    expect(Object.values(DYNAMIC_TABLE_INSERTS).reduce((n, site) => n + site.count, 0)).toBe(17);
+    // s108-m02: 17 -> 18, the next-step reasons.
+    expect(Object.values(DYNAMIC_TABLE_INSERTS).reduce((n, site) => n + site.count, 0)).toBe(18);
   });
 
   it('a fixed table named outside the firehose is one', () => {

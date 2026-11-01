@@ -304,6 +304,7 @@ describe('formatMissionDeferForLLM', () => {
         currentStatus: 'Deferred',
         reason: 'Waiting on partner team',
         deferUntil: 'after sprint 49',
+        checkAfter: null,
         message: "Mission 's12-m05' has been deferred",
         deferredAt: '2024-01-15T10:00:00.000Z',
       },
@@ -314,6 +315,8 @@ describe('formatMissionDeferForLLM', () => {
     expect(output).toContain('Queued → Deferred');
     expect(output).toContain('Waiting on partner team');
     expect(output).toContain('after sprint 49');
+    // s108-m03: free text is a hint, and the receipt says nothing acts on it.
+    expect(output).toContain('a hint: nothing brings the mission back on its own');
   });
 
   it('formats an error result', () => {
@@ -340,6 +343,7 @@ describe('formatMissionDeferForLLM', () => {
         currentStatus: 'Deferred',
         reason: null,
         deferUntil: null,
+        checkAfter: null,
         message: "Mission 's12-m05' has been deferred",
         deferredAt: '2024-01-15T10:00:00.000Z',
       },

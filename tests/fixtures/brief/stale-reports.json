@@ -6,7 +6,7 @@
       "schema": "rbook.signals/1",
       "library": {
         "name": "@aquex/reasonbook/signals",
-        "version": "4.3.0"
+        "version": "4.10.0"
       },
       "computedAt": "2026-10-19T12:00:00.000Z",
       "project": {
@@ -23,6 +23,7 @@
         "quiet_days": "whole days from the newest occurred_at at or before now, across missions, sprints, sessions, learnings, decisions and next steps, to now; the review calls a project silent after more than 21 days",
         "constraints_expiring": "active constraints whose expires_at falls after now and within 7 days of it; an unreadable expires_at counts apart as undated",
         "shared_conflicts": "on a shared copy, the fields copies set apart that no one has settled (record_conflicts), oldest first, and oldestAt is the oldest one's detection; removed says a peer told this copy its member was removed (record_peers.removed_at), and is false where no peer has told it, including a copy that keeps no peer record, such as the referee's snapshot, where it says nothing",
+        "work_due": "next steps with status 'pending' or 'carried' whose resolved_at is a bare YYYY-MM-DD day at or before now, and missions whose status is 'Deferred' whose domain_fields.checkAfter is such a day and belongs to the current deferral (checkAfterDeferredAt equals deferredAt); a day is its 00:00 UTC; ids longest due first, oldestAt is the earliest due day, and nextDueAt is the soonest day still ahead",
         "window": "decisions and learnings created, missions completed and sprints closed (Completed, by end_date) after now minus the window and at or before now; null where the table or its time column is absent",
         "feedbackKinds": "agent_feedback rows written after now minus the window and at or before now, by kind (a row's kind is that of the first rule in FEEDBACK_KIND_RULES whose pattern matches its text, among rows that name Reasonbook (reasonbook, rbook, cmos or one of their tools); a row that names it nowhere, that no rule matches, or whose first rule is a folded kind's, is unclassified; the tool name decides nothing); null when unavailable"
       },
@@ -94,6 +95,14 @@
           "count": null,
           "ids": [],
           "reason": "not a shared copy (no record_conflicts table)"
+        },
+        {
+          "kind": "work_due",
+          "available": true,
+          "count": 1,
+          "ids": ["n:44"],
+          "oldestAt": "2026-10-15T00:00:00.000Z",
+          "nextDueAt": "2026-10-27T00:00:00.000Z"
         }
       ],
       "window": {
@@ -121,7 +130,7 @@
       "schema": "rbook.signals/1",
       "library": {
         "name": "@aquex/reasonbook/signals",
-        "version": "4.3.0"
+        "version": "4.10.0"
       },
       "computedAt": "2026-10-19T12:00:00.000Z",
       "project": {
@@ -138,6 +147,7 @@
         "quiet_days": "whole days from the newest occurred_at at or before now, across missions, sprints, sessions, learnings, decisions and next steps, to now; the review calls a project silent after more than 21 days",
         "constraints_expiring": "active constraints whose expires_at falls after now and within 7 days of it; an unreadable expires_at counts apart as undated",
         "shared_conflicts": "on a shared copy, the fields copies set apart that no one has settled (record_conflicts), oldest first, and oldestAt is the oldest one's detection; removed says a peer told this copy its member was removed (record_peers.removed_at), and is false where no peer has told it, including a copy that keeps no peer record, such as the referee's snapshot, where it says nothing",
+        "work_due": "next steps with status 'pending' or 'carried' whose resolved_at is a bare YYYY-MM-DD day at or before now, and missions whose status is 'Deferred' whose domain_fields.checkAfter is such a day and belongs to the current deferral (checkAfterDeferredAt equals deferredAt); a day is its 00:00 UTC; ids longest due first, oldestAt is the earliest due day, and nextDueAt is the soonest day still ahead",
         "window": "decisions and learnings created, missions completed and sprints closed (Completed, by end_date) after now minus the window and at or before now; null where the table or its time column is absent",
         "feedbackKinds": "agent_feedback rows written after now minus the window and at or before now, by kind (a row's kind is that of the first rule in FEEDBACK_KIND_RULES whose pattern matches its text, among rows that name Reasonbook (reasonbook, rbook, cmos or one of their tools); a row that names it nowhere, that no rule matches, or whose first rule is a folded kind's, is unclassified; the tool name decides nothing); null when unavailable"
       },
@@ -207,6 +217,13 @@
           "ids": ["strategic_decisions:01M5DFZ6D0KA3PG18VTXK3TRPR/status", "missions:s2-m1/name"],
           "removed": false,
           "oldestAt": "2026-10-10T11:00:00.000Z"
+        },
+        {
+          "kind": "work_due",
+          "available": true,
+          "count": 0,
+          "ids": [],
+          "nextDueAt": "2026-10-25T00:00:00.000Z"
         }
       ],
       "window": {

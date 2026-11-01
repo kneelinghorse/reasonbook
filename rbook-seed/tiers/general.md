@@ -67,8 +67,9 @@ decisions and lessons, and up to 5 open next steps. Empty sections are omitted; 
 has no sprint or mission section and no fleet-feedback line. The local text core stays within
 4,000 characters. Use `rbook_agent_onboard` for the first cold start.
 
-Next steps rank by lease state (lapsing, warning, idle), then the current cycle, then newest.
-When next steps appear, the digest shows up to 6 recent decisions. The digest and
+Next steps rank due ones first (a row whose date has come), then by lease state (lapsing,
+warning, idle), then the current cycle, then newest. A row waiting until a date is left out, and
+a line says how many wait. When next steps appear, the digest shows up to 6 recent decisions. The digest and
 `rbook_context(action="next_steps", nextStepAction="list")` provide a preview; read a row
 in full with `rbook_context(action="next_steps", nextStepAction="show", nextStepIds=[123])`,
 using the numeric part of its `n:123` label.

@@ -169,8 +169,8 @@ export interface PortfolioSignalsItem extends PersonSignals {
 /**
  * s97-m01 — other projects' signals that need a person, counted by the signals library on the
  * connection the fan-out opens, with this machine's draft runtime: drafts awaiting a decision,
- * next steps near their lease, blocked missions and a shared copy's unsettled conflicts. This
- * project's own are left out, since its digest carries them. `reasonbook signals` gives the full
+ * next steps near their lease, blocked missions, a shared copy's unsettled conflicts and, from
+ * s108-m03, work whose date has come. This project's own are left out, since its digest carries them. `reasonbook signals` gives the full
  * reports, with every unavailable signal and its reason.
  */
 export interface PortfolioSignals {
@@ -180,7 +180,7 @@ export interface PortfolioSignals {
   top: PortfolioSignalsItem[];
   /**
    * Other projects whose signals could not be read: the store could not be queried, or one of the
-   * four failed on it (a missing table is not a failure). Present only when there are any.
+   * five failed on it (a missing table is not a failure). Present only when there are any.
    */
   unread?: number;
 }
@@ -1374,7 +1374,11 @@ async function buildPortfolioSection(
 }
 
 const personTotal = (item: PersonSignals): number =>
-  (item.drafts ?? 0) + (item.lapsing ?? 0) + (item.blocked ?? 0) + (item.conflicts ?? 0);
+  (item.drafts ?? 0) +
+  (item.lapsing ?? 0) +
+  (item.blocked ?? 0) +
+  (item.conflicts ?? 0) +
+  (item.due ?? 0);
 
 /** A folder as the file system names it, so one store under two spellings is one store. */
 function realFolder(folder: string): string {

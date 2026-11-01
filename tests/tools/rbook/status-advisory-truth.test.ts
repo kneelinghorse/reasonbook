@@ -2,7 +2,10 @@
 // ABOUTME: Status and sprint-close advisories distinguish parked work from completed sprints.
 // ABOUTME: Real SQLite witnesses prevent untagged sessions from borrowing unrelated row membership.
 import Database from 'better-sqlite3';
-import { parkedMissionNotice } from '../../../src/tools/rbook/mission-status-parked';
+import {
+  dueMissionNotice,
+  parkedMissionNotice,
+} from '../../../src/tools/rbook/mission-status-parked';
 import {
   rbookMissionStatus,
   formatMissionStatusForLLM,
@@ -118,6 +121,19 @@ test('unreadable parked work refuses rather than claiming there is none', async 
       },
       null
     );
+  });
+  expect(result.success).toBe(false);
+  expect(result.error?.code).toBe('DB_QUERY_FAILED');
+  expect(result.error?.suggestion).toContain('Restore read access to missions');
+});
+
+test('unreadable Deferred work refuses rather than claiming none is due (s108-m03)', async () => {
+  const result = await withClient(root, (client) => {
+    jest.spyOn(client, 'getMany').mockImplementationOnce(() => ({
+      success: false,
+      error: { code: 'DB_QUERY_FAILED', message: 'Injected deferred-work read failure' },
+    }));
+    return dueMissionNotice(client, null);
   });
   expect(result.success).toBe(false);
   expect(result.error?.code).toBe('DB_QUERY_FAILED');

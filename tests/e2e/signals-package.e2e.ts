@@ -176,6 +176,7 @@ it.each(['node16', 'bundler'] as const)(
         'quiet_days',
         'constraints_expiring',
         'shared_conflicts',
+        'work_due',
       ],
       available: false,
     });

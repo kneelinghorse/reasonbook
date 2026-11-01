@@ -1187,6 +1187,51 @@ describe("reasonbook import's text says only what is true (s96-m14, round 4)", (
     );
   }, 240000);
 
+  it("s108-m02: flags a next step's date the copy wrote after the marker as the copy's own change", async () => {
+    const place = await preShare(fixture.tmp, {});
+    await onPlace(fixture.tmp, place, 'rbook_mission', {
+      action: 'add',
+      missionId: 'i-m03',
+      name: 'Deleted on the owner',
+      sprintId: 'i-sprint',
+    });
+    await onPlace(fixture.tmp, place, 'rbook_session', {
+      action: 'start',
+      type: 'custom',
+      title: 'Before the copy',
+    });
+    await onPlace(fixture.tmp, place, 'rbook_session', {
+      action: 'complete',
+      summary: 'Before the copy.',
+      nextSteps: ['A shared step.'],
+    });
+    onFile(place, "UPDATE next_steps SET mission_id = 'i-m03' WHERE content = 'A shared step.'");
+    await onPlace(fixture.tmp, place, 'rbook_context', { action: 'snapshot', source: 'marker' });
+    const zip = zipOf(fixture.tmp, place);
+    // After the marker the copy dates the step. The field differs from the record's only because the
+    // copy wrote it, so the flag's "may be its own change" is true of a date as of any later time
+    // (decision #1782, keeping 4.9.0's rule over the design's bullet).
+    const day = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
+    onFile(
+      zip,
+      `UPDATE next_steps SET status = 'carried', resolved_at = '${day}' WHERE content = 'A shared step.'`
+    );
+    onFile(
+      place,
+      'PRAGMA foreign_keys = OFF',
+      "UPDATE next_steps SET mission_id = NULL WHERE content = 'A shared step.'",
+      "DELETE FROM missions WHERE id = 'i-m03'"
+    );
+    const owner = await shareExisting(fixture.tmp, place.root);
+    const report = await dryRun(owner, zip);
+    const text = importText(report);
+    // The date itself is one of the fields raised, and it is flagged as the copy's own change.
+    expect(text).toMatch(
+      /^ {2}next_steps \d+ resolved_at: the copy holds "\d{4}-\d{2}-\d{2}", the record null; the copy's row carries a time after the marker, so this may be its own change$/m
+    );
+    expect(report.flagged).toBe(report.differing);
+  }, 240000);
+
   it("names no citation where the record's value stands, since nothing is written there", async () => {
     const place = await preShare(fixture.tmp, {});
     await onPlace(fixture.tmp, place, 'rbook_decisions', { action: 'record', content: 'Gone.' });

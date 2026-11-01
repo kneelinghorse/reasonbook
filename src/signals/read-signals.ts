@@ -12,6 +12,7 @@ import { storedTimeMs } from '../tools/rbook/stored-time';
 import { DRAFT_EXPIRY_DAYS, DRAFT_EXPIRY_STARTS } from '../tools/rbook/proposals';
 import { LEASE_LAPSE_AT, LEASE_MIN_AGE_DAYS, LEASE_WARN_AT } from '../tools/rbook/next-step-lease';
 import { FEEDBACK_KINDS_RULE } from './feedback-kinds';
+import { FEEDBACK_FIXES_RULE, FEEDBACK_GROUPS_RULE } from './feedback-fixes';
 import {
   SIGNAL_KINDS,
   SIGNAL_MAX_IDS,
@@ -44,6 +45,7 @@ import {
   windowCounts,
   windowFeedbackKinds,
 } from './rules-activity';
+import { workDue } from './rules-due';
 import { columnsOf, DAY_MS } from './store-read';
 
 const DRAFTS_RULE = `proposals with outcome 'pending' and not revised after an approval (replaced_by unset), drafted at or before now and no more than ${DRAFT_EXPIRY_DAYS} days before it`;
@@ -54,17 +56,19 @@ const DRAFTS_TAIL =
 export const SIGNAL_RULES: Readonly<Record<SignalKind | 'window' | 'feedbackKinds', string>> =
   Object.freeze({
     drafts_pending: `${DRAFTS_RULE}, with fewer than ${DRAFT_EXPIRY_STARTS} session starts after the draft and at or before now in this machine's draft runtime; a runtime that is not found or cannot be read is named in the reason, and its drafts expire by age only; ${DRAFTS_TAIL}`,
-    next_steps_lapsing: `pending or carried next steps whose lease anchor (the last carry, else the creation) is at or before now and has survived ${LEASE_WARN_AT} or more closes: sprints with status exactly 'Completed' whose recorded end_date is at or before now and after the anchor; lapseDue counts those at ${LEASE_LAPSE_AT} or more closes and ${LEASE_MIN_AGE_DAYS} days past the anchor, which the next close drops unless they are carried; an unreadable anchor counts apart as undated; ids most closes first, and oldestAt is the oldest counted anchor`,
+    next_steps_lapsing: `pending or carried next steps whose lease anchor (the day a dated row waits until, its last carry or the reopen that ended a wait, else the creation) is at or before now and has survived ${LEASE_WARN_AT} or more closes: sprints with status exactly 'Completed' whose recorded end_date is at or before now and after the anchor; lapseDue counts those at ${LEASE_LAPSE_AT} or more closes and ${LEASE_MIN_AGE_DAYS} days past the anchor, which the next close drops unless they are carried; an unreadable anchor counts apart as undated; ids most closes first, and oldestAt is the oldest counted anchor`,
     reviews_due: `active decisions and active learnings that are not evergreen, made at or before now, whose review age is ${SIGNALS_REVIEW_THRESHOLD} or more closes (sprints Completed, without regard to case, closed at or before now and after the close of the row's own sprint, else after its creation), not reviewed in the ${SIGNALS_REVIEW_WINDOW_MS / DAY_MS} days before now, and for decisions without evidence and not a replacement in a supersession; the threshold is pinned and RBOOK_STALENESS_THRESHOLD_SPRINTS is not read; becameDue counts the rows due at now that were not due at the window's start; an unreadable anchor counts apart as undated; ids oldest anchor first`,
     superseded_cited:
       "decisions and learnings with status 'active', made at or before now, that cite a decision with status 'superseded', by the project's own citation reader (typed citations only where no persisted citation graph exists), leaving out a decision's citations of a decision it replaced, directly or along the chain; statuses are read as stored, not as of now",
     missions_blocked:
       "missions whose status is 'Blocked', longest blocked first by domain_fields.blockedSince, else the newest session_events block row; sinceUnknown counts those with neither; oldestAt is the longest block's start",
-    feedback_open: `agent_feedback rows with status 'open' written at or before now; count is the friction rows, by kind, and unclassified the rest (${FEEDBACK_KINDS_RULE}); an unreadable time counts apart as undated; ids oldest first`,
+    feedback_open: `agent_feedback rows with status 'open' written at or before now; count is the friction rows, by kind, and unclassified the rest (${FEEDBACK_KINDS_RULE}); groups splits the same rows (${FEEDBACK_GROUPS_RULE}; ${FEEDBACK_FIXES_RULE}); an unreadable time counts apart as undated; ids oldest first`,
     quiet_days: `whole days from the newest occurred_at at or before now, across missions, sprints, sessions, learnings, decisions and next steps, to now; the review calls a project silent after more than ${QUIET_SILENT_DAYS} days`,
     constraints_expiring: `active constraints whose expires_at falls after now and within ${CONSTRAINTS_EXPIRING_DAYS} days of it; an unreadable expires_at counts apart as undated`,
     shared_conflicts:
       "on a shared copy, the fields copies set apart that no one has settled (record_conflicts), oldest first, and oldestAt is the oldest one's detection; removed says a peer told this copy its member was removed (record_peers.removed_at), and is false where no peer has told it, including a copy that keeps no peer record, such as the referee's snapshot, where it says nothing",
+    work_due:
+      "next steps with status 'pending' or 'carried' whose resolved_at is a bare YYYY-MM-DD day at or before now, and missions whose status is 'Deferred' whose domain_fields.checkAfter is such a day and belongs to the current deferral (checkAfterDeferredAt equals deferredAt); a day is its 00:00 UTC; ids longest due first, oldestAt is the earliest due day, and nextDueAt is the soonest day still ahead",
     window:
       'decisions and learnings created, missions completed and sprints closed (Completed, by end_date) after now minus the window and at or before now; null where the table or its time column is absent',
     feedbackKinds: `agent_feedback rows written after now minus the window and at or before now, by kind (${FEEDBACK_KINDS_RULE}); null when unavailable`,
@@ -95,12 +99,13 @@ const SIGNAL_RULE_FUNCTIONS: Readonly<Record<SignalKind, (ctx: RecordsContext) =
   quiet_days: quietDays,
   constraints_expiring: constraintsExpiring,
   shared_conflicts: sharedConflicts,
+  work_due: workDue,
 };
 
 export interface ComputeSignalsOptions extends ReadSignalsOptions {
   /** The store file the handle reads, which keys this machine's draft runtime. */
   readonly storePath: string;
-  /** Only these signals, in report order; the rest are omitted. Default: all nine. */
+  /** Only these signals, in report order; the rest are omitted. Default: all ten. */
   readonly only?: readonly SignalKind[];
 }
 
@@ -201,7 +206,7 @@ function inOneRead<T>(db: Database.Database, read: () => T): T {
 
 /**
  * The signal entries alone, by the same rules as a report, for a caller that needs no window:
- * the review reads four of them on every store its fan-out opens.
+ * the review reads five of them on every store its fan-out opens.
  */
 export function computeSignalEntries(
   db: Database.Database,

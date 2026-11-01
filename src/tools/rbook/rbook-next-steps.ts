@@ -26,8 +26,22 @@ import { appendWarnings, appendWriteFailures, attachWarnings } from './format-wa
 import { skipConflicted, skippedConflicts } from './record-conflict-skip';
 import { countWrite, type WriteFailure } from './write-guard';
 import type { LeaseState } from './next-step-lease';
-import { recordedExecute } from './record-changes';
+import { recordedExecute, recordedTransaction } from './record-changes';
+import { isRecordedStore } from './record-recording';
 import { readNextSteps, renderNextStepsBody } from './next-steps-read';
+import { bareDateSql, readCheckAfter, SHARED_DATE_NOTE } from './next-step-dates';
+import {
+  deleteNextStepReason,
+  NEXT_STEP_REASON_MAX,
+  NEXT_STEP_REASONS,
+  prepareNextStepReasons,
+  rowsWithoutStableIds,
+  SHARED_REASON_NOTE,
+  writeNextStepReason,
+} from './next-step-reasons';
+import { inapplicableParam, isGiven } from './inapplicable-param';
+import { sanitizeContentField } from '../../intelligence/content-sanitizer';
+import { emptiedParameter } from './emptied-parameter';
 
 /**
  * A next-step record from the database.
@@ -51,6 +65,12 @@ export interface NextStepRecord extends SpinOutDetails {
   closesSurvived?: number;
   /** s91-m06: `lapsing` = the next close drops it unless carried; `warning` = the one after. */
   lease?: LeaseState;
+  /** s108-m02: an open row's date, while it is ahead (next-step-dates.ts). */
+  waitsUntil?: string;
+  /** s108-m02: an open row's date, once it has come. */
+  dueSince?: string;
+  /** s108-m02: why a completed or dropped row was resolved, while it still has that resolution. */
+  reason?: string;
 }
 
 /**
@@ -77,6 +97,22 @@ const TRANSITIONABLE_STATUS = "status IN ('pending','carried')";
 /** Published next-step sub-actions, shared by the handler and rbook_context's two schemas. */
 export const NEXT_STEP_ACTIONS = ['list', 'show', 'complete', 'carry', 'drop', 'reopen'] as const;
 export type NextStepAction = (typeof NEXT_STEP_ACTIONS)[number];
+
+/**
+ * s108-m02 — which of next_steps' own parameters each sub-action takes. RBOOK_CONTEXT_ACTION_PARAMS is
+ * keyed by action, so it cannot reach below next_steps; this table does, and every other pairing of
+ * these keys with a sub-action is refused rather than ignored (inapplicable-param.ts).
+ */
+export const NEXT_STEP_ACTION_PARAMS: Readonly<
+  Record<NextStepAction, readonly ('reason' | 'checkAfter')[]>
+> = {
+  list: [],
+  show: [],
+  complete: ['reason'],
+  carry: ['checkAfter'],
+  drop: ['reason'],
+  reopen: [],
+};
 
 /** Reopening is intentionally narrower than the ordinary pending/carried transition predicate. */
 const REOPENABLE_STATUS = "status IN ('completed','dropped','carried')";
@@ -138,6 +174,10 @@ export interface RbookNextStepsParams {
   nextStepIds?: number[];
   /** Target sprint for carry action */
   carryToSprint?: string;
+  /** s108-m02: complete and drop, why; kept in this copy's next_step_reasons table. */
+  reason?: string;
+  /** s108-m02: carry by explicit ids, the day the rows wait until (next-step-dates.ts). */
+  checkAfter?: string;
   /** s106-m03: page of the list, 1-based, and rows per page (default NEXT_STEPS_PAGE_SIZE) */
   page?: number;
   pageSize?: number;
@@ -159,6 +199,53 @@ export async function rbookNextSteps(
     });
   }
 
+  const inapplicable = inapplicableParam(
+    `rbook_context(action="next_steps", nextStepAction="${action}")`,
+    NEXT_STEP_ACTION_PARAMS[action],
+    params as unknown as Record<string, unknown>,
+    ['reason', 'checkAfter']
+  );
+  if (inapplicable) return createError<NextStepsResult>(inapplicable);
+
+  const warnings: string[] = [];
+  let reason: string | undefined;
+  if (isGiven(params.reason)) {
+    const cleaned = sanitizeContentField(String(params.reason).trim());
+    if (!cleaned.cleaned.trim()) return createError<NextStepsResult>(emptiedParameter('reason'));
+    if (cleaned.wasModified)
+      warnings.push(
+        `reason held a stray tool-call tag, so it was kept only up to it: ${cleaned.reason ?? ''}`
+      );
+    reason = cleaned.cleaned.trim();
+    // Enforced here, not in zod, whose max would publish maxLength on the wire (design, settled item 8).
+    // Characters are code points, so an emoji counts once, not as its two UTF-16 units.
+    const characters = [...reason].length;
+    if (characters > NEXT_STEP_REASON_MAX)
+      return createError<NextStepsResult>({
+        code: 'INVALID_PARAMETER',
+        field: 'reason',
+        providedValue: `${characters} characters`,
+        message: `reason is ${characters} characters; it can be at most ${NEXT_STEP_REASON_MAX}.`,
+        suggestion: `Shorten it to ${NEXT_STEP_REASON_MAX} characters or fewer, and record anything longer as a decision or learning.`,
+      });
+  }
+  let checkAfter: string | undefined;
+  if (isGiven(params.checkAfter)) {
+    if (!params.nextStepIds?.length)
+      return createError<NextStepsResult>({
+        code: 'INVALID_PARAMETER',
+        field: 'checkAfter',
+        providedValue: params.checkAfter,
+        message:
+          'A carry without nextStepIds carries every open next step, so it cannot give them one date; nothing was carried.',
+        suggestion:
+          'Name the rows: rbook_context(action="next_steps", nextStepAction="carry", nextStepIds=[…], checkAfter=…).',
+      });
+    const day = readCheckAfter(String(params.checkAfter), 'carry');
+    if ('error' in day) return createError<NextStepsResult>(day.error);
+    checkAfter = day.day;
+  }
+
   if (action === 'show') {
     const ids = params.nextStepIds;
     if (ids === undefined || (Array.isArray(ids) && ids.length === 0))
@@ -169,10 +256,9 @@ export async function rbookNextSteps(
       );
   }
 
-  const migrationWarnings: string[] = [];
   const result = await withClient(
     (client) => {
-      migrationWarnings.push(...(ensureNextStepsTable(client).warnings ?? []));
+      warnings.push(...(ensureNextStepsTable(client).warnings ?? []));
 
       switch (action) {
         case 'list':
@@ -186,16 +272,17 @@ export async function rbookNextSteps(
             { page: params.page, pageSize: params.pageSize, projectRoot: params.projectRoot }
           );
         case 'complete':
-          return transitionNextSteps(client, params.nextStepIds ?? [], 'completed');
+          return transitionNextSteps(client, params.nextStepIds ?? [], 'completed', reason);
         case 'carry':
           return carryNextSteps(
             client,
             params.nextStepIds,
             params.carryToSprint ?? null,
-            params.missionId
+            params.missionId,
+            checkAfter
           );
         case 'drop':
-          return transitionNextSteps(client, params.nextStepIds ?? [], 'dropped');
+          return transitionNextSteps(client, params.nextStepIds ?? [], 'dropped', reason);
         case 'reopen':
           return reopenNextSteps(client, params.nextStepIds ?? []);
         default:
@@ -207,16 +294,56 @@ export async function rbookNextSteps(
     },
     { projectRoot: params.projectRoot }
   );
-  return attachWarnings(result, migrationWarnings);
+  return attachWarnings(result, warnings);
+}
+
+/** The status change and its reason in one write, so neither lands without the other. */
+function changeWithReason(
+  client: RbookDatabaseClient,
+  id: number,
+  targetStatus: 'completed' | 'dropped',
+  now: string,
+  reason: string
+): RbookToolResult<{ changes: number; lastInsertRowid: number | bigint }> {
+  const written = recordedTransaction(client, () => {
+    const updated = client.execute(
+      `UPDATE next_steps SET status = ?, resolved_at = ? WHERE id = ? AND ${TRANSITIONABLE_STATUS}`,
+      [targetStatus, now, id]
+    );
+    if (!updated.success) throw new Error(updated.error?.message ?? 'next-step update failed');
+    const changes = updated.data?.changes ?? 0;
+    if (changes > 0) writeNextStepReason(client, id, reason, targetStatus, now);
+    return changes;
+  });
+  if (!written.success)
+    return createError(
+      written.error ?? { code: 'DB_QUERY_FAILED', message: `next step #${id} was not changed` }
+    );
+  return createSuccess({ changes: written.data ?? 0, lastInsertRowid: 0 });
 }
 
 function transitionNextSteps(
   client: RbookDatabaseClient,
   ids: number[],
-  targetStatus: 'completed' | 'dropped'
+  targetStatus: 'completed' | 'dropped',
+  reason?: string
 ): RbookToolResult<NextStepsResult> {
   if (ids.length === 0) {
     return createError<NextStepsResult>(RbookErrors.missingParameter('nextStepIds'));
+  }
+  if (reason !== undefined) {
+    // Before any write: the stable ids a reason is keyed by, and its table (design, round 3's N3).
+    const unprepared = prepareNextStepReasons(client);
+    if (unprepared) return createError<NextStepsResult>(unprepared);
+    const keyless = rowsWithoutStableIds(client, ids);
+    if (keyless.length)
+      return createError<NextStepsResult>({
+        code: 'INVALID_PARAMETER',
+        field: 'reason',
+        providedValue: keyless,
+        message: `A reason is kept by the next step's stable id, and ${keyless.map((id) => `#${id}`).join(', ')} ${keyless.length === 1 ? 'has' : 'have'} none; nothing was changed.`,
+        suggestion: `Send the call without reason for ${keyless.length === 1 ? 'that row' : 'those rows'}, and with it for the others.`,
+      });
   }
 
   const now = new Date().toISOString();
@@ -226,11 +353,14 @@ function transitionNextSteps(
   const unmatchedIds: number[] = [];
 
   for (const id of ids) {
-    const result = recordedExecute(
-      client,
-      `UPDATE next_steps SET status = ?, resolved_at = ? WHERE id = ? AND ${TRANSITIONABLE_STATUS}`,
-      [targetStatus, now, id]
-    );
+    const result =
+      reason === undefined
+        ? recordedExecute(
+            client,
+            `UPDATE next_steps SET status = ?, resolved_at = ? WHERE id = ? AND ${TRANSITIONABLE_STATUS}`,
+            [targetStatus, now, id]
+          )
+        : changeWithReason(client, id, targetStatus, now, reason);
     // s86-m02b: the ids come from the TOOL CALL and were never re-selected, so `changes: 0` on a
     // statement that RAN means "no transitionable row with that id" — legitimate, and countWrite
     // records nothing for it. Only an errored statement reaches writeSink.
@@ -241,13 +371,17 @@ function transitionNextSteps(
     affected += changed;
   }
 
-  return createSuccess<NextStepsResult>({
+  const changed = createSuccess<NextStepsResult>({
     nextStepAction: targetStatus === 'completed' ? 'complete' : 'drop',
     affected,
     writeFailures: writeSink.failures,
     unmatchedIds,
-    message: `${affected} next-step(s) marked as ${targetStatus}`,
+    message: `${affected} next-step(s) marked as ${targetStatus}${reason !== undefined && affected ? ', with the reason' : ''}`,
   });
+  return attachWarnings(
+    changed,
+    reason !== undefined && affected && isRecordedStore(client) ? [SHARED_REASON_NOTE] : []
+  );
 }
 
 function reopenNextSteps(
@@ -261,13 +395,20 @@ function reopenNextSteps(
   const writeSink = { failures: [] as WriteFailure[] };
   let affected = 0;
   const unmatchedIds: number[] = [];
+  const now = new Date().toISOString();
+  // s108-m02: reopening a row that waits on a date ends the wait (the anchor becomes now), and a
+  // reopen deletes the reason it would otherwise only hide. A store without the table has none.
+  const reopen = `UPDATE next_steps SET status = 'pending', resolved_at = CASE WHEN status = 'carried' THEN CASE WHEN ${bareDateSql('resolved_at')} AND julianday(resolved_at) > julianday(?) THEN ? ELSE resolved_at END ELSE NULL END, carried_to_sprint = NULL WHERE id = ? AND ${REOPENABLE_STATUS}`;
+  const reasons = client.getOne<{ name: string }>(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+    [NEXT_STEP_REASONS]
+  );
 
   for (const id of ids) {
-    const result = recordedExecute(
-      client,
-      `UPDATE next_steps SET status = 'pending', resolved_at = CASE WHEN status = 'carried' THEN resolved_at ELSE NULL END, carried_to_sprint = NULL WHERE id = ? AND ${REOPENABLE_STATUS}`,
-      [id]
-    );
+    const result =
+      reasons.success && reasons.data
+        ? reopenWithReason(client, reopen, now, id)
+        : recordedExecute(client, reopen, [now, now, id]);
     const changed = countWrite(result, writeSink, `next_steps.reopen #${id}`);
     if (result.success && (result.data?.changes ?? 0) === 0) unmatchedIds.push(id);
     affected += changed;
@@ -282,11 +423,32 @@ function reopenNextSteps(
   });
 }
 
+function reopenWithReason(
+  client: RbookDatabaseClient,
+  sql: string,
+  now: string,
+  id: number
+): RbookToolResult<{ changes: number; lastInsertRowid: number | bigint }> {
+  const written = recordedTransaction(client, () => {
+    const updated = client.execute(sql, [now, now, id]);
+    if (!updated.success) throw new Error(updated.error?.message ?? 'next-step reopen failed');
+    const changes = updated.data?.changes ?? 0;
+    if (changes > 0) deleteNextStepReason(client, id);
+    return changes;
+  });
+  if (!written.success)
+    return createError(
+      written.error ?? { code: 'DB_QUERY_FAILED', message: `next step #${id} was not reopened` }
+    );
+  return createSuccess({ changes: written.data ?? 0, lastInsertRowid: 0 });
+}
+
 function carryNextSteps(
   client: RbookDatabaseClient,
   ids: number[] | undefined,
   targetSprint: string | null,
-  missionId?: string
+  missionId?: string,
+  checkAfter?: string
 ): RbookToolResult<NextStepsResult> {
   if (targetSprint !== null) {
     const sprint = client.getOne<{ id: string }>('SELECT id FROM sprints WHERE id = ?', [
@@ -321,6 +483,10 @@ function carryNextSteps(
   const missionFilter = missionId === undefined ? '' : ' AND mission_id = ?';
   const missionParams = missionId === undefined ? [] : [missionId];
   const eligible = TRANSITIONABLE_STATUS + missionFilter;
+  // s108-m02 (settled item 4): a carry renews the lease, but keeps a date still ahead, so it never
+  // erases the day a row waits until. Only the bare date counts: a full stamp ahead of now (another
+  // machine's clock) is renewed as before. 4.9.0 and older stamp now, the documented residual.
+  const renewed = `CASE WHEN ${bareDateSql('resolved_at')} AND julianday(resolved_at) > julianday(?) THEN resolved_at ELSE ? END`;
 
   if (!ids || ids.length === 0) {
     // Carry all pending; on a shared record, skip a row whose status is in conflict (s96-m12).
@@ -328,8 +494,8 @@ function carryNextSteps(
     const skipped = skippedConflicts(client, 'next_steps', conflicted, eligible, missionParams);
     const result = recordedExecute(
       client,
-      `UPDATE next_steps SET status = 'carried', resolved_at = ?, carried_to_sprint = ? WHERE ${eligible}${skipConflicted(client, 'next_steps', conflicted)}`,
-      [now, targetSprint, ...missionParams]
+      `UPDATE next_steps SET status = 'carried', resolved_at = ${renewed}, carried_to_sprint = ? WHERE ${eligible}${skipConflicted(client, 'next_steps', conflicted)}`,
+      [now, now, targetSprint, ...missionParams]
     );
     const affected = countWrite(result, writeSink, 'next_steps.carry (all pending)');
     const carried = createSuccess<NextStepsResult>({
@@ -348,8 +514,13 @@ function carryNextSteps(
   for (const id of ids) {
     const result = recordedExecute(
       client,
-      `UPDATE next_steps SET status = 'carried', resolved_at = ?, carried_to_sprint = ? WHERE id = ? AND ${eligible}`,
-      [now, targetSprint, id, ...missionParams]
+      `UPDATE next_steps SET status = 'carried', resolved_at = ${checkAfter === undefined ? renewed : '?'}, carried_to_sprint = ? WHERE id = ? AND ${eligible}`,
+      [
+        ...(checkAfter === undefined ? [now, now] : [checkAfter]),
+        targetSprint,
+        id,
+        ...missionParams,
+      ]
     );
     // Caller-supplied id: a zero from a WHERE that matched no transitionable row is ordinary and
     // is not a write failure. s87-m06 names it instead of discarding it.
@@ -358,15 +529,20 @@ function carryNextSteps(
     affected += changed;
   }
 
-  return createSuccess<NextStepsResult>({
+  const dated = checkAfter === undefined ? '' : `, waiting until ${checkAfter}`;
+  const carried = createSuccess<NextStepsResult>({
     nextStepAction: 'carry',
     affected,
     writeFailures: writeSink.failures,
     unmatchedIds,
     message: targetSprint
-      ? `${affected} next-step(s) carried to ${targetSprint}`
-      : `${affected} next-step(s) marked as carried`,
+      ? `${affected} next-step(s) carried to ${targetSprint}${dated}`
+      : `${affected} next-step(s) marked as carried${dated}`,
   });
+  return attachWarnings(
+    carried,
+    checkAfter !== undefined && affected && isRecordedStore(client) ? [SHARED_DATE_NOTE] : []
+  );
 }
 
 /**

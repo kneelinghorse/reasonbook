@@ -2,7 +2,7 @@
 // ABOUTME: Queries all registered Reasonbook instances via SQLite and returns open missions/sessions.
 
 import { formatToolFailure } from './format-failure';
-import { resolveRecordPaths } from '../../intelligence/legacy-compat';
+import { recordPathsUnlessMoving } from '../../intelligence/legacy-compat';
 import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -145,7 +145,15 @@ export async function rbookProjectSweep(
 
   for (const project of targetProjects) {
     const instanceId = project.name ?? path.basename(project.projectRoot);
-    const dbPath = resolveRecordPaths(project.projectRoot).dbPath;
+    const paths = recordPathsUnlessMoving(project.projectRoot);
+    if (!paths) {
+      warnings.push(
+        `${instanceId} (${project.projectRoot}): its record is moving, or its move needs recovery — skipped`
+      );
+      skipped++;
+      continue;
+    }
+    const dbPath = paths.dbPath;
 
     if (!fs.existsSync(dbPath)) {
       warnings.push(`${instanceId} (${project.projectRoot}): ${dbPath} not found — skipped`);

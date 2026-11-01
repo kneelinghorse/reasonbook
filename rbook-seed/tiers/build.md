@@ -49,8 +49,13 @@ text core is capped at 4,000 characters; MCP may append portfolio context. Use
 
 The 400-character Open work section keeps the mission line and adds "Next steps (k of N)":
 up to 3 open rows with `n:<id>` labels and first sentences cut to 72 characters. Next steps
-rank by lease state (lapsing, warning, idle), then the current sprint, then newest. When next
-steps appear, the digest shows up to 6 recent decisions.
+rank due ones first (a row whose date has come), then by lease state (lapsing, warning, idle),
+then the current sprint, then newest. A row waiting until a date is left out, and a line says
+how many wait. Another line says how many Deferred missions have come due and names the earliest;
+when the section is full, the last next steps give way to it, down to one, then the mission line
+gives up only the room still needed, and where even that is not enough the last step's line goes
+too if a mission line then fits, its count kept in the heading; otherwise the mission line is left
+out and the steps that gave way return, as many as fit. When next steps appear, the digest shows up to 6 recent decisions.
 
 The digest and `rbook_context(action="next_steps", nextStepAction="list")` provide a preview;
 read a row in full with

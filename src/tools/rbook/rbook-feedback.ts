@@ -17,6 +17,12 @@ import { renderFeedbackBody } from './feedback-presentation';
 import type { ProvenanceDescriptor } from '../../intelligence/provenance-frame';
 import { kindCounts, readFeedbackFleet, type FeedbackFleetCoverage } from './feedback-fleet';
 import { classifyFeedback, type FeedbackKind } from '../../signals/feedback-kinds';
+import {
+  feedbackFixOf,
+  type FeedbackFixVerdict,
+  type FeedbackGroup,
+} from '../../signals/feedback-fixes';
+import { groupCounts } from './feedback-fix-labels';
 import { getProjectId } from './project-id';
 import { nextPageCall, pageFacts, pageRequest, REREAD_AFTER_ACTING } from './answer-page';
 
@@ -68,6 +74,8 @@ export interface AgentFeedbackEntry<Id extends number | string = number> {
   resolutionNote: string | null;
   /** s97-m07: the row's kind, by the published rules over its text. */
   kind: FeedbackRowKind;
+  /** s108-m04: the shipped release that fixed what the row reports, by FEEDBACK_FIX_RULES. */
+  fix?: FeedbackFixVerdict;
   sourceProjectId?: string;
   provenance?: ProvenanceDescriptor;
 }
@@ -84,6 +92,11 @@ export interface RbookFeedbackListResult<Id extends number | string = number> {
    * beside them. Absent only from the fleet's count-only read, which reads no text.
    */
   countsByKind?: Record<FeedbackRowKind, number>;
+  /**
+   * s108-m04: every matching row in one of three groups (FEEDBACK_GROUPS_RULE): fixed by a shipped
+   * release, about Reasonbook, or about the project's own work. Absent where no text was read.
+   */
+  countsByGroup?: Record<FeedbackGroup, number>;
   /** Total entries matching the filter (may exceed entries.length when limit was applied). */
   totalCount: number;
   /** Rows per page: the limit that was applied. */
@@ -274,6 +287,8 @@ interface FeedbackRow {
   created_at: string;
   resolved_at: string | null;
   resolution_note: string | null;
+  /** s108-m04: absent from a table no apply has touched, so selected as NULL there. */
+  fix_rule?: string | null;
 }
 
 function rowToEntry(row: FeedbackRow): AgentFeedbackEntry {
@@ -465,9 +480,13 @@ export async function rbookFeedback(
           args.push(params.toolName);
         }
         const where = `WHERE ${conditions.join(' AND ')}`;
+        // s108-m04: a reopen's marker in fix_rule bars every rule but a newer revision of its own.
+        const tableColumns = client.getMany<{ name: string }>('PRAGMA table_info(agent_feedback)');
+        const hasFixRule =
+          tableColumns.success && (tableColumns.data ?? []).some((c) => c.name === 'fix_rule');
         const rowsResult = client.getMany<FeedbackRow>(
           `SELECT id, tool_name, body, status, session_id, sprint_id, mission_id, project_id,
-                  created_at, resolved_at, resolution_note
+                  created_at, resolved_at, resolution_note, ${hasFixRule ? 'fix_rule' : 'NULL AS fix_rule'}
            FROM agent_feedback ${where}
            ORDER BY julianday(created_at) DESC, id DESC
            LIMIT ? OFFSET ?`,
@@ -482,7 +501,17 @@ export async function rbookFeedback(
           );
         }
         const rows = rowsResult.data ?? [];
-        const entries = rows.map(rowToEntry);
+        // s108-m04: a row a shipped release fixed carries its label.
+        const entries = rows.map((row) => {
+          const entry = rowToEntry(row);
+          const fix = feedbackFixOf({
+            body: row.body,
+            status: row.status,
+            createdAt: row.created_at,
+            fixRule: row.fix_rule,
+          });
+          return fix ? { ...entry, fix } : entry;
+        });
 
         const totalResult = client.getOne<{ count: number }>(
           `SELECT COUNT(*) as count FROM agent_feedback ${where}`,
@@ -510,17 +539,24 @@ export async function rbookFeedback(
           }
         }
 
-        // s97-m07: every matching row by kind, not only the page returned.
-        const bodies = client.getMany<{ body: string }>(
-          `SELECT body FROM agent_feedback ${where}`,
+        // s97-m07: every matching row by kind, not only the page returned; s108-m04: and by group.
+        const bodies = client.getMany<{
+          body: string;
+          status: string;
+          createdAt: string;
+          fixRule: string | null;
+        }>(
+          `SELECT body, status, created_at AS createdAt, ${hasFixRule ? 'fix_rule' : 'NULL'} AS fixRule
+           FROM agent_feedback ${where}`,
           args
         );
         const countsByKind = bodies.success
           ? kindCounts((bodies.data ?? []).map((row) => row.body))
           : undefined;
+        const countsByGroup = bodies.success ? groupCounts(bodies.data ?? []) : undefined;
         if (!bodies.success)
           warnings.push(
-            `Could not count the rows by kind (${bodies.error?.message ?? 'the query failed'}); no kind counts are shown, which does not mean there are none.`
+            `Could not count the rows by kind or group (${bodies.error?.message ?? 'the query failed'}); no kind or group counts are shown, which does not mean there are none.`
           );
 
         const statusGroupsResult = client.getMany<{ status: string; c: number }>(
@@ -541,6 +577,7 @@ export async function rbookFeedback(
           countsByTool,
           countsByStatus,
           ...(countsByKind ? { countsByKind } : {}),
+          ...(countsByGroup ? { countsByGroup } : {}),
           totalCount,
           limit,
           page: facts.page,

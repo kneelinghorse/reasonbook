@@ -32,7 +32,7 @@ the order this guide applies them. It checks the installs, the Claude Code and C
 manual servers, saved tool permissions, each registered project's record and the config folder:
 
 ```sh
-npx --prefer-offline -y @aquex/reasonbook@4.9.0 doctor
+npx --prefer-offline -y @aquex/reasonbook@4.10.0 doctor
 ```
 
 It writes nothing and exits 0 only when nothing needs fixing. Add `--offline` to skip its one
@@ -44,17 +44,17 @@ Requires Node.js 20 or newer. Replace a globally installed old package if presen
 
 ```sh
 npm uninstall -g @aquex/cmos-mcp
-npm install -g @aquex/reasonbook@4.9.0
+npm install -g @aquex/reasonbook@4.10.0
 reasonbook --version
 ```
 
 Without a global installation, use the scoped package explicitly:
 
 ```sh
-npx --prefer-offline -y @aquex/reasonbook@4.9.0 --version
+npx --prefer-offline -y @aquex/reasonbook@4.10.0 --version
 ```
 
-Update every manual MCP package pin to `@aquex/reasonbook@4.9.0`. A server that runs
+Update every manual MCP package pin to `@aquex/reasonbook@4.10.0`. A server that runs
 local `dist/` files needs a 4.x build too. See [client configuration](getting-started.md)
 and [harness setup](harnesses.md).
 
@@ -113,7 +113,7 @@ The command is a dry run unless you add `--apply`. Run it from the project root,
 select a root explicitly; `--project-root` is an alias for `--project`.
 
 ```sh
-npx --prefer-offline -y @aquex/reasonbook@4.9.0 migrate --project /absolute/path/to/project
+npx --prefer-offline -y @aquex/reasonbook@4.10.0 migrate --project /absolute/path/to/project
 ```
 
 The JSON result lists proposed changes and text left for review. A successful preview
@@ -122,8 +122,8 @@ does not establish that the database will be safe to move when you apply it.
 To update instructions while keeping the database where it is:
 
 ```sh
-npx --prefer-offline -y @aquex/reasonbook@4.9.0 migrate --docs-only --project /absolute/path/to/project
-npx --prefer-offline -y @aquex/reasonbook@4.9.0 migrate --docs-only --apply --project /absolute/path/to/project
+npx --prefer-offline -y @aquex/reasonbook@4.10.0 migrate --docs-only --project /absolute/path/to/project
+npx --prefer-offline -y @aquex/reasonbook@4.10.0 migrate --docs-only --apply --project /absolute/path/to/project
 ```
 
 This covers root `AGENTS.md`/`agents.md`, `CLAUDE.md`, `.mcp.json`, and the record's
@@ -133,29 +133,37 @@ moved. Hand-edited owned lines or blocks are left for review with a proposed rep
 Ordinary prose is not broadly renamed. A package explicitly pinned below version 4 is
 refused; update that pin first.
 
-## Move the project record offline
+## Move the project record
 
 Update your own source code, scripts and other configuration that refer to `cmos/`;
-those files are outside the document migration's scope. Then stop every process using
-the record: MCP servers, CLI jobs, plugin installers and database viewers, including
-idle Reasonbook 4.x servers. Run the migration from a separate terminal.
+those files are outside the document migration's scope. Reasonbook 4.0 and later may keep
+running, in any project and in this one: every 4.x release checks for a move before it opens a
+record, and refuses that record until the move ends. Stop any older runtime, and any CLI job,
+plugin installer or database viewer that has the record open. A record whose store has ever had a
+sync peer waits for every Reasonbook runtime, as before: a 4.1 to 4.9 server that syncs it, as it keeps
+doing for a record it once saw shared, ends at its next sync during a move. The dry run lists, under
+`blocked`, what the apply's checks of server entries, clients, runtimes and open files would
+refuse now. Agent sessions working in this project may still use the `cmos/` paths they read
+before the move, and a file one writes there makes the old folder again: restart them after the
+move, or tell them where the record is now.
 
 ```sh
-npx --prefer-offline -y @aquex/reasonbook@4.9.0 migrate --apply --project /absolute/path/to/project
+npx --prefer-offline -y @aquex/reasonbook@4.10.0 migrate --apply --project /absolute/path/to/project
 ```
 
-The command refuses configured legacy clients, detected live runtimes, open file handles
-and unavailable process or handle inspection. It does not stop processes for you. Custom
-programs that access the record must also be stopped; detection is not a substitute for
-that offline requirement. Both record folders already existing, or a symlinked record
-or symlinked/hardlinked database, also cause a refusal.
+The command refuses configured legacy clients, a running Reasonbook runtime older than 4.0 (one
+named `cmos-mcp`, or whose manifest gives a version below 4.0.0 or none it can read), open file
+handles and unavailable process or handle inspection. It does not stop processes for you. Both
+record folders already existing, or a symlinked record or symlinked/hardlinked database, also
+cause a refusal.
 
-Before renaming, it checkpoints and closes the database, creates
-`db/snapshots/pre-migrate-<uuid>.sqlite`, and adds ignore rules for the database, WAL/SHM
-files and that backup. A successful move changes `cmos/` to `rbook/` and the database
-filename to `rbook.sqlite`. It then updates the covered documents and existing local
-registration. Project identity and historical rows stay intact. Review the reported
-files and remaining text before committing your changes.
+Before renaming, it checkpoints the database and takes its exclusive lock, writes
+`db/snapshots/pre-migrate-<uuid>.sqlite` from it, and adds ignore rules for the database, WAL/SHM
+files and that backup. It holds the lock through both renames, so a program that opens the old
+file meanwhile cannot lose a write: each fails, or lands in the moved store. A successful move changes `cmos/` to `rbook/` and the
+database filename to `rbook.sqlite`. It then updates the covered documents and existing local
+registration. Project identity and historical rows stay intact. Review the reported files and
+remaining text before committing your changes.
 
 ## Move shared config separately
 
@@ -164,8 +172,8 @@ using it has been upgraded. Stop all relevant runtimes and installers first. Uns
 `CMOS_CONFIG_DIR`; this command moves only the default shared folder.
 
 ```sh
-npx --prefer-offline -y @aquex/reasonbook@4.9.0 migrate --config
-npx --prefer-offline -y @aquex/reasonbook@4.9.0 migrate --config --apply
+npx --prefer-offline -y @aquex/reasonbook@4.10.0 migrate --config
+npx --prefer-offline -y @aquex/reasonbook@4.10.0 migrate --config --apply
 ```
 
 It moves `~/.config/cmos-mcp` to `~/.config/rbook`, preserving filenames and creating

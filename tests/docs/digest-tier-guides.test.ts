@@ -23,6 +23,9 @@ it.each(['general', 'managed', 'build'])(
     expect(shipped).not.toBe('');
     const prose = shipped.replace(/\s+/g, ' ');
     expect(prose).toContain('lapsing, warning, idle');
+    // s108-m02: a due row ranks first, and a row waiting until a date is left out and counted.
+    expect(prose).toContain('rank due ones first');
+    expect(prose).toContain('A row waiting until a date is left out');
     expect(prose).toContain('then newest');
     expect(prose).toContain('6 recent decisions');
     expect(prose).toContain('4,000 characters');

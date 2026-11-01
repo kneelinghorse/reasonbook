@@ -352,6 +352,8 @@ describe('s90-m05 sprint-close survey and mandatory-write disclosure', () => {
       totalOpen: null,
       groups: null,
       lease: null,
+      // s108-m02: and the waiting rows.
+      waiting: null,
     });
     for (const id of [1, 2, 3, 4, 5]) {
       expect(readStep(dbPath, id)).toEqual({ status: 'pending', resolved_at: null });

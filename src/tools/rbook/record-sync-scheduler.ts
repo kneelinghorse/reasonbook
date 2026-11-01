@@ -20,10 +20,12 @@ const targets = new Set<string>();
 let timer: NodeJS.Timeout | undefined;
 
 function syncNow(projectRoot: string): Promise<unknown> {
-  const dbPath = resolveRecordPaths(projectRoot).dbPath;
   // setInterval inherits its creator's request context; each sync runs in a fresh one, as an upload does.
   return withoutCodexRequest(() =>
     captureToolCall('write', async () => {
+      // s108-m05: inside the promise, so a record mid-move skips this tick and the log says why.
+      // Resolved before it, the guard's error left the timer and ended the server (round 2).
+      const dbPath = resolveRecordPaths(projectRoot).dbPath;
       if (sharedSyncEnabled())
         await withSyncLock(dbPath, () =>
           syncPeers(storeOpener(dbPath), {

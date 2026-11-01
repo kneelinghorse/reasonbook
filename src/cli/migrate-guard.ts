@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// ABOUTME: Offline migration refuses legacy clients and open files rather than stopping other sessions.
+// ABOUTME: A move refuses pre-4.0 runtimes, legacy clients and open files, and never stops a session.
 // ABOUTME: Client configuration and OS handle inspection fail closed when their state is unreadable.
 import * as fs from 'fs';
 import * as path from 'path';
@@ -15,8 +15,11 @@ function read(file: string): string | null {
   }
 }
 
-/** Only migration calls this: no path or process argument is interpreted by a shell. */
-export function assertNoOpenFiles(directory: string): void {
+/**
+ * Only migration calls this: no path or process argument is interpreted by a shell. s108-m05: a
+ * move's last check passes the mover's own pid, whose held connection keeps the record locked.
+ */
+export function assertNoOpenFiles(directory: string, ownPid?: number): void {
   const inspected = spawnSync('lsof', ['-nP', '-Fpcn', '+D', directory], { encoding: 'utf8' });
   if (
     inspected.error ||
@@ -24,14 +27,15 @@ export function assertNoOpenFiles(directory: string): void {
     inspected.stderr.trim()
   )
     throw new Error(
-      `Cannot establish offline quiescence for ${directory}; lsof must be available and able to inspect every open file.`
+      `Cannot establish that no other process has files in ${directory} open; lsof must be available and able to inspect every open file.`
     );
-  if (inspected.stdout.trim()) {
-    const ids = [...inspected.stdout.matchAll(/^p(\d+)$/gm)].map((m) => m[1]);
+  const holders = [...new Set([...inspected.stdout.matchAll(/^p(\d+)$/gm)].map((m) => m[1]))];
+  const others = holders.filter((id) => Number(id) !== ownPid);
+  // Output that names no process is no proof that nothing holds the record.
+  if (others.length || (inspected.stdout.trim() && !holders.length))
     throw new Error(
-      `Files in ${directory} are open by process ${[...new Set(ids)].join(', ')}. Close those clients before migrating; no process was stopped.`
+      `Files in ${directory} are open by process ${others.join(', ') || 'unknown'}. Close those clients before migrating; no process was stopped.`
     );
-  }
 }
 
 function oldPackage(value: string): boolean {
@@ -262,65 +266,215 @@ export function assertModernClients(home: string, configMove = false): void {
   if (problem) throw new Error(problem.message);
 }
 
-/** A cached path can reopen after lsof; cutover requires every record runtime to be offline. */
-export function assertNoRecordProcesses(): void {
+/**
+ * s108-m05: who a move waits for. A record's move ('pre-guard') waits only for a runtime from before
+ * 4.0.0, which can open the record without the in-project check every 4.x release makes before each
+ * open; the held lock covers a handle opened mid-move. The shared config's move ('every') waits for
+ * every runtime, since each holds the registry open for its life (E5 F4, F11). Decision #1330's
+ * cached-path race is the one the held lock closes. A record that may ever have synced ('shared')
+ * waits for every runtime too: a 4.1 to 4.9 server that syncs it ends at its next sync during the
+ * move (round 2), and keeps syncing a record it once saw shared (round 3).
+ */
+export type RuntimeScope = 'pre-guard' | 'shared' | 'every';
+
+export interface RuntimeProblem {
+  /** Absent when the process list itself could not be read. */
+  readonly pid?: number;
+  readonly message: string;
+}
+
+const ENTRY =
+  /(?:^|\/)(?:dist\/(?:index|bin|cli)\.js|(?:server|hooks)\/(?:run|install-worker|installing-server|disabled-server)\.mjs)$/;
+const MODERN = /^(?:[4-9]|\d{2,})\./;
+
+type Manifest =
+  | {
+      readonly file: string;
+      readonly reasonbook: boolean;
+      readonly legacy: boolean;
+      readonly version: unknown;
+    }
+  | { readonly unreadable: string };
+
+const PLUGIN_NAMES = [
+  'reasonbook',
+  'reasonbook-chat',
+  LEGACY.recordDirectory,
+  `${LEGACY.recordDirectory}-chat`,
+];
+const LEGACY_PLUGIN_NAMES = [LEGACY.recordDirectory, `${LEGACY.recordDirectory}-chat`];
+
+/** The first manifest at or above a runtime's file, package before plugin, as the walk has read it. */
+function runtimeManifest(file: string): Manifest | null {
+  let directory = path.dirname(file);
+  for (let depth = 0; depth < 5 && path.isAbsolute(directory); depth++) {
+    for (const [relative, names, legacy, ownOnly] of [
+      ['package.json', ['@aquex/reasonbook', LEGACY.packageName], [LEGACY.packageName], false],
+      ['.claude-plugin/plugin.json', PLUGIN_NAMES, LEGACY_PLUGIN_NAMES, false],
+      // s108-m05: the chat plugin kept its manifest at its root before 4.7.0 (round 1). Read there, a
+      // manifest identifies only a Reasonbook plugin; another product's leaves the walk going.
+      ['plugin.json', PLUGIN_NAMES, LEGACY_PLUGIN_NAMES, true],
+    ] as const) {
+      const manifest = path.join(directory, relative);
+      let text: string | null;
+      try {
+        text = read(manifest);
+      } catch {
+        if (ownOnly) continue;
+        return { unreadable: `${manifest} could not be read` };
+      }
+      if (text === null) continue;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        if (ownOnly) continue;
+        // Never the parser's message: it quotes the file's text.
+        return { unreadable: `${manifest} is not valid JSON` };
+      }
+      const { name, version } = (parsed && typeof parsed === 'object' ? parsed : {}) as {
+        name?: unknown;
+        version?: unknown;
+      };
+      const reasonbook = (names as readonly unknown[]).includes(name);
+      if (ownOnly && !reasonbook) continue;
+      return {
+        file: manifest,
+        reasonbook,
+        legacy: (legacy as readonly unknown[]).includes(name),
+        version,
+      };
+    }
+    directory = path.dirname(directory);
+  }
+  return null;
+}
+
+/**
+ * The entry point on a command line. ps joins a process's arguments with spaces, so a path holding
+ * one comes back in pieces; the pieces before it are joined back while that names a file (round 1).
+ */
+function entryOf(words: readonly string[]): string | undefined {
+  const at = words.findIndex((part) => ENTRY.test(part));
+  if (at < 0) return undefined;
+  if (path.isAbsolute(words[at])) return words[at];
+  for (let start = at - 1; start > 0; start--) {
+    const joined = words.slice(start, at + 1).join(' ');
+    if (path.isAbsolute(joined)) return fs.existsSync(joined) ? joined : words[at];
+  }
+  return words[at];
+}
+
+/** The global command is a link to the package's bin, so its manifest is read where it points. */
+function commandTarget(words: readonly string[]): string | undefined {
+  const command = words.find(
+    (word) => path.isAbsolute(word) && path.basename(word) === 'reasonbook'
+  );
+  if (!command) return undefined;
+  try {
+    return fs.realpathSync.native(command);
+  } catch {
+    return command;
+  }
+}
+
+/** Every Reasonbook runtime a move in this scope waits for, without throwing, so a dry run lists them. */
+export function recordProcessProblems(scope: RuntimeScope = 'every'): RuntimeProblem[] {
   const processes = spawnSync('ps', ['-ww', '-axo', 'pid=,args='], { encoding: 'utf8' });
   if (processes.error || processes.status !== 0)
-    throw new Error(
-      'Cannot inspect running clients; offline migration requires process inspection.'
-    );
+    return [{ message: 'Cannot inspect running clients; a move requires process inspection.' }];
+  const problems: RuntimeProblem[] = [];
   for (const line of processes.stdout.split('\n')) {
     const match = /^\s*(\d+)\s+(.+)$/.exec(line);
     if (!match || Number(match[1]) === process.pid) continue;
-    const words = match[2].split(/\s+/);
+    const pid = Number(match[1]);
+    // ps joins arguments with single spaces, so each space is one boundary (round 2).
+    const words = match[2].split(' ');
     const executable = path.basename(words[0]);
     if (!/^(?:node|nodejs|reasonbook|npx)$/.test(executable) && executable !== LEGACY.command)
       continue;
-    const entry = words.find((part) =>
-      /(?:^|\/)(?:dist\/(?:index|bin|cli)\.js|(?:server|hooks)\/(?:run|install-worker|installing-server|disabled-server)\.mjs)$/.test(
-        part
-      )
-    );
-    let relevant =
+    const named =
       executable === 'reasonbook' ||
+      words.some(
+        (word) => path.basename(word) === 'reasonbook' || word.startsWith('@aquex/reasonbook')
+      );
+    const legacyName =
       executable === LEGACY.command ||
       words.some(
-        (word) =>
-          path.basename(word) === LEGACY.command ||
-          path.basename(word) === 'reasonbook' ||
-          word.startsWith(LEGACY.packageName) ||
-          word.startsWith('@aquex/reasonbook')
+        (word) => path.basename(word) === LEGACY.command || word.startsWith(LEGACY.packageName)
       );
-    if (entry) {
-      let directory = path.dirname(entry);
-      let identified = false;
-      for (let depth = 0; depth < 5 && path.isAbsolute(directory); depth++) {
-        const manifest = read(path.join(directory, 'package.json'));
-        if (manifest) {
-          const pkg = JSON.parse(manifest) as { name?: string };
-          relevant ||= pkg.name === LEGACY.packageName || pkg.name === '@aquex/reasonbook';
-          identified = true;
-          break;
-        }
-        const plugin = read(path.join(directory, '.claude-plugin/plugin.json'));
-        if (plugin) {
-          const name = (JSON.parse(plugin) as { name?: string }).name;
-          relevant ||=
-            name === 'reasonbook' ||
-            name === 'reasonbook-chat' ||
-            name === LEGACY.recordDirectory ||
-            name === `${LEGACY.recordDirectory}-chat`;
-          identified = true;
-          break;
-        }
-        directory = path.dirname(directory);
-      }
-      // An unresolved supported entry point cannot prove that its cached path is safe.
-      if (!identified) relevant = true;
+    const entry = entryOf(words);
+    const file = entry ?? commandTarget(words);
+    const found = file ? runtimeManifest(file) : null;
+    // A Reasonbook manifest says what runs; the names on a command line say so only without one.
+    const identified = found && !('unreadable' in found) && found.reasonbook ? found : undefined;
+    // An unresolved supported entry point cannot prove that its cached path is safe.
+    const unresolved = entry !== undefined && (!found || 'unreadable' in found);
+    if (!identified && !named && !legacyName && !unresolved) continue;
+    if (scope === 'every') {
+      problems.push({
+        pid,
+        message: `Process ${pid} is a live or unidentified record runtime. Exit that client before offline migration; no process was stopped.`,
+      });
+      continue;
     }
-    if (relevant)
-      throw new Error(
-        `Process ${match[1]} is a live or unidentified record runtime. Exit that client before offline migration; no process was stopped.`
-      );
+    if (scope === 'shared') {
+      problems.push({
+        pid,
+        message: `Process ${pid} is a live or unidentified record runtime, and this record's store has had a sync peer, or could not be read to tell: a Reasonbook 4.1 to 4.9 server that syncs it ends at its next sync during a move, so such a record moves only while no Reasonbook runtime runs. Exit that client before moving the record; no process was stopped.`,
+      });
+      continue;
+    }
+    const remedy =
+      'Exit that client, or update it to Reasonbook 4.x, before moving the record; no process was stopped.';
+    const before = (why: string) => ({
+      pid,
+      message: `Process ${pid} runs a Reasonbook runtime from before 4.0 (${why}), which can open the record without checking for a move. ${remedy}`,
+    });
+    const why = !found
+      ? file
+        ? `no manifest above ${file}`
+        : 'no manifest on its command line'
+      : 'unreadable' in found
+        ? found.unreadable
+        : `${found.file} names another program`;
+    if (identified) {
+      const { version } = identified;
+      if (typeof version !== 'string')
+        problems.push({
+          pid,
+          message: `Process ${pid} runs Reasonbook, but its version cannot be read (no version in ${identified.file}), so it may predate 4.0's check for a move. ${remedy}`,
+        });
+      else if (!MODERN.test(version)) problems.push(before(`version ${version}`));
+      else if (identified.legacy) problems.push(before(`the legacy ${LEGACY.command} runtime`));
+      // Otherwise it is 4.0.0 or later and checks for a move before every open, so it may run on.
+      // Without a Reasonbook manifest, only what its command line names is known (round 2).
+    } else if (legacyName)
+      problems.push({
+        pid,
+        message: `Process ${pid} names ${LEGACY.command} on its command line and no Reasonbook manifest says what it runs (${why}), so it may be a runtime from before 4.0. ${remedy}`,
+      });
+    else if (words.some((word) => /@aquex\/reasonbook@[0-3](?:\.|\b)/.test(word)))
+      problems.push({
+        pid,
+        message: `Process ${pid} names a Reasonbook release from before 4.0 on its command line, which can open the record without checking for a move. ${remedy}`,
+      });
+    else if (named)
+      problems.push({
+        pid,
+        message: `Process ${pid} names Reasonbook on its command line, but no manifest gives its version (${why}), so it may predate 4.0's check for a move. ${remedy}`,
+      });
+    else
+      problems.push({
+        pid,
+        message: `Process ${pid} runs a program at a Reasonbook entry point that cannot be identified (${why}), so it may be a runtime from before 4.0. Exit it before moving the record; no process was stopped.`,
+      });
   }
+  return problems;
+}
+
+/** Refuses the first runtime recordProcessProblems names; 'every' unless a record's move narrows it. */
+export function assertNoRecordProcesses(scope: RuntimeScope = 'every'): void {
+  const [problem] = recordProcessProblems(scope);
+  if (problem) throw new Error(problem.message);
 }

@@ -7,7 +7,7 @@
  * @module tools/rbook/rbook-project-validate
  */
 
-import { resolveRecordPaths } from '../../intelligence/legacy-compat';
+import { recordPathsUnlessMoving } from '../../intelligence/legacy-compat';
 import * as fs from 'fs';
 import { z } from 'zod';
 import { ProjectGraphRegistry } from '../../intelligence/project-graph-registry';
@@ -119,7 +119,9 @@ export async function rbookProjectValidate(
     const graph = await ProjectGraphRegistry.create();
     const items: ProjectValidationItem[] = graph.list().map((row) => {
       const dirExists = fs.existsSync(row.store_path);
-      const dbExists = fs.existsSync(resolveRecordPaths(row.store_path).dbPath);
+      // s108-m05: a record mid-move still exists; it is being renamed.
+      const paths = recordPathsUnlessMoving(row.store_path);
+      const dbExists = !paths || fs.existsSync(paths.dbPath);
       const status: ProjectValidationItem['status'] = !dirExists
         ? 'missing'
         : !dbExists
@@ -127,8 +129,9 @@ export async function rbookProjectValidate(
           : graph.isEphemeral(row.store_path)
             ? 'ephemeral'
             : 'active';
-      const message =
-        status === 'missing'
+      const message = !paths
+        ? `Project's record is moving, or its move needs recovery: ${row.store_path}`
+        : status === 'missing'
           ? `Project directory does not exist: ${row.store_path}`
           : status === 'stale'
             ? `Reasonbook database no longer exists at: ${row.store_path}`

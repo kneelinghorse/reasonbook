@@ -16,6 +16,8 @@ import {
   leaseState,
 } from './next-step-lease';
 import { previewText } from './text-preview';
+import { nextStepWait } from './next-step-dates';
+import { readNextStepReasons } from './next-step-reasons';
 import { getProjectId } from './project-id';
 import type { NextStepRecord, NextStepsResult } from './rbook-next-steps';
 import {
@@ -143,7 +145,25 @@ export function readNextSteps(
     });
   }
 
+  // s108-m02: the reasons that still belong to the resolved rows shown; a read never creates the table.
+  let reasons: Map<number, string>;
+  try {
+    reasons = readNextStepReasons(
+      client,
+      result.data
+        .filter((row) => row.status === 'completed' || row.status === 'dropped')
+        .map((row) => row.id)
+    );
+  } catch (error) {
+    return createError<NextStepsResult>({
+      code: 'DB_QUERY_FAILED',
+      message: `Failed to read next-step reasons: ${error instanceof Error ? error.message : String(error)}`,
+      suggestion: 'Check database access and retry.',
+    });
+  }
+
   const items: NextStepRecord[] = result.data.map((row) => {
+    const reason = reasons.get(row.id);
     const { preview, truncated, fullLength } = previewText(row.content);
     return {
       ...spinOutDetails(visibility, 'next-step', row.id),
@@ -163,7 +183,12 @@ export function readNextSteps(
         ? {
             closesSurvived: row.closes_survived,
             lease: leaseState(row.closes_survived, row.age_days),
+            ...nextStepWait(row.status, row.resolved_at),
           }
+        : {}),
+      // A list previews the reason as it previews the content; show gives it whole.
+      ...(reason !== undefined
+        ? { reason: action === 'show' ? reason : previewText(reason).preview }
         : {}),
     };
   });
@@ -241,11 +266,14 @@ export function renderNextStepsBody(result: RbookToolResult<NextStepsResult>): s
     for (const item of d.items) {
       const sprint = item.sprintId ? ` [${item.sprintId}]` : '';
       const mission = item.missionId ? ` (${item.missionId})` : '';
-      const lease =
-        item.closesSurvived === undefined
+      // s108-m02: a row that waits on a date has no lease running yet; one that is due runs it from the date.
+      const lease = item.waitsUntil
+        ? ` {waits until ${item.waitsUntil}}`
+        : item.closesSurvived === undefined
           ? ''
-          : ` {closes survived ${item.closesSurvived}${item.lease === 'ok' ? '' : `, ${item.lease}`}}`;
+          : `${item.dueSince ? ` {due since ${item.dueSince}}` : ''} {closes survived ${item.closesSurvived}${item.lease === 'ok' ? '' : `, ${item.lease}`}}`;
       lines.push(`  #${item.id} [${item.status}]${lease}${sprint}${mission}: ${item.content}`);
+      if (item.reason !== undefined) lines.push(`    Reason: ${item.reason}`);
       lines.push(...spinOutPointerLines(item));
     }
     if (d.nextStepAction === 'list' && d.items.some((item) => item.truncated))

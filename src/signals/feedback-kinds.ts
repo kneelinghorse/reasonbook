@@ -87,8 +87,12 @@ export interface FeedbackKindRule {
   readonly pattern: RegExp;
 }
 
-/** A row names Reasonbook: its names, old and new, or one of their tools. */
-export const REASONBOOK_NAMED = /\b(?:cmos|rbook|reasonbook)\b|\b(?:cmos|rbook)_[a-z_]+/i;
+/**
+ * A row names Reasonbook: its names, old and new, one of their tools, or, from s108-m04, the words
+ * agents use for it since 4.0: drafts, fromDraft and mission status (the sprint-108 design's m04).
+ */
+export const REASONBOOK_NAMED =
+  /\b(?:cmos|rbook|reasonbook)\b|\b(?:cmos|rbook)_[a-z_]+|\bfromDraft\b|\bdrafts?\b|\bmission status\b/i;
 
 /**
  * The rules, in precedence order. Case-insensitive and never global, so stateless.
@@ -219,7 +223,7 @@ export const FEEDBACK_KIND_RULES: readonly FeedbackKindRule[] = [
 /** Published beside every count by kind. */
 export const FEEDBACK_KINDS_RULE =
   "a row's kind is that of the first rule in FEEDBACK_KIND_RULES whose pattern matches the first 4,000 UTF-16 code units of its text, " +
-  'among rows that name Reasonbook (reasonbook, rbook, cmos or one of their tools); a row that names ' +
+  'among rows that name Reasonbook (reasonbook, rbook, cmos or one of their tools, drafts, fromDraft or mission status); a row that names ' +
   "it nowhere, that no rule matches, or whose first rule is a folded kind's, is unclassified; the " +
   'tool name decides nothing';
 

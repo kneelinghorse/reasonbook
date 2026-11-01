@@ -30,7 +30,7 @@ import type { ProjectGraphRegistry } from '../../intelligence/project-graph-regi
 import { appendWarnings } from './format-warnings';
 import { sprintIdOrderSql } from './sprint-ordering';
 import { firstReady, orderByRequires } from './work-queue-order';
-import { parkedMissionNotice } from './mission-status-parked';
+import { dueMissionNotice, parkedMissionNotice } from './mission-status-parked';
 import { PREVIEW_MAX_CHARS, previewText } from './text-preview';
 import { callText } from './answer-page';
 
@@ -350,10 +350,15 @@ export async function rbookMissionStatus(
       const blockedCount = blockedMissions?.length ?? null;
 
       // Determine next action recommendation
+      // s108-m03: the queue leaves Deferred missions out, so one whose date has come is named here,
+      // and not again among the parked ones.
+      const due = dueMissionNotice(client, getProjectId(client));
+      if (!due.success) return createError<RbookMissionStatusResult>(due.error!);
       const parked = parkedMissionNotice(
         client,
         activeSprintInfo?.sprint ?? null,
-        getProjectId(client)
+        getProjectId(client),
+        new Set(due.data!.ids)
       );
       if (!parked.success) return createError<RbookMissionStatusResult>(parked.error!);
       const nextAction = determineNextAction(
@@ -376,7 +381,7 @@ export async function rbookMissionStatus(
             activeCount,
             queuedCount,
             blockedCount,
-            nextAction: [nextAction, parked.data].filter(Boolean).join(' '),
+            nextAction: [nextAction, due.data!.text, parked.data].filter(Boolean).join(' '),
           },
           localProjectId: getProjectId(client),
         },

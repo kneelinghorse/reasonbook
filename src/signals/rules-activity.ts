@@ -8,6 +8,7 @@ import {
   FEEDBACK_KINDS,
   type FeedbackKind,
 } from './feedback-kinds';
+import { feedbackGroupOf, type FeedbackGroup } from './feedback-fixes';
 import type { FeedbackKindsReport, SignalEntry, WindowCounts } from './report';
 import { oldestOf, unavailable, type RecordsContext } from './rules-records';
 import { closesAtOrBefore, columnsOf, DAY_MS, timeOf } from './store-read';
@@ -37,9 +38,15 @@ export function feedbackOpen(ctx: RecordsContext): SignalEntry {
   if (!columns.has('status') || !columns.has('body'))
     return unavailable('feedback_open', 'agent_feedback has no status or body column');
   const created = columns.has('created_at') ? 'created_at' : 'NULL AS created_at';
+  const fixRule = columns.has('fix_rule') ? 'fix_rule' : 'NULL AS fix_rule';
   const rows = ctx.db
-    .prepare(`SELECT id, body, ${created} FROM agent_feedback WHERE status = 'open'`)
-    .all() as Array<{ id: number; body: string | null; created_at: unknown }>;
+    .prepare(`SELECT id, body, ${created}, ${fixRule} FROM agent_feedback WHERE status = 'open'`)
+    .all() as Array<{
+    id: number;
+    body: string | null;
+    created_at: unknown;
+    fix_rule: string | null;
+  }>;
   const byKind = Object.fromEntries(FEEDBACK_KINDS.map(({ kind }) => [kind, 0])) as Record<
     FeedbackKind,
     number
@@ -47,6 +54,8 @@ export function feedbackOpen(ctx: RecordsContext): SignalEntry {
   let unclassified = 0;
   let undated = 0;
   const friction: Array<{ at: number; id: number }> = [];
+  // s108-m04: the same rows in the three groups.
+  const groups: Record<FeedbackGroup, number> = { fixed: 0, reasonbook: 0, own: 0 };
   for (const row of rows) {
     const at = timeOf(row.created_at);
     if (!Number.isFinite(at)) {
@@ -54,6 +63,17 @@ export function feedbackOpen(ctx: RecordsContext): SignalEntry {
       continue;
     }
     if (at > ctx.nowMs) continue;
+    groups[
+      feedbackGroupOf(
+        {
+          body: row.body,
+          status: 'open',
+          createdAt: row.created_at as string,
+          fixRule: row.fix_rule,
+        },
+        ctx.nowMs
+      )
+    ] += 1;
     const { kind } = classifyFeedback(row.body);
     if (kind === 'unclassified') {
       unclassified += 1;
@@ -71,6 +91,7 @@ export function feedbackOpen(ctx: RecordsContext): SignalEntry {
     ids: friction.slice(0, ctx.maxIds).map((row) => `f:${row.id}`),
     byKind,
     unclassified,
+    groups,
     ...(undated ? { undated } : {}),
   };
 }

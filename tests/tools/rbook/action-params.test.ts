@@ -397,8 +397,9 @@ describe('ACTION_PARAMS vacuity floor (s86-m04)', () => {
       // s106-m03: page on feedback list, mission list, sprint list, retro and analytics, and
       // session search; page and pageSize on decisions review: 461 -> 469; page and pageSize on
       // the next_steps and constraints actions: 469 -> 473; and on view, whose digest pages the
-      // context documents' constraints and next steps: 473 -> 475.
-      expect(entryCount).toBe(475);
+      // context documents' constraints and next steps: 473 -> 475. s108-m02 adds checkAfter on
+      // capture, and reason and checkAfter on next_steps: 475 -> 478.
+      expect(entryCount).toBe(478);
 
       // Floors, so a walker that silently stops producing branches fails here rather than passing
       // every applicability case with nothing to check.

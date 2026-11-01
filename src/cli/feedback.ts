@@ -14,6 +14,7 @@ import { getProjectId } from '../tools/rbook/project-id';
 import { isReadOnlyAgentSession } from '../tools/rbook/read-only-agent-guard';
 import { captureToolCall } from '../tools/rbook/tool-call-context';
 import type { RbookToolResult } from '../tools/rbook/types';
+import { runFeedbackFixes } from './feedback-fixes';
 
 type FeedbackReceipt = RbookToolResult<
   { feedbackId: number } | { dryRun: true; content: string; projectRoot: string }
@@ -21,7 +22,11 @@ type FeedbackReceipt = RbookToolResult<
 
 /** Filing feedback is independent of the harness lifecycle; omitted context stays NULL. */
 export async function runFeedback(argv: readonly string[], io: CliIo): Promise<number> {
-  const { flags } = parseArgs(argv);
+  const { flags, positional } = parseArgs(argv);
+  // s108-m04: the two commands that resolve and reopen rows a shipped release fixed.
+  if (positional[0] === 'resolve-fixed' || positional[0] === 'reopen-fixed')
+    return runFeedbackFixes(positional[0], flags, io);
+
   const dryRun = flags['dry-run'] === 'true';
   const finish = (result: FeedbackReceipt): number => {
     result = boundErrorFields(result);

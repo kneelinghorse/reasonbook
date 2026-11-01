@@ -12,6 +12,7 @@ import { formatToolFailure } from './format-failure';
 import { z } from 'zod';
 import { createError, RbookErrors, VALID_SESSION_TYPES } from './errors';
 import { findWrongTypedStringParam } from './param-type-guard';
+import { inapplicableParam } from './inapplicable-param';
 import { appendWarnings } from './format-warnings';
 import type { ActionParamMap, RbookToolResult } from './types';
 import {
@@ -72,6 +73,7 @@ export const RBOOK_SESSION_ACTION_PARAMS: ActionParamMap<RbookSessionAction, Rbo
     'content',
     'context',
     'expiresAt',
+    'checkAfter',
     'missionId',
     'evidence',
     'citesLearningIds',
@@ -167,6 +169,12 @@ export const rbookSessionSchema = z
       .optional()
       .describe(
         'Optional expiry date for constraint captures (ISO 8601, e.g. "2026-03-20T00:00:00Z"). Applies to capture(category="constraint") and to constraints materialized from that capture at session complete.'
+      ),
+    checkAfter: z
+      .string()
+      .optional()
+      .describe(
+        'capture(category="next-step"): the day it waits until (YYYY-MM-DD, a month, or a date-time reduced to its UTC day), after today and at most 180 days ahead. The row leaves the open work until then, no close drops it, and it is due from that day'
       ),
     missionId: z
       .string()
@@ -297,6 +305,11 @@ export const rbookSessionToolDefinition = {
         description:
           'Optional expiry date for constraint captures (ISO 8601, e.g. "2026-03-20T00:00:00Z"). Applies to capture(category="constraint") and to constraints materialized from that capture at session complete.',
       },
+      checkAfter: {
+        type: 'string',
+        description:
+          'capture(category="next-step"): the day it waits until (YYYY-MM-DD, a month, or a date-time reduced to its UTC day), after today and at most 180 days ahead. The row leaves the open work until then, no close drops it, and it is due from that day',
+      },
       missionId: {
         type: 'string',
         description:
@@ -381,6 +394,16 @@ export async function rbookSession(
   );
   if (wrongTypedParam) return createError<RbookSessionResult>(wrongTypedParam);
 
+  // s108-m02: checkAfter on an action that would ignore it is refused: complete with nextSteps[]
+  // would otherwise succeed and write undated rows (inapplicable-param.ts).
+  const inapplicable = inapplicableParam(
+    `rbook_session(action="${actionValue}")`,
+    RBOOK_SESSION_ACTION_PARAMS[actionValue],
+    params,
+    ['checkAfter']
+  );
+  if (inapplicable) return createError<RbookSessionResult>(inapplicable);
+
   switch (actionValue) {
     case 'list':
       return rbookSessionList({
@@ -411,6 +434,7 @@ export async function rbookSession(
         // (rbook-session-capture.ts:186/:275) — which is not a published surface — but never on
         // this router, so no agent could set it and both constraint write paths saw undefined.
         expiresAt: params.expiresAt,
+        checkAfter: params.checkAfter,
         missionId: params.missionId,
         evidence: params.evidence,
         agent: params.agent,

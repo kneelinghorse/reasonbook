@@ -37,6 +37,7 @@
 import {
   assertConfigDirectoryAvailable,
   resolveConfigDirectory,
+  recordPathsUnlessMoving,
   resolveRecordPaths,
 } from './legacy-compat';
 import Database from 'better-sqlite3';
@@ -688,8 +689,9 @@ export class ProjectGraphRegistry {
   pruneMissingStores(): number {
     let pruned = 0;
     for (const row of this.list()) {
-      const dbPath = resolveRecordPaths(row.store_path).dbPath;
-      if (!existsSync(dbPath) && this.archive(row.project_id)) pruned++;
+      // s108-m05: a record mid-move is never archived as missing; it is being renamed.
+      const paths = recordPathsUnlessMoving(row.store_path);
+      if (paths && !existsSync(paths.dbPath) && this.archive(row.project_id)) pruned++;
     }
     return pruned;
   }

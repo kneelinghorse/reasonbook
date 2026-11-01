@@ -313,7 +313,9 @@ it('keeps local feedback visible when it is the project’s only durable record'
     FLEET_ROOM_MS
   );
   expect(model.emptyRecord).toBe(false);
-  expect(model.feedback).toContain('Fleet feedback: 1 open; 1/1 stores');
+  expect(model.feedback).toContain(
+    'Fleet feedback: 1 open (0 fixed, 0 Reasonbook, 1 own); 1/1 stores'
+  );
 });
 
 it('shows fleet feedback for a mature quiet store with stable bytes and explicit partial coverage', async () => {
@@ -337,7 +339,7 @@ it('shows fleet feedback for a mature quiet store with stable bytes and explicit
   const read = async () =>
     renderDigestV2(await readDigestV2(local, env, Infinity, FLEET_ROOM_MS)).text;
   const first = await read();
-  expect(first).toContain('Fleet feedback: 1 open; 1/1 stores');
+  expect(first).toContain('Fleet feedback: 1 open (0 fixed, 0 Reasonbook, 1 own); 1/1 stores');
   expect(first.length).toBeLessThanOrEqual(4000);
   expect(await read()).toBe(first);
   store('gone', 'missing');
@@ -465,4 +467,72 @@ it('pages resolved feedback two rows at a time, the other statuses five (s106-m0
     limit: 5,
     hasMore: false,
   });
+});
+
+it('labels rows a shipped release fixed across the fleet, through dispatch, and writes no store (s108-m04)', async () => {
+  const fixed = store('alpha');
+  const own = store('beta');
+  const db = new Database(dbFile(fixed));
+  db.prepare(
+    "INSERT INTO agent_feedback (id, tool_name, body, status, created_at) VALUES (1, 't', ?, 'open', '2026-06-01T00:00:00.000Z')"
+  ).run(
+    'cmos_mission show walked the whole registry and returned one entry per registered project.'
+  );
+  db.close();
+  insert(own, 1);
+  // A row a reopen marked counts as about Reasonbook, never as fixed, even in a store that has fix_rule.
+  const marked = new Database(dbFile(fixed));
+  marked.exec('ALTER TABLE agent_feedback ADD COLUMN fix_rule TEXT');
+  marked
+    .prepare(
+      "INSERT INTO agent_feedback (id, tool_name, body, status, created_at, fix_rule) VALUES (2, 't', ?, 'open', '2026-06-01T00:00:00.000Z', 'reopened:reads.fan-out-every-project@1')"
+    )
+    .run(
+      'cmos_mission status walked the whole registry and returned one entry per registered project.'
+    );
+  marked.close();
+  const before = [hash(fixed), hash(own)];
+  const savedRoot = process.env.RBOOK_PROJECT_ROOT;
+  delete process.env.RBOOK_PROJECT_ROOT;
+  const cwd = jest.spyOn(process, 'cwd').mockReturnValue(root);
+  try {
+    const response = await executeMissionProtocolTool(
+      'rbook_feedback',
+      { action: 'list', acrossProjects: true },
+      {} as never
+    );
+    const data = (
+      response.structuredContent as {
+        data: {
+          countsByGroup: unknown;
+          entries: Array<{ sourceProjectId?: string; fix?: unknown }>;
+        };
+      }
+    ).data;
+    expect(data.countsByGroup).toEqual({ fixed: 1, reasonbook: 1, own: 1 });
+    const alpha = (id: number) =>
+      data.entries.find(
+        (entry) =>
+          entry.sourceProjectId === 'alpha' &&
+          String((entry as { id?: unknown }).id).endsWith(`:feedback:${id}`)
+      );
+    // Both rows are listed; only the fixed one carries a label.
+    expect(alpha(2)).toBeDefined();
+    expect(alpha(2)?.fix).toBeUndefined();
+    expect(alpha(1)?.fix).toMatchObject({
+      rule: 'reads.fan-out-every-project',
+      state: 'fixed',
+    });
+    const text = (response.content ?? [])
+      .map((part) => ('text' in part ? part.text : ''))
+      .join('\n');
+    expect(text).toContain('fixed in 2.1.0 (reads.fan-out-every-project)');
+    expect(text).toContain('By group: fixed=1, reasonbook=1, own=1');
+    // Labels are read-only: neither project's store changes, the fixed row's included.
+    expect([hash(fixed), hash(own)]).toEqual(before);
+  } finally {
+    cwd.mockRestore();
+    if (savedRoot === undefined) delete process.env.RBOOK_PROJECT_ROOT;
+    else process.env.RBOOK_PROJECT_ROOT = savedRoot;
+  }
 });

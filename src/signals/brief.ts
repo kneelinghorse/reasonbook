@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// ABOUTME: The weekly brief from signals reports: six ranked, capped sections, every listed row named by its id, the same
+// ABOUTME: The weekly brief from signals reports: seven ranked, capped sections, every listed row named by its id, the same
 // ABOUTME: bytes for the same reports and now on any machine. buildBrief gives the sections; renderBrief, the markdown.
 
 import type { BriefOptions, Brief, BriefItem, BriefSection, BriefSectionId } from './brief-types';
@@ -152,6 +152,40 @@ function stuck(reports: readonly SignalsReport[]): Ranked[] {
           Number.isFinite(oldest) ? `, oldest ${day(oldest)}` : ''
         }`,
         ids: parts.flatMap((part) => part.ids),
+      },
+    });
+  }
+  return out;
+}
+
+/**
+ * s108-m03: work whose date has come. A stored report counts what was due when it was computed;
+ * its nextDueAt, the soonest date then ahead, says whether more has come due by the brief's now.
+ */
+function dueNow(reports: readonly SignalsReport[], now: number): Ranked[] {
+  const out: Ranked[] = [];
+  for (const report of reports) {
+    const work = report.signals.find((signal) => signal.kind === 'work_due');
+    if (!work?.available) continue;
+    const counted = work.count ? clause(work, 'item due', 'items due') : undefined;
+    const next = timeOf(work.nextDueAt);
+    // A day that came after the report was computed: due now, though the report could not count it.
+    const later = Number.isFinite(next) && next <= now;
+    if (!counted && !later) continue;
+    const oldest = counted ? timeOf(work.oldestAt) : next;
+    const parts = [
+      ...(counted
+        ? [`${counted.text}${Number.isFinite(oldest) ? `, oldest since ${day(oldest)}` : ''}`]
+        : []),
+      ...(later ? [`${counted ? 'more' : 'work'} due since ${day(next)}, after its report`] : []),
+    ];
+    out.push({
+      projectId: report.project.id,
+      rank: [oldest],
+      item: {
+        projectId: report.project.id,
+        text: `${projectLabel(report)}: ${parts.join('; ')}`,
+        ids: counted?.ids ?? [],
       },
     });
   }
@@ -314,6 +348,12 @@ export function buildBrief(reports: readonly SignalsReport[], options: BriefOpti
         'Stuck',
         'blocked missions and next steps about to lapse, the project whose oldest such item is oldest first',
         stuck(readable)
+      ),
+      section(
+        'due',
+        'Due',
+        'open next steps and Deferred missions whose day has come, with work that came due after its report was computed, the project whose earliest due day is earliest first',
+        dueNow(readable, nowMs)
       ),
       section(
         'gone_quiet',

@@ -4,6 +4,7 @@
 import { z } from 'zod';
 import { withClientValidated } from './client';
 import type { RbookToolResult, Mission, MissionStatus, SanitizedFieldReport } from './types';
+import { readCheckAfter } from './next-step-dates';
 import {
   createError,
   createSuccess,
@@ -35,6 +36,12 @@ export interface MissionDeferResult {
 
   /** Hint about when to re-queue (not enforced, just recorded) */
   deferUntil: string | null;
+
+  /**
+   * s108-m03: the day the mission comes back as due, when deferUntil reads as a day after today and
+   * at most 180 days ahead (next-step-dates.ts); null when deferUntil stays a hint.
+   */
+  checkAfter: string | null;
 
   /** Human-readable message */
   message: string;
@@ -149,12 +156,18 @@ export async function rbookMissionDefer(
         }
       }
 
+      // s108-m03 (settled item 3): a deferUntil that reads as a future day is the mission's date,
+      // paired with this deferral, so a later deferral, which writes a new deferredAt, leaves it
+      // stale. Anything else stays the hint it always was; deferUntil is never refused for it.
+      const read = cleanedDeferUntil ? readCheckAfter(cleanedDeferUntil, 'carry') : null;
+      const checkAfter = read && 'day' in read ? read.day : null;
       const updatedDomainFields = {
         ...existingDomainFields,
         deferredReason: cleanedReason ?? null,
         deferredAt: now,
         deferUntil: cleanedDeferUntil ?? null,
         deferredFromStatus: currentStatus,
+        ...(checkAfter ? { checkAfter, checkAfterDeferredAt: now } : {}),
       };
 
       const deferNote = cleanedReason
@@ -218,7 +231,8 @@ export async function rbookMissionDefer(
           currentStatus: targetStatus,
           reason: cleanedReason ?? null,
           deferUntil: cleanedDeferUntil ?? null,
-          message: `Mission '${missionId}' has been deferred`,
+          checkAfter,
+          message: `Mission '${missionId}' has been deferred${checkAfter ? ` until ${checkAfter}` : ''}`,
           deferredAt: now,
         },
         warnings,
@@ -264,8 +278,14 @@ export function formatMissionDeferForLLM(result: RbookToolResult<MissionDeferRes
     lines.push(`Reason: ${data.reason}`);
   }
 
-  if (data.deferUntil) {
-    lines.push(`Re-queue when: ${data.deferUntil}`);
+  // s108-m03: a date brings the mission back as due; any other deferUntil is a hint nothing acts on.
+  if (data.checkAfter) {
+    lines.push(`Due again: ${data.checkAfter}, when review and the signals list it as due`);
+  } else if (data.deferUntil) {
+    // Today's UTC day, since in an American evening it is already tomorrow there (settled item 5).
+    lines.push(
+      `Re-queue when: ${data.deferUntil} (a hint: nothing brings the mission back on its own; a day after today, up to 180 days ahead, would; today is ${data.deferredAt.slice(0, 10)} in UTC)`
+    );
   }
 
   // Surface warnings (incl. the m05 collab-sync warnings the transition dispatcher

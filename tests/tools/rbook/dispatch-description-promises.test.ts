@@ -8,7 +8,30 @@ import { CredentialStore } from '../../../src/intelligence/credential-store';
 import { constraintKey, dispatchConstraints } from '../../helpers/dispatch-constraints';
 import { createSeededRbookProject, type SeededRbookProject } from '../../helpers/seedRbookDb';
 
+/** s108-m02: a day past checkAfter's 180-day window, from today, never a fixed date. */
+const tooFar = new Date(Date.now() + 181 * 86_400_000).toISOString().slice(0, 10);
+
 const cases: Record<string, { args: Record<string, unknown>; code: string; remedy: RegExp }> = {
+  'rbook_context /reason#description desc-bound': {
+    args: {
+      action: 'next_steps',
+      nextStepAction: 'complete',
+      nextStepIds: [1],
+      reason: 'x'.repeat(501),
+    },
+    code: 'INVALID_PARAMETER',
+    remedy: /500 characters or fewer/,
+  },
+  'rbook_context /checkAfter#description desc-bound': {
+    args: { action: 'next_steps', nextStepAction: 'carry', nextStepIds: [1], checkAfter: tooFar },
+    code: 'INVALID_PARAMETER',
+    remedy: /up to \d{4}-\d{2}-\d{2}/,
+  },
+  'rbook_session /checkAfter#description desc-bound': {
+    args: { action: 'capture', category: 'next-step', content: 'Too far', checkAfter: tooFar },
+    code: 'INVALID_PARAMETER',
+    remedy: /up to \d{4}-\d{2}-\d{2}/,
+  },
   'rbook_sprint /summary#description desc-required': {
     args: { action: 'complete', sprintId: 'sprint' },
     code: 'MISSING_PARAMETER',
@@ -124,7 +147,8 @@ afterEach(async () => {
 it('covers every description promise exactly once', () => {
   // s106-m02 adds rbook_mission's missionId promise (#871); s106-m05 adds the search queries of
   // context, decisions, learnings and session, and session's title, content and summary.
-  expect(rows).toHaveLength(19);
+  // s108-m02 adds reason's 500-character cap and the two checkAfter windows.
+  expect(rows).toHaveLength(22);
   expect(rows.map(constraintKey).sort()).toEqual(Object.keys(cases).sort());
 });
 

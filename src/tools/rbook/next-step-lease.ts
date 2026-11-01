@@ -26,6 +26,12 @@ import type { RbookDatabaseClient } from './client';
  *
  * NO SCHEMA CHANGE. The anchors (`created_at`, the last carry's `resolved_at`) and every close's
  * `sprints.end_date` are already on disk.
+ *
+ * s108-m02 — A DATE IS AN ANCHOR TOO. A row that waits until a day holds it in `resolved_at`, in the
+ * bare YYYY-MM-DD spelling no other writer produces (next-step-dates.ts). Ahead of now it survives
+ * no close and its age is negative, so no close drops it; from the day on, its lease runs from the
+ * day. This module computes nothing new for it. Never normalise stored times: that would erase the
+ * marker that tells a date from a carry.
  */
 
 export const LEASE_WARN_AT = 3;
@@ -41,8 +47,8 @@ export const LEASE_IDLE_WARN_DAYS = 42;
  * not counted.
  */
 export const LEASE_COUNTING_RULE =
-  "closes survived = Completed sprints whose recorded end_date — the actual close time — is in the past and later than the row's last carry " +
-  '(resolved_at) or, if never carried, its created_at; a close counts only after it completes, so ' +
+  "closes survived = Completed sprints whose recorded end_date — the actual close time — is in the past and later than the row's resolved_at " +
+  '(the day a dated row waits until, else its last carry or the reopen that ended a wait) or, if neither, its created_at; a close counts only after it completes, so ' +
   'the closing sprint never counts toward its own close. A row at the drop age is dropped only once it is ' +
   `also ${LEASE_MIN_AGE_DAYS} days past that same anchor; a row that has survived no close for ` +
   `${LEASE_IDLE_WARN_DAYS} days is flagged idle; nothing is dropped by the calendar alone`;

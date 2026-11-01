@@ -52,6 +52,8 @@ const STAYS_LOCAL = [
   'proposals',
   'sync_event_queue',
   'prompt_mappings',
+  // s108-m02: why next steps were completed or dropped, which no exchange sends (next-step-reasons.ts).
+  'next_step_reasons',
 ] as const;
 
 export interface DashboardSharePlan {

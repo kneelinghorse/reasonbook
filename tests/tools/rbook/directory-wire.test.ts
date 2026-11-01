@@ -32,6 +32,55 @@ it('pins all thirteen local tools with a separate measured wire budget', () => {
   for (const tool of tools) expect(tool.annotations?.openWorldHint).toBe(false);
 });
 
+/**
+ * The tools whose published text, description or any parameter's hint, names an upload, the
+ * dashboard or a sync, none of which this edition has. A claim in other words (a hosted service, a
+ * remote copy) is not caught; the snapshot and the text's own review cover those.
+ */
+function claimsUpload(tools: readonly ToolDefinition[]): string[] {
+  return tools
+    .filter((tool) =>
+      /upload|dashboard|\bsync/i.test(JSON.stringify([tool.description, tool.inputSchema]))
+    )
+    .map((tool) => tool.name);
+}
+
+it('claims no upload anywhere, since this edition makes none, and the check finds a planted one (s108-m06)', () => {
+  const tools = getToolDefinitions();
+  expect(claimsUpload(tools)).toEqual([]);
+  // Learning #613: a full-edition sentence reaches this edition unless an entry here replaces it.
+  const planted = tools.map((tool) =>
+    tool.name === 'rbook_mission_transition'
+      ? { ...tool, description: `${tool.description} Any may upload owed checkpoints.` }
+      : tool
+  );
+  expect(claimsUpload(planted)).toEqual(['rbook_mission_transition']);
+});
+
+it("states #888's effects, without an upload, and the usage line on its ten multi-action tools (s108-m06)", () => {
+  const published = Object.fromEntries(
+    getToolDefinitions().map((tool) => [tool.name, tool.description])
+  );
+  for (const [tool, effect] of [
+    ['rbook_sprint', 'drops next steps whose lease lapsed (dated ones wait)'],
+    ['rbook_sprint', 'takes two DB snapshots (oldest may be deleted)'],
+    ['rbook_mission_transition', 'start may activate its Planned sprint'],
+    ['rbook_mission_transition', 'complete writes decisions[], updates and snapshots the context'],
+  ])
+    expect({ tool, effect, stated: published[tool].includes(effect) }).toEqual({
+      tool,
+      effect,
+      stated: true,
+    });
+  const multiAction = Object.keys(published).filter(
+    (name) => !['rbook_review', 'rbook_agent_onboard', 'rbook_status'].includes(name)
+  );
+  expect(multiAction).toHaveLength(10);
+  expect(multiAction.filter((name) => !published[name].includes(' Calls may log usage.'))).toEqual(
+    []
+  );
+});
+
 it('advertises only available sprint actions in the local edition', () => {
   const sprint = getToolDefinitions().find((tool) => tool.name === 'rbook_sprint');
   expect(sprint?.description).toContain('Except list/analytics, supply sprintId');

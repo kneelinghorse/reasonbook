@@ -279,10 +279,12 @@ const EXPECTED_TOTALS = {
   // s106-m03: answer-page.ts (the shared page arithmetic) adds one file, no answer type.
   // s107-m05: session-read-pages.ts (a named session read's pages) and, from its round-1 critic
   // fold, session-read-render.ts (how such a read prints) add two files, no answer type.
-  files: 332,
+  // s108-m02: next-step-dates.ts, next-step-reasons.ts and inapplicable-param.ts add three files,
+  // no answer type.
+  files: 338,
   roots: 151,
-  declarations: 350,
-  compositions: 350,
+  declarations: 352,
+  compositions: 352,
   // s98-m11: bulk feedback receipts name the project and list already resolved skips.
   // s98-m12: ProjectTypeFields gains optional build_freshness_check, disclosed in CHANGELOG.
   // s98-m13: sprint-close adds implicitSessionsAtClose beside the direct-membership list.
@@ -297,7 +299,15 @@ const EXPECTED_TOTALS = {
   // s107-m05: a named session read in pages gains pageCount and capturesShown, a capture's part,
   // parts and fullLength, and the summary's summaryPart and summaryParts: 7 rows, disclosed in
   // the CHANGELOG.
-  rows: 2049,
+  // s108-m02: eight additive rows, disclosed in the CHANGELOG: NextStepRecord waitsUntil, dueSince
+  // and reason; SprintPendingNextStep.waitsUntil and the survey's waiting; capture's checkAfter;
+  // datesPassed on the session-complete result and on ClosedSessionReceipt.
+  // s108-m03: two additive rows, disclosed in the CHANGELOG: defer's checkAfter, and PersonSignals'
+  // due, the review's count of work whose date has come in another project.
+  // s108-m04: six additive rows, disclosed in the CHANGELOG: a feedback row's fix (its rule,
+  // revision, fixedIn and state) and the list's countsByGroup: two new declarations and
+  // compositions, and three new files that the analyzed root reaches.
+  rows: 2065,
 } as const;
 const EXPLICIT_OPAQUE_LEDGER = [
   'RbookToolError.providedValue = ANY',

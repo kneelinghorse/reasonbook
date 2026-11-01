@@ -136,7 +136,8 @@ there at its first upload: an explicit session close on a machine signed in to t
 registers the project and uploads its whole SQLite file. Every later upload sends the whole file
 again. These uploads hold everything the store holds, including session events, agent feedback,
 proposals (pending, declined and expired), context documents and snapshots, telemetry events,
-prompt mappings, the sync queue and the search index. `RBOOK_CHECKPOINT_SYNC=off` in the server's
+prompt mappings, the sync queue, the search index and the reasons given for completed and dropped
+next steps. `RBOOK_CHECKPOINT_SYNC=off` in the server's
 environment stops these uploads, including explicit closes and manual backfill, for every project
 that process serves. It does not stop shared-record exchanges. A project that was never uploaded
 cannot be shared through the dashboard.

@@ -135,65 +135,111 @@ describe('a shipped renamed seed does not move paths in docs-only mode', () => {
   });
 });
 
-describe('offline cutover rejects cached paths before any handle opens', () => {
+/**
+ * A runtime that resolved the record's path before the move and writes through it on "continue",
+ * as decision #1330 feared. Its manifest's version decides whether the move waits for it.
+ */
+async function cachedPathRuntime(version: string) {
+  const runtime = path.join(tmp, 'runtime');
+  fs.mkdirSync(path.join(runtime, 'dist'), { recursive: true });
+  fs.writeFileSync(
+    path.join(runtime, 'package.json'),
+    JSON.stringify({ name: '@aquex/reasonbook', version })
+  );
+  const entry = path.join(runtime, 'dist/bin.js');
+  fs.writeFileSync(
+    entry,
+    'const DB=require(process.argv[2]);const cached=process.argv[3];process.stdout.write("ready");process.stdin.once("data",()=>{const db=new DB(cached,{fileMustExist:true});db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES (?,?)").run("cached-path-writer","survived");db.close();process.exit(0);});'
+  );
+  const oldDb = path.join(root, LEGACY.recordDirectory, 'db', LEGACY.databaseFile);
+  const child = childProcess.spawn(
+    process.execPath,
+    [entry, require.resolve('better-sqlite3'), oldDb],
+    {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }
+  );
+  await ready(child);
+  const guard =
+    require('../../src/cli/migrate-guard') as typeof import('../../src/cli/migrate-guard');
+  const record = path.join(root, LEGACY.recordDirectory);
+  // s98-m08: under two concurrent full suites the guard once failed closed here; a failure now
+  // says what lsof says when run again at once.
+  try {
+    guard.assertNoOpenFiles(record);
+  } catch (error) {
+    const again = childProcess.spawnSync('lsof', ['-nP', '-Fpcn', '+D', record], {
+      encoding: 'utf8',
+    });
+    throw new Error(
+      `${(error as Error).message} lsof again: status ${again.status}, error ${again.error?.message ?? 'none'}, stderr ${String(again.stderr).slice(0, 500)}`
+    );
+  }
+  const spawnSync = childProcess.spawnSync;
+  jest.spyOn(childProcess, 'spawnSync').mockImplementation(((
+    command: string,
+    args: string[],
+    opts: any
+  ) => {
+    const result = spawnSync(command, args, opts);
+    if (command !== 'ps') return result;
+    return {
+      ...result,
+      stdout: String(result.stdout)
+        .split('\n')
+        .filter((line) => line.trim().startsWith(`${child.pid} `))
+        .join('\n'),
+    };
+  }) as any);
+  const inspect = guard.assertNoRecordProcesses;
+  const inspected = jest.spyOn(guard, 'assertNoRecordProcesses').mockImplementation((scope) => {
+    expect(fs.existsSync(path.join(root, '.rbook-migration.lock'))).toBe(true);
+    inspect(scope);
+  });
+  /** Lets the runtime write through its cached path; resolves with its exit code. */
+  const proceed = async (): Promise<number | null> => {
+    const done = once(child, 'exit');
+    child.stdin!.write('continue');
+    return (await done)[0] as number | null;
+  };
+  return { child, oldDb, inspected, proceed };
+}
+
+describe('a record moves past a 4.x runtime that cached its path, and waits for an older one', () => {
   it(
-    'names a live 4.x runtime holding only a path and never renames its database',
+    'moves the record while a live 4.x runtime holds only its old path, whose later write fails, landing nowhere',
     async () => {
-      const runtime = path.join(tmp, 'runtime');
-      fs.mkdirSync(path.join(runtime, 'dist'), { recursive: true });
-      fs.writeFileSync(
-        path.join(runtime, 'package.json'),
-        JSON.stringify({ name: '@aquex/reasonbook', version: '4.0.0' })
-      );
-      const entry = path.join(runtime, 'dist/bin.js');
-      fs.writeFileSync(
-        entry,
-        'const DB=require(process.argv[2]);const cached=process.argv[3];process.stdout.write("ready");process.stdin.once("data",()=>{const db=new DB(cached,{fileMustExist:true});db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES (?,?)").run("cached-path-writer","survived");db.close();process.exit(0);});'
-      );
-      const oldDb = path.join(root, LEGACY.recordDirectory, 'db', LEGACY.databaseFile);
-      const child = childProcess.spawn(
-        process.execPath,
-        [entry, require.resolve('better-sqlite3'), oldDb],
-        { stdio: ['pipe', 'pipe', 'pipe'] }
-      );
+      const { child, oldDb, inspected, proceed } = await cachedPathRuntime('4.0.0');
       try {
-        await ready(child);
-        const guard =
-          require('../../src/cli/migrate-guard') as typeof import('../../src/cli/migrate-guard');
-        const record = path.join(root, LEGACY.recordDirectory);
-        // s98-m08: under two concurrent full suites the guard once failed closed here; a failure now
-        // says what lsof says when run again at once.
-        try {
-          guard.assertNoOpenFiles(record);
-        } catch (error) {
-          const again = childProcess.spawnSync('lsof', ['-nP', '-Fpcn', '+D', record], {
-            encoding: 'utf8',
-          });
-          throw new Error(
-            `${(error as Error).message} lsof again: status ${again.status}, error ${again.error?.message ?? 'none'}, stderr ${String(again.stderr).slice(0, 500)}`
-          );
-        }
-        const spawnSync = childProcess.spawnSync;
-        jest.spyOn(childProcess, 'spawnSync').mockImplementation(((
-          command: string,
-          args: string[],
-          opts: any
-        ) => {
-          const result = spawnSync(command, args, opts);
-          if (command !== 'ps') return result;
-          return {
-            ...result,
-            stdout: String(result.stdout)
-              .split('\n')
-              .filter((line) => line.trim().startsWith(`${child.pid} `))
-              .join('\n'),
-          };
-        }) as any);
-        const inspect = guard.assertNoRecordProcesses;
-        const inspected = jest.spyOn(guard, 'assertNoRecordProcesses').mockImplementation(() => {
-          expect(fs.existsSync(path.join(root, '.rbook-migration.lock'))).toBe(true);
-          inspect();
+        // s108-m05, superseding #1330: the move no longer waits for a 4.x runtime. This fixture
+        // checks no guard and holds no handle; it writes only after the move, through a path that
+        // then names nothing, so its open fails and its row lands nowhere.
+        const result = await migrateProject({ projectRoot: root, env: { HOME: tmp }, apply: true });
+        expect({ success: result.success, error: result.error }).toEqual({
+          success: true,
+          error: undefined,
         });
+        expect(inspected).toHaveBeenCalledWith('pre-guard');
+        expect(fs.existsSync(oldDb)).toBe(false);
+        expect(await proceed()).not.toBe(0);
+        expect(fs.existsSync(path.join(root, LEGACY.recordDirectory))).toBe(false);
+        const db = new Database(path.join(root, 'rbook/db/rbook.sqlite'), { readonly: true });
+        expect(
+          db.prepare("SELECT value FROM metadata WHERE key = 'cached-path-writer'").get()
+        ).toBeUndefined();
+        db.close();
+      } finally {
+        await end(child);
+      }
+    },
+    HANG_GUARD_MS
+  );
+
+  it(
+    'names a live runtime from before 4.0 holding only a path and never renames its database',
+    async () => {
+      const { child, oldDb, inspected, proceed } = await cachedPathRuntime('3.9.0');
+      try {
         const result = await migrateProject({ projectRoot: root, env: { HOME: tmp }, apply: true });
         // s100-m02: this failed once in a full suite with no message kept, and 0 of 14 runs under two
         // concurrent suites reproduced it; a failure now prints the whole answer.
@@ -201,12 +247,10 @@ describe('offline cutover rejects cached paths before any handle opens', () => {
           success: false,
           error: expect.objectContaining({ message: expect.stringContaining(String(child.pid)) }),
         });
-        expect(inspected).toHaveBeenCalled();
+        expect(inspected).toHaveBeenCalledWith('pre-guard');
         expect(fs.existsSync(oldDb)).toBe(true);
         expect(fs.existsSync(path.join(root, 'rbook'))).toBe(false);
-        const done = once(child, 'exit');
-        child.stdin!.write('continue');
-        expect((await done)[0]).toBe(0);
+        expect(await proceed()).toBe(0);
         const db = new Database(oldDb, { readonly: true });
         expect(
           db.prepare("SELECT value FROM metadata WHERE key = 'cached-path-writer'").get()
@@ -220,7 +264,7 @@ describe('offline cutover rejects cached paths before any handle opens', () => {
   );
 });
 
-describe('supported global and plugin launch forms stay offline', () => {
+describe('supported global and plugin launch forms are recognized', () => {
   it.each([
     'hooks/install-worker.mjs',
     'server/install-worker.mjs',
@@ -244,6 +288,8 @@ describe('supported global and plugin launch forms stay offline', () => {
       status: 0,
       signal: null,
     });
+    // The config move waits for it; a record's move lets a 4.x runtime run (s108-m05).
     expect(() => guard.assertNoRecordProcesses()).toThrow('Process 2147483647');
+    expect(guard.recordProcessProblems('pre-guard')).toEqual([]);
   });
 });

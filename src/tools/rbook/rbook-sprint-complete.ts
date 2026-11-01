@@ -63,6 +63,14 @@ import {
   leaseState,
   reopenCommand,
 } from './next-step-lease';
+import { nextStepWait } from './next-step-dates';
+import {
+  leaseDropReason,
+  prepareNextStepReasons,
+  SHARED_REASON_NOTE,
+  writeNextStepReason,
+} from './next-step-reasons';
+import { isRecordedStore } from './record-recording';
 import { repairCompletedSprintEndDates, type SprintEndDateRepair } from './sprint-end-date-repair';
 import { nextStepRowLookup, summarizeSessionCaptures } from './session-capture-state';
 import { findReusableSnapshot, snapshotStorage } from './snapshot-content-policy';
@@ -226,6 +234,8 @@ export interface SprintPendingNextStep {
   closesSurvived: number;
   /** s92-m02: days since the row's lease anchor (last carry, else creation); null if unparseable. */
   ageDays: number | null;
+  /** s108-m02: the day an open row waits until; such a row is listed apart, not in a group. */
+  waitsUntil?: string;
 }
 
 /** s91-m06 — the lease as this close applied it, published with its thresholds and rule. */
@@ -264,6 +274,11 @@ export interface SprintPendingNextStepsSurvey {
   groups: SprintPendingNextStepGroups | null;
   /** s91-m06: null when the survey is unavailable. */
   lease: SprintNextStepLease | null;
+  /**
+   * s108-m02: open rows waiting until a date, out of the groups and the prompt to resolve them; no
+   * close drops them before the day. Null when the survey is unavailable.
+   */
+  waiting: SprintPendingNextStep[] | null;
 }
 
 /**
@@ -483,6 +498,19 @@ export async function rbookSprintComplete(
       // transaction-safe (no 12-step rebuild), but ensuring it pre-BEGIN keeps the
       // rename out of the closeout transaction and mirrors the firehose pattern.
       warnings.push(...(ensureAuthorNamespaceColumns(client).warnings ?? []));
+      // s108-m02 — a lease drop records its reason by the row's stable id, so the genesis columns and
+      // the reasons table are prepared here, before BEGIN, where a migration may run. A failure is
+      // said and never blocks the close: the drops then go ahead without their reason.
+      const nextStepsTable = client.getOne<{ name: string }>(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'next_steps'",
+        []
+      );
+      const reasonsUnready =
+        nextStepsTable.success && nextStepsTable.data ? prepareNextStepReasons(client) : null;
+      if (reasonsUnready)
+        warnings.push(
+          `Next-step reasons cannot be kept by this close: ${reasonsUnready.message} A lease drop goes ahead without its reason.`
+        );
 
       // --- s87-m02: THE PRE-CLOSE SNAPSHOT. The undo handle for the store's most destructive
       // write, and the reason this close is reversible at all.
@@ -786,7 +814,9 @@ export async function rbookSprintComplete(
         client,
         nextStepsSurvey.lease?.lapsed ?? [],
         completedAt,
-        leaseSink
+        leaseSink,
+        reasonsUnready ? null : leaseDropReason(sprintId),
+        warnings
       );
 
       // --- Lifecycle Trigger: Archive sprint-scoped decisions/learnings ---
@@ -1329,6 +1359,7 @@ function surveyPendingNextSteps(
     totalOpen: null,
     groups: null,
     lease: null,
+    waiting: null,
   };
   // s91-m06: every OPEN row (pending and carried). Ages are computed HERE, before
   // completeSprintRecord writes this sprint's end_date, so the closing sprint never counts
@@ -1339,10 +1370,11 @@ function surveyPendingNextSteps(
     sprint_id: string | null;
     mission_id: string | null;
     status: 'pending' | 'carried';
+    resolved_at: string | null;
     closes_survived: number;
     age_days: number | null;
   }>(
-    `SELECT n.id, n.content, n.sprint_id, n.mission_id, n.status,
+    `SELECT n.id, n.content, n.sprint_id, n.mission_id, n.status, n.resolved_at,
             ${CLOSES_SURVIVED_SQL} AS closes_survived,
             ${LEASE_AGE_DAYS_SQL} AS age_days
        FROM next_steps n
@@ -1367,6 +1399,7 @@ function surveyPendingNextSteps(
     noSprintProvenance: [],
   };
 
+  const waiting: SprintPendingNextStep[] = [];
   for (const row of rows.data) {
     const item: SprintPendingNextStep = {
       id: row.id,
@@ -1377,7 +1410,11 @@ function surveyPendingNextSteps(
       closesSurvived: row.closes_survived,
       ageDays: row.age_days,
     };
-    if (row.sprint_id === null) {
+    // s108-m02: a row waiting until a date is not open work yet, so it is not put to the closer.
+    const { waitsUntil } = nextStepWait(row.status, row.resolved_at);
+    if (waitsUntil) {
+      waiting.push({ ...item, waitsUntil });
+    } else if (row.sprint_id === null) {
       groups.noSprintProvenance.push(item);
     } else if (row.sprint_id !== sprintId) {
       groups.otherSprintProvenance.push(item);
@@ -1393,6 +1430,7 @@ function surveyPendingNextSteps(
     totalPending: rows.data.filter((row) => row.status === 'pending').length,
     totalOpen: rows.data.length,
     groups,
+    waiting,
     lease: {
       warnAt: LEASE_WARN_AT,
       lapseAt: LEASE_LAPSE_AT,
@@ -1441,9 +1479,12 @@ function dropLapsedNextSteps(
   client: RbookDatabaseClient,
   lapsedIds: readonly number[],
   droppedAt: string,
-  writeSink: { failures: WriteFailure[] }
+  writeSink: { failures: WriteFailure[] },
+  reason: string | null,
+  warnings: string[]
 ): number[] {
   const dropped: number[] = [];
+  const reasonless: string[] = [];
   for (const id of lapsedIds) {
     const result = recordedExecute(
       client,
@@ -1451,8 +1492,22 @@ function dropLapsedNextSteps(
         WHERE id = ? AND status IN ('pending','carried')`,
       [droppedAt, id]
     );
-    if (countWrite(result, writeSink, `next_steps.lease_drop #${id}`) > 0) dropped.push(id);
+    if (countWrite(result, writeSink, `next_steps.lease_drop #${id}`) === 0) continue;
+    dropped.push(id);
+    // s108-m02: the drop's reason, in this close's transaction. One that cannot be kept is said and
+    // never undoes the drop.
+    if (reason === null) continue;
+    try {
+      writeNextStepReason(client, id, reason, 'dropped', droppedAt);
+    } catch (error) {
+      reasonless.push(`#${id} (${error instanceof Error ? error.message : String(error)})`);
+    }
   }
+  if (reasonless.length)
+    warnings.push(`A lease drop's reason was not kept for ${reasonless.join(', ')}.`);
+  // On a shared record the drops travel and their reasons do not, which the answer says.
+  if (reason !== null && dropped.length > reasonless.length && isRecordedStore(client))
+    warnings.push(SHARED_REASON_NOTE);
   return dropped;
 }
 
@@ -2057,25 +2112,35 @@ export function formatSprintCompleteForLLM(
         );
       }
     }
+    const waiting = data.nextStepsSurvey.waiting ?? [];
+    if (waiting.length > 0)
+      lines.push(
+        `Waiting until a date (left out of the open work; no close drops them before it): ${waiting
+          .map((row) => `#${row.id} until ${row.waitsUntil}`)
+          .join(', ')}`
+      );
+    // s108-m02: a row this close dropped is no longer open, so it is not put to the closer again.
+    const droppedNow = new Set(data.lapsedDroppedIds);
+    const open = (rows: SprintPendingNextStep[]) => rows.filter((row) => !droppedNow.has(row.id));
     formatPendingNextStepGroup(
       lines,
       'Closing sprint with mission provenance (not delivery)',
-      data.nextStepsSurvey.groups.closingSprintWithMissionProvenance
+      open(data.nextStepsSurvey.groups.closingSprintWithMissionProvenance)
     );
     formatPendingNextStepGroup(
       lines,
       'Closing sprint without mission provenance',
-      data.nextStepsSurvey.groups.closingSprintWithoutMissionProvenance
+      open(data.nextStepsSurvey.groups.closingSprintWithoutMissionProvenance)
     );
     formatPendingNextStepGroup(
       lines,
       'Other sprint provenance',
-      data.nextStepsSurvey.groups.otherSprintProvenance
+      open(data.nextStepsSurvey.groups.otherSprintProvenance)
     );
     formatPendingNextStepGroup(
       lines,
       'No sprint provenance',
-      data.nextStepsSurvey.groups.noSprintProvenance
+      open(data.nextStepsSurvey.groups.noSprintProvenance)
     );
     lines.push('Resolve explicitly with one valid action:');
     lines.push(

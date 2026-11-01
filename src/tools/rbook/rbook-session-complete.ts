@@ -17,6 +17,8 @@ import { z } from 'zod';
 import * as crypto from 'crypto';
 import { withClientAsync, type RbookDatabaseClient } from './client';
 import { genesisColumns, getProjectId, tableHasColumn } from './genesis-columns';
+import { readCheckAfter, SHARED_DATE_NOTE } from './next-step-dates';
+import { isRecordedStore } from './record-recording';
 import { recordedExecute, recordedTransaction, recordedWrite } from './record-changes';
 import type { RbookToolResult, Session, Context } from './types';
 import { createError, createSuccess, RbookErrors, RBOOK_ERROR_CODES } from './errors';
@@ -56,6 +58,16 @@ import {
   ONLY_COPY_SOURCE_SUFFIX,
   snapshotStorage,
 } from './snapshot-content-policy';
+
+/** s108-m02: the line that says a captured date had passed when the close wrote its row. */
+export function datesPassedLine(
+  passed: ReadonlyArray<{ id: number | null; checkAfter: string }>
+): string {
+  const rows = passed
+    .map((row) => `${row.id === null ? 'a next step' : `#${row.id}`} (${row.checkAfter})`)
+    .join(', ');
+  return `Written without the date it was captured with, which had come by this close: ${rows}. Carry it with a later checkAfter to date it again.`;
+}
 
 /**
  * Result of session complete operation.
@@ -113,6 +125,12 @@ export interface RbookSessionCompleteResult {
    * one made since 4.2.1 is found by the dedup and not counted; one made before it is.
    */
   nextStepsExtracted: number;
+
+  /**
+   * s108-m02: next steps this close wrote from a dated capture whose day had already come, so they
+   * were written undated, with now as their anchor; a past day never becomes one (design, N2).
+   */
+  datesPassed?: Array<{ id: number | null; checkAfter: string }>;
 
   /**
    * Number of decisions from the `decisions[]` parameter or decision-category
@@ -658,6 +676,7 @@ export async function rbookSessionComplete(
       // only a tiebreaker in the cross-store merge key and both orderings are equally valid
       // within one call — noted so a reviewer does not read it as a regression.
       let nextStepsExtracted = 0;
+      const datesPassed: Array<{ id: number | null; checkAfter: string }> = [];
 
       // (a) capture-sourced next-steps FIRST — these can carry a per-capture missionId.
       // s100-m03: a capture since 4.2.1 wrote its row when captured, and the dedup below finds it; this
@@ -687,25 +706,45 @@ export async function rbookSessionComplete(
           // mission it belongs to, which is strictly better information.
           const captureMissionId =
             (capture as { missionId?: string }).missionId ?? callMissionId ?? null;
+          // s108-m02: a dated capture keeps its date only while the day is still ahead. This close may
+          // run days after the capture, so the day is checked again, and one that has come is not
+          // written as an anchor: the row is written undated and the answer says so.
+          const capturedDay = (capture as { checkAfter?: unknown }).checkAfter;
+          const stillAhead =
+            typeof capturedDay === 'string' ? readCheckAfter(capturedDay, 'capture') : null;
+          const day = stillAhead && 'day' in stillAhead ? stillAhead.day : null;
           // s96-m01: on a shared store the id comes from this copy's block, under the write lock.
           const insertResult = recordedWrite(client, () => {
             const g = genesisColumns(client, 'next_steps', getProjectId(client));
             return client.execute(
-              `INSERT INTO next_steps (content, status, session_id, sprint_id, mission_id, created_at, content_hash, ${g.columns.join(', ')})
-               VALUES (?, 'pending', ?, ?, ?, ?, ?, ${g.placeholders})`,
+              `INSERT INTO next_steps (content, status, session_id, sprint_id, mission_id, created_at, resolved_at, content_hash, ${g.columns.join(', ')})
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ${g.placeholders})`,
               [
                 trimmed,
+                day ? 'carried' : 'pending',
                 sessionId,
                 (capture as { sprintId?: string }).sprintId ?? closeSprintId,
                 captureMissionId,
                 now,
+                day,
                 hash,
                 ...g.values,
               ]
             );
           });
-          if (checkWrite(insertResult, writeSink, 'next_steps extraction insert'))
+          if (checkWrite(insertResult, writeSink, 'next_steps extraction insert')) {
             nextStepsExtracted++;
+            // A dated row on a shared record says what a date does there, once per close.
+            if (day && isRecordedStore(client) && !warnings.includes(SHARED_DATE_NOTE))
+              warnings.push(SHARED_DATE_NOTE);
+            if (typeof capturedDay === 'string' && !day) {
+              const lastId = insertResult.data?.lastInsertRowid;
+              datesPassed.push({
+                id: lastId === undefined ? null : Number(lastId),
+                checkAfter: capturedDay,
+              });
+            }
+          }
         }
       }
 
@@ -924,6 +963,7 @@ export async function rbookSessionComplete(
           capturesByCategory,
           nextSteps: nextSteps && nextSteps.length > 0 ? nextSteps : null,
           nextStepsExtracted,
+          ...(datesPassed.length ? { datesPassed } : {}),
           decisionsExtracted,
           constraintsExtracted,
           aggregation,
@@ -999,6 +1039,11 @@ export function formatSessionCompleteForLLM(
     for (const step of data.nextSteps) {
       lines.push(`  - ${step}`);
     }
+  }
+
+  if (data.datesPassed?.length) {
+    lines.push('');
+    lines.push(datesPassedLine(data.datesPassed));
   }
 
   // Aggregation info

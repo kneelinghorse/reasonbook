@@ -24,7 +24,7 @@ beforeEach(() => {
 });
 afterEach(() => jest.restoreAllMocks());
 
-it('accounts for the complete predicate: 214 rejectable schema rows, one universal JSON value, nineteen handler promises', () => {
+it('accounts for the complete predicate: 214 rejectable schema rows, one universal JSON value, twenty-two handler promises', () => {
   // s104-m03 restores the complete action's existing summary requirement on the wire.
   // s106-m02 (#871) states rbook_mission's missionId requirement on the wire: one more promise.
   // s106-m03 adds page (an integer of at least 1) to rbook_feedback, rbook_mission and
@@ -32,14 +32,16 @@ it('accounts for the complete predicate: 214 rejectable schema rows, one univers
   // s106-m05 states seven more requirements on the wire (the search queries of context, decisions,
   // learnings and session; session's title, content and summary); dispatch-description-promises
   // holds each to its handler's refusal.
-  expect(rows).toHaveLength(234);
+  // s108-m02 states three bounds on the wire: reason's 500 characters and both checkAfter windows,
+  // held to their handlers' refusals there too.
+  expect(rows).toHaveLength(237);
   expect(new Set(rows.map(constraintKey)).size).toBe(rows.length);
   expect(schemaRows).toHaveLength(215);
   expect(rejectable).toHaveLength(214);
   expect(
     cases.filter((item) => item.args === undefined).map((item) => constraintKey(item.row))
   ).toEqual(['rbook_context /fieldUpdates/items/properties/value nested-type']);
-  expect(rows.filter((row) => row.kind.startsWith('desc-'))).toHaveLength(19);
+  expect(rows.filter((row) => row.kind.startsWith('desc-'))).toHaveLength(22);
 });
 
 it.each(rejectable.map(({ row, args }) => [constraintKey(row), row, args] as const))(

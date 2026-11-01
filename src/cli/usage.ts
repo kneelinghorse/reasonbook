@@ -28,7 +28,9 @@ const OPTIONS: Readonly<
       'format',
     ],
   },
-  capture: { values: [...ROOT, 'session-id', 'category', 'content', 'mission', 'format'] },
+  capture: {
+    values: [...ROOT, 'session-id', 'category', 'content', 'mission', 'check-after', 'format'],
+  },
   session: { values: [...ROOT, 'session-id'] },
   ambient: { values: ROOT },
   profile: { values: ROOT },
@@ -38,7 +40,7 @@ const OPTIONS: Readonly<
     values: [...ROOT, 'since', 'until', 'baseline-since', 'baseline-until', 'include-project'],
     switches: ['export'],
   },
-  feedback: { values: [...ROOT, 'content', 'format'], switches: ['dry-run'] },
+  feedback: { values: [...ROOT, 'content', 'format', 'rule'], switches: ['dry-run', 'apply'] },
   drafts: { values: [...ROOT, 'format'], switches: ['all'] },
   migrate: { values: [...ROOT, 'project'], switches: ['apply', 'docs-only', 'config'] },
   sync: {
@@ -148,12 +150,17 @@ export function unexpectedArgument(verb: string, argv: readonly string[]): strin
     }
   }
   // Author names intentionally accept several words; the config handler validates its action.
+  // s108-m04: feedback takes a word only as one of its two commands, so other words keep --content's hint.
   const limit =
     verb === 'config'
       ? words[0]?.value === 'author'
         ? Infinity
         : 1
-      : (POSITIONAL_LIMIT[verb] ?? 0);
+      : verb === 'feedback'
+        ? ['resolve-fixed', 'reopen-fixed'].includes(words[0]?.value ?? '')
+          ? 1
+          : 0
+        : (POSITIONAL_LIMIT[verb] ?? 0);
   if (words.length <= limit) return null;
   const word = boundErrorValue(words[limit].value.replace(/[\r\n]/g, ' '));
   const level = verb === 'init' && ['ledger', 'planner', 'builder'].includes(words[limit].value);
@@ -171,9 +178,13 @@ export const USAGE =
   '  review --format=context        the record digest, for an agent\n' +
   '  relevant --query <text>        decisions and learnings that match, as previews\n' +
   '  decisions record --session-id <id> --content <headline> [--context <why>] [--mode autonomous]\n' +
-  '  capture --session-id <id> --category <c> --content <text>\n' +
+  '  capture --session-id <id> --category <c> --content <text> [--check-after <day>]\n' +
   '  feedback --content <text> [--dry-run] [--format json]\n' +
   '                                 file friction now, without a session or mission\n' +
+  '  feedback resolve-fixed [--apply] [--format json]\n' +
+  "                                 list, or resolve, this project's rows a shipped release fixed\n" +
+  '  feedback reopen-fixed --rule <id>[@<revision>] [--format json]\n' +
+  '                                 reopen the rows a fix rule resolved that nobody changed since\n' +
   '  session ensure|close --session-id <id>\n' +
   '  ambient [on|off|digest-off]    how present Reasonbook is in this project\n' +
   '  init [--level ledger|planner|builder] [--no-hooks] [--name <n>]\n' +

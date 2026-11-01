@@ -222,7 +222,7 @@ function snapshot(
         [sprintId]
       )[0] ?? null)
     : null;
-  const { work, nextSteps, stepCount, localTasks } = digestWork(
+  const { work, nextSteps, stepCount, waiting, dueMissions, localTasks } = digestWork(
     client,
     level,
     local,
@@ -270,6 +270,8 @@ function snapshot(
     learnings: recent(recordRows(client, 'learnings'), 'l', 3, now, writer),
     work,
     nextSteps,
+    ...(waiting ? { waitingSteps: waiting } : {}),
+    ...(dueMissions ? { dueMissions } : {}),
     drafts: isDirectoryEdition(env) ? [] : pendingUnexpired(client, env, now),
     shared,
   };

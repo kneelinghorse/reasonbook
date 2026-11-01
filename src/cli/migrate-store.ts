@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// ABOUTME: Holds an offline migration guard while checkpointing, backing up and renaming a record.
+// ABOUTME: Holds the record's exclusive lock and a migration guard while it backs up and renames it.
 // ABOUTME: A durable journal rolls an interrupted cutover back without overwriting another writer.
 import fs from 'fs';
 import path from 'path';
@@ -22,6 +22,30 @@ interface Journal {
   readonly journalMode: string;
   phase: 'prepared' | 'folder' | 'database' | 'committed';
 }
+
+/**
+ * s108-m05: whether a record may have synced with a peer, which is what a 4.1 to 4.9 server's sync
+ * list remembers: it keeps a project it once saw shared, after its route is forgotten (round 3).
+ * Only a readable store with no record_peers table, which a record's first peer makes and no
+ * release drops, never did.
+ */
+export function mayHaveSynced(dbPath: string): boolean {
+  let db: Database.Database | undefined;
+  try {
+    db = new Database(dbPath, { readonly: true, fileMustExist: true, timeout: 250 });
+    return Boolean(
+      db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'record_peers'").get()
+    );
+  } catch {
+    // Not read, so not known never to have synced.
+    return true;
+  } finally {
+    db?.close();
+  }
+}
+
+/** s108-m05: a test-only seam between a move's final open-file check and its first rename. */
+export const cutoverSeams = { beforeRename: (): void => undefined };
 
 /** Flush each phase before its rename, so recovery sees an intent even after a process crash. */
 export function writeMigrationState(file: string, data: unknown): void {
@@ -101,6 +125,26 @@ export function recoverMigration(root: string, coordinated = false): boolean {
   }
 }
 
+/**
+ * s108-m05: the journal's folders sit in this root by device and inode, so a move begun through one
+ * spelling of the folder recovers through any other (E5 F12), as the coordinator matches them.
+ */
+function namesRoot(journal: Journal, root: string): boolean {
+  if (typeof journal.source !== 'string' || typeof journal.destination !== 'string') return false;
+  const parent = path.dirname(journal.source);
+  if (
+    path.basename(journal.source) !== LEGACY.recordDirectory ||
+    journal.destination !== path.join(parent, 'rbook')
+  )
+    return false;
+  try {
+    const [recorded, current] = [fs.statSync(parent), fs.statSync(root)];
+    return recorded.dev === current.dev && recorded.ino === current.ino;
+  } catch {
+    return false;
+  }
+}
+
 function recoverOwnedMigration(root: string): boolean {
   const file = path.join(root, JOURNAL);
   const lock = path.join(root, LOCK);
@@ -117,19 +161,22 @@ function recoverOwnedMigration(root: string): boolean {
       `Migration guard at ${lock} has a live or unknown owner; no files were changed.`
     );
   if (owner) {
-    if (
-      owner.source !== path.join(root, LEGACY.recordDirectory) ||
-      owner.destination !== path.join(root, 'rbook')
-    )
+    if (!namesRoot(owner, root))
       throw new Error(`Invalid recovery paths in ${file}; no files were changed.`);
-    if (owner.phase === 'committed') {
-      verify(path.join(owner.destination, 'db', 'rbook.sqlite'), owner.journalMode);
+    // Recovery works through this call's spelling of the folders the journal named.
+    const journal: Journal = {
+      ...owner,
+      source: path.join(root, LEGACY.recordDirectory),
+      destination: path.join(root, 'rbook'),
+    };
+    if (journal.phase === 'committed') {
+      verify(path.join(journal.destination, 'db', 'rbook.sqlite'), journal.journalMode);
       writeMigrationState(path.join(root, PENDING), {
-        backup: owner.backup,
+        backup: journal.backup,
         remaining: 'documents and registration',
       });
       release(root);
-    } else rollback(root, owner);
+    } else rollback(root, journal);
   } else release(root);
   return true;
 }
@@ -145,36 +192,64 @@ export function moveRecord(root: string, checkProcesses = true): { backup: strin
     );
   if (fs.lstatSync(source).isSymbolicLink())
     throw new Error(`Refusing a symlinked record directory: ${source}`);
+  // s108-m05 (round 2): the rename would overwrite a store already named rbook.sqlite in the old
+  // folder, and a journal or log under that name would be applied to the moved store when it opens.
+  for (const suffix of ['', '-wal', '-shm', '-journal']) {
+    const stray = path.join(source, 'db', `rbook.sqlite${suffix}`);
+    // lstat, so a link there, even one to nothing, is not replaced unseen (round 3).
+    if (fs.lstatSync(stray, { throwIfNoEntry: false }))
+      throw new Error(
+        `Refusing migration because ${stray} already exists and the move would overwrite or apply it; inspect it before retrying.`
+      );
+  }
   fs.mkdirSync(lock);
   writeMigrationState(path.join(lock, 'owner.json'), { pid: process.pid });
   let journal: Journal | undefined;
+  // s108-m05: one connection holds the record's exclusive lock from the backup through both renames,
+  // so a handle any process opens meanwhile can write nothing (E5 F8). Copying or reading the file
+  // another way in this process would silently drop that lock, so the backup is VACUUM INTO.
+  let held: Database.Database | undefined;
+  const letGo = () => {
+    if (held?.open) held.close();
+  };
   try {
-    if (checkProcesses) assertNoRecordProcesses();
-    assertNoOpenFiles(source);
     const dbPath = path.join(source, 'db', LEGACY.databaseFile);
+    // A 4.1 to 4.9 server that syncs a record ends at a sync during its move (round 2), so a record
+    // that may ever have synced waits for every runtime (round 3).
+    if (checkProcesses) assertNoRecordProcesses(mayHaveSynced(dbPath) ? 'shared' : 'pre-guard');
+    assertNoOpenFiles(source);
     if (fs.lstatSync(dbPath).nlink > 1)
       throw new Error(`Refusing a hardlinked database: ${dbPath}`);
     if (fs.lstatSync(dbPath).isSymbolicLink())
       throw new Error(`Refusing a symlinked database: ${dbPath}`);
-    const db = new Database(dbPath, { fileMustExist: true, timeout: 0 });
+    held = new Database(dbPath, { fileMustExist: true, timeout: 0 });
     const backupRelative = path.join('db', 'snapshots', `pre-migrate-${randomUUID()}.sqlite`);
-    let journalMode = 'delete';
-    try {
-      journalMode = String(db.pragma('journal_mode', { simple: true }));
-      const checkpoint = db.pragma('wal_checkpoint(TRUNCATE)') as Array<{ busy: number }>;
-      if (checkpoint.some((row) => row.busy !== 0))
-        throw new Error('Database checkpoint is busy; close all clients before migration.');
-      db.pragma('locking_mode = EXCLUSIVE');
-      db.pragma('journal_mode = DELETE');
-      db.exec('BEGIN EXCLUSIVE; COMMIT;');
-      const wal = `${dbPath}-wal`;
-      if (fs.existsSync(wal) && fs.statSync(wal).size !== 0)
-        throw new Error(`Uncheckpointed WAL remains at ${wal}; nothing was moved.`);
-      fs.mkdirSync(path.join(source, 'db', 'snapshots'), { recursive: true });
-      fs.copyFileSync(dbPath, path.join(source, backupRelative), fs.constants.COPYFILE_EXCL);
-    } finally {
-      db.close();
-    }
+    const journalMode = String(held.pragma('journal_mode', { simple: true }));
+    const checkpoint = held.pragma('wal_checkpoint(TRUNCATE)') as Array<{ busy: number }>;
+    if (checkpoint.some((row) => row.busy !== 0))
+      throw new Error('Database checkpoint is busy; close all clients before migration.');
+    // The switch from WAL comes first: made under the exclusive mode, its rollback journal would
+    // stay until the close, which comes after the renames and no longer finds it (round 1).
+    const beside = (suffix: string) => fs.existsSync(`${dbPath}${suffix}`);
+    const [hadWal, hadJournal] = [beside('-wal'), beside('-journal')];
+    held.pragma('journal_mode = DELETE');
+    held.pragma('locking_mode = EXCLUSIVE');
+    held.exec('BEGIN EXCLUSIVE; COMMIT;');
+    const wal = `${dbPath}-wal`;
+    if (fs.existsSync(wal) && fs.statSync(wal).size !== 0)
+      throw new Error(`Uncheckpointed WAL remains at ${wal}; nothing was moved.`);
+    // From the switch to the lock another process could switch the store back to WAL or leave a
+    // journal, which would stay behind under the old name; the move refuses instead (round 2).
+    if (
+      String(held.pragma('journal_mode', { simple: true })) !== 'delete' ||
+      (!hadWal && beside('-wal')) ||
+      (!hadJournal && beside('-journal'))
+    )
+      throw new Error(
+        'Another process used the record as the move began; nothing was moved. Retry once it is done.'
+      );
+    fs.mkdirSync(path.join(source, 'db', 'snapshots'), { recursive: true });
+    held.prepare('VACUUM INTO ?').run(path.join(source, backupRelative));
     const ignore = path.join(source, '.gitignore');
     journal = {
       pid: process.pid,
@@ -199,7 +274,9 @@ export function moveRecord(root: string, checkProcesses = true): { backup: strin
       updated += `${updated && !updated.endsWith('\n') ? '\n' : ''}${pattern}\n`;
     }
     fs.writeFileSync(ignore, updated);
-    assertNoOpenFiles(source);
+    // Nothing but this process's held connection may have the record open now.
+    assertNoOpenFiles(source, process.pid);
+    cutoverSeams.beforeRename();
     journal.phase = 'folder';
     writeMigrationState(file, journal);
     fs.renameSync(source, destination);
@@ -209,6 +286,7 @@ export function moveRecord(root: string, checkProcesses = true): { backup: strin
       path.join(destination, 'db', LEGACY.databaseFile),
       path.join(destination, 'db', 'rbook.sqlite')
     );
+    letGo();
     verify(path.join(destination, 'db', 'rbook.sqlite'), journalMode);
     journal.phase = 'committed';
     writeMigrationState(file, journal);
@@ -219,6 +297,8 @@ export function moveRecord(root: string, checkProcesses = true): { backup: strin
     release(root);
     return { backup: journal.backup };
   } catch (error) {
+    // Rollback's own open-file check must not find this process's handle.
+    letGo();
     if (journal && journal.phase !== 'committed') {
       try {
         rollback(root, journal);

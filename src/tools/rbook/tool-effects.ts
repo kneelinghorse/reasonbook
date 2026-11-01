@@ -249,6 +249,21 @@ export function deriveEffectAnnotations(
   };
 }
 
+/**
+ * s108-m01 (#809, narrowed): the full edition omits a false readOnlyHint or idempotentHint, which
+ * the MCP spec and Claude Code both read as false when absent, to free wire room. destructiveHint
+ * and openWorldHint always stay: Claude Code reads their absence as false, the opposite of the spec.
+ * The directory edition keeps all four, because a directory review reads them.
+ */
+export function fullEditionAnnotations(annotations: EffectAnnotations): Partial<EffectAnnotations> {
+  return {
+    ...(annotations.readOnlyHint ? { readOnlyHint: true } : {}),
+    destructiveHint: annotations.destructiveHint,
+    ...(annotations.idempotentHint ? { idempotentHint: true } : {}),
+    openWorldHint: annotations.openWorldHint,
+  };
+}
+
 /** Fail loudly on an unclassified tool rather than publishing misleading safety hints. */
 export function toolEffectMetadata(name: string): {
   title: string;

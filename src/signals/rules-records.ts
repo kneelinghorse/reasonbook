@@ -143,7 +143,7 @@ export function nextStepsLapsing(ctx: RecordsContext): SignalEntry {
   let lapseDue = 0;
   const due: Array<{ anchor: number; id: number; closes: number }> = [];
   for (const row of rows) {
-    // The lease's anchor: the last carry, else the creation (COALESCE(resolved_at, created_at)).
+    // The lease's anchor: a dated row's day or the last carry, else the creation (COALESCE(resolved_at, created_at)).
     const anchor = timeOf(row.resolved_at ?? row.created_at);
     if (!Number.isFinite(anchor)) {
       undated += 1;

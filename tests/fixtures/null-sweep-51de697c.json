@@ -1,0 +1,388 @@
+{
+  "recordedOn": "51de697c",
+  "rule": "each call sends every key its tool declares as null, then its own args and the temp projectRoot; isError, error.code and, where the answer has one, affected are compared",
+  "calls": [
+    {
+      "tool": "rbook_session",
+      "args": {
+        "action": "list"
+      },
+      "isError": false,
+      "code": null
+    },
+    {
+      "tool": "rbook_session",
+      "args": {
+        "action": "start"
+      },
+      "isError": true,
+      "code": "MISSING_PARAMETER"
+    },
+    {
+      "tool": "rbook_session",
+      "args": {
+        "action": "capture"
+      },
+      "isError": true,
+      "code": "MISSING_PARAMETER"
+    },
+    {
+      "tool": "rbook_session",
+      "args": {
+        "action": "complete"
+      },
+      "isError": true,
+      "code": "MISSING_PARAMETER"
+    },
+    {
+      "tool": "rbook_session",
+      "args": {
+        "action": "search"
+      },
+      "isError": true,
+      "code": "MISSING_PARAMETER"
+    },
+    {
+      "tool": "rbook_context",
+      "args": {
+        "action": "view"
+      },
+      "isError": false,
+      "code": null
+    },
+    {
+      "tool": "rbook_context",
+      "args": {
+        "action": "update"
+      },
+      "isError": false,
+      "code": null
+    },
+    {
+      "tool": "rbook_context",
+      "args": {
+        "action": "condense"
+      },
+      "isError": false,
+      "code": null
+    },
+    {
+      "tool": "rbook_context",
+      "args": {
+        "action": "snapshot"
+      },
+      "isError": true,
+      "code": "MISSING_PARAMETER"
+    },
+    {
+      "tool": "rbook_context",
+      "args": {
+        "action": "history"
+      },
+      "isError": false,
+      "code": null
+    },
+    {
+      "tool": "rbook_context",
+      "args": {
+        "action": "search"
+      },
+      "isError": true,
+      "code": "INVALID_PARAMETER"
+    },
+    {
+      "tool": "rbook_context",
+      "args": {
+        "action": "next_steps"
+      },
+      "isError": false,
+      "code": null,
+      "affected": 0
+    },
+    {
+      "tool": "rbook_context",
+      "args": {
+        "action": "next_steps",
+        "nextStepAction": "list"
+      },
+      "isError": false,
+      "code": null,
+      "affected": 0
+    },
+    {
+      "tool": "rbook_context",
+      "args": {
+        "action": "next_steps",
+        "nextStepAction": "show"
+      },
+      "isError": true,
+      "code": "MISSING_PARAMETER"
+    },
+    {
+      "tool": "rbook_context",
+      "args": {
+        "action": "next_steps",
+        "nextStepAction": "complete"
+      },
+      "isError": true,
+      "code": "MISSING_PARAMETER"
+    },
+    {
+      "tool": "rbook_context",
+      "args": {
+        "action": "next_steps",
+        "nextStepAction": "carry"
+      },
+      "isError": false,
+      "code": null,
+      "affected": 0
+    },
+    {
+      "tool": "rbook_context",
+      "args": {
+        "action": "next_steps",
+        "nextStepAction": "drop"
+      },
+      "isError": true,
+      "code": "MISSING_PARAMETER"
+    },
+    {
+      "tool": "rbook_context",
+      "args": {
+        "action": "next_steps",
+        "nextStepAction": "reopen"
+      },
+      "isError": true,
+      "code": "MISSING_PARAMETER"
+    },
+    {
+      "tool": "rbook_context",
+      "args": {
+        "action": "constraints"
+      },
+      "isError": false,
+      "code": null,
+      "affected": 0
+    },
+    {
+      "tool": "rbook_context",
+      "args": {
+        "action": "constraints",
+        "constraintAction": "list"
+      },
+      "isError": false,
+      "code": null,
+      "affected": 0
+    },
+    {
+      "tool": "rbook_context",
+      "args": {
+        "action": "constraints",
+        "constraintAction": "review"
+      },
+      "isError": false,
+      "code": null,
+      "affected": 0
+    },
+    {
+      "tool": "rbook_context",
+      "args": {
+        "action": "constraints",
+        "constraintAction": "archive"
+      },
+      "isError": false,
+      "code": null,
+      "affected": 0
+    },
+    {
+      "tool": "rbook_context",
+      "args": {
+        "action": "constraints",
+        "constraintAction": "reaffirm"
+      },
+      "isError": true,
+      "code": "MISSING_PARAMETER"
+    },
+    {
+      "tool": "rbook_session",
+      "args": {
+        "action": "capture",
+        "category": "next-step",
+        "content": "Null sweep step one"
+      },
+      "isError": false,
+      "code": null
+    },
+    {
+      "tool": "rbook_session",
+      "args": {
+        "action": "capture",
+        "category": "next-step",
+        "content": "Null sweep step two"
+      },
+      "isError": false,
+      "code": null
+    },
+    {
+      "tool": "rbook_session",
+      "args": {
+        "action": "capture",
+        "category": "next-step",
+        "content": "Null sweep step three"
+      },
+      "isError": false,
+      "code": null
+    },
+    {
+      "tool": "rbook_session",
+      "args": {
+        "action": "capture",
+        "category": "constraint",
+        "content": "Null sweep constraint"
+      },
+      "isError": false,
+      "code": null
+    },
+    {
+      "tool": "rbook_session",
+      "args": {
+        "action": "capture",
+        "content": "Null sweep context note"
+      },
+      "isError": false,
+      "code": null
+    },
+    {
+      "tool": "rbook_session",
+      "args": {
+        "action": "start",
+        "title": "Null sweep session"
+      },
+      "isError": false,
+      "code": null
+    },
+    {
+      "tool": "rbook_session",
+      "args": {
+        "action": "complete",
+        "summary": "Null sweep summary"
+      },
+      "isError": false,
+      "code": null
+    },
+    {
+      "tool": "rbook_session",
+      "args": {
+        "action": "search",
+        "query": "sweep"
+      },
+      "isError": false,
+      "code": null
+    },
+    {
+      "tool": "rbook_context",
+      "args": {
+        "action": "snapshot",
+        "source": "null-sweep"
+      },
+      "isError": false,
+      "code": null
+    },
+    {
+      "tool": "rbook_context",
+      "args": {
+        "action": "search",
+        "query": "sweep"
+      },
+      "isError": false,
+      "code": null
+    },
+    {
+      "tool": "rbook_context",
+      "args": {
+        "action": "next_steps",
+        "nextStepAction": "show",
+        "nextStepIds": [1]
+      },
+      "isError": false,
+      "code": null,
+      "affected": 1
+    },
+    {
+      "tool": "rbook_context",
+      "args": {
+        "action": "next_steps",
+        "nextStepAction": "complete",
+        "nextStepIds": [1]
+      },
+      "isError": false,
+      "code": null,
+      "affected": 1
+    },
+    {
+      "tool": "rbook_context",
+      "args": {
+        "action": "next_steps",
+        "nextStepAction": "reopen",
+        "nextStepIds": [1]
+      },
+      "isError": false,
+      "code": null,
+      "affected": 1
+    },
+    {
+      "tool": "rbook_context",
+      "args": {
+        "action": "next_steps",
+        "nextStepAction": "drop",
+        "nextStepIds": [2]
+      },
+      "isError": false,
+      "code": null,
+      "affected": 1
+    },
+    {
+      "tool": "rbook_context",
+      "args": {
+        "action": "next_steps",
+        "nextStepAction": "carry",
+        "nextStepIds": [3]
+      },
+      "isError": false,
+      "code": null,
+      "affected": 1
+    },
+    {
+      "tool": "rbook_context",
+      "args": {
+        "action": "next_steps",
+        "nextStepAction": "carry"
+      },
+      "isError": false,
+      "code": null,
+      "affected": 2
+    },
+    {
+      "tool": "rbook_context",
+      "args": {
+        "action": "constraints",
+        "constraintAction": "reaffirm",
+        "constraintId": 1
+      },
+      "isError": false,
+      "code": null,
+      "affected": 1
+    },
+    {
+      "tool": "rbook_context",
+      "args": {
+        "action": "constraints",
+        "constraintAction": "archive",
+        "constraintIds": [1]
+      },
+      "isError": false,
+      "code": null,
+      "affected": 1
+    }
+  ]
+}

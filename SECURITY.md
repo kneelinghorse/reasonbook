@@ -16,7 +16,7 @@ baked default host without an environment setting.
 
 ## MCP tool annotations
 
-Every published tool has a human-readable title and all four MCP effect hints. The explicit
+Every published tool has a human-readable title and MCP effect hints. The explicit
 action inventory in [tool-effects.ts](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/tool-effects.ts)
 is checked against the published actions and the security read/write taxonomy. Hints describe the
 union of every action's effects and the common MCP dispatch effects, following
@@ -24,9 +24,13 @@ union of every action's effects and the common MCP dispatch effects, following
 Deletion, overwriting content or status, cancellation, revoking access and sending messages count
 as destructive. An undo path does not turn an overwrite into an additive operation.
 
-**All current tools advertise `readOnlyHint: false`, `destructiveHint: true` and
-`idempotentHint: false`.** Every MCP call, including a read or refusal, can append local telemetry;
-the same append expires old monthly telemetry files. That deletion counts conservatively as
+**All current tools are destructive, not read-only and not idempotent.** The full edition
+publishes `destructiveHint: true` and omits `readOnlyHint` and `idempotentHint`, whose absence the
+MCP specification reads as `false`, to keep its tool text under its size limit. The directory
+edition publishes all four: `readOnlyHint: false`, `destructiveHint: true`, `idempotentHint: false`
+and `openWorldHint: false`. Whether OpenAI's review accepts the full edition's omitted hints has
+not been checked. Every MCP call, including a read or refusal, can append local telemetry; the
+same append expires old monthly telemetry files. That deletion counts conservatively as
 destructive, with no exemption for operational logs. Opening a project can also let the configured
 upload scheduler pay upload debt from an earlier write. A configured upload may therefore follow
 a read; its destination is the user's bounded dashboard account.
@@ -566,4 +570,4 @@ subagent type (e.g. the `Explore` agent) — that is a mitigation, not the machi
 
 ---
 
-_Last verified against the source for release 4.9.0._
+_Last verified against the source for release 4.10.0._

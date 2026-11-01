@@ -169,8 +169,8 @@ describe('the weekly brief (s97-m03)', () => {
     );
     expect(text).toContain('- partly: 1 blocked mission (m-9)');
     expect(text).not.toMatch(/gone:/);
-    // Only Stuck has an item: the five other sections say so.
-    expect(text.match(/- Nothing\./g)?.length).toBe(5);
+    // Only Stuck has an item: the six other sections say so.
+    expect(text.match(/- Nothing\./g)?.length).toBe(6);
   });
 
   it('refuses a time or a window it cannot read: the caller’s error', () => {
@@ -344,6 +344,7 @@ describe('the weekly brief (s97-m03)', () => {
     expect(brief.sections.map((s) => s.id)).toEqual([
       'needs_a_decision',
       'stuck',
+      'due',
       'gone_quiet',
       'drifting',
       'friction',
@@ -354,5 +355,9 @@ describe('the weekly brief (s97-m03)', () => {
       projectId: 'birch-7f3a',
       ids: ['P3', 'strategic_decisions:01M5DFZ6D0KA3PG18VTXK3TRPR/status', 'missions:s2-m1/name'],
     });
+    // s108-m03: cedar's report predates work_due, so only Atlas has work that is due.
+    expect(brief.sections[2].items).toEqual([
+      expect.objectContaining({ projectId: 'atlas', ids: ['a3-m05', 'n:44'] }),
+    ]);
   });
 });

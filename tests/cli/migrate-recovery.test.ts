@@ -213,7 +213,7 @@ describe('quiescence is evidence, not a checkpoint assumption', () => {
       signal: null,
       error: new Error('missing lsof'),
     });
-    expect(() => assertNoOpenFiles(root)).toThrow('Cannot establish offline quiescence');
+    expect(() => assertNoOpenFiles(root)).toThrow('Cannot establish that no other process');
   });
   it('refuses an old configured Codex plugin and malformed installed-plugin metadata', () => {
     fs.mkdirSync(path.join(home, '.codex'));
@@ -227,7 +227,7 @@ describe('quiescence is evidence, not a checkpoint assumption', () => {
     fs.writeFileSync(path.join(home, '.claude/plugins/installed_plugins.json'), '{ invalid');
     expect(() => assertModernClients(home)).toThrow();
   });
-  it('refuses even a current on-disk version because an idle runtime can retain a cached path', () => {
+  it('the config move refuses even a current on-disk version, which a record move lets run', () => {
     const packageDir = path.join(tmp, 'runtime');
     fs.mkdirSync(path.join(packageDir, 'dist'), { recursive: true });
     fs.writeFileSync(
@@ -245,7 +245,10 @@ describe('quiescence is evidence, not a checkpoint assumption', () => {
       status: 0,
       signal: null,
     });
+    // Every server holds the registry open for its life (E5 F11). A record's move relies on the
+    // in-project guard every 4.x release checks, with its lock held through the renames (s108-m05).
     expect(() => assertNoRecordProcesses()).toThrow('record runtime');
+    expect(() => assertNoRecordProcesses('pre-guard')).not.toThrow();
   });
   it('previews config without opening its registry or creating a backup', async () => {
     const config = path.join(home, '.config', LEGACY.configDirectory);
@@ -289,6 +292,20 @@ describe('owned seed files and registration follow-ups', () => {
       `${LEGACY.proseName} is our chosen name here. Call rbook_review; see ${LEGACY.recordDirectory}/notes.\n`
     );
   });
+  it('finishes the move of a store with no metadata table, owing no follow-up', async () => {
+    // s108-m05 (round 1): such a store moved, then every retry failed on the missing table, and
+    // its pending follow-up never cleared.
+    const db = new Database(oldDb);
+    db.exec('DROP TABLE metadata');
+    db.close();
+    const result = await migrateProject(options());
+    expect({ success: result.success, error: result.error }).toEqual({
+      success: true,
+      error: undefined,
+    });
+    expect(fs.existsSync(path.join(root, 'rbook/db/rbook.sqlite'))).toBe(true);
+    expect(fs.existsSync(path.join(root, PENDING))).toBe(false);
+  });
   it('refuses a hardlinked database before making a backup', async () => {
     fs.linkSync(oldDb, path.join(tmp, 'shared.sqlite'));
     const result = await migrateProject(options());
@@ -315,6 +332,66 @@ describe('cutover phase boundaries preserve committed data', () => {
     expect(result.error?.message).toContain('checkpoint');
     expect(fs.existsSync(oldDb)).toBe(true);
     expect(fs.existsSync(path.join(root, 'rbook'))).toBe(false);
+    const db = new Database(oldDb, { readonly: true });
+    expect(db.prepare("SELECT value FROM metadata WHERE key='project_id'").get()).toBeDefined();
+    db.close();
+  });
+  it.each(['', '-journal'])(
+    'refuses a legacy folder already holding rbook.sqlite%s, overwriting and applying nothing (round 2)',
+    async (suffix) => {
+      // The rename would overwrite a store under the new name, and open the moved store over a
+      // journal under it; 4.9.0 overwrote it, and neither copy kept its rows.
+      const stray = path.join(root, LEGACY.recordDirectory, 'db', `rbook.sqlite${suffix}`);
+      fs.writeFileSync(stray, 'a stray file the move must not touch');
+      const result = await migrateProject(options());
+      expect(result).toMatchObject({
+        success: false,
+        error: { message: expect.stringContaining('already exists') },
+      });
+      expect(fs.readFileSync(stray, 'utf8')).toBe('a stray file the move must not touch');
+      expect(fs.existsSync(oldDb)).toBe(true);
+      expect(fs.existsSync(path.join(root, 'rbook'))).toBe(false);
+      expect(fs.existsSync(path.join(root, '.rbook-migration.lock'))).toBe(false);
+    }
+  );
+  it('refuses a link to nothing where the moved store goes, and leaves the link (round 3)', async () => {
+    // existsSync follows a link, so one to nothing read as absent and the rename replaced it.
+    const stray = path.join(root, LEGACY.recordDirectory, 'db', 'rbook.sqlite');
+    fs.symlinkSync(path.join(tmp, 'nowhere.sqlite'), stray);
+    const result = await migrateProject(options());
+    expect(result).toMatchObject({
+      success: false,
+      error: { message: expect.stringContaining('already exists') },
+    });
+    expect(fs.readlinkSync(stray)).toBe(path.join(tmp, 'nowhere.sqlite'));
+    expect(fs.existsSync(oldDb)).toBe(true);
+  });
+  it('refuses when another program switches the store to WAL as the move takes its lock (round 2)', async () => {
+    // From the switch to DELETE until the exclusive lock, nothing is locked; a WAL switch there
+    // would leave a log under the old name, so the move refuses and moves nothing.
+    const pragma = Database.prototype.pragma;
+    const spy = jest.spyOn(Database.prototype, 'pragma').mockImplementation(function (
+      this: Database.Database,
+      sql: string,
+      opts?: any
+    ): any {
+      const result = pragma.call(this, sql, opts);
+      if (sql === 'journal_mode = DELETE') {
+        const other = new Database(oldDb);
+        pragma.call(other, 'journal_mode = WAL');
+        other.close();
+      }
+      return result;
+    });
+    const result = await migrateProject(options());
+    spy.mockRestore();
+    expect(result).toMatchObject({
+      success: false,
+      error: { message: expect.stringContaining('Another process used the record') },
+    });
+    expect(fs.existsSync(oldDb)).toBe(true);
+    expect(fs.existsSync(path.join(root, 'rbook'))).toBe(false);
+    expect(fs.existsSync(path.join(root, '.rbook-migration.lock'))).toBe(false);
     const db = new Database(oldDb, { readonly: true });
     expect(db.prepare("SELECT value FROM metadata WHERE key='project_id'").get()).toBeDefined();
     db.close();

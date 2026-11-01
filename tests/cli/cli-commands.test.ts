@@ -206,6 +206,55 @@ describe('s93-m01 — capture and session need a harness session (fork 8)', () =
     expect(fs.readFileSync(dbPath).includes('raw-cli-session')).toBe(false);
   });
 
+  it('s108-m02: a next-step capture takes --check-after, and its row waits until that day', async () => {
+    const day = new Date(Date.now() + 20 * 86_400_000).toISOString().slice(0, 10);
+    const ran = await run([
+      'capture',
+      '--session-id',
+      'dated-cli-session',
+      '--category',
+      'next-step',
+      '--content',
+      'Dated from the command line.',
+      '--check-after',
+      day,
+    ]);
+    expect(ran.code).toBe(0);
+    expect(ran.stdout).toContain(`Waits until ${day}`);
+    expect(
+      query(
+        'SELECT status, resolved_at FROM next_steps WHERE content = ?',
+        'Dated from the command line.'
+      )
+    ).toEqual([{ status: 'carried', resolved_at: day }]);
+    const refused = await run([
+      'capture',
+      '--session-id',
+      'dated-cli-session',
+      '--category',
+      'learning',
+      '--content',
+      'Not a next step.',
+      '--check-after',
+      day,
+    ]);
+    expect(refused.code).toBe(1);
+    // The flag with no day would write the row undated, so it is refused before anything is written.
+    const bare = await run([
+      'capture',
+      '--session-id',
+      'dated-cli-session',
+      '--category',
+      'next-step',
+      '--content',
+      'No day given.',
+      '--check-after',
+    ]);
+    expect(bare.code).toBe(1);
+    expect(bare.stderr.join(' ')).toContain('pass --check-after <day>');
+    expect(query('SELECT id FROM next_steps WHERE content = ?', 'No day given.')).toEqual([]);
+  });
+
   it('session ensure opens one session per harness session, and close closes it', async () => {
     const first = await run(['session', 'ensure', '--session-id', 'raw-adapter']);
     const again = await run(['session', 'ensure', '--session-id', 'raw-adapter']);

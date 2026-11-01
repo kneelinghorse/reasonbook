@@ -17,14 +17,15 @@ import { draftRuntimeDir } from './draft-runtime';
 
 /**
  * The signals that need a person, which the review shows for every other project (the design's
- * mission 7): drafts awaiting a decision, next steps near their lease, blocked missions and a
- * shared copy's unsettled conflicts.
+ * mission 7): drafts awaiting a decision, next steps near their lease, blocked missions, a shared
+ * copy's unsettled conflicts and, from s108-m03, work whose date has come.
  */
 export const PERSON_SIGNALS = [
   'drafts_pending',
   'next_steps_lapsing',
   'missions_blocked',
   'shared_conflicts',
+  'work_due',
 ] as const satisfies readonly SignalKind[];
 
 const PERSON_KEYS: Readonly<Record<(typeof PERSON_SIGNALS)[number], keyof PersonSignals>> = {
@@ -32,6 +33,7 @@ const PERSON_KEYS: Readonly<Record<(typeof PERSON_SIGNALS)[number], keyof Person
   next_steps_lapsing: 'lapsing',
   missions_blocked: 'blocked',
   shared_conflicts: 'conflicts',
+  work_due: 'due',
 };
 
 /** One project's person-needing counts; a signal that is zero or unavailable is left out. */
@@ -40,6 +42,7 @@ export interface PersonSignals {
   lapsing?: number;
   blocked?: number;
   conflicts?: number;
+  due?: number;
 }
 
 /** The store file a registered project root holds, which keys the machine's draft runtime. */
@@ -49,7 +52,7 @@ function storeFile(store: ProjectGraphEntry): string {
 
 /**
  * The person-needing counts of the store the fan-out holds open, with this machine's draft runtime,
- * and whether any of the four could not be read there (a missing table is not a failure).
+ * and whether any of the five could not be read there (a missing table is not a failure).
  */
 export function personSignalsOf(
   db: Database.Database,
@@ -86,6 +89,7 @@ export function personSignalsPhrase(signals: PersonSignals): string {
   if (signals.blocked) parts.push(counted(signals.blocked, 'blocked mission', 'blocked missions'));
   if (signals.conflicts)
     parts.push(counted(signals.conflicts, 'unsettled conflict', 'unsettled conflicts'));
+  if (signals.due) parts.push(counted(signals.due, 'item due', 'items due'));
   return parts.join(', ');
 }
 

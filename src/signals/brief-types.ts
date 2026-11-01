@@ -14,6 +14,7 @@ export interface BriefOptions {
 export type BriefSectionId =
   | 'needs_a_decision'
   | 'stuck'
+  | 'due'
   | 'gone_quiet'
   | 'drifting'
   | 'friction'

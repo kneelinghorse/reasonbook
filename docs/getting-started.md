@@ -21,16 +21,16 @@ Pick one:
 
 ```bash
 # Recommended: a global install of this release. It starts from disk, with no registry lookup.
-npm install -g @aquex/reasonbook@4.9.0
+npm install -g @aquex/reasonbook@4.10.0
 
 # Or run on demand via npx: pinned, and preferring the local cache. The first launch downloads
 # the package; later launches reuse the npm cache.
-npx --prefer-offline -y @aquex/reasonbook@4.9.0
+npx --prefer-offline -y @aquex/reasonbook@4.10.0
 ```
 
 If you installed only a plugin, its private runtime does not add `reasonbook` to your terminal
 PATH. For any CLI example here, replace `reasonbook` with
-`npx --prefer-offline -y @aquex/reasonbook@4.9.0`, or install the pinned global CLI above.
+`npx --prefer-offline -y @aquex/reasonbook@4.10.0`, or install the pinned global CLI above.
 
 If the former package is installed globally, run `npm uninstall -g @aquex/cmos-mcp` first. Version 4 provides only the `reasonbook` command; update scripts and MCP configurations that use the old command.
 
@@ -39,7 +39,7 @@ Verify it starts:
 ```bash
 reasonbook --version  # if globally installed
 # or
-npx --prefer-offline -y @aquex/reasonbook@4.9.0 --version
+npx --prefer-offline -y @aquex/reasonbook@4.10.0 --version
 ```
 
 Semantic (vector) search is optional: without it, retrieval is keyword-only and the install is about
@@ -53,7 +53,7 @@ Claude Code and Codex are verified; the other blocks follow each client's own MC
 ### Claude Code
 
 ```bash
-claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.9.0"]}'
+claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.10.0"]}'
 claude mcp list   # confirm it's registered
 ```
 
@@ -71,7 +71,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS), 
       "args": [
         "--prefer-offline",
         "-y",
-        "@aquex/reasonbook@4.9.0",
+        "@aquex/reasonbook@4.10.0",
         "--project-root",
         "/absolute/path/to/your/project"
       ]
@@ -94,7 +94,7 @@ Edit `~/.cursor/mcp.json`:
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.9.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.10.0"]
     }
   }
 }
@@ -109,7 +109,7 @@ Edit your Zed `settings.json`:
   "context_servers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.9.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.10.0"]
     }
   }
 }
@@ -130,7 +130,7 @@ your terminal PATH, so the terminal route needs the standalone Claude CLI.
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.9.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.10.0"]
     }
   }
 }
@@ -298,13 +298,31 @@ resolution time and note. Fleet entries use opaque project-qualified ids such as
 `project-id:feedback:12`, which local mutation calls refuse. For a sibling disposition, request
 action through an explicitly authorized message to that project.
 
+Feedback that a shipped release already fixed is marked where it is read. Each list labels such a
+row "fixed in X (rule)", or "partly fixed in X" when it also names something else, and counts
+every row in three groups (`countsByGroup`): fixed by a shipped release, about Reasonbook, and
+about the project's own work, with the rules that sorted them. In a project, the dry run lists the
+rows a shipped release fixed; `--apply` resolves those still open with no note, naming the release
+in each row's note and leaving a triaged or noted row to its person; and `reopen-fixed` gives back
+the rows a rule resolved that nobody has changed since and its ledger still names:
+
+```bash
+reasonbook feedback resolve-fixed
+reasonbook feedback resolve-fixed --apply
+reasonbook feedback reopen-fixed --rule reads.fan-out-every-project
+```
+
+Only the project the command runs in is changed; another project's rows are labelled, never
+resolved.
+
 ## What needs a person, across your projects
 
-`reasonbook signals` reads every project registered on this machine, read-only, and reports nine
+`reasonbook signals` reads every project registered on this machine, read-only, and reports ten
 signals for each: drafts awaiting a decision, next steps about to lapse, records due for review,
 rows citing a replaced decision, blocked missions, open agent friction by kind, days since the
-newest row in the record's six main tables, constraints about to expire, and a shared copy's
-unsettled conflicts.
+newest row in the record's six main tables, constraints about to expire, a shared copy's
+unsettled conflicts, and work whose date has come: next steps dated with `checkAfter` and deferred
+missions dated with `deferUntil`.
 
 ```bash
 reasonbook signals
@@ -314,8 +332,8 @@ reasonbook signals --project-root /path/to/project --format json
 Each signal gives its count and up to 5 row ids (20, and the rule that counted it, with
 `--format json`). A signal the store cannot answer, such as drafts in a store made before drafts
 existed, reads unavailable with its reason, never zero. A draft also expires after three session
-starts, which only this machine's draft runtime records. `rbook_review` shows the four signals that need a person
-(drafts, next steps about to lapse, blocked missions and conflicts) for up to eight of your other
+starts, which only this machine's draft runtime records. `rbook_review` shows the five signals that need a person
+(drafts, next steps about to lapse, blocked missions, conflicts and work that is due) for up to eight of your other
 projects, in its portfolio.
 
 The signals come from a library, `@aquex/reasonbook/signals`: `readSignals(storePath, { now })`
@@ -328,7 +346,7 @@ portfolio stores after one second; unfinished coverage is reported as unreadable
 is checked between synchronous reads, so it cannot interrupt a query already executing.
 
 `reasonbook brief` turns those reports into a one-page weekly brief: what needs a decision, what is
-stuck, what has gone quiet, what is drifting, the week's friction and what moved, five items a
+stuck, what is due, what has gone quiet, what is drifting, the week's friction and what moved, five items a
 section with every listed row named by its id. `--days` sets the window (7 by default) and
 `--format json` prints the sections as data. The same renderer, `renderBrief`, gives the same bytes
 for the same reports on any machine.

@@ -173,7 +173,7 @@ Consolidated mission state-machine tool with action parameter support. Actions: 
 | `action` | string | yes | Transition action: start \| complete \| block \| unblock \| drop \| defer \| reopen |
 | `missionId` | string | yes | The mission ID to transition |
 | `reason` | string | no | Reason for block/drop/defer/reopen (required for block/reopen) |
-| `deferUntil` | string | no | Hint about when to re-queue for defer action (e.g., "after sprint 48") |
+| `deferUntil` | string | no | defer: when to re-queue. A day after today, up to 180 days ahead (YYYY-MM-DD, a month, or a date-time reduced to its UTC day), brings the mission back as due that day; other text, such as "after the API ships", is kept as a hint |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |
 
 ### rbook_mission_transition(action="reopen")
@@ -354,6 +354,8 @@ Consolidated context tool with action parameter support. Actions: view, update, 
 | `nextStepStatus` | string | no | Filter status for next_steps list (default: every open row, pending and carried, with its lease age) |
 | `nextStepIds` | array | no | Next-step IDs for full show, historical list lookup (includes moved/dropped rows and pointers unless explicitly status-filtered), or complete/carry/drop/reopen |
 | `carryToSprint` | string | no | Existing target sprint ID for carry; missing targets are refused by name. Create one with rbook_sprint(action="add"), or omit to park with no target |
+| `reason` | string | no | complete/drop: why, at most 500 characters, shown with the row while it keeps that status and time. Exchanges do not send it to the other copies of a shared record; a whole-store copy or upload carries it |
+| `checkAfter` | string | no | carry with nextStepIds: the day the rows wait until (YYYY-MM-DD, a month, or a date-time reduced to its UTC day), after today and at most 180 days ahead. They leave the open work until then and are due from it |
 | `missionId` | string | no | list/carry: only next steps recorded for this mission |
 | `page` | integer | no | Page number for history, the view digest, the next_steps list and constraints list/review |
 | `pageSize` | integer | no | Page size for history, the view digest (1), the next_steps list (15) and constraints (list 4, review 6) |
@@ -428,6 +430,7 @@ Consolidated session tool with action parameter support. Actions: list, start, c
 | `content` | string | no | Capture content for capture action |
 | `context` | string | no | Additional context for capture action |
 | `expiresAt` | string | no | Optional expiry date for constraint captures (ISO 8601, e.g. "2026-03-20T00:00:00Z"). Applies to capture(category="constraint") and to constraints materialized from that capture at session complete. |
+| `checkAfter` | string | no | capture(category="next-step"): the day it waits until (YYYY-MM-DD, a month, or a date-time reduced to its UTC day), after today and at most 180 days ahead. The row leaves the open work until then, no close drops it, and it is due from that day |
 | `missionId` | string | no | Associated mission ID. On capture, stamps the decision, learning or next-step row it writes; on complete, stamps the decisions[] and nextSteps[] rows this call materializes. |
 | `evidence` | array | no | Array of TraceLab evidence references [{type, id}] for decision captures |
 | `evidence[].type` | string | yes | Evidence type |

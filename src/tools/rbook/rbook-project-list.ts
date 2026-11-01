@@ -9,7 +9,7 @@
  * @module tools/rbook/rbook-project-list
  */
 
-import { resolveRecordPaths } from '../../intelligence/legacy-compat';
+import { recordPathsUnlessMoving } from '../../intelligence/legacy-compat';
 import * as fs from 'fs';
 import { z } from 'zod';
 import { readStoredProjectAddress } from '../../intelligence/project-address';
@@ -125,7 +125,10 @@ export async function rbookProjectList(
         name: row.name ?? row.store_path,
         isDefault: row.project_id === defaultId,
         defaultApplied: row.project_id === defaultId && defaultStatus.applied,
-        dbExists: fs.existsSync(resolveRecordPaths(row.store_path).dbPath),
+        // s108-m05: a record mid-move still exists; it is being renamed.
+        dbExists: ((paths) => !paths || fs.existsSync(paths.dbPath))(
+          recordPathsUnlessMoving(row.store_path)
+        ),
         registeredAt: new Date(row.registered_at).toISOString(),
         lastAccessedAt: new Date(row.last_seen_at).toISOString(),
       };

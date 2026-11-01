@@ -82,6 +82,7 @@ import { loadTierConfig, type TierConfig } from './tier-config';
 import { appendWarnings } from './format-warnings';
 import { LEASE_IDLE_WARN_DAYS, leaseState, readLeaseAges, type LeaseAge } from './next-step-lease';
 import { previewText } from './text-preview';
+import { waitingSql } from './next-step-dates';
 import { authorNamesSince, authorReading } from './author-name';
 import { currentSessionOwner, EMPTY_AUTOMATIC_CLOSE_PATTERN } from './session-owner';
 import { levelName, levelOfTier, type ProjectLevel } from './rules-files';
@@ -1063,9 +1064,15 @@ function getLastSession(client: RbookDatabaseClient, tier: string): LastSessionD
   );
   const openItems: string[] = [];
   if (nextStepsTableExists.success && nextStepsTableExists.data) {
+    // s108-m02: a row waiting until a date is not open work yet. An old next_steps without
+    // resolved_at has no dates, so it is read as before.
+    const stepColumns = client.getMany<{ name: string }>("PRAGMA table_info('next_steps')", []);
+    const datable =
+      stepColumns.success &&
+      (stepColumns.data ?? []).some((column) => column.name === 'resolved_at');
     const openItemsResult = client.getMany<{ content: string }>(
       // s91-m06: open means pending OR carried — carried rows were invisible here.
-      `SELECT content FROM next_steps WHERE status IN ('pending','carried') ORDER BY id DESC LIMIT 10`,
+      `SELECT content FROM next_steps WHERE status IN ('pending','carried')${datable ? ` AND NOT ${waitingSql('resolved_at')}` : ''} ORDER BY id DESC LIMIT 10`,
       []
     );
     if (openItemsResult.success && openItemsResult.data) {

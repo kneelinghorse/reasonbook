@@ -10,6 +10,9 @@
 - cedar: 2 next steps about to lapse (n:5, n:6), 2 at the next close, oldest 2026-05-20
 - Atlas (atlas): 1 blocked mission (a3-m02); 4 next steps about to lapse (n:31, n:7, n:40, …), 1 at the next close, oldest 2026-07-02
 
+## Due
+- Atlas (atlas): 2 items due (a3-m05, n:44), oldest since 2026-10-15
+
 ## Gone quiet
 - cedar: 64 days without a new row
 

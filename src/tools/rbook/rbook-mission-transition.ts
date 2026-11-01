@@ -121,7 +121,9 @@ export const rbookMissionTransitionSchema = z
     deferUntil: z
       .string()
       .optional()
-      .describe('Hint about when to re-queue for defer action (e.g., "after sprint 48")'),
+      .describe(
+        'defer: when to re-queue. A day after today, up to 180 days ahead (YYYY-MM-DD, a month, or a date-time reduced to its UTC day), brings the mission back as due that day; other text, such as "after the API ships", is kept as a hint'
+      ),
     agentFeedback: z
       .string()
       .max(2000)
@@ -190,7 +192,8 @@ export const rbookMissionTransitionToolDefinition = {
       },
       deferUntil: {
         type: 'string',
-        description: 'Hint about when to re-queue for defer action (e.g., "after sprint 48")',
+        description:
+          'defer: when to re-queue. A day after today, up to 180 days ahead (YYYY-MM-DD, a month, or a date-time reduced to its UTC day), brings the mission back as due that day; other text, such as "after the API ships", is kept as a hint',
       },
       agentFeedback: {
         type: 'string',

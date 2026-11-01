@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // ABOUTME: reasonbook doctor's record checks: stale permissions, project moves, the config folder and the registry.
-// ABOUTME: Pure functions over the read-only snapshot; a migrate fix carries one note that migrate needs every client closed.
+// ABOUTME: Pure functions over the read-only snapshot; a migrate fix carries a note of what the move waits for.
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -381,12 +381,24 @@ export function recordChecks(inputs: DoctorInputs, ctx: CheckContext): void {
   const config = configChecks(inputs, ctx);
   registryChecks(inputs, ctx);
   refusalChecks(inputs, ctx, projects.guarded, config.guarded);
-  if (projects.migrates || config.migrates)
+  // s108-m05: a record's move waits for runtimes older than 4.0, not for every runtime; the config
+  // move, for all. Only a move or recovery of a record runs the check (round 1).
+  if (projects.guarded)
+    ctx.add({
+      id: 'migrate-waits-for-old-runtimes',
+      severity: 'note',
+      summary:
+        'migrate moves a record while Reasonbook 4.0 or later keeps running, even in that project, and refuses while a runtime older than 4.0, or one whose version it cannot read, runs on this machine or a program has a file in the record open; a record whose store has ever had a sync peer waits for every runtime. Its dry run lists what its checks of runtimes, clients and open files would refuse. After the move, restart agent sessions working in that project, or tell them: they may still write to its old cmos/ paths.',
+      evidence: [],
+      fix: null,
+      order: 6,
+    });
+  if (config.migrates)
     ctx.add({
       id: 'migrate-needs-quiet-machine',
       severity: 'note',
       summary:
-        'migrate refuses while any Reasonbook server or hook runs on this machine: close every Claude Code, Codex and other client first.',
+        'migrate --config refuses while any Reasonbook server or hook runs on this machine: close every Claude Code, Codex and other client first.',
       evidence: [],
       fix: null,
       order: 6,

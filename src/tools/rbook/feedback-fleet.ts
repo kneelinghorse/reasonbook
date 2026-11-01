@@ -16,6 +16,12 @@ import type {
 } from './rbook-feedback';
 import type { AgentFeedbackStatus } from './schema-migrations';
 import { classifyFeedback, countFeedbackKinds } from '../../signals/feedback-kinds';
+import {
+  feedbackFixOf,
+  type FeedbackFixVerdict,
+  type FeedbackGroup,
+} from '../../signals/feedback-fixes';
+import { groupCounts } from './feedback-fix-labels';
 import { pageFacts, pageRequest } from './answer-page';
 
 export interface FeedbackStoreCount {
@@ -34,6 +40,8 @@ interface FeedbackCounts {
   countsByStatus: Record<string, number>;
   /** s97-m07: the store's matching rows by kind; absent from a count-only read. */
   countsByKind?: Record<FeedbackRowKind, number>;
+  /** s108-m04: the store's matching rows in the three groups, the count-only read included. */
+  countsByGroup?: Record<FeedbackGroup, number>;
   absent: boolean;
 }
 interface FeedbackQueryRow extends CrossStoreRow {
@@ -50,6 +58,8 @@ interface FeedbackQueryRow extends CrossStoreRow {
   resolutionNote: string | null;
   /** s97-m07: classified from the stored text, before any framing. */
   kind: FeedbackRowKind;
+  /** s108-m04: the shipped release that fixed what the row reports. */
+  fix?: FeedbackFixVerdict;
 }
 
 /**
@@ -149,16 +159,23 @@ export async function readFeedbackFleet(
         for (const name of ['id', 'body', 'created_at'])
           if (!columns.has(name)) throw new Error(`agent_feedback lacks ${name}`);
         const optional = (name: string): string => (columns.has(name) ? name : 'NULL');
-        // s97-m07: the kinds read every matching row's own text; the count-only digest reads none.
-        const byKind = options.countOnly
-          ? undefined
-          : kindCounts(
-              (
-                db.prepare(`SELECT body FROM agent_feedback ${where}`).all(...values) as Array<{
-                  body: string | null;
-                }>
-              ).map((row) => row.body)
-            );
+        // s97-m07: the kinds read every matching row's own text. s108-m04: so do the three groups,
+        // in the count-only digest too.
+        // A reopen's marker in fix_rule keeps every rule from counting the row as fixed, but a newer
+        // revision of the rule it names.
+        const fixRule = columns.has('fix_rule') ? 'fix_rule' : 'NULL';
+        const texts = db
+          .prepare(
+            `SELECT body, status, created_at AS createdAt, ${fixRule} AS fixRule FROM agent_feedback ${where}`
+          )
+          .all(...values) as Array<{
+          body: string | null;
+          status: string;
+          createdAt: string;
+          fixRule: string | null;
+        }>;
+        const byGroup = groupCounts(texts);
+        const byKind = options.countOnly ? undefined : kindCounts(texts.map((row) => row.body));
         const rows = options.countOnly
           ? []
           : (
@@ -168,18 +185,25 @@ export async function readFeedbackFleet(
         ${optional('session_id')} AS sessionId, ${optional('sprint_id')} AS sprintId,
         ${optional('mission_id')} AS missionId, ${optional('project_id')} AS projectId,
         created_at AS createdAt, ${optional('resolved_at')} AS resolvedAt,
-        ${optional('resolution_note')} AS resolutionNote,
+        ${optional('resolution_note')} AS resolutionNote, ${fixRule} AS fixRule,
         COALESCE(ROUND((julianday(created_at)-2440587.5)*86400000),0) AS occurred_at,
         id AS origin_seq, ? AS project_id FROM agent_feedback ${where}
         ORDER BY occurred_at DESC,id DESC LIMIT ?`
                 )
                 .all(store.project_id, ...values, cap) as FeedbackQueryRow[]
-            ).map((row) => ({ ...row, kind: classifyFeedback(row.body).kind }));
+            ).map((row) => {
+              const { fixRule: stored, ...rest } = row as FeedbackQueryRow & {
+                fixRule: string | null;
+              };
+              const fix = feedbackFixOf({ ...rest, fixRule: stored });
+              return { ...rest, kind: classifyFeedback(row.body).kind, ...(fix ? { fix } : {}) };
+            });
         counts.set(store.project_id, {
           totalCount: total.n,
           countsByTool: Object.fromEntries(byTool.map((row) => [row.key, row.n])),
           countsByStatus: Object.fromEntries(byStatus.map((row) => [row.key, row.n])),
           ...(byKind ? { countsByKind: byKind } : {}),
+          countsByGroup: byGroup,
           absent: false,
         });
         return rows;
@@ -191,6 +215,7 @@ export async function readFeedbackFleet(
   const countsByStatus: Record<string, number> = Object.create(null);
   // s97-m07: summed only from stores that were read; an unavailable store's rows are not zero.
   const countsByKind = options.countOnly ? undefined : kindCounts([]);
+  const countsByGroup: Record<FeedbackGroup, number> = { fixed: 0, reasonbook: 0, own: 0 };
   let totalCount = 0;
   for (const store of stores) {
     const error = errors.get(store.project_id);
@@ -217,6 +242,9 @@ export async function readFeedbackFleet(
     if (countsByKind && count.countsByKind)
       for (const [key, n] of Object.entries(count.countsByKind) as Array<[FeedbackRowKind, number]>)
         countsByKind[key] += n;
+    if (count.countsByGroup)
+      for (const [key, n] of Object.entries(count.countsByGroup) as Array<[FeedbackGroup, number]>)
+        countsByGroup[key] += n;
   }
   const entries: AgentFeedbackEntry<string>[] = result.results
     .slice(request.offset)
@@ -239,6 +267,7 @@ export async function readFeedbackFleet(
     countsByTool,
     countsByStatus,
     ...(countsByKind ? { countsByKind } : {}),
+    countsByGroup,
     limit,
     page: facts.page,
     hasMore: facts.hasMore,
@@ -268,7 +297,11 @@ export async function feedbackDigestLine(
     if (!coverage.complete)
       return 'Fleet feedback: coverage incomplete. rbook_feedback list acrossProjects=true';
     const read = coverage.stores.filter((store) => store.state !== 'unavailable').length;
-    const line = `Fleet feedback: ${result.totalCount} open; ${read}/${coverage.stores.length} stores.`;
+    // s108-m04 (settled item 10): the three groups fit in the line; their rule is in the fleet view.
+    const groups = result.countsByGroup
+      ? ` (${result.countsByGroup.fixed} fixed, ${result.countsByGroup.reasonbook} Reasonbook, ${result.countsByGroup.own} own)`
+      : '';
+    const line = `Fleet feedback: ${result.totalCount} open${groups}; ${read}/${coverage.stores.length} stores.`;
     const action = ' rbook_feedback list acrossProjects=true';
     return line.length + action.length <= 100 ? line + action : line;
   } catch {

@@ -91,6 +91,12 @@ const STATUS_WRITES: ReadonlyArray<{ key: string; kind: Kind; why: string }> = [
     why: 'complete/drop',
   },
   {
+    // s108-m02: the same complete or drop, written with its reason in one transaction.
+    key: 'tools/rbook/rbook-next-steps.ts|next_steps|?',
+    kind: 'caller-requested',
+    why: 'complete/drop with a reason',
+  },
+  {
     key: 'tools/rbook/rbook-next-steps.ts|next_steps|pending',
     kind: 'caller-requested',
     why: 'reopen',

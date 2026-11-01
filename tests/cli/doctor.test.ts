@@ -333,6 +333,23 @@ describe('reasonbook doctor (s107-m03, #815)', () => {
     expect(report.findings.find((f) => f.id === 'project-legacy-layout')?.fix).toBe(
       `${CLI} migrate --project ${roots[0]}, then the same with --apply`
     );
+    // s108-m05: a record's move waits for runtimes older than 4.0, so no quiet-machine note.
+    expect(report.findings.filter((f) => /^migrate-(?:waits|needs)/.test(f.id))).toEqual([
+      expect.objectContaining({
+        id: 'migrate-waits-for-old-runtimes',
+        summary: expect.stringContaining('keeps running, even in that project'),
+      }),
+    ]);
+  });
+
+  it('says what a move waits for only where a record still moves, not for a pending follow-up', async () => {
+    // A follow-up runs no process check (s108-m05 round 1), so its project gets no runtime note.
+    const pending = project('pending-only', 'rbook');
+    put(path.join(pending, '.rbook-migration-pending.json'), {});
+    await registry(path.join(home, '.config/rbook'), [{ id: 'pending-only', root: pending }]);
+    const { ids } = await doctor();
+    expect(ids).toContain('project-move-pending');
+    expect(ids).not.toContain('migrate-waits-for-old-runtimes');
   });
 
   it('old cmos_ permission names are fixes; a current tool permission is not', async () => {

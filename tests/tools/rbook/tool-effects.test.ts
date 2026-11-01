@@ -31,6 +31,7 @@ import {
 import {
   COMMON_WIRE_EFFECTS,
   deriveEffectAnnotations,
+  fullEditionAnnotations,
   TOOL_EFFECTS,
   toolEffectMetadata,
 } from '../../../src/tools/rbook/tool-effects';
@@ -58,13 +59,14 @@ describe('MCP effect annotations', () => {
     '%s discloses common telemetry writes and expiration instead of promising safe retries',
     (name) => {
       const tool = getToolDefinitions().find((definition) => definition.name === name)!;
+      // s108-m01 (#809, narrowed): the full edition omits readOnlyHint and idempotentHint, whose
+      // absence means false under the MCP spec and to Claude Code. destructiveHint and openWorldHint
+      // stay, because Claude Code reads their absence as false, the opposite of the spec.
       expect(tool).toEqual(
         expect.objectContaining({
           title: expect.any(String),
           annotations: {
-            readOnlyHint: false,
             destructiveHint: true,
-            idempotentHint: false,
             // s96-m13: rbook_project's join and sync write a copy on another machine, over SSH.
             openWorldHint:
               name === 'rbook_message' || name === 'rbook_sprint' || name === 'rbook_project',
@@ -73,6 +75,24 @@ describe('MCP effect annotations', () => {
       );
     }
   );
+
+  it('keeps all four hints, as 4.9.0 published them, in the directory edition', () => {
+    // A directory review reads the hints and that edition has room, so the trim stays out of it.
+    const saved = process.env.RBOOK_EDITION;
+    process.env.RBOOK_EDITION = 'directory';
+    try {
+      const tools = getToolDefinitions();
+      expect(tools).toHaveLength(13);
+      for (const tool of tools) {
+        expect(JSON.stringify(tool.annotations)).toBe(
+          '{"readOnlyHint":false,"destructiveHint":true,"idempotentHint":false,"openWorldHint":false}'
+        );
+      }
+    } finally {
+      if (saved === undefined) delete process.env.RBOOK_EDITION;
+      else process.env.RBOOK_EDITION = saved;
+    }
+  });
 
   it('covers exactly every published action and action-less tool, so new actions cannot escape', () => {
     const published = getToolDefinitions().flatMap((tool) => {
@@ -99,7 +119,9 @@ describe('MCP effect annotations', () => {
     for (const tool of getToolDefinitions()) {
       expect(tool.title?.trim()).toBeTruthy();
       expect(tool.annotations).toEqual(
-        deriveEffectAnnotations(Object.values(TOOL_EFFECTS[tool.name].actions))
+        fullEditionAnnotations(
+          deriveEffectAnnotations(Object.values(TOOL_EFFECTS[tool.name].actions))
+        )
       );
     }
   });
@@ -111,6 +133,12 @@ describe('MCP effect annotations', () => {
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
+      openWorldHint: false,
+    });
+    // s108-m01: only a false hint may be omitted, since omission reads as false; a true one stays.
+    expect(fullEditionAnnotations(hints(['none']))).toEqual(hints(['none']));
+    expect(fullEditionAnnotations(hints(['local-write']))).toEqual({
+      destructiveHint: false,
       openWorldHint: false,
     });
     for (const effect of ['overwrite', 'delete', 'access-revocation', 'message'] as const)
@@ -376,5 +404,9 @@ describe('store witnesses and the registered MCP boundary', () => {
       destructiveHint: true,
       idempotentHint: false,
     });
+    // s108-m01: the full edition says the same by omission, which the spec reads as false.
+    const published = getToolDefinitions().find((tool) => tool.name === 'rbook_mission')!;
+    expect(published.annotations).not.toHaveProperty('readOnlyHint');
+    expect(published.annotations).not.toHaveProperty('idempotentHint');
   });
 });

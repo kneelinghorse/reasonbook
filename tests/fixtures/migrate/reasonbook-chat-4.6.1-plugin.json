@@ -1,0 +1,22 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "reasonbook-chat",
+  "version": "4.6.1",
+  "description": "Reasonbook: remember project decisions, recall their reasons, and plan what comes next in conversation.",
+  "author": {
+    "name": "Reasonbook"
+  },
+  "license": "Apache-2.0",
+  "extensions": {
+    "com.openai": {
+      "onboardingSkill": "./skills/setup/SKILL.md",
+      "interface": {
+        "displayName": "Reasonbook Chat",
+        "shortDescription": "Keep your project record in conversation",
+        "developerName": "Reasonbook",
+        "category": "Productivity",
+        "capabilities": ["Read", "Write"]
+      }
+    }
+  }
+}

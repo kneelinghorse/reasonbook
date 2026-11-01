@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // ABOUTME: Explicit migration previews the rename and applies only the requested local changes.
-// ABOUTME: The CLI bypasses telemetry so a default dry run cannot write to the project or config.
+// ABOUTME: The CLI skips telemetry; a dry run changes no record or config (SQLite may add -wal/-shm).
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -11,12 +11,22 @@ import { parseArgs, type CliIo } from './core';
 import { applyDocumentEdits, planDocumentEdits } from './migrate-docs';
 import {
   assertModernClients,
+  assertNoOpenFiles,
   assertNoRecordProcesses,
   assertProjectServerVersion,
+  modernClientProblems,
+  recordProcessProblems,
 } from './migrate-guard';
-import { moveRecord, recoverMigration, PENDING, writeMigrationState } from './migrate-store';
+import {
+  mayHaveSynced,
+  moveRecord,
+  recoverMigration,
+  PENDING,
+  writeMigrationState,
+} from './migrate-store';
 import { acquireMigrationExclusion } from './migrate-exclusion';
 import { migrateConfig } from './migrate-config';
+import { ProjectGraphRegistry } from '../intelligence/project-graph-registry';
 
 export interface MigrationOptions {
   readonly projectRoot: string;
@@ -32,6 +42,21 @@ export interface MigrationResult {
   readonly changed: string[];
   readonly left: string[];
   readonly backup?: string;
+  /**
+   * s108-m05, a dry run only: what the apply's checks would refuse now, from the project's server
+   * entries, the clients' configuration, runtimes from before 4.0 and the record's open files.
+   */
+  readonly blocked?: string[];
+}
+
+/** A check's refusal as a line of the dry run's list, or none. */
+function wouldRefuse(check: () => void): string[] {
+  try {
+    check();
+    return [];
+  } catch (error) {
+    return [error instanceof Error ? error.message : String(error)];
+  }
 }
 
 /** Only a pre-existing registration is touched; migration never adds another project. */
@@ -41,22 +66,35 @@ async function finishRegistration(root: string, env: NodeJS.ProcessEnv): Promise
   if (fs.existsSync(registryPath)) {
     const registry = new Database(registryPath, { fileMustExist: true });
     try {
-      registry
-        .prepare('UPDATE projects SET last_seen_at = ?, archived_at = NULL WHERE store_path = ?')
-        .run(Date.now(), root);
+      // s108-m05: every row naming this folder, by any spelling of it (E5 F12).
+      const rows = registry.prepare('SELECT DISTINCT store_path FROM projects').all() as Array<{
+        store_path: string;
+      }>;
+      const seen = registry.prepare(
+        'UPDATE projects SET last_seen_at = ?, archived_at = NULL WHERE store_path = ?'
+      );
+      const now = Date.now();
+      for (const { store_path: stored } of rows)
+        if (ProjectGraphRegistry.isSameFolder(stored, root)) seen.run(now, stored);
     } finally {
       registry.close();
     }
   }
   const { dbPath } = resolveRecordPaths(root);
   const db = new Database(dbPath, { fileMustExist: true, readonly: true });
-  let metadata: Record<string, string | null>;
+  let metadata: Record<string, string | null> = {};
   try {
-    const rows = db
-      .prepare(
-        "SELECT key, value FROM metadata WHERE key IN ('dashboard_project_id', 'dashboard_slug', 'dashboard_registered')"
-      )
-      .all() as Array<{ key: string; value: string | null }>;
+    // s108-m05: a store with no metadata table names no dashboard project, so its move finishes.
+    const table = db
+      .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'metadata'")
+      .get();
+    const rows = table
+      ? (db
+          .prepare(
+            "SELECT key, value FROM metadata WHERE key IN ('dashboard_project_id', 'dashboard_slug', 'dashboard_registered')"
+          )
+          .all() as Array<{ key: string; value: string | null }>)
+      : [];
     metadata = Object.fromEntries(rows.map((row) => [row.key, row.value]));
   } finally {
     db.close();
@@ -108,7 +146,7 @@ export async function migrateProject(
         fs.existsSync(path.join(root, '.rbook-migration.lock')))
     ) {
       assertModernClients(options.env.HOME ?? os.homedir());
-      if (options.checkProcesses !== false) assertNoRecordProcesses();
+      if (options.checkProcesses !== false) assertNoRecordProcesses('pre-guard');
       recoverMigration(root, true);
     }
     const paths = resolveRecordPaths(root);
@@ -129,7 +167,22 @@ export async function migrateProject(
       willMove || !paths.legacy,
       configDirectory
     );
-    if (!options.apply)
+    if (!options.apply) {
+      const home = options.env.HOME ?? os.homedir();
+      const blocked = [
+        ...wouldRefuse(() => assertProjectServerVersion(root, willMove)),
+        ...(willMove
+          ? [
+              ...modernClientProblems(home).map((problem) => problem.message),
+              ...(options.checkProcesses !== false
+                ? recordProcessProblems(mayHaveSynced(paths.dbPath) ? 'shared' : 'pre-guard').map(
+                    (problem) => problem.message
+                  )
+                : []),
+              ...wouldRefuse(() => assertNoOpenFiles(old)),
+            ]
+          : []),
+      ];
       return {
         success: true,
         data: {
@@ -140,8 +193,10 @@ export async function migrateProject(
             ...planned.edits.map((edit) => edit.file),
           ],
           left: planned.left,
+          blocked,
         },
       };
+    }
     assertProjectServerVersion(root, willMove);
     if (willMove) {
       assertModernClients(options.env.HOME ?? os.homedir());

@@ -255,6 +255,11 @@ async function capture(
     io.stderr('reasonbook capture: pass --category <c> and --content <text>.');
     return 1;
   }
+  // s108-m02: a bare flag, with no day, would write the row undated; an empty value is not given.
+  if (flags['check-after'] === 'true') {
+    io.stderr('reasonbook capture: pass --check-after <day>, a day after today as YYYY-MM-DD.');
+    return 1;
+  }
   const store = requireStore('capture', resolution, io);
   if (!store) return 1;
   const owner = await import('../tools/rbook/session-owner');
@@ -266,6 +271,7 @@ async function capture(
     category,
     content,
     ...(flags.mission && flags.mission !== 'true' ? { missionId: flags.mission } : {}),
+    ...(flags['check-after'] ? { checkAfter: flags['check-after'] } : {}),
     projectRoot: store.projectRoot,
   };
   const checked = validateRbookArguments(sessions.rbookSessionSchema, args);

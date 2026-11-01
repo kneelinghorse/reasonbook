@@ -108,12 +108,15 @@ export function resolveConfigDirectory(
   return current;
 }
 
+/** s108-m05: the in-project guard's refusal, so a starting server can tell a move from a failure. */
+export class RecordMigrationError extends Error {}
+
 export function assertNoRecordMigration(projectRoot: string): void {
   if (
     existsSync(path.join(projectRoot, '.rbook-migration.json')) ||
     existsSync(path.join(projectRoot, '.rbook-migration.lock'))
   ) {
-    throw new Error(
+    throw new RecordMigrationError(
       'Reasonbook migration is in progress or needs recovery; run reasonbook migrate --apply before opening this record.'
     );
   }
@@ -140,6 +143,19 @@ export function resolveRecordPaths(
     dbPath: path.join(directory, 'db', legacy ? LEGACY.databaseFile : 'rbook.sqlite'),
     legacy,
   };
+}
+
+/**
+ * s108-m05 (round 2): a project's record paths, or null while its record moves or its move needs
+ * recovery, so a pass over every registered project skips that one rather than failing on it.
+ */
+export function recordPathsUnlessMoving(projectRoot: string): RecordPaths | null {
+  try {
+    return resolveRecordPaths(projectRoot);
+  } catch (error) {
+    if (error instanceof RecordMigrationError) return null;
+    throw error;
+  }
 }
 
 /** Preserve case and path segments: changing a scheme must not select a different project. */

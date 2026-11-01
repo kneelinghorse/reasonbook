@@ -2,6 +2,166 @@
 
 All notable changes to Reasonbook (published as `@aquex/cmos-mcp` before 4.0.0) are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.10.0] — 2026-11-01
+
+Next steps and deferred missions can wait until a date and come back due on it, a completed or
+dropped next step can keep its reason, and feedback a shipped release already fixed is labelled,
+with a command that resolves a project's own. `reasonbook migrate --apply` moves a record without
+stopping the other Reasonbook 4.x sessions, unless the record has ever been shared, and the tool
+text now says what a sprint close and a mission transition change besides their status.
+
+### Added
+
+- A next step can wait until a date. Capture takes `checkAfter` for a next step, and so does a
+  carry that names its rows:
+  `rbook_session(action="capture", category="next-step", checkAfter=…)` and
+  `rbook_context(action="next_steps", nextStepAction="carry", nextStepIds=[…], checkAfter=…)`. The
+  date is a day after today (UTC) and at most 180 days ahead, given as `YYYY-MM-DD`, a month (its
+  first day) or a date-time (its UTC day); anything else, including a bare year or an impossible
+  date such as `2026-02-30`, is refused, and every such refusal names today's UTC date. The row is
+  carried, with no target sprint unless the carry names one, and its day is its lease anchor, so
+  no close drops it before then, on any copy: every 4.x lease reads that anchor, with code
+  unchanged since 4.0.0. List and show print `{waits until D}`, then `{due since D}` once the day
+  has come, with `waitsUntil` and `dueSince` fields. The digest leaves a waiting row out of the
+  open work, says how many wait and ranks a due row first, and onboard's open items leave a
+  waiting row out. A close lists waiting rows under "Waiting until a date", out of its prompt to
+  resolve them, and its survey's `waiting` field (each row with `waitsUntil`) holds them. A
+  capture's answer gives the stored `checkAfter`. A 4.10.0 carry keeps a date still ahead, and a
+  4.10.0 reopen of a waiting row clears it. `reasonbook capture` takes `--check-after <day>`.
+- A completed or dropped next step can keep its reason: `reason` on next-step complete and drop, at
+  most 500 characters, which list and show print and return as the row's `reason`. A close's lease
+  drop records "lease lapsed at `<sprint>` close". Reasons live in a local table outside the shared
+  record, `next_step_reasons`, keyed by the row's stable id, so a renumber keeps them; a reopen
+  deletes one, and any later change to the row's status or time, by any release, hides it.
+- A deferred mission can come back on a date. `rbook_mission_transition(action="defer", deferUntil=…)`
+  stores a `deferUntil` that reads as a day after today, up to 180 days ahead, in the forms a next
+  step's date takes, as the mission's date: `domain_fields.checkAfter`, with `checkAfterDeferredAt`
+  naming the deferral it belongs to. The answer gives it as `checkAfter`. Any other `deferUntil` is
+  kept as a hint, as before, and the answer now says nothing will bring the mission back on its
+  own. A later deferral leaves an earlier date unused: a re-defer, or an update of the status to
+  Deferred, which now stamps a new `deferredAt`.
+- Work whose date has come is shown where a person looks. The digest's open work says on a line of
+  its own how many Deferred missions have come due and names the earliest (a Planner's says
+  tasks, by name, and a Ledger keeps no missions), and mission status's next action names up to
+  three and counts the rest. A
+  new signal in `rbook.signals/1`, `work_due`, counts open next steps and Deferred missions whose
+  day has come, with `nextDueAt`, the soonest day still ahead, so a stored report read later still
+  shows work that came due after it was computed. `rbook_review` counts it for every other
+  registered project, `reasonbook signals` reports ten signals, and the weekly brief has a Due
+  section between Stuck and Gone quiet.
+
+- Feedback a shipped release fixed is labelled where it is read, and a project can resolve its
+  own. Three published rules, `FEEDBACK_FIX_RULES` in `@aquex/reasonbook/signals`, name the
+  release that fixed what a row reports: mission completion warning "No decisions captured" though
+  decisions were recorded (3.2.0), supersession offers on keyword overlap (3.2.0), and reads that
+  walked every registered project (2.1.0). A row is fixed when it is open or triaged, was filed
+  before that release's npm publish time, names the defect in its first sentence and names no
+  second item ("also", "separately", "in addition", "another issue" or a numbered list); one that
+  does is "partly fixed" and stays open.
+  `rbook_feedback` list and the fleet view label such rows and count every row in three groups,
+  `countsByGroup`: fixed by a shipped release, about Reasonbook, and about the project's own work.
+  The session-start fleet line gives the three counts, and the `feedback_open` signal gives them as
+  `groups`. `reasonbook feedback resolve-fixed` lists this project's fixed rows; `--apply` resolves
+  those still open with no note in one transaction, noting the release and rule in each row and in
+  a `feedback_fix_ledger` metadata entry, and leaves a triaged or noted row to its person.
+  `reasonbook feedback reopen-fixed --rule <id>` (or `<id>@<revision>`) reopens the rows a rule
+  resolved that nobody has changed since: still resolved at the apply's time, with the rule's
+  note, and still named by the ledger, which keeps its newest 50 entries of up to 500 rows. No rule
+  claims a reopened row again but a newer revision of the one reopened. Only the project running
+  the command is changed. New
+  feedback rows record the release they were filed on, in a `reasonbook_version` column; resolved
+  rows keep the release and rule in `fixed_in` and `fix_rule`.
+
+### Changed
+
+- `checkAfter` and `reason` are refused on every action and sub-action that does not use them,
+  rather than accepted and ignored, and so are `since` and `until` on
+  `rbook_context(action="next_steps")`, which never read them: 4.9.0 answered such a call and
+  ignored the key. A key sent as `null`, absent or blank is still not given, so a client that sends
+  `null` for every field is answered as before.
+- The close receipt no longer lists a row it has just dropped under "Resolve explicitly".
+- The test of whether a feedback row names Reasonbook, which the feedback kinds share, now also
+  counts drafts, `fromDraft` and mission status, the words agents have used for it since 4.0, so a
+  few rows that used only those words move from unclassified into a kind.
+- The tool text states what sprint complete and the mission transitions do besides their status,
+  which 4.9.0 left out for room: a sprint's close drops next steps whose lease lapsed (dated ones
+  wait), takes two database snapshots, deleting the oldest past retention, and may upload; a
+  mission's start may activate its Planned sprint, and its completion updates and snapshots the
+  context and writes `decisions[]`;
+  any transition may upload owed checkpoints. Every multi-action tool says its calls may log usage.
+  The full wire is 31,995 characters, under its 32,000 ceiling, and the directory edition says the
+  same without the uploads it never makes.
+- `reasonbook migrate --apply` moves a project's record while other sessions keep running. Of the
+  machine's runtimes it waits only for one older than 4.0: one named `cmos-mcp`, or whose manifest
+  beside its entry point gives a version below 4.0.0 or none it can read. Every 4.x release checks
+  for a move before it opens a record, so 4.0.0 and later may run on, in that project too; 4.9.0
+  refused while any Reasonbook server or hook ran. A record whose store has ever had a sync peer, or one
+  that cannot be read to tell, is the exception and still waits for every runtime: a 4.1 to 4.9
+  server keeps syncing a record it once saw shared, and ends at its next sync during the move. The move still refuses for clients configured with the legacy plugin or package, old pins in
+  `.mcp.json` and open files in the record. One connection holds the record's exclusive lock from
+  the backup, now written with `VACUUM INTO`, through both renames, so a program that opens the old
+  file mid-move cannot lose a write: each fails, or lands in the moved store. 4.9.0 closed the
+  database before renaming it, and a write in WAL mode in that window was lost. The dry run lists
+  under `blocked` what the apply's checks of server entries, clients, runtimes and open files would
+  refuse now. `migrate --config` still refuses while any Reasonbook runtime runs, since every
+  server holds the registry open, and `reasonbook doctor` states both rules. Agent sessions working
+  in a moved project may still write to its old `cmos/` paths; restart or tell them.
+
+### Fixed
+
+- A server that starts while its record moves starts, from that project's folder or with
+  `--project-root`, and refuses each call on that record until the move ends, saying to retry
+  then; 4.9.0's exited with `[FATAL]`.
+- A store with no metadata table finishes its move. 4.9.0 moved it, then failed every retry on the
+  missing table and kept its follow-up owed.
+- A move refuses a legacy folder that already holds an `rbook.sqlite`, or its log, shared memory or
+  journal, which the rename would overwrite or the moved store would take in; 4.9.0 overwrote it.
+- A server's shared-record sync skips a record mid-move and logs why; 4.9.0's server ended at that
+  tick. Listing, validating and sweeping registered projects, and the startup prune, pass over a
+  project mid-move instead of failing on it, and the prune never archives it.
+- Spellings of one project folder (a case variant, a symlink, macOS's `/System/Volumes/Data` path)
+  now share one migration coordinator, a crashed move recovers through any of them where 4.9.0
+  answered "Invalid recovery paths", and a finished move marks seen, and un-archives, every
+  registry row naming the folder.
+
+### Known limits
+
+- A carry by a release before 4.10.0 still stamps now, which erases a date; the row then gets an
+  ordinary lease. A reopen by an older release keeps the date on a row it makes pending, which a
+  4.10.0 reopen does not reach: complete or drop the row, or carry it with a new date. A session
+  close by an older release that rebuilds a dated capture's row writes it undated without a word. On a shared record, one member on an older release erases the date on every copy
+  with a broad carry, and a date and a concurrent carry of the same row conflict, the newer write
+  showing; `rbook_db(action="settle")` settles it.
+- An update of a mission's status to Deferred by a release before 4.10.0 stamps no new deferral,
+  so a date from the mission's earlier deferral counts again after it. A mission's date travels in
+  `domain_fields`, which merges as one field, so a concurrent edit of its other keys on another copy
+  of a shared record conflicts, and the conflict is shown like any other.
+- The hosted dashboard draws the brief and the signals from its own copy of the signals library, so
+  it shows `work_due` and the Due section once it updates that library to 4.10.0.
+- The feedback fix rules ship at a blind-labelled precision of at least 0.9 (8 of 8, 19 of 20 and
+  17 of 17 rows), and the labeller found every one of the 17 rows an apply resolves on this Mac
+  wholly about the fixed defect, a check taken on the same labels after the second-item words were
+  added, not a fresh measure. Two more rules were measured and left out: 4.9.0's build-freshness
+  warning in a project with no build manifest (6 of 7) and 3.2.0's sprint-close archive, which no
+  open row matched. A second complaint written as a plain sentence, with none of the words the
+  second-item test looks for, still reads as wholly fixed. With counts of a few digits, the session-start fleet line no longer has room for its
+  `rbook_feedback list acrossProjects=true` hint. The hosted dashboard shows the groups once it
+  updates its signals library.
+- No exchange sends a reason to the other copies of a shared record, and neither spin-out nor
+  import copies one. A whole-store copy carries them: a member who joins from `reasonbook copy`,
+  directly or by bundle, gets the reasons written before the copy was taken, and a checkpoint upload
+  carries the whole store to your dashboard, reasons included.
+- A dated capture whose row a session close rebuilds after its day writes the row undated; an
+  explicit close says so in its answer's `datesPassed`, and an automatic one that a later call sets
+  off in its receipt's, while a close at process exit or harness end has no reader to tell.
+- Migrate reads each runtime's version from the manifest on disk, not from the code the process
+  loaded, so a process started before an install replaced its files is judged by the newer
+  version. A process that names the package but runs no entry point the check can find refuses the
+  move as unreadable; npm 11 shows npx's own process as `npm exec`, which the check passes by, and
+  the runtime npx starts is judged by its own manifest. A program run by a relative path at a
+  Reasonbook entry point, such as `node dist/index.js` in another project, cannot be identified
+  and refuses the move until it exits, as in 4.9.0.
+
 ## [4.9.0] — 2026-10-31
 
 `reasonbook doctor` lists what in your setup is out of date, doubled up or left over from the move

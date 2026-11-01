@@ -11,6 +11,8 @@ import type {
   RbookFeedbackMutationResult,
 } from './rbook-feedback';
 import { FEEDBACK_KINDS_RULE } from '../../signals/feedback-kinds';
+import { FEEDBACK_FIXES_RULE, FEEDBACK_GROUPS_RULE } from '../../signals/feedback-fixes';
+import { fixLabel } from './feedback-fix-labels';
 import { shownLine } from './answer-page';
 
 /** s97-m07: every kind, zeros included, then unclassified, with the rule that sorted them. */
@@ -20,6 +22,19 @@ function kindLine(data: RbookFeedbackListResult<number | string>): string | null
     .map(([kind, n]) => `${kind}=${n}`)
     .join(', ');
   return `By kind: ${counts} (${FEEDBACK_KINDS_RULE}).`;
+}
+
+/** s108-m04: the three groups, with the rules that sorted them (settled item 10). */
+function groupLine(data: RbookFeedbackListResult<number | string>): string | null {
+  if (!data.countsByGroup) return null;
+  const { fixed, reasonbook, own } = data.countsByGroup;
+  return `By group: fixed=${fixed}, reasonbook=${reasonbook}, own=${own} (${FEEDBACK_GROUPS_RULE}; ${FEEDBACK_FIXES_RULE}).`;
+}
+
+/** s108-m04: where a local list has rows a shipped release fixed, the command that resolves them. */
+function resolveFixedLine(data: RbookFeedbackListResult<number | string>): string | null {
+  if (!data.countsByGroup?.fixed) return null;
+  return `${data.countsByGroup.fixed} of these rows report what a shipped release fixed: \`reasonbook feedback resolve-fixed\` lists them, and its --apply resolves those still open with no note, naming the release.`;
 }
 
 /**
@@ -49,15 +64,18 @@ export function renderFeedbackBody(
       .join(', ');
     const meta = `By tool: ${byTool || '(none)'} | All statuses: ${byStatus || '(none)'}`;
     const kinds = kindLine(d);
+    const groups = groupLine(d);
+    const resolveFixed = resolveFixedLine(d);
     // s106-m03: every row of the page, so the next page starts where the text stops.
     const lines = d.entries.map((e) => {
       const snippet = e.body.length > 140 ? `${e.body.slice(0, 137)}…` : e.body;
-      return `  #${e.id} [${e.status}] (${e.kind}) ${e.toolName} @ ${e.createdAt}\n    ${snippet}`;
+      const fixed = e.fix ? `, ${fixLabel(e.fix)}` : '';
+      return `  #${e.id} [${e.status}] (${e.kind}${fixed}) ${e.toolName} @ ${e.createdAt}\n    ${snippet}`;
     });
     const next = d.nextPageCall
       ? `\nNext page: ${d.nextPageCall}.${d.pageNote ? `\n${d.pageNote}` : ''}`
       : '';
-    return `${head}\n${meta}${kinds ? `\n${kinds}` : ''}${lines.length ? `\n${lines.join('\n')}` : ''}${next}`;
+    return `${head}\n${meta}${kinds ? `\n${kinds}` : ''}${groups ? `\n${groups}` : ''}${resolveFixed ? `\n${resolveFixed}` : ''}${lines.length ? `\n${lines.join('\n')}` : ''}${next}`;
   }
   if ('resolved' in result.data) {
     const bulk = result.data as RbookFeedbackBulkResult;
@@ -74,6 +92,7 @@ function renderFleetFeedback(data: RbookFeedbackListResult<number | string>): st
     `Fleet feedback (${coverage.complete ? 'complete' : 'partial'} coverage): ${shownLine(pageOf(data), data.entries.length, 'matching rows')}, ${data.limit} per page.`,
     'Counts include every matching row without deduplication; unavailable stores are excluded.',
     ...(kindLine(data) ? [kindLine(data)!] : []),
+    ...(groupLine(data) ? [groupLine(data)!] : []),
     ...coverage.stores.map(
       (store) =>
         `  ${store.projectId}: ${store.state === 'unavailable' ? 'unavailable' : `${store.totalCount} matching${store.state === 'absent' ? ' (no feedback table)' : ''}`}`
@@ -81,7 +100,10 @@ function renderFleetFeedback(data: RbookFeedbackListResult<number | string>): st
     'For a sibling disposition, send that project an explicitly authorized message; never write its store.',
   ];
   for (const entry of data.entries) {
-    lines.push(`  ${entry.id} (${entry.kind})`, entry.body);
+    lines.push(
+      `  ${entry.id} (${entry.kind}${entry.fix ? `, ${fixLabel(entry.fix)}` : ''})`,
+      entry.body
+    );
     if (entry.resolutionNote) lines.push(entry.resolutionNote);
   }
   if (data.nextPageCall) lines.push(`Next page: ${data.nextPageCall}.`);

@@ -1459,6 +1459,8 @@ describe('rbook_sprint_complete', () => {
         totalPending: 9,
         // s91-m06: additive — open total, per-row status and age, and the lease block.
         totalOpen: 9,
+        // s108-m02: additive — rows waiting until a date, listed apart; none here.
+        waiting: [],
         groups: {
           closingSprintWithMissionProvenance: [
             {
@@ -1593,6 +1595,8 @@ describe('rbook_sprint_complete', () => {
         totalPending: 1,
         // s91-m06: additive — open total, per-row status and age, and the lease block.
         totalOpen: 1,
+        // s108-m02: additive — rows waiting until a date, listed apart; none here.
+        waiting: [],
         groups: {
           closingSprintWithMissionProvenance: [],
           closingSprintWithoutMissionProvenance: [],
