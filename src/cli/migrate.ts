@@ -20,12 +20,16 @@ import {
 import {
   mayHaveSynced,
   moveRecord,
+  readPending,
   recoverMigration,
   PENDING,
-  writeMigrationState,
+  writePending,
 } from './migrate-store';
 import { acquireMigrationExclusion } from './migrate-exclusion';
 import { migrateConfig } from './migrate-config';
+import { exposureRefusal, planIgnores, shown, writeTwins, type IgnorePlan } from './migrate-ignore';
+import { dryBackstop } from './migrate-dry-run';
+import { recordMoveInIndex } from './migrate-index';
 import { ProjectGraphRegistry } from '../intelligence/project-graph-registry';
 
 export interface MigrationOptions {
@@ -45,8 +49,11 @@ export interface MigrationResult {
   /**
    * s108-m05, a dry run only: what the apply's checks would refuse now, from the project's server
    * entries, the clients' configuration, runtimes from before 4.0 and the record's open files.
+   * s109-m01: and git's: a submodule or ignore source in the folder, files the move would expose.
    */
   readonly blocked?: string[];
+  /** s109-m01, a dry run only: each rbook/ twin the move would add, as "<file>: <line>". */
+  readonly twins?: string[];
 }
 
 /** A check's refusal as a line of the dry run's list, or none. */
@@ -137,6 +144,7 @@ export async function migrateProject(
   let moved = false;
   let backup: string | undefined;
   let release: (() => void) | undefined;
+  const left: string[] = [];
   try {
     if (options.apply) release = acquireMigrationExclusion(root);
     if (
@@ -147,7 +155,18 @@ export async function migrateProject(
     ) {
       assertModernClients(options.env.HOME ?? os.homedir());
       if (options.checkProcesses !== false) assertNoRecordProcesses('pre-guard');
-      recoverMigration(root, true);
+      const notes: string[] = [];
+      const info: string[] = [];
+      recoverMigration(root, true, notes, info);
+      // s109-m01: a store recovery left in rollback-journal mode would move as one, so the retry
+      // waits until a client has put it back; a committed move only reports it.
+      if (notes.length && resolveRecordPaths(root).legacy)
+        throw new Error(
+          `${[...notes, ...info].join(' ')} Recovery released the migration guard; retry the move once that program ends. Nothing was moved.`
+        );
+      // A backup recovery found moves with the folder, where migrate's lines ignore it, so it is
+      // named only when the retry refuses and the record stays where it was.
+      left.push(...notes);
     }
     const paths = resolveRecordPaths(root);
     const old = path.join(root, LEGACY.recordDirectory);
@@ -169,6 +188,18 @@ export async function migrateProject(
     );
     if (!options.apply) {
       const home = options.env.HOME ?? os.homedir();
+      // s109-m01: git's refusals and the backstop, read without a write.
+      let ignores: IgnorePlan | undefined;
+      const gitBlocked = willMove
+        ? wouldRefuse(() => {
+            ignores = planIgnores(root, options.env);
+            const exposed = dryBackstop(root, ignores);
+            if (exposed.length) throw new Error(exposureRefusal(exposed));
+          })
+        : [];
+      const twins = (ignores?.chain ?? []).flatMap((link) =>
+        link.added.map((line) => `${link.file}: ${shown(line)}`)
+      );
       const blocked = [
         ...wouldRefuse(() => assertProjectServerVersion(root, willMove)),
         ...(willMove
@@ -179,7 +210,8 @@ export async function migrateProject(
                     (problem) => problem.message
                   )
                 : []),
-              ...wouldRefuse(() => assertNoOpenFiles(old)),
+              ...wouldRefuse(() => assertNoOpenFiles(old, undefined, { refuseSlowWarnings: true })),
+              ...gitBlocked,
             ]
           : []),
       ];
@@ -190,19 +222,51 @@ export async function migrateProject(
           moved: false,
           changed: [
             ...(willMove ? [`${old} -> ${path.join(root, 'rbook')}`] : []),
+            ...(ignores?.chain ?? []).filter((link) => link.added.length).map((link) => link.file),
             ...planned.edits.map((edit) => edit.file),
           ],
-          left: planned.left,
+          left: [...(ignores?.left ?? []), ...planned.left],
           blocked,
+          ...(willMove ? { twins } : {}),
         },
       };
     }
     assertProjectServerVersion(root, willMove);
     if (willMove) {
       assertModernClients(options.env.HOME ?? os.homedir());
-      ({ backup } = moveRecord(root, options.checkProcesses !== false));
+      const record = moveRecord(root, options.checkProcesses !== false, options.env);
+      backup = record.backup;
+      left.push(...record.left);
       moved = true;
     }
+    const following = !options.docsOnly && (moved || fs.existsSync(path.join(root, PENDING)));
+    const folder = readPending(root)?.folder ?? LEGACY.recordDirectory;
+    // A retry writes the twins too, comparing before it writes: a move an older release made left
+    // the root's rules naming the old folder, and its index blob alone would hold them (build critic
+    // B, round 1, note 6). The move itself wrote them before its rename.
+    // A twin step that cannot run waits with the index step, and documents and registration still
+    // run (settled item 9; round-2 verifier B).
+    let twinsWaiting: string | undefined;
+    if (following && !moved) {
+      try {
+        const retry = planIgnores(root, options.env, { folder });
+        writeTwins(retry);
+        for (const link of retry.chain)
+          if (link.added.length)
+            left.push(`${link.file}: migrate added ${link.added.map(shown).join(', ')}.`);
+      } catch (error) {
+        twinsWaiting = (error as Error).message;
+        left.push(
+          `migrate could not give the .gitignore files above the record the rbook/ twins of their rules naming ${folder}/ (${twinsWaiting}); a later reasonbook migrate --apply writes them. Until then, do not commit with git add -A or git commit -a: either would commit files under rbook/ that those rules ignore under ${folder}/.`
+        );
+      }
+    }
+    // s109-m01: git's index first, so no ordinary commit drops a moved file while a later follow-up
+    // waits; a retry runs it whenever the marker exists, whatever its text says.
+    const index = following
+      ? recordMoveInIndex(root, options.env, folder, moved)
+      : { done: true, pending: [], left: [] };
+    left.push(...index.left);
     // Re-plan against the committed directory, including retries after follow-up failures.
     const finalPaths = resolveRecordPaths(root);
     const documents = planDocumentEdits(
@@ -212,17 +276,36 @@ export async function migrateProject(
       configDirectory
     );
     const changed = applyDocumentEdits(documents.edits);
-    if (!options.docsOnly && (moved || fs.existsSync(path.join(root, PENDING)))) {
+    if (following) {
       await finishRegistration(root, options.env);
-      fs.rmSync(path.join(root, PENDING), { force: true });
+      // The marker goes only once every follow-up is done, the git index among them.
+      if (index.done && !twinsWaiting) fs.rmSync(path.join(root, PENDING), { force: true });
+      else
+        writePending(root, {
+          remaining: [
+            ...(twinsWaiting ? [`the ignore rules: ${twinsWaiting}`] : []),
+            ...(index.done ? [] : [`the git index: ${index.pending.join('; ')}`]),
+          ].join('; '),
+          steps: [
+            ...(twinsWaiting ? ['the ignore rules'] : []),
+            ...(index.done ? [] : ['the git index']),
+          ],
+        });
     }
     return {
       success: true,
-      data: { dryRun: false, moved, changed, left: documents.left, ...(backup ? { backup } : {}) },
+      data: {
+        dryRun: false,
+        moved,
+        changed,
+        left: [...left, ...documents.left],
+        ...(backup ? { backup } : {}),
+      },
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (moved) writeMigrationState(path.join(root, PENDING), { backup, remaining: message });
+    // The marker keeps what the move recorded, the old folder's spelling among it.
+    if (moved) writePending(root, { backup, remaining: message });
     return {
       success: false,
       error: {

@@ -477,19 +477,22 @@ const EXPECTED_WRITER_KEYS: readonly WriterKeySite[] = sortSourceSites([
     key: 'MARKER',
   },
   // s101-m01: stored-id reconciliation removes name adoption; the same metadata writers remain.
+  // s109-m04 (#907): down eight (the listedAsOwned and listedName fields), and the callers below
+  // eighteen (the name check), or twenty-two past the two early returns that now carry both; the same
+  // writers.
   {
     file: 'tools/rbook/owner-resolution.ts',
-    line: 89,
+    line: 97,
     role: 'writeMetadata',
     callee: 'metadata.execute',
     key: 'key',
   },
   // Owner resolution keeps the sign-in's identity and only the already registered dashboard id.
   ...[
-    [221, "'dashboard_slug'"],
-    [239, "'dashboard_project_id'"],
-    [263, "'owner'"],
-    [264, "'dashboard_username'"],
+    [239, "'dashboard_slug'"],
+    [257, "'dashboard_project_id'"],
+    [285, "'owner'"],
+    [286, "'dashboard_username'"],
   ].map(([line, key]) => ({
     file: 'tools/rbook/owner-resolution.ts',
     line: Number(line),

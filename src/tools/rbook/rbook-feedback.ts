@@ -41,6 +41,13 @@ export const FEEDBACK_BULK_RESOLVE_MAX = 200;
 export const FEEDBACK_PAGE_SIZE = 10;
 
 /**
+ * s109-m05: a resolved row carries its resolution note too. Ten of this repository's resolved rows
+ * were 21,125 characters; at eight they were 19,193, the largest feedback page on any registered
+ * store, on the day it was measured.
+ */
+export const FEEDBACK_RESOLVED_PAGE_SIZE = 8;
+
+/**
  * Hand-audited applicability: this tool dispatches with inline if blocks rather than a switch,
  * so the router walk cannot derive these lists. All three transitions accept resolutionNote;
  * only list can fan out across projects; only resolve takes many rows (s97-m07).
@@ -183,7 +190,7 @@ export const rbookFeedbackSchema = z
       .max(200)
       .optional()
       .describe(
-        'Max entries per page on list (default 10; with acrossProjects 5, or 2 at status resolved; max 200)'
+        'Max entries per page on list (default 10, or 8 at status resolved; with acrossProjects 4, or 2 at status resolved; max 200)'
       ),
     page: z
       .number()
@@ -248,7 +255,7 @@ export const rbookFeedbackToolDefinition = {
         minimum: 1,
         maximum: 200,
         description:
-          'Max entries per page on list (default 10; with acrossProjects 5, or 2 at status resolved; max 200)',
+          'Max entries per page on list (default 10, or 8 at status resolved; with acrossProjects 4, or 2 at status resolved; max 200)',
       },
       page: {
         type: 'integer',
@@ -471,7 +478,11 @@ export async function rbookFeedback(
       if (action === 'list') {
         const status = params.status ?? 'open';
         // s106-m03: 50 rows were 35,736 characters on a registered store, past the 20,000 cap.
-        const request = pageRequest(params.page, params.limit, FEEDBACK_PAGE_SIZE);
+        const request = pageRequest(
+          params.page,
+          params.limit,
+          status === 'resolved' ? FEEDBACK_RESOLVED_PAGE_SIZE : FEEDBACK_PAGE_SIZE
+        );
         const limit = request.pageSize;
         const conditions: string[] = ['status = ?'];
         const args: unknown[] = [status];

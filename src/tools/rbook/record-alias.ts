@@ -42,6 +42,8 @@ const REFERENCES: Readonly<Record<TextKeyed, ReadonlyArray<[string, string]>>> =
     ['agent_feedback', 'session_id'],
     ['context_snapshots', 'session_id'],
     ['proposals', 'source_session'],
+    // s109-m02: the session that settled a draft (critic B2, note 15).
+    ['proposals', 'settled_by'],
   ],
 };
 /** Keys of per-copy JSON documents that hold a mission or sprint id. */
@@ -80,6 +82,9 @@ function run(client: RbookDatabaseClient, sql: string, params: unknown[] = []): 
 
 const tablePresent = (client: RbookDatabaseClient, table: string): boolean =>
   rows(client, "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", [table]).length > 0;
+/** s109-m02: a column a store's table lacks, such as proposals.settled_by before 4.11, names no row. */
+const columnPresent = (client: RbookDatabaseClient, table: string, column: string): boolean =>
+  rows(client, 'SELECT 1 FROM pragma_table_info(?) WHERE name = ?', [table, column]).length > 0;
 
 /**
  * The id a live create of a mission or sprint takes on this copy: the earliest live create that
@@ -150,7 +155,7 @@ export function renameRow(
 ): void {
   run(client, `UPDATE ${table} SET id = ? WHERE stable_event_id = ?`, [to, stableId]);
   for (const [target, column] of REFERENCES[table])
-    if (tablePresent(client, target))
+    if (tablePresent(client, target) && columnPresent(client, target, column))
       run(client, `UPDATE ${target} SET "${column}" = ? WHERE "${column}" = ?`, [to, from]);
   if (tablePresent(client, 'session_events'))
     run(

@@ -11,7 +11,7 @@ import {
   type SyncSqliteFileResult,
 } from './dashboard-client';
 import { inspectUploadOwner, recheckUploadAuth } from './dashboard-upload-auth';
-import { checkAndRegister } from './checkpoint-registration';
+import { checkAndRegister, markRegistered } from './checkpoint-registration';
 import { withUploadSnapshot, readUploadProject, uploadLog } from './dashboard-upload';
 import type { RbookToolError } from './types';
 
@@ -28,15 +28,23 @@ function retryAfter(error?: RbookToolError): number | undefined {
     : undefined;
 }
 
+const KEEPS_REMEDY = new Set([
+  'PROJECT_NAME_CONFLICT',
+  'REGISTRATION_NEEDS_USER_KEY',
+  'DASHBOARD_NAME_MISMATCH',
+]);
+
 export async function uploadFailure(
   projectRoot: string,
   error?: RbookToolError,
   ownerConfirmed = false
 ): Promise<UploadOutcome> {
+  // A refusal whose remedy is the operator's keeps it in the stored outcome, which the upload notice
+  // shows (s109-m04, #907: the project-key and name refusals name their remedies there too).
   const base = {
     success: false,
     error:
-      error?.code === 'PROJECT_NAME_CONFLICT' && error.suggestion
+      error?.code && KEEPS_REMEDY.has(error.code) && error.suggestion
         ? `${error.message} ${error.suggestion}`
         : (error?.message ?? 'Dashboard upload unavailable.'),
     retryAfterMs: retryAfter(error),
@@ -144,6 +152,16 @@ export async function attemptDashboardUpload(
   if (data.errors.length)
     return { outcome: { success: false, error: data.errors.join('; ') }, data };
   uploadLog(`File sync: ${info.projectSlug} (${data.durationMs}ms)`);
+  // s109-m04 (round 3, NEW-1): a healed store's flag is written only now that the dashboard has
+  // taken this close's upload, signed by the folder's own project key.
+  if (checked?.healPending) {
+    const unsaved = await markRegistered(projectRoot);
+    uploadLog(
+      unsaved
+        ? `Uploaded, but this store could not save that it is registered (${unsaved}); the next close with this folder's project key marks it again.`
+        : `Marked "${info.projectSlug}" registered: reasonbook.ai took this close's upload, signed by this folder's project key.`
+    );
+  }
   return { outcome: { success: true }, data };
 }
 

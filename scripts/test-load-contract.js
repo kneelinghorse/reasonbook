@@ -30,6 +30,7 @@ const HISTORICAL_FAILURES = [
   'tests/tools/rbook/author-names.test.ts',
   'tests/tools/rbook/dashboard-upload-auth.test.ts',
   'tests/tools/rbook/draft-real-store.test.ts',
+  'tests/tools/rbook/draft-reply-questions.test.ts',
   'tests/tools/rbook/feedback-fleet.test.ts',
   'tests/tools/rbook/lifecycle-decoupling.test.ts',
   'tests/tools/rbook/rbook-agent-onboard.test.ts',

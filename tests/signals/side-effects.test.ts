@@ -215,6 +215,12 @@ describe('the signals library has no side effects of its own (s97-m01)', () => {
         'src/signals/store-read.ts',
         'src/tools/rbook/decision-citations.ts',
         'src/tools/rbook/draft-grammar.ts',
+        // s109-m02: the grammar's line reading, its subject coverage and the Settled label, all leaves.
+        'src/tools/rbook/draft-lines.ts',
+        // s109-m03: the reply grammar, moved out of draft-grammar.ts; a leaf over the three above.
+        'src/tools/rbook/draft-reply.ts',
+        'src/tools/rbook/draft-settle-label.ts',
+        'src/tools/rbook/draft-subject.ts',
         'src/tools/rbook/errors.ts',
         'src/tools/rbook/keyword-extraction.ts',
         'src/tools/rbook/next-step-dates.ts',

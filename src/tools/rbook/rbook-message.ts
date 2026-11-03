@@ -1509,10 +1509,21 @@ async function handleDirectory(
   // deployed dashboard, the directory route does return it. The join is KEPT regardless: it is
   // correct today, and dropping it would be a latency optimisation rather than a truth fix. Only
   // the claim about what the route can never do is removed.
+  //
+  // s109-m05: /me lists the projects shared with the account too, so being listed there is not
+  // owning. Only a row whose isOwner is true counts; one without the field stays foreign. The join
+  // s87-m05 called correct was not, measured then: /me left out 10 of the account's 30 projects,
+  // which the directory route marks owned, so they read foreign before this change and after it.
+  // And with /me failing, rows keep the directory route's isOwner, which the warning below denies.
   const mine = await client.getMyProjects();
   let ownedIds: Set<string> | null = null;
   if (mine.success && mine.data) {
-    ownedIds = new Set(mine.data.projects.map((p) => p.id).filter((id) => id.length > 0));
+    ownedIds = new Set(
+      mine.data.projects
+        .filter((p) => p.isOwner === true)
+        .map((p) => p.id)
+        .filter((id) => id.length > 0)
+    );
   } else {
     // Do not fail the directory call, and do not silently reclassify every row as foreign
     // without saying so — a swallowed failure here is the defect class this mission fixes.

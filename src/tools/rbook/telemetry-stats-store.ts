@@ -65,7 +65,7 @@ export const STORE_COUNTING_RULES = {
   friction:
     'Local agent_feedback created in the window, all statuses. Severity is a human judgment; absence of local items cannot establish no severity-3 friction elsewhere.',
   proposals:
-    'Drafts created in the window, by outcome; a pending draft past 7 days or 3 later session starts counts as expired (computed, never stored). Acceptance rate = approved / (approved + declined + expired); replaced (a revision) and answered (by a record the draft did not become: one without fromDraft, a record of the same text made earlier, or the record of the draft it revises) are excluded from the denominator. Modes count approved drafts only. A store without the proposals table is unavailable, never zero acceptance.',
+    'Drafts created in the window, by outcome; a pending draft past 7 days or 3 later session starts counts as expired (computed, never stored). Acceptance rate = approved / (approved + declined + expired); replaced (a revision) and answered (by a record the draft did not become: one without fromDraft, a record of the same text made earlier, the record of the draft it revises, or the decision a reply named in a Settled line) are excluded from the denominator. A settle answers a draft that would otherwise have expired unanswered, which the denominator counts, so the rate can rise with no change in approvals. Modes count approved drafts only. A store without the proposals table is unavailable, never zero acceptance.',
 } as const;
 
 function rows<T>(client: RbookDatabaseClient, sql: string, values: unknown[] = []): T[] {
@@ -170,7 +170,7 @@ function proposalStatistics(
         draft.outcome === 'pending' && isExpired(draft, starts, now) ? 'expired' : draft.outcome;
       if (outcome in outcomes) outcomes[outcome as keyof typeof outcomes]++;
       if (draft.outcome === 'approved' && draft.approvalMode && draft.approvalMode in modes)
-        modes[draft.approvalMode]++;
+        modes[draft.approvalMode as keyof typeof modes]++;
     }
     const resolved = outcomes.approved + outcomes.declined + outcomes.expired;
     return {

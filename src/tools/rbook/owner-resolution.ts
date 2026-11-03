@@ -30,6 +30,14 @@ export interface OwnerResolutionResult {
   warnings?: string[];
   /** Safety evidence from this listing, for the upload caller; messaging may retain its local identity. */
   ownerConfirmed?: boolean;
+  /**
+   * s109-m04 (#907; settled item 12): the listing names this store's dashboard id with
+   * `isOwner === true`, under the store's own name, and the owner is confirmed, so the store is
+   * registered whatever its flag says.
+   */
+  listedAsOwned?: boolean;
+  /** The listed name of that owned project, when its owner is confirmed, whatever the store's name. */
+  listedName?: string;
   error?: RbookToolError;
 }
 
@@ -169,6 +177,16 @@ export async function resolveAndPersistOwner(
     ? projects.find((project) => project.id === localProjectId)
     : undefined;
   const confirmed = matchedProject !== undefined;
+  // s109-m04 (critic A, F1): the listed project is this store's only when its name is the store's
+  // name too. The matcher that ran until 3f913561 wrote another project's id and slug into a store,
+  // and healing that store would upload it over that project's record; the dashboard keeps names
+  // unique per account, so a matching name ties the listed id to this store.
+  const storeName = readMetadata(client, 'project_name');
+  const listedName =
+    matchedProject?.isOwner === true && ownerConfirmed
+      ? (matchedProject.name ?? '').trim()
+      : undefined;
+  const listedAsOwned = listedName !== undefined && storeName !== null && listedName === storeName;
   if (localProjectId && ownerConfirmed && !confirmed) {
     const slug = readMetadata(client, 'dashboard_slug');
     const name = readMetadata(client, 'project_name');
@@ -248,6 +266,8 @@ export async function resolveAndPersistOwner(
           source: 'metadata',
           incumbentConfirmed: confirmed,
           ownerConfirmed,
+          listedAsOwned,
+          listedName,
           warnings: surfaced(),
         }
       : {
@@ -255,6 +275,8 @@ export async function resolveAndPersistOwner(
           source: 'unresolved',
           incumbentConfirmed: confirmed,
           ownerConfirmed,
+          listedAsOwned,
+          listedName,
           warnings: surfaced(),
         };
   }
@@ -267,6 +289,8 @@ export async function resolveAndPersistOwner(
     source: 'dashboard',
     incumbentConfirmed: confirmed,
     ownerConfirmed,
+    listedAsOwned,
+    listedName,
     warnings: surfaced(),
   };
 }

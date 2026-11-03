@@ -91,15 +91,21 @@ const SERVER_NAMES = new Set(['reasonbook', 'rbook', LEGACY.command, LEGACY.reco
 const packageSpec = (value: string): string | null =>
   /@aquex\/(?:reasonbook|cmos-mcp)(?:@[0-9A-Za-z.+-]+)?/.exec(value)?.[0] ?? null;
 
-/** An absolute dist/ entry whose package.json names Reasonbook, as `a local build of <name> <v>`. */
+/**
+ * Each absolute dist/ entry whose package.json names Reasonbook, as `a local build of <name> <v>`,
+ * joined by " and ": s109-m01 (#914) has node run every one --require names, as migrate judges them.
+ */
 function localBuild(args: readonly string[]): string | null {
-  const entry = args.find((arg) => /(?:^|[\\/])dist[\\/](?:index|bin|cli)\.js$/.test(arg));
-  if (!entry || !path.isAbsolute(entry)) return null;
-  const manifest = readJson(path.join(path.dirname(entry), '..', 'package.json'));
-  if (!manifest.ok || !isObject(manifest.value)) return null;
-  const { name, version } = manifest.value;
-  if (name !== '@aquex/reasonbook' && name !== LEGACY.packageName) return null;
-  return `a local build of ${name}${typeof version === 'string' ? ` ${version}` : ''}`;
+  const builds = args
+    .filter((arg) => /(?:^|[\\/])dist[\\/](?:index|bin|cli)\.js$/.test(arg) && path.isAbsolute(arg))
+    .flatMap((entry) => {
+      const manifest = readJson(path.join(path.dirname(entry), '..', 'package.json'));
+      if (!manifest.ok || !isObject(manifest.value)) return [];
+      const { name, version } = manifest.value;
+      if (name !== '@aquex/reasonbook' && name !== LEGACY.packageName) return [];
+      return [`a local build of ${name}${typeof version === 'string' ? ` ${version}` : ''}`];
+    });
+  return builds.length ? builds.join(' and ') : null;
 }
 
 /**

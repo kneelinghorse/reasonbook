@@ -71,6 +71,13 @@ interface Moves {
   readonly guarded: boolean;
 }
 
+/** A moved record's owed follow-ups, as "its git index, documents and registration" (s109-m01). */
+const steps = (names: readonly string[]): string =>
+  `its ${names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0]}`.replace(
+    /^its the /,
+    'its '
+  );
+
 function projectChecks(inputs: DoctorInputs, ctx: CheckContext): Moves {
   let migrates = false;
   let guarded = false;
@@ -149,7 +156,7 @@ function projectChecks(inputs: DoctorInputs, ctx: CheckContext): Moves {
         id: 'project-move-pending',
         severity: 'fix',
         projectRoot: root,
-        summary: `${root}'s record moved, but its documents and registration were not finished.`,
+        summary: `${root}'s record moved, but ${steps(project.pendingSteps)} ${project.pendingSteps.length > 1 ? 'were' : 'was'} not finished.`,
         evidence: ['.rbook-migration-pending.json is present'],
         fix: `${ctx.cli} migrate --apply --project ${quoted}`,
         order: 6,

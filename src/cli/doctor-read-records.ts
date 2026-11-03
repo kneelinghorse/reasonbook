@@ -11,6 +11,7 @@ import {
   type ClientProblem,
   type ServerPinProblem,
 } from './migrate-guard';
+import { gitMarker } from './migrate-git';
 import {
   fail,
   isObject,
@@ -198,6 +199,8 @@ export interface ProjectState {
   readonly journal: boolean;
   readonly lock: boolean;
   readonly pending: boolean;
+  /** s109-m01: the follow-ups a pending move still owes, as its marker names them. */
+  readonly pendingSteps: readonly string[];
   /** The old pins migrate would refuse in this project's .mcp.json, as it would move it. */
   readonly serverPins: readonly ServerPinProblem[];
   /** This project's .mcp.json Reasonbook servers, with the names each one runs under. */
@@ -207,6 +210,26 @@ export interface ProjectState {
   readonly permissions: readonly PermissionSource[];
   /** Why a file here, or a server entry's shape, could not be read, so its checks did not run. */
   readonly unread: readonly string[];
+}
+
+/**
+ * s109-m01: what a moved record still owes, from its marker; one 4.10.0 wrote names no steps, and
+ * 4.11.0's retry also records the move in git's index wherever a work tree holds the project.
+ */
+function pendingSteps(root: string): string[] {
+  let steps: unknown;
+  try {
+    steps = (
+      JSON.parse(fs.readFileSync(path.join(root, '.rbook-migration-pending.json'), 'utf8')) as {
+        steps?: unknown;
+      }
+    ).steps;
+  } catch {
+    steps = undefined;
+  }
+  if (Array.isArray(steps) && steps.length && steps.every((step) => typeof step === 'string'))
+    return steps;
+  return [...(gitMarker(root) ? ['the git index'] : []), 'documents', 'registration'];
 }
 
 export function readProject(root: string): ProjectState {
@@ -253,6 +276,7 @@ export function readProject(root: string): ProjectState {
     journal,
     lock,
     pending: fs.existsSync(path.join(root, '.rbook-migration-pending.json')),
+    pendingSteps: pendingSteps(root),
     serverPins: pins.filter((pin) => pin.kind !== 'shape'),
     servers: mcp.ok && isObject(mcp.value) ? servers(mcp.value.mcpServers) : [],
     mcpjson,

@@ -8,7 +8,7 @@ import {
   type SanitizedField,
 } from '../../intelligence/content-sanitizer';
 import { RbookErrors, createError, createSuccess } from './errors';
-import type { RbookToolResult } from './types';
+import type { RbookToolError, RbookToolResult } from './types';
 
 export interface DecisionFieldsParams {
   readonly context?: string;
@@ -134,4 +134,43 @@ export function decisionTextProjection(columns: ReadonlySet<string>, alias = '')
   return DECISION_TEXT_FIELDS.map(
     (field) => `${columns.has(field) ? `${alias}${field}` : 'NULL'} AS ${field}`
   ).join(', ');
+}
+
+/**
+ * s109-m02 (#893): the record fields a constraint, rule or profile draft's writer neither stores,
+ * validates, warns about nor refuses (rbook-decisions-record.ts, draft-approval.ts): four on every
+ * such kind, and a profile line's mission and sprint, 14 pairs. Given with fromDraft, each is
+ * refused before the draft is claimed, so a success never hides a field it dropped. An empty list
+ * carries nothing to drop and is not refused. The five fields above are refused for every kind.
+ */
+const IGNORED_BY_KIND: Readonly<Record<'constraint' | 'rule' | 'profile', readonly string[]>> = {
+  constraint: ['evidence', 'supersedes', 'citesLearningIds', 'domain'],
+  rule: ['evidence', 'supersedes', 'citesLearningIds', 'domain'],
+  profile: ['evidence', 'supersedes', 'citesLearningIds', 'domain', 'missionId', 'sprintId'],
+};
+
+const KIND_WORDS = {
+  constraint: 'a constraint',
+  rule: 'a standing rule',
+  profile: 'a profile line',
+} as const;
+
+export function draftKindIgnores(
+  kind: 'constraint' | 'rule' | 'profile',
+  params: object
+): RbookToolError | null {
+  const values = params as Readonly<Record<string, unknown>>;
+  const given = (value: unknown): boolean =>
+    Array.isArray(value)
+      ? value.length > 0
+      : value !== undefined && value !== null && !(typeof value === 'string' && !value.trim());
+  const field = IGNORED_BY_KIND[kind].find((name) => given(values[name]));
+  if (!field) return null;
+  return {
+    code: 'INVALID_PARAMETER',
+    field,
+    providedValue: values[field],
+    message: `A ${kind} draft is written as ${KIND_WORDS[kind]}, which does not take ${field}, so it would be ignored; nothing was written and the draft stays pending.`,
+    suggestion: `Send the fromDraft call without ${field}.`,
+  };
 }

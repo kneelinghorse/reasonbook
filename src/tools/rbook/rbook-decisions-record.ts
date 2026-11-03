@@ -6,6 +6,7 @@ import { isDirectoryEdition, directoryCallError } from '../../edition';
 import * as path from 'path';
 import { formatCliRemedy } from '../../utils/cli-remedy';
 import {
+  draftKindIgnores,
   prepareDecisionFields,
   storedDecisionFields,
   type DecisionFieldsParams,
@@ -185,6 +186,8 @@ export async function rbookDecisionsRecord(
     if (!evaluated.data.ok) return createError(evaluated.data.error);
     draft = evaluated.data.value;
     if (draft.draft.kind !== 'decision') {
+      const ignored = draftKindIgnores(draft.draft.kind, params);
+      if (ignored) return createError(ignored);
       return recordDraftOfKind(
         {
           content,

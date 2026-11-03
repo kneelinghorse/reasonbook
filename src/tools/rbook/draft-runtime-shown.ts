@@ -77,6 +77,16 @@ export function carryShown(runtime: DraftRuntime, session: string, now: number):
   })();
 }
 
+/** s109-m02: drafts a reply's Settled lines name leave the kept set, settled or not. */
+export function dropKept(runtime: DraftRuntime, session: string, ids: readonly number[]): void {
+  if (!ids.length || !has(runtime.db, 'kept')) return;
+  runtime.db
+    .prepare(
+      `DELETE FROM kept WHERE session = ? AND draft_id IN (${ids.map(() => '?').join(', ')})`
+    )
+    .run(session, ...ids);
+}
+
 export interface KeptDraft {
   readonly id: number;
   readonly at: number;
@@ -157,7 +167,7 @@ export function pruneAllRuntimes(env: NodeJS.ProcessEnv, now: number): number {
       const stat = fs.lstatSync(file);
       if (!stat.isFile() || stat.nlink !== 1 || !safeDestination(file)) continue;
       db = new Database(file, { fileMustExist: true, timeout: 50 });
-      for (const table of ['excerpts', 'windows', 'shown', 'kept'] as const) {
+      for (const table of ['excerpts', 'windows', 'shown', 'kept', 'unkept'] as const) {
         const present = db
           .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
           .get(table);

@@ -25,6 +25,7 @@ export async function run(ctx: HookVerbContext): Promise<null> {
     draftsCreated: outcome.created,
     draftsReplaced: outcome.replaced,
     draftLinesElsewhere: outcome.elsewhere,
+    draftLinesDropped: outcome.dropped,
   });
   return null;
 }

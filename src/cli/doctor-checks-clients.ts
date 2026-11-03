@@ -54,7 +54,7 @@ function oldSpec(entry: ServerEntry): boolean {
   return (
     spec.includes(LEGACY.packageName) ||
     /@aquex\/reasonbook@[0-3](?:\.|$)/.test(spec) ||
-    /^a local build of @aquex\/reasonbook [0-3]\./.test(spec)
+    /(?:^| and )a local build of @aquex\/reasonbook [0-3]\./.test(spec)
   );
 }
 

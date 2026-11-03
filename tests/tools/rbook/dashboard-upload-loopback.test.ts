@@ -345,7 +345,13 @@ it('two uploads use a real snapshot, include WAL rows and leave source sha256 un
 });
 
 it('automatic upload cannot register a store, while explicit registration preserves localDbPath and WAL', async () => {
-  writer.prepare("DELETE FROM metadata WHERE key='dashboard_registered'").run();
+  // A store the dashboard does not know. s109-m04 (#907): one whose id the listing names as owned
+  // is registered whatever its flag says, so deleting only the flag no longer makes it register.
+  writer
+    .prepare(
+      "DELETE FROM metadata WHERE key IN ('dashboard_registered', 'dashboard_project_id', 'dashboard_slug')"
+    )
+    .run();
   graph.markUploadOwed('upload-test', Date.now() - 300001);
   await triggerCheckpointBackfill({ projectRoot: root, force: false, automatic: true });
   expect(requests).toHaveLength(0);

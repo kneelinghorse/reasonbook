@@ -53,12 +53,23 @@ Where Reasonbook hooks run, the line becomes a draft with an id (`P<n>`) and the
 message is bound to it. The line is a proposal, not a claim that a hook saved or approved it.
 Continue independent authorized work while the choice is open.
 
-**Published reply grammar** ([source](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/draft-grammar.ts)): a plain reply
+**Published reply grammar** ([source](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/draft-reply.ts)): a plain reply
 is at most 60 normalized characters and consists entirely of phrases below, joined by whitespace,
 commas, periods, semicolons, exclamation marks, ellipses or dashes, with optional courtesies.
 Matching ignores case, normalizes curly apostrophes, removes double quotes and collapses
-whitespace. A question mark makes it a question; extra words, or a mixture of approval and decline
-phrases, make it other. Courtesies alone do not approve or decline.
+whitespace. A question mark makes it a question. A message that opens with an approval phrase, with
+no quote marker (`>`) or backtick before it and no decline phrase or "dont" in its first clause, is
+other instead in two cases: its only question marks are in code (fenced, indented or inline,
+backticks typed as apostrophes included), a link target or a URL, where a "?" with an ASCII letter,
+a digit or one of `=&%+/#-` after it in the URL is the URL's and any other ends a question; or every
+question starts with a topic word such as "also", "separately", "by the way" or "PS" (alone, or
+after "and", "but", "so", "we", "I" or "I'm"), and none names a draft (`P<n>` or `#<n>`), says this,
+that, these, those, draft, proposal or "the decision", holds a decline phrase, has fewer than two
+keywords, or shares a quarter of the subject words of the shorter of it and a draft. A question is
+read as a sentence that ends at ".", "!", "?" or "…" and at every line break, so a hard-wrapped
+question is read from its last line. A message over 10,000 characters is not read this way. Extra
+words, or a mixture of approval and decline phrases, make it other. Courtesies alone do not approve
+or decline.
 
 - Approval phrases: `approved`, `approve`, `approve it`, `yes`, `yep`, `yeah`, `y`, `ok`, `okay`,
   `sure`, `proceed`, `go ahead`, `go for it`, `do it`, `record it`, `yes record it`, `that's good`,
@@ -80,14 +91,37 @@ phrases, make it other. Courtesies alone do not approve or decline.
 - Nuance or call-outs approving a decision: fold them in; ask first when the nuance is unclear or
   conflicts with an existing record. For a constraint, rule or profile line, propose the revised
   text again and wait for a plain approval; these kinds refuse nuance and questions.
-- A question or an amendment: answer, and end with the line again, revised if the answer changes it.
-  The revised line replaces the draft.
+- A question about the draft, or an amendment: answer, and end with the line again, revised if the
+  answer changes it. The revised line replaces the draft. An approval of a decision whose every
+  question is about something else is recorded agent-judged, and the questions answered.
 - A plain decline ("no", "don't record that", "skip it"…): do not record it.
 - No answer: never record it. A draft expires unanswered after 7 days or 3 session starts.
 - A pending draft from an earlier session: name it to the operator in a prose line as `draft P<n>`
   or `proposal P<n>`, with its subject. A bare id, or an id in code, a link target, a URL or a file
   path, does not show the draft for approval. This instruction's backticks mark examples; the
   actual naming must be prose outside inline code.
+
+**When a recorded decision already answered a draft** (a compaction lost the operator's approval, or
+the choice was recorded directly), settle the draft with one plain line among the reply's last lines:
+
+    Settled: P<n> by decision <N>
+
+Put it above any Would record lines, and name the draft only in that line: explain the settle in
+prose without writing `draft P<n>` or `proposal P<n>`, which shows the draft for approval again. An
+older Reasonbook hook stops reading at the Settled line and keeps the Would record lines below it.
+Where hooks run, the Stop hook marks the draft answered by that decision, with the mode `settled`,
+which is a draft's mode and never a decision's. It refuses a decision recorded with
+`mode="autonomous"`, a superseded decision (naming the end of its chain), a decision not yet in
+this copy of a shared record (sync first), a constraint, rule or profile draft (those need the
+operator's plain approval), a draft the same reply's Would record lines create, repeat or revise,
+and an expired or no longer pending draft. A decision recorded after the draft must state at least
+30% of the draft's subject, an older one 85%. A quoted, listed, bold, code or link-text Settled line
+is not read as a settle. Where the hooks run, the operator's next message names the lines of your
+reply that took no effect, such as a fourth Would record line; tell the operator about each.
+
+A draft ends approved (recorded with `fromDraft`), declined, replaced by a revision, expired, or
+answered, by a record that covered it automatically or by a settle that named it. Only a Would
+record line makes a draft: Reasonbook never detects decision-shaped statements in a reply.
 
 The record says how the approval was known: `approved` requires a plain approval of that draft
 alone in this session and, for a decision, content that stays within the draft's wording check.

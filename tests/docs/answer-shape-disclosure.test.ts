@@ -281,7 +281,11 @@ const EXPECTED_TOTALS = {
   // fold, session-read-render.ts (how such a read prints) add two files, no answer type.
   // s108-m02: next-step-dates.ts, next-step-reasons.ts and inapplicable-param.ts add three files,
   // no answer type.
-  files: 338,
+  // s109-m02: draft-lines.ts and draft-subject.ts (moved out of draft-grammar.ts), draft-settle-label.ts,
+  // draft-settle-grammar.ts, draft-settle.ts and draft-runtime-unkept.ts add six files, no answer type.
+  // s109-m03: draft-reply.ts (the reply grammar, moved out of draft-grammar.ts) adds one file, no
+  // answer type.
+  files: 345,
   roots: 151,
   declarations: 352,
   compositions: 352,
@@ -307,7 +311,11 @@ const EXPECTED_TOTALS = {
   // s108-m04: six additive rows, disclosed in the CHANGELOG: a feedback row's fix (its rule,
   // revision, fixedIn and state) and the list's countsByGroup: two new declarations and
   // compositions, and three new files that the analyzed root reaches.
-  rows: 2065,
+  // s109-m04 (#907): two additive rows, OwnerResolutionResult.listedAsOwned and listedName, an
+  // internal result the analyzed root reaches through owner resolution; no answer carries it, so the
+  // CHANGELOG names the behaviour (a store listed as owned uploads instead of registering), not the
+  // fields.
+  rows: 2067,
 } as const;
 const EXPLICIT_OPAQUE_LEDGER = [
   'RbookToolError.providedValue = ANY',

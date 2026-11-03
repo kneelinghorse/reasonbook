@@ -304,7 +304,12 @@ const PKG = JSON.parse(fs.readFileSync(r('package.json'), 'utf8')) as {
  */
 const CODE_CORPUS: string = (() => {
   const parts: string[] = [];
-  for (const f of [...walkFiles(r('src'), '.ts'), ...walkFiles(r('scripts'), '.ts')]) {
+  // s109-m04: the scripts' JavaScript is code too (rbook-call-current.js names two waits).
+  for (const f of [
+    ...walkFiles(r('src'), '.ts'),
+    ...walkFiles(r('scripts'), '.ts'),
+    ...walkFiles(r('scripts'), '.js'),
+  ]) {
     parts.push(codeTokens(f).join('\n'));
   }
   const schema = r('rbook-seed', 'db', 'schema.sql');
@@ -335,6 +340,7 @@ const ENV_READS: Set<string> = (() => {
   const files = [
     ...walkFiles(r('src'), '.ts'),
     ...walkFiles(r('scripts'), '.ts'),
+    ...walkFiles(r('scripts'), '.js'),
     ...walkFiles(r('tests'), '.ts'),
   ];
   for (const f of files) {
@@ -1272,7 +1278,8 @@ describePrivate('agents.md environment-variable block is derived, not maintained
   });
 
   it('documents exactly the scripts-only read set', () => {
-    expect(scriptsOnly.length).toBe(11);
+    // s109-m04: 11 to 13, rbook-call-current.js's two upload waits (#799).
+    expect(scriptsOnly.length).toBe(13);
     expect(agentsMdEnvSections().scripts.sort()).toEqual([...scriptsOnly].sort());
   });
 

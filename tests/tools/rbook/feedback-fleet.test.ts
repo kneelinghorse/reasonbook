@@ -390,8 +390,9 @@ it('serves fleet reads through MCP without requiring a local project or mutating
   }
 });
 
-it('pages the merged fleet list newest first, five rows by default, each row once (s106-m03)', async () => {
-  // The old 50-row default was 86,243 characters across 26 stores, and ten rows still 25,644.
+it('pages the merged fleet list newest first, four rows by default, each row once (s106-m03, s109-m05)', async () => {
+  // The old 50-row default was 86,243 characters across 26 stores, and ten rows still 25,644; at
+  // five, one page of the open list was 20,595 (s109 planning, E3).
   const a = store('alpha');
   const b = store('beta');
   for (let id = 1; id <= 8; id++) insert(a, id);
@@ -399,13 +400,13 @@ it('pages the merged fleet list newest first, five rows by default, each row onc
   const first = await list();
   expect(first.data).toMatchObject({
     totalCount: 15,
-    limit: 5,
+    limit: 4,
     page: 1,
     hasMore: true,
     nextPage: 2,
   });
   const text = formatFeedbackForLLM('list', first);
-  expect(text).toContain('Showing 1–5 of 15 matching rows');
+  expect(text).toContain('Showing 1–4 of 15 matching rows');
   expect(text).toContain('Next page: rbook_feedback(action="list", acrossProjects=true, page=2).');
   const ids = (result: typeof first): string[] =>
     (result.data as unknown as { entries: Array<{ id: string }> }).entries.map((entry) => entry.id);
@@ -425,7 +426,7 @@ it('pages the merged fleet list newest first, five rows by default, each row onc
   expect(seen).toEqual([...expected, 'alpha:feedback:8']);
 });
 
-it('pages resolved feedback two rows at a time, the other statuses five (s106-m03, decision #1730)', async () => {
+it('pages resolved feedback two rows at a time, the other statuses four (s106-m03, decision #1730, s109-m05)', async () => {
   // A resolved row goes out whole with its resolution note: at five a page, 4 of the fleet's 8
   // resolved pages passed 20,000 characters (largest 22,364), and three or four rows still did.
   const a = store('alpha');
@@ -461,7 +462,7 @@ it('pages resolved feedback two rows at a time, the other statuses five (s106-m0
     'alpha:feedback:3',
   ]);
   for (const status of ['open', 'triaged', 'archived'])
-    expect((await list({ status })).data).toMatchObject({ limit: 5 });
+    expect((await list({ status })).data).toMatchObject({ limit: 4 });
   expect((await list({ status: 'archived' })).data).toMatchObject({ totalCount: 6, hasMore: true });
   expect((await list({ status: 'resolved', limit: 5 })).data).toMatchObject({
     limit: 5,

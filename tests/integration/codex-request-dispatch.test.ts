@@ -339,6 +339,26 @@ it('binds hook-stored operator approval once, without a global owner override', 
   );
 });
 
+it('keeps the Codex remedy for a decision draft whose text opens with control characters (s109-m02)', async () => {
+  // Each control character is six characters in JSON; the suggestion quotes them as spaces, so it
+  // stays within error-bounds.ts's limit and is never cut to a preview (the budget verifier, B1).
+  const text = `${'\u0001'.repeat(9)}aaaaaaaaaaa Keep the project record in SQLite because every agent needs the same decisions.`;
+  await hook('session-start', 'codex-one', { source: 'startup' });
+  await hook('stop', 'codex-one', { last_assistant_message: `Would record: ${text}` });
+  await hook('session-end', 'codex-one');
+  await hook('session-start', 'codex-one', { source: 'resume' });
+  await hook('prompt', 'codex-one', { prompt: 'yes' });
+  const refused = await invoke('rbook_decisions', { action: 'record', fromDraft: 'P1' }, meta());
+  const suggestion = refused.structuredContent.error?.suggestion ?? '';
+  expect(refused.structuredContent.error?.code).toBe('APPROVAL_REQUIRED');
+  expect(suggestion).not.toContain('[truncated');
+  expect(suggestion).toContain('naming the draft only in that line');
+  expect(suggestion).toContain('one Codex conversation running');
+  expect(JSON.stringify(suggestion).length).toBeLessThanOrEqual(512);
+  // Quoted as spaces, the control characters leave room for the draft's own words to re-propose.
+  expect(suggestion).toContain('Keep the project record');
+});
+
 it('names a live-conversation remedy after exec ends the approval window, and binds after reproposing there', async () => {
   await offer('codex-one');
   await hook('session-end', 'codex-one');

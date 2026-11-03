@@ -78,7 +78,9 @@ export const DIGEST_POINTER =
 export const DRAFTS_SECTION_CAP = 450;
 /** s96-m12: the shared record's section, which takes its room before the drafts do. */
 export const SHARED_SECTION_CAP = 600;
-const DRAFTS_ASK = 'Name each as "draft P<n>" with its subject; record approval with fromDraft.';
+/** s109-m02: with the settle line, taught with both its clauses (settled item 1). */
+export const DRAFTS_ASK =
+  'Name each as "draft P<n>" with its subject; record approval with fromDraft. If a recorded decision already answered one, write "Settled: P<n> by decision <N>" above any Would record lines, naming the draft only in that line.';
 
 function projectSection(model: DigestV2Model): Section {
   const step =

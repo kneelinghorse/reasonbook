@@ -9,6 +9,7 @@ import { sanitizeContentField } from '../../intelligence/content-sanitizer';
 import type { RbookDatabaseClient } from './client';
 import { CONTENT_FLOOR, draftCoverage, recordStatesDraft, type ReplyClass } from './draft-grammar';
 import { openDraftRuntime, readExcerpt, startsSince, pendingDeclines } from './draft-runtime';
+import { ERROR_FIELD_LIMIT } from './error-bounds';
 import { RBOOK_ERROR_CODES } from './errors';
 import {
   clientRunner,
@@ -104,10 +105,27 @@ function approvalRequired(draft: DraftRow, label: string, why: string): RbookToo
   const codexRemedy = currentCodexRequest()
     ? ' Keep one Codex conversation running for both proposal and approval; separate codex exec / codex exec resume runs end the hook session. Re-propose and approve there.'
     : '';
+  const again = (text: string) =>
+    `end a reply with "Would record${draft.kind === 'decision' ? '' : ` (${draft.kind})`}: ${text}" (revised if needed), and record it after the operator approves it.${codexRemedy}`;
+  // s109-m02 (critic B2, note 7): a decision draft a recorded decision already answered is settled
+  // by a reply line, both clauses explicit; only otherwise is it put to the operator again.
+  const suggestion = (text: string): string =>
+    draft.kind === 'decision'
+      ? `If decision N already records the operator's answer, end your reply with "Settled: ${label} by decision <N>" above any Would record lines, naming the draft only in that line. Otherwise ${again(text)}`
+      : `${again(text).charAt(0).toUpperCase()}${again(text).slice(1)}`;
+  // A suggestion past error-bounds.ts's limit is cut to a short preview, which lost the Codex remedy
+  // at the end: the draft's own words give way first, down to none, never the guidance. Control
+  // characters, up to six characters each in JSON, are quoted as spaces (the budget's verifier, B1).
+  const quoted = Array.from(draft.text, (char) =>
+    char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127 ? ' ' : char
+  ).join('');
+  let room = 80;
+  while (JSON.stringify(suggestion(quoted.slice(0, room))).length > ERROR_FIELD_LIMIT && room > 0)
+    room -= 10;
   return {
     code: RBOOK_ERROR_CODES.APPROVAL_REQUIRED,
     message: `Draft ${label} (${draft.kind}) was not recorded: ${why}`,
-    suggestion: `End a reply with "Would record${draft.kind === 'decision' ? '' : ` (${draft.kind})`}: ${draft.text.slice(0, 80)}" (revised if needed), and record it after the operator approves it.${codexRemedy}`,
+    suggestion: suggestion(quoted.slice(0, Math.max(room, 0))),
   };
 }
 

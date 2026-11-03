@@ -529,24 +529,26 @@ export async function rbookSprintComplete(
       // and the close proceeds. Refusing to close a sprint because a copy failed would be a worse
       // trade than closing without one and saying so — and the warning says so.
       //
-      // GATED ON THE SPRINT EXISTING, and that gate is not an optimisation. The sprint's existence
-      // is validated INSIDE the transaction, after this point, so without the gate a typo'd
-      // sprintId would copy the whole store (514–928 ms on this 64 MB one) and consume a retention
-      // slot — pruning the operator's OLDEST real snapshot — before returning SPRINT_NOT_FOUND. A
-      // call that fails should not destroy a backup. The check only skips wasted work: the
-      // authoritative refusal still comes from the in-transaction validation below, unchanged.
+      // GATED ON THE CLOSE BEING ABLE TO GO AHEAD, and that gate is not an optimisation. The
+      // sprint's existence and status, its missions and the two contexts are validated INSIDE the
+      // transaction, after this point, so without the gate a close those checks refuse would copy
+      // the whole store (514–928 ms on this 64 MB one) and consume a retention slot — pruning the
+      // operator's OLDEST real snapshot — before refusing. A call that fails should not destroy a
+      // backup. s109-m04 (#916): the gate runs the transaction's own checks on this connection
+      // (`predictCloseRefusal`); it used to ask only whether the sprint existed. The authoritative
+      // refusal still comes from the in-transaction validation below, unchanged. A read that fails
+      // predicts nothing, so a refusal from a database or file failure still costs a snapshot.
       let preCloseSnapshotId: string | null = null;
-      const sprintExists = client.getOne<{ id: string }>('SELECT id FROM sprints WHERE id = ?', [
-        sprintId,
-      ]);
-      const worthSnapshotting = sprintExists.success && sprintExists.data !== undefined;
+      const predictedRefusal = predictCloseRefusal(client, sprintId);
+      const worthSnapshotting = predictedRefusal === null;
       try {
         const preSnapshot = worthSnapshotting
           ? await rbookDbSnapshot({ projectRoot: params.projectRoot })
           : null;
         if (!worthSnapshotting) {
           // No warning: the close is about to refuse anyway, and warning about a backup we
-          // deliberately skipped for a call that cannot succeed would be noise.
+          // deliberately skipped for a call that cannot succeed would be noise. A race that lets it
+          // go ahead after all is said once the checks below have passed.
         } else if (preSnapshot?.success && preSnapshot.data?.createdSnapshot) {
           preCloseSnapshotId = preSnapshot.data.createdSnapshot.id;
         } else {
@@ -751,6 +753,16 @@ export async function rbookSprintComplete(
             message: 'project_context is required for sprint closeout',
             suggestion: 'Repair or recreate project_context before retrying sprint closeout.',
           }
+        );
+      }
+
+      // s109-m04 (#916): the gate predicted a refusal, so no pre-close snapshot was taken, but the
+      // checks above have passed since: another process changed the sprint in between.
+      if (predictedRefusal !== null) {
+        warnings.push(
+          `Pre-close database snapshot skipped — when this close began, ${predictedRefusal}, so no ` +
+            'backup was taken; it has gone ahead since, so it is NOT reversible from a snapshot. ' +
+            'What it changes (lease drops, and archival when archive: true) is enumerated in the result.'
         );
       }
 
@@ -1245,6 +1257,39 @@ function summarizeSprintReadiness(missions: SprintMissionRow[]): SprintCloseoutR
     skippedMissionIds,
     openMissionIds,
   };
+}
+
+/**
+ * s109-m04 (#916): why the close's own checks would refuse it, read before BEGIN on the close's
+ * connection, or null when they would pass. Only state predicts a refusal: a read that fails
+ * returns null, so the snapshot is taken as before and the transaction gives the refusal.
+ */
+function predictCloseRefusal(client: RbookDatabaseClient, sprintId: string): string | null {
+  const sprint = client.getOne<{ status: string | null }>(
+    'SELECT status FROM sprints WHERE id = ?',
+    [sprintId]
+  );
+  if (!sprint.success) return null;
+  if (!sprint.data) return `sprint '${sprintId}' did not exist`;
+  if (sprint.data.status === 'Completed') return `sprint '${sprintId}' was already Completed`;
+  const missions = client.getMany<SprintMissionRow>(
+    'SELECT id, status, notes FROM missions WHERE sprint_id = ? ORDER BY id ASC',
+    [sprintId]
+  );
+  if (!missions.success) return null;
+  const open = summarizeSprintReadiness(missions.data ?? []).openMissionIds;
+  if (open.length === 1) return `its mission ${open[0]} was still open`;
+  if (open.length > 1) return `its missions ${open.join(', ')} were still open`;
+  for (const contextType of ['master_context', 'project_context'] as const) {
+    const context = loadCloseoutContext(client, contextType);
+    const code = context.success ? null : context.error?.code;
+    if (
+      code === RBOOK_ERROR_CODES.CONTEXT_NOT_FOUND ||
+      code === RBOOK_ERROR_CODES.CONTEXT_PARSE_ERROR
+    )
+      return `${contextType} could not be read (${code})`;
+  }
+  return null;
 }
 
 function isSkippedMission(notes: string | null): boolean {

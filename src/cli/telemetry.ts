@@ -322,6 +322,7 @@ export function observeDrafts(
     | 'draftsCreated'
     | 'draftsReplaced'
     | 'draftLinesElsewhere'
+    | 'draftLinesDropped'
     | 'draftsOffered'
     | 'draftReply'
   >

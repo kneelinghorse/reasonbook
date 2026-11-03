@@ -2660,6 +2660,88 @@ async function main(): Promise<void> {
         : parsed(applied.stdout).success === false,
       `blocked: ${JSON.stringify(blocked)}; apply: ${applied.stdout.slice(0, 300)}`
     );
+
+    // s109-m01: the built migrate in a git repository keeps an ignored file ignored with an anchored
+    // rbook/ twin of the root's line, and records the move in git's index as git mv does; its dry
+    // run lists a submodule in the record folder as a refusal, whatever runs on this machine.
+    const gitEnv = {
+      ...migrateEnv,
+      GIT_CONFIG_NOSYSTEM: '1',
+      GIT_AUTHOR_NAME: 'verify',
+      GIT_AUTHOR_EMAIL: 'verify@example.com',
+      GIT_COMMITTER_NAME: 'verify',
+      GIT_COMMITTER_EMAIL: 'verify@example.com',
+    };
+    const gitProject = (name: string) => {
+      const root = mkTmp(name);
+      const git = (args: string[]) =>
+        spawnSync('git', ['-c', 'core.quotePath=false', ...args], {
+          cwd: root,
+          encoding: 'utf8',
+          env: gitEnv,
+        });
+      git(['init', '-q', '-b', 'main']);
+      const store = path.join(root, LEGACY.recordDirectory, 'db', LEGACY.databaseFile);
+      fs.mkdirSync(path.join(root, LEGACY.recordDirectory, 'jobs'), { recursive: true });
+      fs.mkdirSync(path.dirname(store), { recursive: true });
+      const db = new Database(store);
+      db.exec(
+        "CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT); INSERT INTO metadata VALUES ('project_id', 'verify-migrate-git');"
+      );
+      db.close();
+      fs.writeFileSync(
+        path.join(root, '.gitignore'),
+        `${LEGACY.recordDirectory}/jobs/\n${LEGACY.recordDirectory}/db/\n`
+      );
+      fs.writeFileSync(path.join(root, LEGACY.recordDirectory, 'jobs', 'cv.pdf'), 'cv\n');
+      fs.writeFileSync(path.join(root, LEGACY.recordDirectory, 'notes.md'), 'notes\n');
+      git(['add', '.gitignore', `${LEGACY.recordDirectory}/notes.md`]);
+      git(['commit', '-q', '-m', 'base']);
+      const run = (args: string[]) =>
+        spawnSync(process.execPath, [path.join(REPO_ROOT, 'dist', 'bin.js'), ...args], {
+          cwd: root,
+          encoding: 'utf8',
+          env: gitEnv,
+          timeout: 120_000,
+        });
+      return { root, git, run };
+    };
+    const moved = gitProject('rbook-verify-migrate-git-');
+    const gitPreview = parsed(moved.run(['migrate', '--project', moved.root]).stdout) as {
+      data?: { blocked?: string[]; twins?: string[] };
+    };
+    check(
+      "s109-m01: dist migrate's dry run previews the rbook/ twin of a root ignore line",
+      (gitPreview.data?.twins ?? []).some((line) => line.endsWith(': /rbook/jobs/')),
+      JSON.stringify(gitPreview).slice(0, 300)
+    );
+    const gitApplied = parsed(moved.run(['migrate', '--apply', '--project', moved.root]).stdout);
+    const ignored = moved.git(['ls-files', '-o', '-i', '--exclude-standard', '--', 'rbook']).stdout;
+    const indexed = moved.git(['ls-files']).stdout.split('\n').filter(Boolean);
+    check(
+      "s109-m01: dist migrate --apply keeps an ignored file ignored and records the move in git's index",
+      gitPreview.data?.blocked?.length === 0
+        ? gitApplied.success === true &&
+            ignored.split('\n').includes('rbook/jobs/cv.pdf') &&
+            indexed.includes('rbook/notes.md') &&
+            !indexed.some((file) => file.startsWith(`${LEGACY.recordDirectory}/`))
+        : gitApplied.success === false,
+      `blocked: ${JSON.stringify(gitPreview.data?.blocked)}; index: ${indexed.join(', ')}; ignored: ${ignored}`
+    );
+    const submodule = gitProject('rbook-verify-migrate-gitlink-');
+    const head = submodule.git(['rev-parse', 'HEAD']).stdout.trim();
+    submodule.git([
+      'update-index',
+      '--add',
+      '--cacheinfo',
+      `160000,${head},${LEGACY.recordDirectory}/vendor/lib`,
+    ]);
+    const linkPreview = parsed(submodule.run(['migrate', '--project', submodule.root]).stdout);
+    check(
+      "s109-m01: dist migrate's dry run lists a submodule in the record folder as a refusal",
+      (linkPreview.data?.blocked ?? []).some((line) => line.includes('holds a submodule')),
+      JSON.stringify(linkPreview).slice(0, 300)
+    );
   } finally {
     await h.close();
     for (const dir of tmpDirs) {

@@ -56,7 +56,7 @@
  * read it. That is also why m02 takes NO dependency on m03's `#535` read-only-client fix.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -492,6 +492,162 @@ describe('s87-m02 — the close names the rows it archived', () => {
     const after = fs.existsSync(snapDir) ? fs.readdirSync(snapDir) : [];
     expect(after).toEqual(before);
   }, 60_000);
+
+  /**
+   * s109-m04 (#916). The nonexistent-sprint gate above did not reach the refusals the store's state
+   * predicts: an open mission, a sprint already Completed, a missing or unreadable context. Each one
+   * copied the whole store before refusing, and at the retention cap pruned the operator's oldest
+   * backup. The close now runs its own checks before BEGIN and snapshots only when all of them pass.
+   */
+  describe('#916: a refusal the state predicts takes no snapshot and prunes nothing', () => {
+    const snapDir = (): string => path.join(tempDir, 'rbook', 'db', 'snapshots');
+    const listing = (): string[] =>
+      fs.existsSync(snapDir()) ? fs.readdirSync(snapDir()).sort() : [];
+    const addQueuedMission = (): void => {
+      withDb((db) =>
+        db
+          .prepare(
+            `INSERT INTO missions (id, sprint_id, name, status) VALUES ('m-2', ?, 'Mission 2', 'Queued')`
+          )
+          .run(SPRINT)
+      );
+    };
+
+    it('an open mission: SPRINT_NOT_READY, and the snapshot folder is unchanged', async () => {
+      seedRows();
+      addQueuedMission();
+      const before = listing();
+      const result = await closeSprint();
+      expect(result.error?.code).toBe('SPRINT_NOT_READY');
+      expect(listing()).toEqual(before);
+    }, 60_000);
+
+    it('a second close of a Completed sprint: SPRINT_ALREADY_COMPLETED, and the folder is unchanged', async () => {
+      seedRows();
+      expect((await closeSprint()).success).toBe(true);
+      const before = listing();
+      // Non-vacuity: the first close took its two snapshots, so the folder exists and holds them.
+      expect(before.length).toBeGreaterThanOrEqual(2);
+      const again = await closeSprint();
+      expect(again.error?.code).toBe('SPRINT_ALREADY_COMPLETED');
+      expect(listing()).toEqual(before);
+    }, 60_000);
+
+    it('a missing project_context, then an unreadable master_context: refused, and the folder is unchanged', async () => {
+      seedRows();
+      withDb((db) => db.prepare(`DELETE FROM contexts WHERE id = 'project_context'`).run());
+      const before = listing();
+      const missing = await closeSprint();
+      expect(missing.error?.code).toBe('CONTEXT_NOT_FOUND');
+      expect(listing()).toEqual(before);
+
+      withDb((db) => {
+        db.prepare(
+          `INSERT INTO contexts (id, source_path, content, updated_at)
+           VALUES ('project_context', 'context/PROJECT_CONTEXT.json', '{}', '2026-08-01T00:00:00Z')`
+        ).run();
+        db.prepare(`UPDATE contexts SET content = 'not json' WHERE id = 'master_context'`).run();
+      });
+      const unreadable = await closeSprint();
+      expect(unreadable.error?.code).toBe('CONTEXT_PARSE_ERROR');
+      expect(listing()).toEqual(before);
+    }, 60_000);
+
+    it('at the retention cap, a refused close deletes nothing', async () => {
+      seedRows();
+      const { rbookDbSnapshot } = await import('../../../src/tools/rbook/rbook-db-snapshot');
+      for (let i = 0; i < 3; i += 1) {
+        expect((await rbookDbSnapshot({ projectRoot: tempDir })).success).toBe(true);
+      }
+      const before = listing();
+      expect(before.filter((name) => name.endsWith('.sqlite'))).toHaveLength(3);
+      addQueuedMission();
+      const previous = process.env.RBOOK_MAX_SNAPSHOTS;
+      process.env.RBOOK_MAX_SNAPSHOTS = '3';
+      try {
+        const result = await closeSprint();
+        expect(result.error?.code).toBe('SPRINT_NOT_READY');
+        // Before #916 this close added a snapshot and pruned the oldest of the three.
+        expect(listing()).toEqual(before);
+      } finally {
+        if (previous === undefined) delete process.env.RBOOK_MAX_SNAPSHOTS;
+        else process.env.RBOOK_MAX_SNAPSHOTS = previous;
+      }
+    }, 60_000);
+
+    // Critic A, F4: only the store's state predicts a refusal. A read the pre-check cannot make
+    // predicts nothing, so the close snapshots as before and the transaction gives any refusal.
+    it.each([
+      ['the sprint', 'getOne', 'SELECT status FROM sprints WHERE id = ?'],
+      [
+        'the missions',
+        'getMany',
+        'SELECT id, status, notes FROM missions WHERE sprint_id = ? ORDER BY id ASC',
+      ],
+      [
+        'a context',
+        'getOne',
+        'SELECT id, source_path, content, updated_at FROM contexts WHERE id = ?',
+      ],
+    ] as const)(
+      'a read of %s the pre-check cannot make predicts nothing: the snapshot is taken and the close goes ahead',
+      async (_what, method, sql) => {
+        seedRows();
+        const { RbookDatabaseClient } = await import('../../../src/tools/rbook/client');
+        const original = RbookDatabaseClient.prototype[method] as (...args: unknown[]) => unknown;
+        let failed = 0;
+        // The pre-check's read is that statement's first: the transaction's own read follows it.
+        const spy = jest.spyOn(RbookDatabaseClient.prototype, method).mockImplementation(function (
+          this: unknown,
+          ...args: unknown[]
+        ) {
+          if (failed === 0 && args[0] === sql) {
+            failed += 1;
+            return { success: false, error: { code: 'DB_QUERY_FAILED', message: 'injected' } };
+          }
+          return original.apply(this, args);
+        } as never);
+        try {
+          const result = await closeSprint();
+          expect(failed).toBe(1);
+          expect(result.success).toBe(true);
+          expect(result.data!.lifecycle.preCloseSnapshotId).toEqual(expect.any(String));
+          expect((result.warnings ?? []).join('\n')).not.toContain('snapshot skipped');
+        } finally {
+          spy.mockRestore();
+        }
+      },
+      60_000
+    );
+
+    it('a close predicted to refuse that a race lets go ahead says its snapshot was skipped, not failed', async () => {
+      seedRows();
+      addQueuedMission();
+      const spinOut = await import('../../../src/tools/rbook/spin-out-read');
+      const original = spinOut.prepareSpinOutRead;
+      // Another process completes m-2 after the pre-check and before BEGIN: the window this opens.
+      const spy = jest.spyOn(spinOut, 'prepareSpinOutRead').mockImplementation((reader) => {
+        withDb((db) =>
+          db.prepare(`UPDATE missions SET status = 'Completed' WHERE id = 'm-2'`).run()
+        );
+        return original(reader);
+      });
+      try {
+        const result = await closeSprint();
+        // The in-transaction checks stay authoritative: the close goes ahead.
+        expect(result.success).toBe(true);
+        expect(result.data!.lifecycle.preCloseSnapshotId).toBeNull();
+        const text = (result.warnings ?? []).join('\n');
+        expect(text).toContain('Pre-close database snapshot skipped');
+        // One open mission reads in the singular (round 2, verifier A, N4).
+        expect(text).toContain('its mission m-2 was still open');
+        expect(text).toContain('NOT reversible from a snapshot');
+        expect(text).not.toContain('snapshot failed');
+      } finally {
+        spy.mockRestore();
+      }
+    }, 60_000);
+  });
 
   it('criterion 10 — the rendered close line names ids, and any truncation is EXPLICIT', async () => {
     // Seed past the truncation threshold so the branch is exercised rather than assumed.

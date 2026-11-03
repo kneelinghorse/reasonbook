@@ -5,10 +5,12 @@ import { afterAll, beforeAll, expect, it, jest } from '@jest/globals';
 import Database from 'better-sqlite3';
 import childProcess from 'child_process';
 import { createHash } from 'crypto';
+import { once } from 'events';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { migrateProject } from '../../src/cli/migrate';
+import { cutoverSeams } from '../../src/cli/migrate-store';
 import { LEGACY, resolveConfigDirectory } from '../../src/intelligence/legacy-compat';
 import { getServerVersion } from '../../src/server-version';
 import { requiresPrivateEvidence } from '../helpers/public-mirror';
@@ -282,4 +284,170 @@ PRIVATE.describe('s108-m05 real-store fire: two real stores move under a live 4.
     },
     HANG_GUARD_MS
   );
+
+  it(
+    'a late reader of a copy of the largest real store: refused before any rename, its guard released, every row kept (s109-m01, #913)',
+    async () => {
+      // A reader that keeps its read, in a WAL and a DELETE copy, and one that ends within the
+      // clients' 5 s busy timeout, which the switch back to WAL waits out.
+      for (const [mode, brief] of [
+        ['wal', false],
+        ['wal', true],
+        ['delete', false],
+      ] as const) {
+        const copy = largestStoreCopy(`late-${mode}${brief ? '-brief' : ''}`, mode);
+        const before = contents(copy.file);
+        const signals = fs.mkdtempSync(path.join(tmp, 'opener-'));
+        let child: childProcess.ChildProcess | undefined;
+        const wait = (name: string) => {
+          const sleeper = new Int32Array(new SharedArrayBuffer(4));
+          const deadline = Date.now() + 60_000;
+          while (!fs.existsSync(path.join(signals, name))) {
+            if (Date.now() > deadline) throw new Error(`the late reader never wrote ${name}`);
+            Atomics.wait(sleeper, 0, 0, 20);
+          }
+        };
+        const seams = { ...cutoverSeams };
+        cutoverSeams.beforeFinalCheck = () => {
+          child = childProcess.spawn(
+            process.execPath,
+            [
+              '-e',
+              'const [file, signals, sqlite, brief] = process.argv.slice(1);const fs = require("fs");' +
+                'const db = new (require(sqlite))(file, { timeout: 60000 });fs.writeFileSync(signals + "/ready", "");' +
+                'db.exec("BEGIN");db.prepare("SELECT count(*) FROM sqlite_master").get();fs.writeFileSync(signals + "/reading", "");' +
+                'if (brief === "1") setTimeout(() => db.exec("COMMIT"), 1500);setInterval(() => {}, 1000);',
+              copy.file,
+              signals,
+              require.resolve('better-sqlite3'),
+              brief ? '1' : '0',
+            ],
+            { stdio: 'ignore' }
+          );
+          wait('ready');
+        };
+        cutoverSeams.beforeRollbackVerify = () => wait('reading');
+        try {
+          const result = await migrateProject({
+            projectRoot: copy.root,
+            env: { PATH: process.env.PATH, HOME: path.join(tmp, 'home') },
+            apply: true,
+            checkProcesses: false,
+          });
+          expect({ mode, brief, success: result.success }).toEqual({ mode, brief, success: false });
+          expect(result.error?.message).toContain(`open by process ${child?.pid}`);
+          expect(result.error?.message).not.toContain('recovery failed');
+          expect(
+            fs.readdirSync(copy.root).filter((name) => name.startsWith('.rbook-migration'))
+          ).toEqual([]);
+          const held = mode === 'wal' && !brief;
+          expect(result.error?.message.includes('stays in rollback-journal mode')).toBe(held);
+        } finally {
+          Object.assign(cutoverSeams, seams);
+          if (child && child.exitCode === null && child.signalCode === null) {
+            const exited = once(child, 'exit');
+            child.kill();
+            await exited;
+          }
+        }
+        const after = new Database(copy.file, { readonly: true });
+        expect(after.pragma('journal_mode', { simple: true })).toBe(
+          mode === 'wal' && !brief ? 'delete' : mode
+        );
+        after.close();
+        expect(contents(copy.file)).toEqual(before);
+      }
+    },
+    HANG_GUARD_MS
+  );
+
+  it(
+    'a copy of the largest real store given a sync peer refuses while a 4.x runtime runs, and never makes its guard (s109-m01, #915)',
+    async () => {
+      // No store on this machine has had a peer (E1), so one is planted in the copy.
+      const copy = largestStoreCopy('peered', 'wal');
+      const db = new Database(copy.file);
+      db.exec(
+        'CREATE TABLE IF NOT EXISTS record_peers (replica_id TEXT PRIMARY KEY, name TEXT, route TEXT)'
+      );
+      db.prepare(
+        "INSERT OR REPLACE INTO record_peers (replica_id, name) VALUES ('peer', 'Peer')"
+      ).run();
+      db.close();
+      const runtime = path.join(tmp, 'peer-runtime');
+      fs.mkdirSync(path.join(runtime, 'dist'), { recursive: true });
+      fs.writeFileSync(
+        path.join(runtime, 'package.json'),
+        JSON.stringify({ name: '@aquex/reasonbook', version: getServerVersion() })
+      );
+      const spawnSync = childProcess.spawnSync;
+      jest.spyOn(childProcess, 'spawnSync').mockImplementation(((
+        command: string,
+        args: string[],
+        opts: any
+      ) => {
+        const result = spawnSync(command, args, opts);
+        return command === 'ps'
+          ? { ...result, stdout: `2147483646 node ${path.join(runtime, 'dist/index.js')}\n` }
+          : result;
+      }) as any);
+      const made: string[] = [];
+      const mkdirSync = fs.mkdirSync;
+      jest.spyOn(fs, 'mkdirSync').mockImplementation(((target: fs.PathLike, opts?: any) => {
+        made.push(String(target));
+        return mkdirSync(target, opts);
+      }) as any);
+      try {
+        const result = await migrateProject({
+          projectRoot: copy.root,
+          env: { PATH: process.env.PATH, HOME: path.join(tmp, 'home') },
+          apply: true,
+        });
+        expect(result).toMatchObject({
+          success: false,
+          error: { message: expect.stringContaining('has had a sync peer') },
+        });
+        expect(made.filter((target) => target.endsWith('.rbook-migration.lock'))).toEqual([]);
+        expect(fs.existsSync(copy.file)).toBe(true);
+      } finally {
+        jest.restoreAllMocks();
+      }
+    },
+    HANG_GUARD_MS
+  );
 });
+
+/** The largest registered store on this machine, copied by VACUUM INTO into a legacy project of its own. */
+function largestStoreCopy(name: string, mode: 'wal' | 'delete'): { root: string; file: string } {
+  const realConfig = resolveConfigDirectory({ HOME: os.homedir() }, os.homedir(), { quiet: true });
+  const registry = new Database(path.join(realConfig, 'project-graph.sqlite'), {
+    readonly: true,
+    fileMustExist: true,
+  });
+  const roots = (
+    registry
+      .prepare('SELECT DISTINCT store_path FROM projects WHERE archived_at IS NULL')
+      .all() as Array<{ store_path: string }>
+  ).map((row) => row.store_path);
+  registry.close();
+  const stores = roots
+    .flatMap((root) => [
+      path.join(root, LEGACY.recordDirectory, 'db', LEGACY.databaseFile),
+      path.join(root, 'rbook/db/rbook.sqlite'),
+    ])
+    .filter((file) => fs.existsSync(file))
+    .sort((a, b) => fs.statSync(b).size - fs.statSync(a).size);
+  expect(stores.length).toBeGreaterThan(0);
+  const root = path.join(tmp, name);
+  const file = path.join(root, LEGACY.recordDirectory, 'db', LEGACY.databaseFile);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const read = new Database(stores[0], { readonly: true, fileMustExist: true });
+  read.prepare('VACUUM INTO ?').run(file);
+  read.close();
+  const db = new Database(file);
+  // No dashboard is told about a copy: the move's follow-up reads these keys.
+  db.prepare("DELETE FROM metadata WHERE key LIKE 'dashboard%'").run();
+  db.pragma(`journal_mode = ${mode}`);
+  db.close();
+  return { root, file };
+}

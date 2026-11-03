@@ -2,6 +2,143 @@
 
 All notable changes to Reasonbook (published as `@aquex/cmos-mcp` before 4.0.0) are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.11.0] — 2026-11-03
+
+An agent can settle a draft that a recorded decision already answered with one reply line,
+`Settled: P<n> by decision <N>`. `reasonbook migrate --apply` can be run for real: a refused move
+releases its guard, every runtime a process names is judged, and a move off `cmos/` keeps every
+ignored file ignored and records itself in git's index. A sprint close its own checks refuse takes no
+snapshot, and an explicit close signed by the project's own key marks a store that lost its
+registered flag registered once the dashboard takes its upload, instead of sending a registration
+the dashboard refused on every close. No MCP tool definition changed.
+
+### Added
+
+- An agent can settle a pending draft that a recorded decision already answered, with one plain
+  line in its reply, `Settled: P<n> by decision <N>`, above any Would record lines (#1810). Where
+  hooks run, the Stop hook marks the draft answered by `d:N`, with the draft's approval mode
+  `settled`, in its own transaction after the reply's drafts and shown set are written. The
+  operator's next "yes" then binds nothing to it, the digest and reminders stop listing it, and
+  `reasonbook drafts list --all` shows "answered as d:N (settled)". A settle refuses a decision
+  recorded autonomously, a superseded decision (naming the end of its chain), a decision this copy
+  of a shared record has not received (sync first), a constraint, rule or profile draft, a draft the
+  same reply's Would record lines create, repeat or revise, and an expired or no longer pending
+  draft. A decision recorded after the draft must hold 30% of the draft's subject and an older one
+  85%; a settle below 85% takes effect with a note. A Settled line in any other form (quoted, listed,
+  bold, in code or a fence, link text, or worded otherwise) or outside the reply's last lines is not
+  read as a settle, and every draft a Settled line names leaves what the operator's next message
+  binds, whether or not the settle took effect. A settle is applied only from the turn's own reply,
+  never from the transcript. The reminders, the digest, the approval-required suggestion and the
+  record-decision skill teach it.
+- The operator's next prompt names the lines of the agent's last reply that took no effect, with
+  why, and tells the agent to say so: a fourth Would record line (#51), one of an unpublished kind or
+  with too little text, and a Settled line that was refused or not read. A settle applied below 85%
+  or placed below a Would record line is named with a note. Stop keeps at most five such lines a
+  reply, the rest counted, in the draft runtime's new `unkept` table, and its telemetry row counts
+  them as `draftLinesDropped`.
+- `proposals.settled_by`, a nullable column holding the hashed session that settled a draft, added
+  to an existing table when a settle first writes. A merge's session rename rewrites it too.
+
+### Changed
+
+- `rbook_decisions(action="record", fromDraft=…)` on a constraint, rule or profile draft refuses
+  `evidence`, `supersedes`, `citesLearningIds` and `domain`, and on a profile draft `missionId` and
+  `sprintId`, which those writers ignored while reporting success (#893). Nothing is written and the
+  draft stays pending; an empty list is not refused.
+- `reasonbook stats`' counting rule names settled drafts: a settle answers a draft that would
+  otherwise have expired unanswered, which the acceptance denominator counts, so the rate can rise
+  with no change in approvals.
+- An operator's message that opens with an approval, and whose every question is about something
+  else, no longer reads as a question about the drafts (#52): "yes, this looks good" followed by a
+  question about renaming the project now gets the agent-judged instruction, so the agent records
+  the drafts and answers the question. A question is about the drafts unless it starts with a topic
+  word such as "also", "separately" or "by the way", and even then when it names a draft, says this,
+  that, these, those, draft or proposal, holds a decline phrase, has fewer than two keywords, or
+  shares a quarter of the subject words of the shorter of it and a draft; a question is read as a
+  sentence that ends at a full stop, question or exclamation mark, ellipsis or line break. After an
+  approval, a question mark only in code, a link target or a URL asks nothing, while a URL's last
+  question mark ends a question unless an ASCII letter, a digit or one of `=&%+/#-` comes after it
+  in the URL. The rule never makes a plain approval or decline, so no record's approval mode
+  changes. A message over 10,000 characters keeps the earlier reading. The question instruction is
+  conditional: answer when the message asks about the drafts or amends them, record them
+  agent-judged only when it approves them as drafted and every question is about something else, and
+  otherwise leave them pending; constraint, rule and profile drafts still need a plain approval. The
+  instruction for any other message records only a message that asks nothing about the drafts, gives
+  a question about them or an amendment an answer and their Would record lines again, revised if
+  needed, and offers a record only when a decision draft is bound. When the drafts offered at a
+  prompt pass 1,000 characters, their offers go compact before anything is cut, so less of each
+  draft's notes and of the lines a reply lost is cut.
+
+### Fixed
+
+- `reasonbook migrate --apply` releases its guard when it refuses before renaming anything, and so
+  does `migrate --config --apply` (#913). Each puts back in WAL mode what it switched, waiting out a
+  client's write for up to 5 seconds, or says what stays in rollback-journal mode until a Reasonbook
+  client opens it; the record move's refusal names the `pre-migrate-*.sqlite` backup it left. A
+  refusal after a rename still keeps the guard, and a move whose WAL restore fails after both renames
+  is committed and says so.
+- Migrate's check for older Reasonbook runtimes judges every entry a process or a project's
+  `.mcp.json` names, not only the first (#914): a process passes only when each entry resolves to
+  Reasonbook 4.0 or later or to another product. It recognizes launches through `node`, `nodejs`,
+  `node<N>`, `node-<N>`, `bun` and `deno`, with `-r`, `--import` and `--env-file=` arguments, and
+  refuses when a root `plugin.json` cannot be read. `reasonbook doctor` describes every entry
+  migrate judges, and a refusal for an entry in a plugin folder that no longer exists says to restart
+  the app that updated its plugin.
+- A shared record's, or the config's, check for running 4.x processes runs before migrate creates its
+  guard, so that refusal leaves no guard behind (#915).
+- An lsof warning that it could not reach another file system, such as an unreachable network
+  mount, no longer refuses a move when its device line names a device other than the record
+  folder's and the store folder's (#917). Any other lsof output still refuses, quoting the line, and a
+  first check that warned and took over 3 seconds refuses before the exclusive lock, naming the slow
+  mount.
+- A move off `cmos/` keeps every ignored file ignored and records itself in git's index. Each rule
+  naming the folder in the project root's `.gitignore`, or in one between it and git's top level, gets
+  an anchored twin naming `rbook` after it (a negation keeps its `!`; a rule naming the store's file
+  gets two), and the move refuses, putting those files back byte for byte, if any file ignored before
+  it would be visible after; the dry run names any such file. In a git repository the move then
+  renames every tracked file under the old folder to its new path in git's index, with its blob, gives
+  the index copies of the ignore files the same lines, and leaves unstaged edits, untracked files and
+  other staged changes as they were. During a merge, rebase or similar operation, with a stale
+  `index.lock`, a skip-worktree, assume-unchanged or intent-to-add flag, or a case mismatch, that step
+  waits, and a later `migrate --apply` completes it; a gitlink under the folder refuses the move before
+  any rename. A project outside git gets the twins and no git step.
+- `rbook_sprint(action="complete")` takes its pre-close snapshot only when the close's own checks
+  would let it go ahead (#916). A close refused for an open mission, a sprint already Completed, or
+  a missing or unreadable master or project context used to copy the whole store first and, at the
+  `RBOOK_MAX_SNAPSHOTS` cap, delete the oldest backup; it now takes no snapshot and deletes nothing.
+  A refusal from a database or file failure still costs one, as before, and a close that another
+  process lets go ahead after the check says its snapshot was skipped.
+- An explicit close signed by the project's own project-scoped key, of a store that holds its
+  dashboard id but not its registered flag and that the dashboard lists under the store's own name
+  as the signed-in account's own with the store's owner confirmed, uploads it and, once the
+  dashboard has taken that upload, marks the store registered, instead of sending a registration the
+  dashboard refused on every close (#907). A close signed by a user key keeps 4.10.0's registration
+  path, so a store holding another record's id is never uploaded over it. A close signed by a
+  project-scoped key never sends a registration: a store listed as owned under another name is
+  refused with both names and the rename that matches them, and an unregistered one with
+  "Registration refused: … this project's own key cannot register it" and its remedy (sign in,
+  revoke the folder's project key, close again). The upload notice shows the remedy.
+- `rbook_feedback(action="list")` returns 8 resolved rows a page by default, not 10, and the list
+  across projects (`acrossProjects=true`) 4 rows a page, not 5, at every status but resolved, which
+  stays at 2 (#883). A resolved row goes out whole with its resolution note: on Reasonbook's own
+  record ten measured 21,125 characters, past the 20,000 a list answer is held to, and a page of the
+  open list across projects 20,595 when this release was planned. At the new sizes no feedback page
+  on any registered store of the machine that measured them passed 20,000; the largest was 19,193.
+  Feedback text has no length limit, so long enough rows can still pass it. A `limit` in the call
+  is unchanged.
+- When `/api/projects/me` answers, `rbook_message(action="directory")` calls a project the
+  signed-in account's own (`isOwner` true, local provenance) only when that route marks it `isOwner`
+  true. The route also lists projects shared with the account, which read as owned and local; they,
+  and a row it sends without `isOwner`, now read `isOwner` false with foreign provenance. When it
+  fails, each row keeps the directory route's own `isOwner`, as before.
+
+### Known limits
+
+- `/api/projects/me` leaves out some projects the account owns (10 of 30 on the dashboard probed),
+  and the directory reads those as not owned, as 4.10.0 did. When `/me` fails, the directory's
+  warning says no row is claimed as the account's own, although each row keeps the directory
+  route's own `isOwner`.
+
 ## [4.10.0] — 2026-11-01
 
 Next steps and deferred missions can wait until a date and come back due on it, a completed or

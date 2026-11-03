@@ -30,10 +30,47 @@ interface CheckResult {
    * followed by an "Auto-registered project ..." line asserting a row that was never stored.
    */
   warnings: string[];
+  /**
+   * s109-m04 (#907): the store takes the registered path as a heal, and its flag is written once the
+   * dashboard has taken this close's upload (`markRegistered`), never before (round 3, NEW-1).
+   */
+  healPending?: boolean;
 }
 
 function deriveProjectSlug(projectName: string): string {
   return projectName.trim().toLowerCase().replace(/\s+/g, '-');
+}
+
+/**
+ * s109-m04 (round 3, NEW-1): once the dashboard has taken a healing close's upload, signed by the
+ * folder's own project key, the store records that it is registered. Returns why it could not, or
+ * null; a store that could not is healed again by its next close with that key.
+ */
+export async function markRegistered(projectRoot: string | undefined): Promise<string | null> {
+  const warnings: string[] = [];
+  let saved = false;
+  try {
+    await withClientAsync(
+      async (client) => {
+        checkWrite(
+          client.execute(
+            `INSERT OR REPLACE INTO metadata (key, value) VALUES ('dashboard_registered', 'true')`
+          ),
+          warnings,
+          'metadata.dashboard_registered'
+        );
+        const read = client.getOne<{ value: string }>(
+          `SELECT value FROM metadata WHERE key = 'dashboard_registered'`
+        );
+        saved = read.success && read.data?.value === 'true';
+        return createSuccess(undefined);
+      },
+      { projectRoot }
+    );
+  } catch (error) {
+    warnings.push(error instanceof Error ? error.message : String(error));
+  }
+  return saved ? null : warnings.join('; ') || 'the flag could not be read back';
 }
 
 /**
@@ -105,9 +142,13 @@ export async function checkAndRegister(
         // writes below. A failed owner write leaves the store minting `rbook://unknown/*`
         // addresses while the push proceeds under a slug this cycle believed it persisted.
         let incumbentConfirmed = false;
+        let listedAsOwned = false;
+        let listedName: string | undefined;
         try {
           const ownerResult = await resolveAndPersistOwner(client, dashClient);
           incumbentConfirmed = ownerResult.incumbentConfirmed;
+          listedAsOwned = ownerResult.listedAsOwned === true;
+          listedName = ownerResult.listedName;
           captured.ownerConfirmed = ownerResult.ownerConfirmed;
           warnings.push(...(ownerResult.warnings ?? []));
           if (ownerResult.error) {
@@ -122,16 +163,30 @@ export async function checkAndRegister(
           return createSuccess(undefined);
         }
 
-        // Check if already registered
+        // Check if already registered. A read that fails is said, never taken for a store that is
+        // not registered (s109-m04, round 3, NEW-4), as the automatic path above already says it.
         const regResult = client.getOne<{ value: string }>(
           `SELECT value FROM metadata WHERE key = 'dashboard_registered'`
         );
-        if (regResult.success && regResult.data?.value === 'true') {
+        if (!regResult.success)
+          throw new Error(regResult.error?.message ?? 'Could not read dashboard registration.');
+        // s109-m04 (#907; settled item 12): the listing names this store's id as this account's own,
+        // under the store's name, with its owner confirmed, so the store is registered and takes the
+        // registered path instead of sending a registration, which the dashboard refuses for a
+        // project it already has (Meridian's 400s). Only a close signed by this folder's own
+        // project-scoped key heals (round 2, verifier A, N1), and the flag is written only after the
+        // dashboard takes that close's upload (round 3, NEW-1): the dashboard refuses the key's sync
+        // outside its own project, so a store holding another record's id and name never gains the
+        // flag that a later user-key close would upload over that record with.
+        const registered = regResult.data?.value === 'true';
+        const healing = !registered && listedAsOwned && keySource === 'project-scoped';
+        if (registered || healing) {
           // Already registered — read slug from metadata
           const slugResult = client.getOne<{ value: string }>(
             `SELECT value FROM metadata WHERE key = 'dashboard_slug'`
           );
           captured.projectSlug = (slugResult.success && slugResult.data?.value) || null;
+          if (healing) captured.healPending = true;
           // s81-m02 defect-2 (adversarial-review-hardened): on the SYNC path, relax the
           // expectedSlug guard to the RECONCILED incumbent dashboard_slug ONLY when the
           // reconcile CONFIRMED that incumbent against a live dashboard row this cycle
@@ -150,6 +205,38 @@ export async function checkAndRegister(
 
         if (!projectName || !allowRegister) {
           return createSuccess(undefined); // Can't register without a name
+        }
+
+        // s109-m04 (#907): the dashboard refuses a registration sent with a project-scoped key, so
+        // none is sent. While this project's key is stored it signs every close, so the remedy
+        // removes it as well as signing in; revoke by folder reads the very row closes sign with,
+        // which list can hide (critic A, F2).
+        if (keySource === 'project-scoped') {
+          const folder = projectRoot ?? '<project folder>';
+          // Round 2, verifier A, N2: the listing names this store's id as owned, under another name,
+          // so it is not "not registered", and registering it would make a second record. A listing
+          // that gives no name offers no name to take (round 3, NEW-3).
+          if (listedName !== undefined) {
+            const revoke = `sign in with rbook_auth(action="login_init"), then login_complete, revoke this folder's project key with rbook_auth(action="revoke", projectRoot="${folder}") and close again.`;
+            captured.error = {
+              code: 'DASHBOARD_NAME_MISMATCH',
+              message: listedName
+                ? `Registration refused: reasonbook.ai lists this store's dashboard id as "${listedName}", but this store is named "${projectName}", so it was not marked registered. Nothing was uploaded.`
+                : `Registration refused: reasonbook.ai lists this store's dashboard id as this account's own but gives it no name, so "${projectName}" was not marked registered. Nothing was uploaded.`,
+              suggestion: listedName
+                ? `If this store is "${listedName}", give it that name with rbook_project(action="init", projectRoot="${folder}", projectName="${listedName}") and close again. If it is another project, ${revoke}`
+                : `If this store is another project, ${revoke}`,
+            };
+            log(captured.error.message);
+            return createSuccess(undefined);
+          }
+          captured.error = {
+            code: 'REGISTRATION_NEEDS_USER_KEY',
+            message: `Registration refused: "${projectName}" is not registered on reasonbook.ai, and this project's own key cannot register it. Nothing was uploaded.`,
+            suggestion: `Sign in with rbook_auth(action="login_init"), then login_complete. Then revoke this folder's project key with rbook_auth(action="revoke", projectRoot="${folder}") and close again: a close signed by your user key can register the project, or says what stops it.`,
+          };
+          log(captured.error.message);
+          return createSuccess(undefined);
         }
 
         const sqlitePath = client.path;
@@ -216,14 +303,11 @@ export async function checkAndRegister(
                 // recover", which is false in exactly the state that emits it:
                 // startup recovery returns `skipped-already-present` whenever a
                 // local row exists, and where no row exists the reason for the
-                // missing attribution is unchanged by a restart. Derived from
-                // keySource so each arm gets the recovery that applies to it.
+                // missing attribution is unchanged by a restart. s109-m04 (#907): a
+                // project-scoped key never registers (above), so only the user-key
+                // recovery applies here.
                 log(
-                  `Skipping project-key capture: the dashboard minted a project key but this client (keySource=${keySource}) carries no user-scoped parent to attribute it to, so it is left orphaned locally. ${
-                    keySource === 'project-scoped'
-                      ? 'A local project-key row already exists for this root, so startup recovery will skip it — run rbook_auth(action="reissue", projectRoot=…) to replace the row.'
-                      : 'Startup recovery will hit the same wall — run rbook_auth(action="login_init") + login_complete so a device-code user key is available, then rbook_auth(action="reissue", projectRoot=…).'
-                  }`
+                  `Skipping project-key capture: the dashboard minted a project key but this client (keySource=${keySource}) carries no user-scoped parent to attribute it to, so it is left orphaned locally. Startup recovery will hit the same wall — run rbook_auth(action="login_init") + login_complete so a device-code user key is available, then rbook_auth(action="reissue", projectRoot=…).`
                 );
               }
             } catch (err) {

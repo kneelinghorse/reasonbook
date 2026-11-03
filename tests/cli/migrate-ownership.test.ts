@@ -192,8 +192,11 @@ async function cachedPathRuntime(version: string) {
     };
   }) as any);
   const inspect = guard.assertNoRecordProcesses;
+  // s109-m01 (#915): the check runs before the guard exists, so a refusal never makes it, and
+  // again under it, which closes the race of a runtime starting in between.
+  const guarded: boolean[] = [];
   const inspected = jest.spyOn(guard, 'assertNoRecordProcesses').mockImplementation((scope) => {
-    expect(fs.existsSync(path.join(root, '.rbook-migration.lock'))).toBe(true);
+    guarded.push(fs.existsSync(path.join(root, '.rbook-migration.lock')));
     inspect(scope);
   });
   /** Lets the runtime write through its cached path; resolves with its exit code. */
@@ -202,14 +205,14 @@ async function cachedPathRuntime(version: string) {
     child.stdin!.write('continue');
     return (await done)[0] as number | null;
   };
-  return { child, oldDb, inspected, proceed };
+  return { child, oldDb, inspected, guarded, proceed };
 }
 
 describe('a record moves past a 4.x runtime that cached its path, and waits for an older one', () => {
   it(
     'moves the record while a live 4.x runtime holds only its old path, whose later write fails, landing nowhere',
     async () => {
-      const { child, oldDb, inspected, proceed } = await cachedPathRuntime('4.0.0');
+      const { child, oldDb, inspected, guarded, proceed } = await cachedPathRuntime('4.0.0');
       try {
         // s108-m05, superseding #1330: the move no longer waits for a 4.x runtime. This fixture
         // checks no guard and holds no handle; it writes only after the move, through a path that
@@ -220,6 +223,7 @@ describe('a record moves past a 4.x runtime that cached its path, and waits for 
           error: undefined,
         });
         expect(inspected).toHaveBeenCalledWith('pre-guard');
+        expect(guarded).toEqual([false, true]);
         expect(fs.existsSync(oldDb)).toBe(false);
         expect(await proceed()).not.toBe(0);
         expect(fs.existsSync(path.join(root, LEGACY.recordDirectory))).toBe(false);
@@ -238,7 +242,7 @@ describe('a record moves past a 4.x runtime that cached its path, and waits for 
   it(
     'names a live runtime from before 4.0 holding only a path and never renames its database',
     async () => {
-      const { child, oldDb, inspected, proceed } = await cachedPathRuntime('3.9.0');
+      const { child, oldDb, inspected, guarded, proceed } = await cachedPathRuntime('3.9.0');
       try {
         const result = await migrateProject({ projectRoot: root, env: { HOME: tmp }, apply: true });
         // s100-m02: this failed once in a full suite with no message kept, and 0 of 14 runs under two
@@ -248,6 +252,8 @@ describe('a record moves past a 4.x runtime that cached its path, and waits for 
           error: expect.objectContaining({ message: expect.stringContaining(String(child.pid)) }),
         });
         expect(inspected).toHaveBeenCalledWith('pre-guard');
+        // Refused before the guard existed.
+        expect(guarded).toEqual([false]);
         expect(fs.existsSync(oldDb)).toBe(true);
         expect(fs.existsSync(path.join(root, 'rbook'))).toBe(false);
         expect(await proceed()).toBe(0);

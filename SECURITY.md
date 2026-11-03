@@ -273,7 +273,10 @@ surfaced as an `authTier` (the `AuthTier` type and `deriveAuthTier` in
 
 - **Database snapshots** are copies of the SQLite file under `rbook/db/snapshots/`.
   `rbook_db(action="snapshot")` takes one on demand. `rbook_sprint(action="complete")` attempts
-  snapshots before and after closing; a snapshot failure warns without blocking the close.
+  snapshots before and after closing; a snapshot failure warns without blocking the close. A close
+  its own checks refuse (an open mission, a sprint already Completed, a missing or unreadable
+  context) takes none, so it deletes no older one; a close that another process lets go ahead after
+  those checks runs without its pre-close snapshot and says so.
   `rbook_db(action="prune_snapshots")` requires a backup before applying a nonempty selection.
   `rbook_db(action="restore")` requires a copy of the live database under
   `rbook/db/snapshots/pre-restore/` before replacing it. These are the automatic backup paths.
@@ -500,7 +503,11 @@ project graph or writes its identity.
 **Drafted records (3.3.0).** When an agent ends a reply with a `Would record:` line, the Stop hook
 stores it in the store's `proposals` table: the line, its kind, the hashed session, up to 600
 characters of the reply before it, the links it named, and whether the session had read outside
-content. The prompt hook writes only a decline or a draft's first-offer time there. Neither is a
+content. The prompt hook writes only a decline or a draft's first-offer time there. From 4.11.0 the
+Stop hook also marks a pending draft answered when the reply settles it with a plain
+`Settled: P<n> by decision <N>` line, and keeps the hashed session that settled it in the column
+`settled_by`, so a whole-file upload or `reasonbook copy` of the store carries a second session hash
+beside the drafting one. Neither is a
 record: the table is outside search, embeddings and sync events, and nothing in it becomes a
 decision, constraint, learning or profile line without a `rbook_decisions(action="record",
 fromDraft=...)` call. The table is in `rbook.sqlite`, so a signed-in checkpoint upload carries it with
@@ -515,7 +522,12 @@ the project id and the store's native real path. It keeps:
 - the draft ids shown by the last reply, with their time;
 - declined draft ids awaiting a store write, with the first decline time and no words;
 - the draft ids in an approval window, its open/closed state and its time;
-- transcript scan offsets and outside-content flags, keyed by hashes of transcript paths.
+- transcript scan offsets and outside-content flags, keyed by hashes of transcript paths;
+- the lines of the last reply that took no effect, or took effect with a note: the agent's own text,
+  at most 80 characters and five lines a reply (the rest counted), with the reason and no operator
+  words. Each Stop replaces them, and session end deletes them. The next prompt names them and clears
+  them, except with nothing pending, when it opens the runtime read-only and a later prompt can name
+  them again until the next Stop replaces them. They stop being used after two hours.
 
 Session keys are 16-character hashes; raw session ids and transcript paths are not stored there
 ([src/tools/rbook/draft-runtime.ts](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/draft-runtime.ts)).
@@ -570,4 +582,4 @@ subagent type (e.g. the `Explore` agent) — that is a mitigation, not the machi
 
 ---
 
-_Last verified against the source for release 4.10.0._
+_Last verified against the source for release 4.11.0._

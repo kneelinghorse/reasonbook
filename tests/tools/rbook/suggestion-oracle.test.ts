@@ -265,28 +265,29 @@ const SITES_BY_MISSION = {
     'src/cli/feedback.ts:103',
     'src/cli/feedback.ts:114',
     'src/cli/feedback.ts:146',
-    'src/tools/rbook/rbook-feedback.ts:445',
-    'src/tools/rbook/rbook-feedback.ts:455',
+    // s109-m05: down seven lines (the resolved page size).
+    'src/tools/rbook/rbook-feedback.ts:452',
+    'src/tools/rbook/rbook-feedback.ts:462',
   ],
   // s93-m06: recording a draft. Six refusals are driven in axis 2 below (an id that is not a draft
   // id, no such draft, an answered draft, an expired one, content that does not state the draft, a
   // constraint draft with no operator words in this session); four need a harness session or a
   // race and are named residuals, each driven in tests/tools/rbook/draft-approval.test.ts.
   's93-m06': [
-    'src/tools/rbook/draft-evaluation.ts:87',
-    'src/tools/rbook/draft-evaluation.ts:147',
-    'src/tools/rbook/draft-evaluation.ts:159',
-    'src/tools/rbook/draft-evaluation.ts:185',
-    'src/tools/rbook/draft-evaluation.ts:228',
-    'src/tools/rbook/draft-evaluation.ts:241',
-    'src/tools/rbook/draft-evaluation.ts:110',
+    'src/tools/rbook/draft-evaluation.ts:88',
+    'src/tools/rbook/draft-evaluation.ts:165',
+    'src/tools/rbook/draft-evaluation.ts:177',
+    'src/tools/rbook/draft-evaluation.ts:203',
+    'src/tools/rbook/draft-evaluation.ts:246',
+    'src/tools/rbook/draft-evaluation.ts:259',
+    'src/tools/rbook/draft-evaluation.ts:128',
     'src/tools/rbook/draft-approval.ts:181',
     'src/tools/rbook/draft-approval.ts:252',
-    'src/tools/rbook/rbook-decisions-record.ts:370',
+    'src/tools/rbook/rbook-decisions-record.ts:373',
   ],
   // s94-m04: shape preflight at six writer boundaries, immutable retry comparison and draft-field conflict.
   's94-m04': [
-    'src/tools/rbook/rbook-decisions-record.ts:218',
+    'src/tools/rbook/rbook-decisions-record.ts:221',
     'src/tools/rbook/rbook-decisions-record.ts:300',
     'src/tools/rbook/rbook-mission-complete.ts:356',
     'src/tools/rbook/rbook-session-capture.ts:612',
@@ -309,7 +310,7 @@ const SITES_BY_MISSION = {
   // s94-m06: six authored fault remedies cover required citation preflight/materialization and
   // rollback. The inline capture-permissions suggestion retires into shared failure handling.
   's94-m06': [
-    'src/tools/rbook/rbook-decisions-record.ts:382',
+    'src/tools/rbook/rbook-decisions-record.ts:385',
     'src/tools/rbook/record-link-write.ts:26',
     'src/tools/rbook/record-link-write.ts:83',
     'src/tools/rbook/record-links.ts:22',
@@ -320,7 +321,7 @@ const SITES_BY_MISSION = {
   // s108-m05: down seven lines (a server that starts mid-move starts), then 13 more in round 1 (a
   // call mid-move is a refusal, and so is --project-root's check).
   's95-m13': [
-    'src/index.ts:1404',
+    'src/index.ts:1390',
     'src/tools/rbook/rbook-message.ts:798',
     'src/tools/rbook/sender-refusal.ts:90',
   ],
@@ -338,10 +339,12 @@ const SITES_BY_MISSION = {
     'src/tools/rbook/rbook-project-init.ts:640',
     // s108-m05: down 41 lines (the dry run's list of what would block, the registry by any spelling),
     // then six more in round 1 (a store with no metadata table), three in round 2 (shared records)
-    // and five in round 3 (the import of mayHaveSynced).
-    'src/cli/migrate.ts:231',
-    'src/cli/migrate-config.ts:156',
-    'src/cli/migrate-config.ts:166',
+    // and five in round 3 (the import of mayHaveSynced). s109-m01: down 83 lines in migrate.ts (the
+    // dry run's git refusals and twins, the retry's twins and their wait, the index step) and 62 and
+    // 65 in migrate-config.ts (the registries' WAL restore and the notes naming those left out of it).
+    'src/cli/migrate.ts:314',
+    'src/cli/migrate-config.ts:218',
+    'src/cli/migrate-config.ts:231',
   ],
   // s96-m01: the shared record's refusals (a second live copy, a restored copy, an unjoined copy, an
   // unchecked one and a store that cannot be read), a full number block, and init's refusal to seed
@@ -608,7 +611,7 @@ const SITES_BY_MISSION = {
     'src/tools/rbook/record-membership.ts:291',
     'src/tools/rbook/record-membership.ts:277',
   ],
-  's97-m12': ['src/tools/rbook/draft-evaluation.ts:208'],
+  's97-m12': ['src/tools/rbook/draft-evaluation.ts:226'],
   // s100-m01: the sharing fixes' refusals: the owner's other copies at a share, a removed member's
   // route the dashboard ended, a re-judge off the owner's copy, a join and a recovery of a newer
   // protocol, a handover to a copy behind a move or from one, a removed copy's sync, and a member's
@@ -634,8 +637,8 @@ const SITES_BY_MISSION = {
   // write lock, now that the capture writes its row (#712).
   's100-m03': ['src/tools/rbook/rbook-session-capture.ts:544'],
   // s97-m07: a bulk resolve whose feedbackIds is not a list of row ids, and one naming a row that
-  // does not exist, which resolves none.
-  's97-m07': ['src/tools/rbook/rbook-feedback.ts:322', 'src/tools/rbook/rbook-feedback.ts:397'],
+  // does not exist, which resolves none. s109-m05: down seven lines (the resolved page size).
+  's97-m07': ['src/tools/rbook/rbook-feedback.ts:329', 'src/tools/rbook/rbook-feedback.ts:404'],
   // s98-m09: protected identity clears, invalid explicit snapshot retention, and the shared
   // whole-schema validator's type/bound remedy. The validator spreads `error`, so this census's
   // sibling-code rule classifies its site UNTYPED; its separate unit/dispatch tests grant this
@@ -657,8 +660,8 @@ const SITES_BY_MISSION = {
   // code, so it is UNTYPED by this gate's sibling-code rule. member-remedies.test.ts covers its
   // five host-code branches plus fallback and caller-safe controls; no router or wire credit.
   's98-m13': [
-    'src/tools/rbook/rbook-sprint-complete.ts:650',
-    'src/tools/rbook/rbook-sprint-complete.ts:666',
+    'src/tools/rbook/rbook-sprint-complete.ts:652',
+    'src/tools/rbook/rbook-sprint-complete.ts:668',
     'src/referee/member-answer.ts:58',
   ],
   // s98-m15: hosted recovery offers, intake/finalization refusal and confirmed-membership guard,
@@ -721,10 +724,10 @@ const SITES_BY_MISSION = {
     'src/tools/rbook/rbook-db-backfill.ts:234',
     'src/tools/rbook/dashboard-http-error.ts:46',
     'src/tools/rbook/dashboard-upload-auth.ts:87',
-    'src/tools/rbook/owner-resolution.ts:158',
-    'src/tools/rbook/owner-resolution.ts:191',
-    'src/tools/rbook/owner-resolution.ts:216',
+    'src/tools/rbook/owner-resolution.ts:166',
+    'src/tools/rbook/owner-resolution.ts:209',
     'src/tools/rbook/owner-resolution.ts:234',
+    'src/tools/rbook/owner-resolution.ts:252',
   ],
   // s101-m04: actionable unshared-record, never-uploaded and concurrent init refusals.
   's101-m04': [
@@ -771,7 +774,7 @@ const SITES_BY_MISSION = {
   ],
   // s102-m05: an operator decline awaiting its store write blocks records across sessions.
   // The marker is identifier-only, and the existing row-presence axis drives this refusal.
-  's102-m05': ['src/tools/rbook/draft-evaluation.ts:175'],
+  's102-m05': ['src/tools/rbook/draft-evaluation.ts:193'],
   // s102-m06: unreadable next-step provenance refuses instead of silently counting foreign use.
   // DB_QUERY_FAILED is FAULT; the real-store API suite injects the schema-inspection failure.
   's102-m06': ['src/tools/rbook/next-steps-read.ts:111'],
@@ -790,11 +793,12 @@ const SITES_BY_MISSION = {
   ],
   // s106-m03: the paged next-steps and feedback lists refuse when their count cannot be read,
   // rather than state a total they did not take or end the paging at a page's own length.
-  // DB_QUERY_FAILED is FAULT, like s102-m06's provenance refusal beside the first.
-  's106-m03': ['src/tools/rbook/next-steps-read.ts:138', 'src/tools/rbook/rbook-feedback.ts:526'],
+  // DB_QUERY_FAILED is FAULT, like s102-m06's provenance refusal beside the first. s109-m05: the
+  // feedback site down eleven lines (the resolved page size, and the page request that reads it).
+  's106-m03': ['src/tools/rbook/next-steps-read.ts:138', 'src/tools/rbook/rbook-feedback.ts:537'],
   // s107-m02 (#876): a draft the content sanitizer cuts is refused before anything is written,
   // with the propose-it-quoted remedy; driven in axis 2 (decision kind, fromDraft alone).
-  's107-m02': ['src/tools/rbook/draft-evaluation.ts:256'],
+  's107-m02': ['src/tools/rbook/draft-evaluation.ts:274'],
   // s108-m02: dates and reasons on next steps. A key given to an action that would ignore it; the
   // three readings of a date; a reason over 500 characters, for a row with no stable id, or a date on
   // a broad carry or a capture that is not a next step; the three failures to prepare the reasons
@@ -833,7 +837,24 @@ const SITES_BY_MISSION = {
   // s108-m05 (round 1): a call that meets a record mid-move is refused, with when to retry. Its
   // code is the client's for a record it may not open, so the census reads it as a fault; no router
   // call makes the guard, and migrate-cutover.test.ts checks the answer during a real move.
-  's108-m05': ['src/index.ts:829'],
+  's108-m05': ['src/index.ts:815'],
+  // s109-m02 (#893): fromDraft refuses a field a constraint, rule or profile draft's writer would
+  // ignore, with the resend without it. Its moves: draft-evaluation.ts's sites down one line for an
+  // import, and from the approval refusal on down eighteen, for the settle clause and the
+  // suggestion's budget under error-bounds.ts's limit; rbook-decisions-record.ts's down three.
+  's109-m02': ['src/tools/rbook/decision-fields.ts:174'],
+  // s109-m04 (#907): a registration a project-scoped key would send is refused before it is sent,
+  // with the sign-in and revoke that let a close register, and a store listed as owned under another
+  // name is refused by name (verifier A, N2). Critic A's F3 refusal of a flag that could not be saved
+  // went when round 3 (NEW-1) moved that write after the upload. Its moves: owner-resolution.ts's sites down eight lines (the
+  // listedAsOwned and listedName fields) and eighteen from :191 on (the name check, critic A, F1);
+  // rbook-sprint-complete.ts's down two from #916's pre-close gate, twelve after the context checks
+  // (the skipped-snapshot warning) and forty-five after predictCloseRefusal; src/index.ts's up
+  // fourteen, its .env loader now fillFromEnvFile in legacy-compat.ts (verifier B, round 2, N1).
+  's109-m04': [
+    'src/tools/rbook/checkpoint-registration.ts:226',
+    'src/tools/rbook/checkpoint-registration.ts:236',
+  ],
 } as const satisfies Readonly<Record<string, readonly string[]>>;
 const RATIFIED_SITE_ADDS = Object.values(SITES_BY_MISSION).flat();
 
@@ -3045,6 +3066,9 @@ const FIRST_RUN_SITES = new Set(FIRST_RUN.map((row) => row.site));
  * fired/non-universe site is stale bookkeeping.
  */
 const EXTERNAL_RESIDUAL_REASONS: Readonly<Record<string, string>> = {
+  // s109-m04 (verifier A, N2): a detached close upload's refusal, like the 404 below.
+  'src/tools/rbook/checkpoint-registration.ts:226':
+    'A store the listing names as owned under another name, closed with its project-scoped key, is refused by name instead of as an unregistered store, during a detached close upload. This synchronous router-refusal matrix does not await close uploads; registration-create-only.test.ts drives it with the names differing in case. No oracle-site credit is claimed.',
   'src/tools/rbook/registration-error.ts:48':
     'An old dashboard returns 404 for the create-only registration endpoint during a detached close upload. This synchronous router-refusal matrix does not await that background registration. Separate loopback/MCP-close tests confer no oracle-site credit.',
   // s96-m01 (fold): client.ts's write-lock tracking moves these down 55 lines; s96-m03 (fold): its
@@ -3055,8 +3079,8 @@ const EXTERNAL_RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     '`validateProjectId()` has zero production callers; only direct unit tests invoke the method.',
   'src/tools/rbook/client.ts:961':
     'The second PROJECT_ID_MISMATCH arm is in the same production-unreachable `validateProjectId()` method.',
-  'src/tools/rbook/owner-resolution.ts:216':
-    'With a dashboard project id and stored owner, the earlier latest-listing guard at :158 ' +
+  'src/tools/rbook/owner-resolution.ts:234':
+    'With a dashboard project id and stored owner, the earlier latest-listing guard at :166 ' +
     'already refuses a different username. Without a dashboard id, unavailable() intentionally ' +
     'omits the error property, so this constructed suggestion cannot reach a router refusal. ' +
     'A changed guard or consumer must reopen this residual; no examined-site credit is claimed.',
@@ -3064,8 +3088,8 @@ const EXTERNAL_RESIDUAL_REASONS: Readonly<Record<string, string>> = {
 
 const HTTP_EXTERNAL_SITES = new Set([
   'src/tools/rbook/dashboard-upload-auth.ts:87',
-  'src/tools/rbook/owner-resolution.ts:158',
-  'src/tools/rbook/owner-resolution.ts:234',
+  'src/tools/rbook/owner-resolution.ts:166',
+  'src/tools/rbook/owner-resolution.ts:252',
   'src/tools/rbook/rbook-db-backfill.ts:234',
   'src/tools/rbook/dashboard-client.ts:1497',
   'src/tools/rbook/rbook-db-backfill.ts:518',
@@ -3463,15 +3487,16 @@ describe('s89-m08 T5 — every authored suggestion naming a shipped tool yields 
     // unpublished feedbackIds minimum from the schema. The text is unchanged. s106-m03 moved it to
     // :557 by adding the list's page parameter, its next-page call, its re-read note and its count
     // refusal above it, then to :560 when the limit description named the resolved page size.
+    // s109-m05 moved it from :597 to :608 with the local list's own resolved page size.
     expect(narrowOffenders).toEqual([
       'src/tools/rbook/errors.ts:399',
       'src/tools/rbook/errors.ts:408',
       'src/tools/rbook/rbook-db-backfill.ts:234',
       'src/tools/rbook/rbook-decisions-update.ts:81',
-      'src/tools/rbook/rbook-feedback.ts:597',
+      'src/tools/rbook/rbook-feedback.ts:608',
       'src/tools/rbook/rbook-learnings-reaffirm.ts:91',
       'src/tools/rbook/rbook-learnings-update.ts:104',
-      'src/tools/rbook/rbook-sprint-complete.ts:615',
+      'src/tools/rbook/rbook-sprint-complete.ts:617',
     ]);
   });
 
@@ -4442,7 +4467,7 @@ describe('s90-m07 PORTABLE EXTERNAL + FIRST-RUN LEDGER — loopback, never live 
           ownerListing('fixture-owner', incumbentId),
           ownerListing('other-account', incumbentId),
         ],
-        site: 'src/tools/rbook/owner-resolution.ts:158',
+        site: 'src/tools/rbook/owner-resolution.ts:166',
       },
       {
         name: 'backfill reports a replacement found at its second owner check',
@@ -4451,7 +4476,7 @@ describe('s90-m07 PORTABLE EXTERNAL + FIRST-RUN LEDGER — loopback, never live 
           ownerListing('fixture-owner', incumbentId),
           ownerListing('fixture-owner', 'replacement-id'),
         ],
-        site: 'src/tools/rbook/owner-resolution.ts:191',
+        site: 'src/tools/rbook/owner-resolution.ts:209',
       },
       {
         name: 'backfill reports an initial terminal hold through its status remedy',
@@ -4521,7 +4546,7 @@ describe('s90-m07 PORTABLE EXTERNAL + FIRST-RUN LEDGER — loopback, never live 
       params: ({ projectRoot }) => ({ action: 'backfill', projectRoot }),
     });
     const unsavedDestination = portableEvidence[portableEvidence.length - 1];
-    expect(unsavedDestination.fired).toContain('src/tools/rbook/owner-resolution.ts:234');
+    expect(unsavedDestination.fired).toContain('src/tools/rbook/owner-resolution.ts:252');
     expect(unsavedDestination.requests.map(({ method, url }) => `${method} ${url}`)).toEqual([
       'GET /api/projects/me',
       'GET /api/projects/me',
@@ -6042,6 +6067,9 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     'An authority catch-up withholds changes from an older recipient after applying the readable prefix. This router matrix establishes no mixed-version exchange or authority catch-up; separate transport and published-copy tests grant no examined-site or remedy-replay credit.',
   'src/tools/rbook/record-exchange.ts:345':
     'The ordinary exchange withholds changes from an older member after accepting its own push. This router matrix establishes no mixed-version exchange; separate transport and published-copy tests grant no examined-site or remedy-replay credit.',
+  // s109-m04 (#907): the project-key refusal is a detached close upload's, as the collision below is.
+  'src/tools/rbook/checkpoint-registration.ts:236':
+    'A registration a project-scoped key would send is refused before it is sent, during a detached close upload. This synchronous router-refusal matrix does not await close uploads; registration-create-only.test.ts drives it directly and through an MCP close with a stored project key, and checks the stored outcome keeps the remedy. No oracle-site credit is claimed.',
   'src/tools/rbook/registration-error.ts:29':
     'An exact owner/name collision refuses detached first registration, including archived names and concurrent stores. This synchronous router-refusal matrix does not await close uploads; the separate real-store loopback and MCP-close suite grants no oracle-site credit.',
   'src/tools/rbook/dashboard-client.ts:2437':
@@ -6322,12 +6350,12 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     "A fresh copy's own schema that the sharing preparation cannot make current, which only a broken install leaves. The referee library and the share's upload build it, never a router; no test constructs one.",
   // The CLI's offline migration is outside the router matrix; its refusal/retry cases run
   // against real SQLite stores and child processes in tests/cli/migrate*.test.ts.
-  // s108-m05: down 55 lines.
-  'src/cli/migrate.ts:231':
+  // s108-m05: down 55 lines. s109-m01: down 83 more in migrate.ts, and 62 and 65 in migrate-config.ts.
+  'src/cli/migrate.ts:314':
     'CLI-only migration refusal and deferred-follow-up retry, outside MCP routers; covered by migrate and recovery suites.',
-  'src/cli/migrate-config.ts:156':
+  'src/cli/migrate-config.ts:218':
     'CLI-only failed-rollback recovery requires conflicting filesystem state; migrate-config.test.ts retains the guard and proves retry.',
-  'src/cli/migrate-config.ts:166':
+  'src/cli/migrate-config.ts:231':
     'CLI-only offline config refusal, outside MCP routers; migrate-config and migration ownership suites drive its blockers.',
   // These spread the underlying database error; their nonliteral code is classified STATE by
   // the syntax census, but the trigger is a database fault, exercised in lifecycle-decoupling.
@@ -6381,9 +6409,9 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
   // s102-m05 extracted evaluation; these are current locations, unlike the mission history above.
   // The matrix drives routers in process with no harness link, so the server writes as a process
   // and no operator words can be bound to it; these are driven by name in draft-approval.test.ts.
-  'src/tools/rbook/draft-evaluation.ts:208':
+  'src/tools/rbook/draft-evaluation.ts:226':
     "A fromDraft record, in other words than the draft's, of a draft revised after the operator approved it. The record path only; draft-approval.test.ts records a declined revision's text under the earlier approval, and the s106-m02 chain test replays it after this ledger is computed, for no examined-site credit.",
-  'src/tools/rbook/draft-evaluation.ts:241':
+  'src/tools/rbook/draft-evaluation.ts:259':
     'The operator plainly declined but the prompt hook could not write the decline, so only the ' +
     'runtime words say so. Needs a harness-linked server and hook runtime words; driven in ' +
     'draft-approval.test.ts ("refuses a decline the hook could not write to the store").',
@@ -6395,8 +6423,12 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     'An approved profile draft whose line cannot be written (past the profile cap) releases its ' +
     'claim. Needs the operator words bound in a harness session; driven in draft-approval.test.ts ' +
     '("releases the claim when an approved profile line cannot be written").',
+  'src/tools/rbook/decision-fields.ts:174':
+    'A fromDraft record of a constraint, rule or profile draft given a field its writer ignores ' +
+    '(#893). Needs the operator words bound in a harness session; driven for all 14 pairs in ' +
+    'draft-kind-fields.test.ts, whose control records the draft once the field is left out.',
   // s102-m05: pending-decline settlement moves the unchanged draft-race refusal again.
-  'src/tools/rbook/rbook-decisions-record.ts:370':
+  'src/tools/rbook/rbook-decisions-record.ts:373':
     'Two records of one decision draft at once: the in-transaction guard approves it once and ' +
     'rolls the other back. Driven in draft-approval.test.ts ("records a draft once").',
   // ── s96-m01: the shared record's refusals of a copy, which need a second copy or a restore ─────
@@ -6629,12 +6661,13 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     'resolveSenderContext. Reaching it means reaching a state the dispatcher forbids.',
   // ── MASKED BY AN EARLIER REFUSAL ON EVERY PATH THIS MATRIX CAN DRIVE ─────────────────────────
   // s92-m02, s92-m05 and s92-m03 moved these two down (planned-end-date receipt fields; the
-  // archive param; a comment on implicit sessions); same branches.
-  'src/tools/rbook/rbook-sprint-complete.ts:741':
+  // archive param; a comment on implicit sessions), and s109-m04 two more (#916's pre-close gate);
+  // same branches.
+  'src/tools/rbook/rbook-sprint-complete.ts:743':
     'MEASURED: masked. With master_context deleted and the sprint made closable, closeout refuses at ' +
     'the shared errors.ts contextNotFound BEFORE reaching this sprint-local branch, so :709 is ' +
     'unreachable while that earlier guard stands.',
-  'src/tools/rbook/rbook-sprint-complete.ts:752': 'Same masking as :713, for project_context.',
+  'src/tools/rbook/rbook-sprint-complete.ts:754': 'Same masking as :713, for project_context.',
 };
 
 const FAULT_SHAPED_DRIVEABLE_RESIDUALS = new Set([

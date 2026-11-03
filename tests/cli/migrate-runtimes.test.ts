@@ -11,9 +11,11 @@ import { LEGACY } from '../../src/intelligence/legacy-compat';
 import {
   assertNoOpenFiles,
   assertNoRecordProcesses,
+  assertProjectServerVersion,
   recordProcessProblems,
 } from '../../src/cli/migrate-guard';
 import { migrateProject } from '../../src/cli/migrate';
+import { migrateConfig } from '../../src/cli/migrate-config';
 import { mayHaveSynced } from '../../src/cli/migrate-store';
 import { seedLegacyMigrationStore } from '../helpers/legacyMigrationStore';
 
@@ -269,6 +271,177 @@ describe('a record moves while 4.0.0 and later runtimes keep running', () => {
   });
 });
 
+describe('every entry on a command line is judged, under any Node-like interpreter (s109-m01, #914)', () => {
+  /** A released 3.5.0 runtime and a 4.10.0 one, as their manifests shipped. */
+  const old = () => runtime('released', fixture('cmos-mcp-3.5.0-package.json'));
+  const modern = () => runtime('modern', { name: '@aquex/reasonbook', version: '4.10.0' });
+
+  it("refuses E1's six lines, each naming the 3.5.0 runtime or the unreadable manifest", () => {
+    // Each passed 4.10.0's pre-guard check but the control (E1, a914/repro.cjs).
+    const spaced = path.join(tmp, 'My Node', 'node');
+    fs.mkdirSync(path.dirname(spaced), { recursive: true });
+    fs.writeFileSync(spaced, '');
+    // A 3.5.0 chat plugin inside a 4.10.0 package tree, its root manifest unreadable.
+    const tree = runtime('tree', { name: '@aquex/reasonbook', version: '4.10.0' }, 'dist/index.js');
+    const chat = path.join(
+      path.dirname(path.dirname(tree)),
+      'plugins',
+      `${LEGACY.recordDirectory}-chat`
+    );
+    fs.mkdirSync(path.join(chat, 'server'), { recursive: true });
+    fs.writeFileSync(
+      path.join(chat, 'plugin.json'),
+      JSON.stringify({ name: `${LEGACY.recordDirectory}-chat`, version: '3.5.0' })
+    );
+    fs.chmodSync(path.join(chat, 'plugin.json'), 0o000);
+    try {
+      ps(
+        `1601 /opt/homebrew/bin/node ${old()}`,
+        `1602 /usr/local/bin/node22 ${old()}`,
+        `1603 ${spaced} ${old()}`,
+        `1604 node --require ${modern()} ${old()}`,
+        `1605 node ${path.join(chat, 'server/run.mjs')}`,
+        `1606 /opt/homebrew/bin/bun ${old()}`
+      );
+      const problems = recordProcessProblems('pre-guard');
+      const asRoot = process.getuid?.() === 0;
+      expect(problems.map((p) => p.pid)).toEqual(
+        asRoot ? [1601, 1602, 1603, 1604, 1606] : [1601, 1602, 1603, 1604, 1605, 1606]
+      );
+      for (const problem of problems.filter((p) => p.pid !== 1605))
+        expect(problem.message).toContain('version 3.5.0');
+      if (!asRoot)
+        expect(problems.find((p) => p.pid === 1605)?.message).toContain('could not be read');
+    } finally {
+      fs.chmodSync(path.join(chat, 'plugin.json'), 0o644);
+    }
+  });
+
+  it('refuses the -r, --import and --env-file forms, and every Node-like name, by the 3.5.0 entry', () => {
+    ps(
+      `1701 node -r ${modern()} ${old()}`,
+      `1702 node --import ${modern()} ${old()}`,
+      `1703 node --env-file=${tmp}/.env -r ${modern()} ${old()}`,
+      `1704 node --import=${old()} ${modern()}`,
+      `1705 /usr/bin/nodejs ${old()}`,
+      `1706 /opt/node-22/bin/node-22 ${old()}`,
+      `1707 /usr/local/bin/deno run -A ${old()}`
+    );
+    const problems = recordProcessProblems('pre-guard');
+    expect(problems.map((p) => p.pid)).toEqual([1701, 1702, 1703, 1704, 1705, 1706, 1707]);
+    for (const problem of problems) expect(problem.message).toContain('version 3.5.0');
+  });
+
+  it('passes a 4.x runtime preloading another 4.x entry, and one given as --import=<entry>', () => {
+    // Every judged entry is 4.x, or another product's: 4.10.0 refused the second as unidentified.
+    const other = runtime('other', { name: 'unrelated-app', version: '1.0.0' });
+    ps(
+      `1801 node --require ${modern()} ${runtime('second', { name: '@aquex/reasonbook', version: '4.9.0' })}`,
+      `1802 node --import=${modern()}`,
+      `1803 node -r ${other} ${modern()}`
+    );
+    expect(recordProcessProblems('pre-guard')).toEqual([]);
+    expect(pids('every')).toEqual([1801, 1802, 1803]);
+  });
+
+  it('refuses a 4.x runtime preloading an entry no manifest identifies', () => {
+    const lost = path.join(tmp, 'a/b/c/d/e/f/dist/index.js');
+    fs.mkdirSync(path.dirname(lost), { recursive: true });
+    ps(`1901 node -r ${lost} ${modern()}`);
+    expect(recordProcessProblems('pre-guard')).toEqual([
+      {
+        pid: 1901,
+        message: expect.stringMatching(/entry point that cannot be identified \(no manifest above/),
+      },
+    ]);
+  });
+
+  it('refuses a .mcp.json server whose --require preloads 4.x before a 3.x build', () => {
+    const root = path.join(tmp, 'project');
+    fs.mkdirSync(root);
+    fs.writeFileSync(
+      path.join(root, '.mcp.json'),
+      JSON.stringify({
+        mcpServers: { reasonbook: { command: 'node', args: ['--require', modern(), old()] } },
+      })
+    );
+    expect(() => assertProjectServerVersion(root)).toThrow('pre-4.x or unknown local build');
+    fs.writeFileSync(
+      path.join(root, '.mcp.json'),
+      JSON.stringify({
+        mcpServers: { reasonbook: { command: 'node', args: ['--require', modern(), modern()] } },
+      })
+    );
+    expect(() => assertProjectServerVersion(root)).not.toThrow();
+  });
+
+  it('names the remedy when the entry runs from a plugin folder an update deleted (E1 Part B)', () => {
+    // Codex replaced 4.9.0 with 4.10.0 and deleted the old folder while its launcher ran from it.
+    const gone = path.join(tmp, '.codex/plugins/cache/reasonbook/reasonbook/4.9.0/hooks/run.mjs');
+    fs.mkdirSync(path.join(tmp, '.codex/plugins/cache/reasonbook/reasonbook/4.10.0'), {
+      recursive: true,
+    });
+    ps(`2001 node ${gone} serve`);
+    const [problem] = recordProcessProblems('pre-guard');
+    expect(problem.message).toMatch(/^Process 2001 runs a program at a Reasonbook entry point/);
+    expect(problem.message).toContain('restart the app that updated its plugin');
+    // A missing folder outside a plugin cache is not the deleted-plugin case.
+    ps(`2002 node ${path.join(tmp, 'a/b/c/d/e/f/g/dist/index.js')}`);
+    expect(recordProcessProblems('pre-guard')[0].message).not.toContain('restart the app');
+  });
+});
+
+describe('every global command is judged, and the remedy reaches every scope (build critic A, notes 7-8)', () => {
+  /** A global command linked to a package's bin, as npm links one. */
+  function command(name: string, manifest: object | string): string {
+    const bin = runtime(`${name}-package`, manifest, 'dist/bin.js');
+    fs.writeFileSync(bin, '');
+    const link = path.join(tmp, `${name}-bin`, name);
+    fs.mkdirSync(path.dirname(link), { recursive: true });
+    fs.symlinkSync(bin, link);
+    return link;
+  }
+
+  it('refuses a second reasonbook command that runs a 3.x bin, and a legacy command preloaded before a 4.x entry', () => {
+    const modern = command('reasonbook', { name: '@aquex/reasonbook', version: '4.10.0' });
+    const old = path.join(tmp, 'old-bin', 'reasonbook');
+    const oldBin = runtime('old-package', fixture('cmos-mcp-3.5.0-package.json'), 'dist/bin.js');
+    fs.writeFileSync(oldBin, '');
+    fs.mkdirSync(path.dirname(old), { recursive: true });
+    fs.symlinkSync(oldBin, old);
+    const legacy = command(LEGACY.command, fixture('cmos-mcp-3.5.0-package.json'));
+    const entry = runtime('modern-entry', { name: '@aquex/reasonbook', version: '4.10.0' });
+    ps(`2101 node ${modern} serve ${old}`, `2102 node --require ${legacy} ${entry}`);
+    expect(recordProcessProblems('pre-guard')).toEqual([
+      { pid: 2101, message: expect.stringContaining('version 3.5.0') },
+      { pid: 2102, message: expect.stringContaining('version 3.5.0') },
+    ]);
+  });
+
+  it('passes a spaced interpreter path that no longer exists, which it cannot rejoin (the closed list)', () => {
+    // The profile admits it: ps splits the path, and only a joined path that exists is rejoined.
+    ps(
+      `2201 ${path.join(tmp, 'Gone Dir', 'node')} ${runtime('released', fixture('cmos-mcp-3.5.0-package.json'))}`
+    );
+    expect(recordProcessProblems('every')).toEqual([]);
+  });
+
+  it('names the remedy for a deleted plugin folder in every scope, and only for a folder that is gone', () => {
+    const gone = path.join(tmp, '.codex/plugins/cache/reasonbook/reasonbook/4.9.0/hooks/run.mjs');
+    for (const scope of ['pre-guard', 'shared', 'every'] as const) {
+      ps(`2301 node ${gone} serve`);
+      expect(recordProcessProblems(scope)[0].message).toContain(
+        'restart the app that updated its plugin'
+      );
+    }
+    // An entry no manifest identifies in a plugin cache folder that still exists is not that case.
+    const present = path.join(tmp, '.codex/plugins/cache/other/thing/1.0.0/hooks/run.mjs');
+    fs.mkdirSync(path.dirname(present), { recursive: true });
+    ps(`2302 node ${present} serve`);
+    expect(recordProcessProblems('pre-guard')[0].message).not.toContain('restart the app');
+  });
+});
+
 describe('the dry run lists what the apply would refuse, and changes nothing', () => {
   it('names a runtime from before 4.0 and a legacy client, and nothing for a 4.x machine', async () => {
     const root = path.join(tmp, 'project');
@@ -354,6 +527,78 @@ describe('a shared record waits for every runtime, in its apply and its dry run 
       error: { message: expect.stringContaining('has had a sync peer') },
     });
     expect(fs.existsSync(oldDb)).toBe(true);
+  });
+
+  it('a refused shared-record move never creates its guard, and a config move neither (s109-m01, #915)', async () => {
+    // 4.10.0 made the guard first and refused about 40 ms later, so a 4.1 to 4.9 server whose sync
+    // tick fell in between ended as at a move.
+    const root = path.join(tmp, 'peered');
+    const home = path.join(tmp, 'home');
+    fs.mkdirSync(path.join(home, '.config', LEGACY.configDirectory), { recursive: true });
+    const oldDb = seedLegacyMigrationStore(root);
+    const db = new Database(oldDb);
+    db.exec('CREATE TABLE record_peers (replica_id TEXT PRIMARY KEY, name TEXT, route TEXT)');
+    db.close();
+    const current = runtime('current', { name: '@aquex/reasonbook', version: '4.9.0' });
+    const spawnSync = childProcess.spawnSync;
+    jest.spyOn(childProcess, 'spawnSync').mockImplementation(((
+      command: string,
+      args: string[],
+      opts: any
+    ) => {
+      const result = spawnSync(command, args, opts);
+      return command === 'ps' ? { ...result, stdout: `1401 node ${current}\n` } : result;
+    }) as any);
+    const made: string[] = [];
+    const mkdirSync = fs.mkdirSync;
+    jest.spyOn(fs, 'mkdirSync').mockImplementation(((target: fs.PathLike, opts?: any) => {
+      made.push(String(target));
+      return mkdirSync(target, opts);
+    }) as any);
+    const record = await migrateProject({ projectRoot: root, env: { HOME: home }, apply: true });
+    expect(record).toMatchObject({
+      success: false,
+      error: { message: expect.stringContaining('has had a sync peer') },
+    });
+    const config = await migrateConfig({ HOME: home }, true);
+    expect(config).toMatchObject({
+      success: false,
+      error: { message: expect.stringContaining('Process 1401 is a live or unidentified') },
+    });
+    expect(made.filter((target) => /\.rbook(?:-config)?-migration\.lock$/.test(target))).toEqual(
+      []
+    );
+    expect(fs.existsSync(oldDb)).toBe(true);
+    expect(fs.existsSync(path.join(home, '.config', LEGACY.configDirectory))).toBe(true);
+  });
+
+  it('still refuses a runtime that starts between the check before the guard and the one after it', async () => {
+    // The check after the guard closes that race (s109-m01, #915's regression guard).
+    const root = path.join(tmp, 'racing');
+    const home = path.join(tmp, 'home');
+    fs.mkdirSync(home);
+    const oldDb = seedLegacyMigrationStore(root);
+    const old = runtime('old', { name: '@aquex/reasonbook', version: '3.9.9' });
+    let calls = 0;
+    const spawnSync = childProcess.spawnSync;
+    jest.spyOn(childProcess, 'spawnSync').mockImplementation(((
+      command: string,
+      args: string[],
+      opts: any
+    ) => {
+      const result = spawnSync(command, args, opts);
+      if (command !== 'ps') return result;
+      calls += 1;
+      return { ...result, stdout: calls > 1 ? `1501 node ${old}\n` : '' };
+    }) as any);
+    const result = await migrateProject({ projectRoot: root, env: { HOME: home }, apply: true });
+    expect(result).toMatchObject({
+      success: false,
+      error: { message: expect.stringMatching(/^Process 1501 runs a Reasonbook runtime/) },
+    });
+    expect(calls).toBe(2);
+    expect(fs.existsSync(oldDb)).toBe(true);
+    expect(fs.readdirSync(root).filter((name) => name.startsWith('.rbook-migration'))).toEqual([]);
   });
 
   it('a record that cannot be read to tell waits for every runtime too (round 3)', () => {

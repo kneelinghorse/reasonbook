@@ -1166,3 +1166,59 @@ it('an edition off at user and project scope: the fix enables both copies, user 
     `claude plugin enable reasonbook@reasonbook --scope user, then claude plugin enable reasonbook@reasonbook --scope project (run in ${root})`
   );
 });
+
+describe('reasonbook doctor reads what s109-m01 changed in migrate', () => {
+  it('names the follow-ups a pending move owes, from its marker, the git index among them', async () => {
+    const steps = project('steps', 'rbook');
+    put(path.join(steps, '.rbook-migration-pending.json'), {
+      remaining: 'x',
+      steps: ['the git index'],
+    });
+    // A marker 4.10.0 wrote names no steps; in a work tree 4.11.0's retry also records the move in git.
+    const old = project('old-marker', 'rbook');
+    put(path.join(old, '.git/HEAD'), 'ref: refs/heads/main\n');
+    put(path.join(old, '.rbook-migration-pending.json'), {
+      remaining: 'documents and registration',
+    });
+    const plain = project('plain-marker', 'rbook');
+    put(path.join(plain, '.rbook-migration-pending.json'), {});
+    await registry(path.join(home, '.config/rbook'), [
+      { id: 'steps', root: steps },
+      { id: 'old-marker', root: old },
+      { id: 'plain-marker', root: plain },
+    ]);
+    const { report } = await doctor();
+    const summary = (root: string) =>
+      report.findings.find((f) => f.id === 'project-move-pending' && f.projectRoot === root)
+        ?.summary;
+    expect(summary(steps)).toBe(`${steps}'s record moved, but its git index was not finished.`);
+    expect(summary(old)).toBe(
+      `${old}'s record moved, but its git index, documents and registration were not finished.`
+    );
+    expect(summary(plain)).toBe(
+      `${plain}'s record moved, but its documents and registration were not finished.`
+    );
+  });
+
+  it('describes every local build a --require entry runs, and calls the entry old when any is', async () => {
+    plugin(VERSION, false);
+    const build = (name: string, version: string) => {
+      const dist = path.join(work, name, 'dist/index.js');
+      put(path.join(work, name, 'package.json'), { name: '@aquex/reasonbook', version });
+      put(dist, '');
+      return dist;
+    };
+    put(path.join(home, '.claude.json'), {
+      mcpServers: {
+        reasonbook: {
+          command: 'node',
+          args: ['--require', build('modern', VERSION), build('old', '3.5.0')],
+        },
+      },
+    });
+    const { find } = await doctor();
+    expect(find('claude-server-old-package')?.evidence[0]).toBe(
+      `reasonbook (node, a local build of @aquex/reasonbook ${VERSION} and a local build of @aquex/reasonbook 3.5.0), user scope`
+    );
+  });
+});

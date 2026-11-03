@@ -13,7 +13,12 @@
  */
 
 import { isDirectoryEdition, directoryCallError } from './edition';
-import { getSetting, RecordMigrationError, settingIsOff } from './intelligence/legacy-compat';
+import {
+  fillFromEnvFile,
+  getSetting,
+  RecordMigrationError,
+  settingIsOff,
+} from './intelligence/legacy-compat';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getServerVersion } from './server-version';
@@ -39,27 +44,8 @@ const envPath = path.join(__projectRoot, '.env');
 const directoryEdition = isDirectoryEdition();
 try {
   if (!directoryEdition && fs.existsSync(envPath)) {
-    const lines = fs.readFileSync(envPath, 'utf-8').split('\n');
-    let loaded = 0;
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-      const eqIdx = trimmed.indexOf('=');
-      if (eqIdx === -1) continue;
-      const key = trimmed.slice(0, eqIdx).trim();
-      if (key === 'RBOOK_EDITION') continue;
-      let value = trimmed.slice(eqIdx + 1).trim();
-      if (
-        (value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith("'") && value.endsWith("'"))
-      ) {
-        value = value.slice(1, -1);
-      }
-      if (key.startsWith('RBOOK_') ? process.env[key] === undefined : !process.env[key]) {
-        process.env[key] = value;
-        loaded++;
-      }
-    }
+    // s109-m04: the rule lives in legacy-compat.ts, so the per-call helper reads the same folders.
+    const loaded = fillFromEnvFile(process.env, fs.readFileSync(envPath, 'utf-8'));
     // s92-m07: diagnostics, behind RBOOK_DEBUG (checked after loading, so the .env can set it).
     if (debugEnabled())
       process.stderr.write(`[env-loader] loaded ${loaded} vars from ${envPath}\n`);

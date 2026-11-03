@@ -38,10 +38,13 @@ function walkFiles(dir: string, ext: string): string[] {
  * FALSE-NEGATIVE PROFILE: a name assembled at runtime (`process.env['RBOOK_' + suffix]`), a name
  * reaching the process through a shell wrapper rather than a code read, and a constant defined
  * in one module and consumed in another are all invisible. None exists in the tree today.
+ * s109-m04: `.js` files are read as well as `.ts`. The tree's JavaScript is in scripts/
+ * (rbook-call-current.js's two upload waits); until then a script written in JavaScript read
+ * names this census could not see.
  */
 export function deriveEnvReads(root: string): Set<string> {
   const out = new Set<string>();
-  const files = walkFiles(root, '.ts');
+  const files = [...walkFiles(root, '.ts'), ...walkFiles(root, '.js')];
   const constMap = new Map<string, string>();
   for (const f of files) {
     for (const m of fs

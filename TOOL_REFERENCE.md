@@ -893,7 +893,7 @@ Review agent feedback: list (status and tool filters, counts by kind, optional r
 | `action` | string | yes | Feedback action: list \| triage \| resolve \| archive |
 | `status` | string | no | Filter by status on list (default: "open") |
 | `toolName` | string | no | Filter by originating tool name on list |
-| `limit` | integer | no | Max entries per page on list (default 10; with acrossProjects 5, or 2 at status resolved; max 200) |
+| `limit` | integer | no | Max entries per page on list (default 10, or 8 at status resolved; with acrossProjects 4, or 2 at status resolved; max 200) |
 | `page` | integer | no | Page of list results, 1-based (default 1); each page holds limit entries |
 | `acrossProjects` | boolean | no | List active registered stores with project-qualified ids; full filtered counts accompany a capped newest-first list. Unavailable stores are named. Never writes siblings. |
 | `projectRoot` | string | no | Project root directory to search for Reasonbook database (defaults to cwd) |

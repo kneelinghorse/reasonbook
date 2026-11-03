@@ -86,6 +86,8 @@ export interface TelemetryRecord {
   readonly draftsCreated?: number;
   readonly draftsReplaced?: number;
   readonly draftLinesElsewhere?: number;
+  /** s109-m02, Stop: the reply's lines that took no effect, named at the next prompt (#51). */
+  readonly draftLinesDropped?: number;
   /** s93-m06, prompt: drafts offered with this message, and how the message reads. */
   readonly draftsOffered?: number;
   readonly draftReply?: 'approval' | 'decline' | 'question' | 'other';
@@ -107,6 +109,7 @@ const DRAFT_COUNTS = [
   'draftsCreated',
   'draftsReplaced',
   'draftLinesElsewhere',
+  'draftLinesDropped',
   'draftsOffered',
 ] as const;
 

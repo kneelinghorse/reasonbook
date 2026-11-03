@@ -382,10 +382,10 @@ export interface ResolveAddressResult {
  * what the route can never do.
  *
  * THE JOIN STAYS, AND THAT IS A DELIBERATE CALL, NOT AN OVERSIGHT. `rbook_message(directory)` still
- * calls GET /api/projects/me and merges. Dropping it now that the directory route carries
- * `isOwner` would be a LATENCY optimisation, not a truth fix — the join is correct today and its
- * degraded path already warns honestly. Rule 3: touch only what is wrong. What was wrong was the
- * sentence.
+ * calls GET /api/projects/me and merges. s87-m05 called dropping it a latency optimisation, the
+ * join being correct and its degraded path warning honestly. s109-m05 found both false: /me
+ * omitted 10 of the account's 30 projects, and with /me failing, rows keep this route's isOwner
+ * under a warning that claims none. Rule 3: touch only what is wrong.
  */
 export interface DirectoryProject {
   id: string;
@@ -1537,7 +1537,7 @@ export class DashboardClient {
   }
 
   /**
-   * Get projects owned by the authenticated user.
+   * The projects the authenticated user owns or that are shared with them; isOwner tells which.
    */
   async getMyProjects(): Promise<RbookToolResult<GetMyProjectsResult>> {
     const result = await this.request<GetMyProjectsResult>('GET', '/api/projects/me');

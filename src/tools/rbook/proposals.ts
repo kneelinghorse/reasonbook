@@ -39,7 +39,8 @@ export const PROPOSALS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS proposals (
   outcome TEXT NOT NULL DEFAULT 'pending',   -- pending | approved | declined | replaced | answered
   replaced_by INTEGER,                       -- the draft that revised this one
   record_id TEXT,                            -- the record it became: d:N, c:N, l:N or profile
-  approval_mode TEXT                         -- approved | agent-judged | agent-attested
+  approval_mode TEXT,                        -- approved | agent-judged | agent-attested | settled
+  settled_by TEXT                            -- the harness session hash that settled it
 );
 CREATE INDEX IF NOT EXISTS idx_proposals_outcome ON proposals (outcome);`;
 
@@ -48,6 +49,8 @@ export const DRAFT_EXPIRY_STARTS = 3;
 
 export type DraftOutcome = 'pending' | 'approved' | 'declined' | 'replaced' | 'answered';
 export type ApprovalMode = 'approved' | 'agent-judged' | 'agent-attested';
+/** s109-m02: `settled` is a draft-side mode (a reply named the decision that answered it), never a decision's. */
+export type DraftApprovalMode = ApprovalMode | 'settled';
 
 export interface DraftRow {
   readonly id: number;
@@ -63,7 +66,7 @@ export interface DraftRow {
   readonly outcome: DraftOutcome;
   readonly replacedBy: number | null;
   readonly recordId: string | null;
-  readonly approvalMode: ApprovalMode | null;
+  readonly approvalMode: DraftApprovalMode | null;
 }
 
 /** The few statements the proposals code needs, over better-sqlite3 or the Reasonbook client alike. */
@@ -175,7 +178,7 @@ function toRow(row: StoredRow): DraftRow {
     outcome: row.outcome as DraftOutcome,
     replacedBy: row.replaced_by,
     recordId: row.record_id,
-    approvalMode: row.approval_mode as ApprovalMode | null,
+    approvalMode: row.approval_mode as DraftApprovalMode | null,
   };
 }
 

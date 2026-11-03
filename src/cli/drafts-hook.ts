@@ -18,17 +18,15 @@ export {
 } from './drafts-offer';
 
 import {
-  draftCoverage,
   keywordOverlap,
   proseLines,
   readDraftReply,
-  REVISION_COVERAGE,
-  REVISION_OVERLAP,
   SINGLE_REVISION_FLOOR,
   type DraftLine,
 } from '../tools/rbook/draft-grammar';
 import {
   closeWindow,
+  dropKept,
   endDraftSession,
   openDraftRuntime,
   openWindow,
@@ -39,6 +37,9 @@ import {
   recordSessionStart,
   setShown,
 } from '../tools/rbook/draft-runtime';
+import { replaceUnkept } from '../tools/rbook/draft-runtime-unkept';
+import { readSettles } from '../tools/rbook/draft-settle-grammar';
+import { applySettles, NOTE_REASONS, unkeptEntries } from './drafts-settle';
 import { harnessSessionHash } from '../tools/rbook/harness-session';
 import {
   ensureProposalsTable,
@@ -58,6 +59,7 @@ import { readScans } from '../tools/rbook/draft-runtime';
 import { scanSession, sessionOutside } from './drafts-scan';
 export { sessionOutside } from './drafts-scan';
 import { retryRetainedDeclines } from './drafts-decline';
+import { revisions } from './drafts-revisions';
 
 /**
  * THE FLOW (design doc s93 m06; decisions #1186–#1188; build plan B5–B8, B13, B16, with the plan
@@ -148,48 +150,8 @@ export interface StopOutcome {
   readonly created: number;
   readonly replaced: number;
   readonly elsewhere: number;
-}
-
-/**
- * Which window draft each line revises (B3, folded): when the operator's last message answered one
- * draft of a kind, the reply's best line of that kind revises it if they share a subject (an
- * amendment may flip its key term, which the 0.5 overlap missed); among several of a kind, only a
- * line at the full overlap threshold. A line about something else leaves the draft pending. Without
- * a window (s97-m12), a line must hold REVISION_COVERAGE of the draft's own subject instead: no
- * operator message names the draft, so a line on a neighbouring subject, or one part of a longer
- * draft, does not retire it.
- */
-function revisions(
-  lines: readonly DraftLine[],
-  candidates: readonly DraftRow[],
-  /**
-   * s97-m12: whether a draft is one the operator's last message answered, other than by a plain
-   * approval; any other candidate (none answered, kept from an earlier reply, or approved, which a
-   * link limits to its own words) is revised only at the coverage rule.
-   */
-  answered: (draft: DraftRow) => boolean
-): Map<number, DraftRow> {
-  const assigned = new Map<number, DraftRow>();
-  for (const draft of candidates) {
-    const ofKind = candidates.filter((row) => row.kind === draft.kind && answered(row)).length;
-    const covered = !answered(draft);
-    let best = -1;
-    let bestScore =
-      (covered ? REVISION_COVERAGE : ofKind === 1 ? SINGLE_REVISION_FLOOR : REVISION_OVERLAP) -
-      Number.EPSILON;
-    lines.forEach((line, index) => {
-      if (line.kind !== draft.kind || assigned.has(index)) return;
-      const score = covered
-        ? draftCoverage(draft.text, line.text)
-        : keywordOverlap(draft.text, line.text);
-      if (score > bestScore) {
-        best = index;
-        bestScore = score;
-      }
-    });
-    if (best >= 0) assigned.set(best, draft);
-  }
-  return assigned;
+  /** s109-m02: lines that took no effect, kept for the next prompt to name. */
+  readonly dropped: number;
 }
 
 /**
@@ -242,7 +204,7 @@ export function onStop(options: {
   readonly deadlineAtMs: number;
   readonly now?: number;
 }): StopOutcome {
-  const none = { lines: 0, created: 0, replaced: 0, elsewhere: 0 };
+  const none = { lines: 0, created: 0, replaced: 0, elsewhere: 0, dropped: 0 };
   if (isReadOnlyAgentSession(options.env)) return none;
   const now = options.now ?? Date.now();
   const session = harnessSessionHash(options.rawSessionId);
@@ -250,11 +212,15 @@ export function onStop(options: {
   try {
     if (runtime) retryRetainedDeclines(options.dbPath, runtime);
     const declined = new Set(runtime ? pendingDeclines(runtime).map((entry) => entry.id) : []);
+    // s109-m02: a settle is applied only from the turn's own reply; the transcript can hold an earlier one.
+    const fromReply = options.reply !== undefined;
     const reply =
       options.reply ??
       (options.transcriptPath ? lastAssistantText(options.transcriptPath) : null) ??
       '';
     const read = readDraftReply(reply);
+    const settles = readSettles(reply, read);
+    const sameReply = new Set<number>();
     const windowIds = runtime ? openWindow(runtime, session, now) : [];
     if (runtime) closeWindow(runtime, session);
     const mentionsId = /\bP[1-9]\d{0,15}\b/.test(reply);
@@ -281,6 +247,7 @@ export function onStop(options: {
             );
             if (repeated) {
               if (!shown.includes(repeated.id)) shown.push(repeated.id);
+              sameReply.add(repeated.id);
             } else fresh.push(line);
           }
           // s97-m12 (learning #481): a line revises a draft the operator's last message answered at
@@ -319,6 +286,7 @@ export function onStop(options: {
             // newest pending draft, and one there the operator never approved it retires, as it
             // would any unapproved draft it revised.
             const target = old && approved(old) ? getDraft(run, newestPending(run, old.id)) : null;
+            for (const touched of [id, old?.id, target?.id]) if (touched) sameReply.add(touched);
             if (target && target.id !== old!.id && !approved(target))
               replaced += markReplaced(run, target.id, id, at);
             else if (old && approved(old)) markRevisedAfterApproval(run, old.id, id);
@@ -339,11 +307,35 @@ export function onStop(options: {
         db.close();
       }
     }
+    // s109-m02: a draft a Settled line names leaves the shown and kept sets, settled or not, so a
+    // settle that did not take effect never lets the operator's next "yes" record it a second time.
+    const named = new Set(settles.named);
     if (runtime) {
       // s97-m12: drafts an earlier reply showed that no operator message took, as when the harness
       // opened this turn itself, are kept apart from this reply's (learning #481; critic round 2).
       carryShown(runtime, session, now);
-      setShown(runtime, session, shown, now);
+      dropKept(runtime, session, settles.named);
+      setShown(
+        runtime,
+        session,
+        shown.filter((id) => !named.has(id)),
+        now
+      );
+    }
+    const outcomes = fromReply
+      ? applySettles({
+          dbPath: options.dbPath,
+          runtime,
+          session,
+          lines: settles.settles,
+          sameReply,
+          now,
+          deadlineAtMs: options.deadlineAtMs,
+        })
+      : [];
+    const unkept = unkeptEntries(read, settles, outcomes, fromReply);
+    if (runtime) {
+      replaceUnkept(runtime, session, unkept, now);
       if (options.transcriptPath) {
         const outside = scanSession(
           runtime,
@@ -360,6 +352,7 @@ export function onStop(options: {
       created: createdIds.length,
       replaced,
       elsewhere: read.elsewhere,
+      dropped: unkept.filter((entry) => !NOTE_REASONS.has(entry.reason)).length,
     };
   } finally {
     runtime?.close();

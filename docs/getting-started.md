@@ -21,16 +21,16 @@ Pick one:
 
 ```bash
 # Recommended: a global install of this release. It starts from disk, with no registry lookup.
-npm install -g @aquex/reasonbook@4.10.0
+npm install -g @aquex/reasonbook@4.11.0
 
 # Or run on demand via npx: pinned, and preferring the local cache. The first launch downloads
 # the package; later launches reuse the npm cache.
-npx --prefer-offline -y @aquex/reasonbook@4.10.0
+npx --prefer-offline -y @aquex/reasonbook@4.11.0
 ```
 
 If you installed only a plugin, its private runtime does not add `reasonbook` to your terminal
 PATH. For any CLI example here, replace `reasonbook` with
-`npx --prefer-offline -y @aquex/reasonbook@4.10.0`, or install the pinned global CLI above.
+`npx --prefer-offline -y @aquex/reasonbook@4.11.0`, or install the pinned global CLI above.
 
 If the former package is installed globally, run `npm uninstall -g @aquex/cmos-mcp` first. Version 4 provides only the `reasonbook` command; update scripts and MCP configurations that use the old command.
 
@@ -39,7 +39,7 @@ Verify it starts:
 ```bash
 reasonbook --version  # if globally installed
 # or
-npx --prefer-offline -y @aquex/reasonbook@4.10.0 --version
+npx --prefer-offline -y @aquex/reasonbook@4.11.0 --version
 ```
 
 Semantic (vector) search is optional: without it, retrieval is keyword-only and the install is about
@@ -53,7 +53,7 @@ Claude Code and Codex are verified; the other blocks follow each client's own MC
 ### Claude Code
 
 ```bash
-claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.10.0"]}'
+claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.11.0"]}'
 claude mcp list   # confirm it's registered
 ```
 
@@ -71,7 +71,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS), 
       "args": [
         "--prefer-offline",
         "-y",
-        "@aquex/reasonbook@4.10.0",
+        "@aquex/reasonbook@4.11.0",
         "--project-root",
         "/absolute/path/to/your/project"
       ]
@@ -94,7 +94,7 @@ Edit `~/.cursor/mcp.json`:
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.10.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.11.0"]
     }
   }
 }
@@ -109,7 +109,7 @@ Edit your Zed `settings.json`:
   "context_servers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.10.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.11.0"]
     }
   }
 }
@@ -130,7 +130,7 @@ your terminal PATH, so the terminal route needs the standalone Claude CLI.
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.10.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.11.0"]
     }
   }
 }
@@ -287,7 +287,7 @@ reasonbook feedback --content 'What happened, what was expected, and how to repr
 Use `--project-root /path/to/project` to name the affected project, `--dry-run` to preview,
 or `--format json` for a receipt. The package includes `plugins/reasonbook/skills/feedback/SKILL.md` for agents.
 `rbook_feedback(action="list", acrossProjects=true)` reads the registered fleet and reports
-full filtered counts beside the capped newest rows (5 a page by default, 2 at status resolved; 200
+full filtered counts beside the capped newest rows (4 a page by default, 2 at status resolved; 200
 maximum). Unavailable stores make the coverage partial; absent feedback tables count as zero. All
 rows are counted, without deduplication or subject filtering. Each list also counts the rows by kind
 (`countsByKind`: ceremony, surfacing, identity, sync, payload), by published rules over each

@@ -419,7 +419,8 @@ CREATE TABLE IF NOT EXISTS proposals (
   outcome TEXT NOT NULL DEFAULT 'pending',   -- pending | approved | declined | replaced | answered
   replaced_by INTEGER,                       -- the draft that revised this one
   record_id TEXT,                            -- the record it became: d:N, c:N, l:N or profile
-  approval_mode TEXT                         -- approved | agent-judged | agent-attested
+  approval_mode TEXT,                        -- approved | agent-judged | agent-attested | settled
+  settled_by TEXT                            -- the harness session hash that settled it
 );
 CREATE INDEX IF NOT EXISTS idx_proposals_outcome ON proposals (outcome);
 

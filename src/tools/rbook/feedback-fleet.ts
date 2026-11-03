@@ -88,8 +88,10 @@ export interface FeedbackFleetOptions {
 /**
  * s106-m03: 50 rows across 26 stores were 86,243 characters, past the 20,000 cap, and 10 still
  * 25,644: each row's whole framed body goes out in the text and again in the structured copy.
+ * s109-m05: at 5, a page of the open list was 20,595 when sprint 109 was planned, and the archived
+ * list's largest 19,955; at 4 the largest page at any status but resolved was 16,881.
  */
-export const FLEET_FEEDBACK_PAGE_SIZE = 5;
+export const FLEET_FEEDBACK_PAGE_SIZE = 4;
 
 /**
  * s106-m03 (decision #1730): a resolved row goes out whole with its resolution note; at 5 a page,

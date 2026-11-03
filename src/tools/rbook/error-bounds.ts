@@ -12,7 +12,9 @@ const FIELDS = [
   'currentState',
   'validValues',
 ] as const;
-const FIELD_LIMIT = 512;
+/** A refusal field past this many JSON characters is cut to a preview; suggestions are written to fit. */
+export const ERROR_FIELD_LIMIT = 512;
+const FIELD_LIMIT = ERROR_FIELD_LIMIT;
 const PREVIEW_LIMIT = 160;
 
 function serialized(value: unknown): string {

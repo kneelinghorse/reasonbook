@@ -7,6 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import { ensureLateColumn } from './draft-runtime-excerpts';
+import { UNKEPT_TABLE_SQL } from './draft-runtime-unkept';
 import { runtimeDir } from './harness-session';
 import { safeDestination, targetForStore, type TelemetryTarget } from './local-telemetry';
 import { draftRuntimeFile, draftStoreKey, plainSqliteFile, sqliteFileSet } from './store-key';
@@ -55,7 +56,8 @@ CREATE TABLE IF NOT EXISTS shown (session TEXT PRIMARY KEY, draft_ids TEXT NOT N
 CREATE TABLE IF NOT EXISTS kept (session TEXT NOT NULL, draft_id INTEGER NOT NULL, at INTEGER NOT NULL,
   PRIMARY KEY (session, draft_id));
 CREATE TABLE IF NOT EXISTS scans (session TEXT NOT NULL, file TEXT NOT NULL, scanned INTEGER NOT NULL,
-  outside INTEGER, PRIMARY KEY (session, file));`;
+  outside INTEGER, PRIMARY KEY (session, file));
+${UNKEPT_TABLE_SQL}`;
 
 const SESSION_TABLES = [
   'session_state',
@@ -65,6 +67,7 @@ const SESSION_TABLES = [
   'shown',
   'kept',
   'scans',
+  'unkept',
 ] as const;
 
 export interface DraftRuntime {
@@ -163,7 +166,7 @@ export function recordSessionStart(runtime: DraftRuntime, session: string, now: 
         'DELETE FROM starts WHERE rowid NOT IN (SELECT rowid FROM starts ORDER BY at DESC LIMIT ?)'
       )
       .run(STARTS_KEPT);
-    for (const table of ['offers', 'excerpts', 'windows', 'shown', 'kept'])
+    for (const table of ['offers', 'excerpts', 'windows', 'shown', 'kept', 'unkept'])
       runtime.db.prepare(`DELETE FROM ${table} WHERE session = ?`).run(session);
     runtime.db
       .prepare(
@@ -297,6 +300,7 @@ export function saveScan(
 
 export {
   carryShown,
+  dropKept,
   peekShown,
   readShown,
   restoreShown,

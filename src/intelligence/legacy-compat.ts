@@ -42,6 +42,36 @@ export function getSetting(name: string, env: NodeJS.ProcessEnv = process.env): 
   return env[current] ?? env[legacy];
 }
 
+/**
+ * The server's .env rule (src/index.ts), shared so scripts/rbook-call-current.js reads the folder its
+ * server will use (s109-m04, #799): each KEY=value line fills a key `env` lacks. A legacy or
+ * non-product key's empty value is fillable too, for IDE spawns; a new RBOOK_ key's empty value is
+ * an explicit clear and stays. RBOOK_EDITION never comes from the file. Returns how many it filled.
+ */
+export function fillFromEnvFile(env: NodeJS.ProcessEnv, content: string): number {
+  let loaded = 0;
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eqIdx = trimmed.indexOf('=');
+    if (eqIdx === -1) continue;
+    const key = trimmed.slice(0, eqIdx).trim();
+    if (key === 'RBOOK_EDITION') continue;
+    let value = trimmed.slice(eqIdx + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    if (key.startsWith('RBOOK_') ? env[key] === undefined : !env[key]) {
+      env[key] = value;
+      loaded++;
+    }
+  }
+  return loaded;
+}
+
 /** s100-m02: an off switch read as a person writes it: off, false, 0 or no, in any case. */
 export function settingIsOff(name: string, env: NodeJS.ProcessEnv = process.env): boolean {
   const value = getSetting(name, env)?.trim().toLowerCase();
