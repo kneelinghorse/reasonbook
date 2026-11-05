@@ -363,6 +363,14 @@ function metadataWriterKeySites(sources: SourceMap): WriterKeySite[] {
 
 const EXPECTED_WRITER_KEYS: readonly WriterKeySite[] = sortSourceSites([
   {
+    // s110-m03: the four explicit identity keys in writeRenameLocal's metadata object; never the schema label.
+    file: 'cli/rename-local.ts',
+    line: 129,
+    role: 'writeRenameLocal',
+    callee: 'metadata.execute',
+    key: 'key',
+  },
+  {
     // s108-m04: the feedback fix ledger, a constant key, never the label.
     file: 'tools/rbook/feedback-fix-apply.ts',
     line: 213,
@@ -489,10 +497,11 @@ const EXPECTED_WRITER_KEYS: readonly WriterKeySite[] = sortSourceSites([
   },
   // Owner resolution keeps the sign-in's identity and only the already registered dashboard id.
   ...[
-    [239, "'dashboard_slug'"],
-    [257, "'dashboard_project_id'"],
-    [285, "'owner'"],
-    [286, "'dashboard_username'"],
+    // s110-m03: down three for the dashboard-name tie; same writers and keys.
+    [242, "'dashboard_slug'"],
+    [260, "'dashboard_project_id'"],
+    [288, "'owner'"],
+    [289, "'dashboard_username'"],
   ].map(([line, key]) => ({
     file: 'tools/rbook/owner-resolution.ts',
     line: Number(line),
@@ -715,6 +724,8 @@ function variableWriterSites(sources: SourceMap): SourceSite[] {
 const EXPECTED_VARIABLE_WRITER_FILES = [
   // s93-m01: the hook CLI's per-project ambient switch (key AMBIENT_METADATA_KEY, a constant).
   'cli/commands.ts',
+  // s110-m03: only project_name, dashboard_slug, dashboard_project_name and previous_rbook_addresses.
+  'cli/rename-local.ts',
   'tools/rbook/blob-migrations.ts',
   // s94-m04: the atomic decision-fields migration's own completion marker.
   'tools/rbook/decision-shape-migration.ts',

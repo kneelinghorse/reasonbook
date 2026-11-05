@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-// ABOUTME: s106-m03 — a shipped skill that reads a list whose answer pages tells the agent to follow
-// ABOUTME: its pages, so a capped answer never stands in for the whole list.
+// ABOUTME: Shipped skills follow paginated records so a capped answer never stands in for the whole list.
+// ABOUTME: Plan review has the same five-round bound and feasibility precedence in its three homes.
 
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
@@ -8,8 +8,16 @@ import * as path from 'path';
 import { RBOOK_ACTION_PARAMS } from '../../src/tools/rbook/action-params';
 import { RBOOK_FEEDBACK_ACTIONS } from '../../src/tools/rbook/rbook-feedback';
 import { NEXT_STEP_ACTIONS } from '../../src/tools/rbook/rbook-next-steps';
+import { requiresPrivateEvidence } from '../helpers/public-mirror';
 
 const ROOT = path.resolve(__dirname, '../..');
+const CAP_AUTHORITY = requiresPrivateEvidence({
+  reason: 'this repository’s plan-review cap and rules pointer',
+  paths: {
+    agents: 'agents.md',
+    buildSessionPrompt: 'rbook/docs/build-session-prompt.md',
+  },
+});
 
 /**
  * The design's universe (s106-m03, settled item 5): the files `git grep -lE
@@ -117,5 +125,34 @@ describe('shipped skills follow the pages of a paged list (s106-m03)', () => {
     expect(pages('rbook_context', 'next_steps', 'list')).toBe(true);
     expect(pages('rbook_context', 'next_steps', 'carry')).toBe(false);
     expect(pages('rbook_feedback', 'list')).toBe(true);
+  });
+});
+
+describe('plan-time review stops at the ratified five-round cap (s110-m05)', () => {
+  const plan = fs.readFileSync(path.join(ROOT, 'plugins/reasonbook/skills/plan/SKILL.md'), 'utf8');
+  const normalized = (text: string) => text.replace(/\s+/g, ' ').toLowerCase();
+  const rounds = 'four blocking rounds and one verification round';
+  const precedence = 'after round five, the feasibility rule gives way to the cap';
+  const carry = 'carried forward as a next step on the mission it touches';
+
+  it('bounds the shipped skill and explicitly settles its feasibility-rule conflict', () => {
+    const text = normalized(plan);
+    for (const clause of [rounds, precedence, carry, 'the plan is ratified'])
+      expect(text).toContain(clause);
+  });
+
+  CAP_AUTHORITY.describe('private rule and build prompt agree with the shipped cap', () => {
+    it('keeps the same round counts, carry and feasibility precedence in all three homes', () => {
+      const prompt = normalized(fs.readFileSync(CAP_AUTHORITY.paths.buildSessionPrompt, 'utf8'));
+      const agents = normalized(fs.readFileSync(CAP_AUTHORITY.paths.agents, 'utf8'));
+      for (const text of [normalized(plan), prompt, agents]) {
+        expect(text).toContain(rounds);
+        expect(text).toContain(precedence);
+      }
+      expect(prompt).toContain(carry);
+      expect(prompt).toContain('the plan is ratified');
+      expect(agents).toContain('later findings carry forward');
+      expect(agents).toContain('(rbook/docs/build-session-prompt.md)');
+    });
   });
 });

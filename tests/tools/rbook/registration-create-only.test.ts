@@ -49,6 +49,7 @@ let syncs: Array<{ slug: string; snapshot: Buffer; accepted: boolean }>;
 let projectKeyScope: string | null;
 let purges: number;
 let missingCreateRoute: boolean;
+let mineStatus: number;
 let handlerErrors: unknown[];
 let graph: ProjectGraphRegistry;
 const envKeys = [
@@ -138,6 +139,7 @@ beforeEach(async () => {
   projectKeyScope = null;
   purges = 0;
   missingCreateRoute = false;
+  mineStatus = 200;
   handlerErrors = [];
   server = http.createServer((req, res) => {
     const chunks: Buffer[] = [];
@@ -164,6 +166,16 @@ beforeEach(async () => {
                   isOwner: p.isOwner,
                   owner: p.isOwner ? 'tester' : 'another-owner',
                 })),
+            },
+          });
+          return;
+        }
+        if (url === '/api/projects/mine') {
+          answer(mineStatus, {
+            data: {
+              projects: projects
+                .filter((p) => p.isOwner)
+                .map((p) => ({ id: p.id, name: p.projectName, slug: p.slug })),
             },
           });
           return;
@@ -281,7 +293,7 @@ async function local(folder: string, name = 'Same Name'): Promise<LocalProject> 
   const db = new Database(file);
   try {
     db.exec(
-      "DELETE FROM metadata WHERE key IN ('dashboard_registered','dashboard_project_id','dashboard_slug','owner','dashboard_username')"
+      "DELETE FROM metadata WHERE key IN ('dashboard_registered','dashboard_project_id','dashboard_slug','dashboard_project_name','owner','dashboard_username')"
     );
     const upsert = db.prepare('INSERT OR REPLACE INTO metadata(key,value) VALUES (?,?)');
     upsert.run('project_id', id);
@@ -462,6 +474,10 @@ it.each([
     'DASHBOARD_NAME_MISMATCH',
     'If this store is "meridian", give it that name with rbook_project(action="init", projectRoot="<project folder>", projectName="meridian") and close again.',
   ],
+  [
+    'DASHBOARD_PROJECT_ALREADY_EXISTS',
+    "Close again with this folder's project key. If the record is archived, restore it on reasonbook.ai first, or delete it there to register anew.",
+  ],
 ])(
   'keeps the %s remedy visible after persisting the failed upload and rendering its notice',
   async (code, suggestion) => {
@@ -523,7 +539,7 @@ describe('#907: a store the dashboard lists as owned uploads instead of register
     expect(registrations()).toEqual([]);
   });
 
-  it('with a user key, the same store keeps 4.10.0’s registration path: refused as a name conflict, never healed', async () => {
+  it('with a user key, an owned id is refused before registration, never healed', async () => {
     // Round 2, verifier A, N1: a user key's sync is not held to one project, so a store holding a
     // record's id and name might be another store; only the folder's own project key heals.
     const incumbent = remote('Meridian');
@@ -531,10 +547,57 @@ describe('#907: a store the dashboard lists as owned uploads instead of register
     const project = await local('meridian', 'Meridian');
     known(project, incumbent);
     const result = await checkAndRegister(project.root, client, 'legacy-env');
-    expect(result?.error?.code).toBe('PROJECT_NAME_CONFLICT');
+    expect(result?.error?.code).toBe('DASHBOARD_PROJECT_ALREADY_EXISTS');
+    expect(result?.error?.suggestion).toContain("this folder's project key");
     expect(metadata(project).dashboard_registered).toBeUndefined();
-    expect(registrations()).toEqual(['/api/projects/register-new']);
+    expect(requests).toContain('/api/projects/mine');
+    expect(registrations()).toEqual([]);
     expect(incumbent.snapshot).toEqual(before);
+  });
+
+  it.each([false, true])(
+    'a locally renamed store never registers a second owned record (archived=%s)',
+    async (archived) => {
+      const incumbent = remote('Old Name', { archived });
+      const before = Buffer.from(incumbent.snapshot);
+      const project = await local('renamed', 'New Name');
+      known(project, incumbent);
+      const result = await checkAndRegister(project.root, client, 'legacy-env');
+      expect(result?.error?.code).toBe('DASHBOARD_PROJECT_ALREADY_EXISTS');
+      expect(result?.error?.message).toContain('Old Name');
+      expect(result?.error?.suggestion).toContain('reasonbook rename');
+      expect(result?.error?.suggestion).toContain('--slug old-name');
+      expect(result?.error?.suggestion).toContain('restore');
+      expect(result?.error?.suggestion).toContain('delete');
+      expect(requests).toContain('/api/projects/mine');
+      expect(registrations()).toEqual([]);
+      expect(projects).toHaveLength(1);
+      expect(metadata(project).dashboard_registered).toBeUndefined();
+      expect(incumbent.snapshot).toEqual(before);
+    }
+  );
+
+  it('an unavailable owned-project listing refuses registration rather than creating a second record', async () => {
+    const incumbent = remote('Old Name');
+    const project = await local('renamed-unavailable', 'New Name');
+    known(project, incumbent);
+    mineStatus = 503;
+    const result = await checkAndRegister(project.root, client, 'legacy-env');
+    expect(result?.error).toBeDefined();
+    expect(result?.error?.message).toContain('503');
+    expect(requests).toContain('/api/projects/mine');
+    expect(registrations()).toEqual([]);
+    expect(metadata(project).dashboard_registered).toBeUndefined();
+  });
+
+  it('a first registration with no dashboard id never asks the unavailable owned-project listing', async () => {
+    const project = await local('brand-new', 'Brand New');
+    mineStatus = 503;
+    const result = await checkAndRegister(project.root, client, 'legacy-env');
+    expect(result?.error).toBeUndefined();
+    expect(requests).not.toContain('/api/projects/mine');
+    expect(registrations()).toEqual(['/api/projects/register-new']);
+    expect(metadata(project).dashboard_registered).toBe('true');
   });
 
   it.each([false, undefined])(
@@ -590,7 +653,7 @@ describe('#907: a store the dashboard lists as owned uploads instead of register
     expect(closed.success).toBe(true);
     await __drainCheckpointBackfill();
     expect(syncs).toEqual([]);
-    expect(registrations()).toEqual(['/api/projects/register-new']);
+    expect(registrations()).toEqual([]);
     expect(metadata(project).dashboard_registered).toBeUndefined();
     expect(graph.readUploadState(project.id)?.lastError).toContain('Meridian');
     expect(incumbent.snapshot).toEqual(before);
@@ -710,25 +773,22 @@ describe('#907: a store the dashboard lists as owned uploads instead of register
     expect(lastError).toContain('rbook_auth(action="revoke"');
   });
 
-  it('a store holding another project’s id, as the old owner matcher left it, registers its own record, never uploading over that project', async () => {
+  it('a store holding another project’s id never registers another record or uploads over that project', async () => {
     // Critic A, F1: until 3f913561 the matcher wrote another project's id and slug into a store.
     const bravo = remote('Bravo');
     const before = Buffer.from(bravo.snapshot);
     const alpha = await local('alpha', 'Alpha');
     known(alpha, bravo);
-    // With the project key the listed name is named back; with a user key it registers its own.
+    // Both credentials refuse; neither may turn the stored id into a second registration.
     expect((await checkAndRegister(alpha.root, client, 'project-scoped'))?.error?.code).toBe(
       'DASHBOARD_NAME_MISMATCH'
     );
     expect(metadata(alpha).dashboard_registered).toBeUndefined();
     await closeSession(alpha.root);
-    expect(syncs.map((sync) => sync.slug)).not.toContain(bravo.slug);
-    expect(requests).toContain('/api/projects/register-new');
-    const own = projects.find((project) => project.projectName === 'Alpha')!;
-    expect(own).toBeDefined();
-    expect(syncs.map((sync) => sync.slug)).toEqual([own.slug]);
-    expect(witness(syncs[0]!.snapshot)).toBe('alpha');
-    expect(metadata(alpha).dashboard_project_id).toBe(own.id);
+    expect(syncs).toEqual([]);
+    expect(registrations()).toEqual([]);
+    expect(projects).toHaveLength(1);
+    expect(metadata(alpha).dashboard_project_id).toBe(bravo.id);
     expect(bravo.snapshot).toEqual(before);
   });
 
@@ -844,7 +904,7 @@ describe('#907: a store the dashboard lists as owned uploads instead of register
     process.env.RBOOK_DASHBOARD_API_KEY = 'cmk_loopback';
     await closeSession(project.root);
     expect(syncs.filter((sync) => sync.accepted)).toEqual([]);
-    expect(registrations()).toEqual(['/api/projects/register-new']);
+    expect(registrations()).toEqual([]);
     expect(graph.readUploadState(project.id)?.lastError).toContain('Alpha');
     expect(incumbent.snapshot).toEqual(before);
   });

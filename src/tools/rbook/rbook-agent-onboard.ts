@@ -57,8 +57,8 @@ import {
   getProjectIdentity as getProjectIdentityData,
   readProjectIdentity,
   type ProjectIdentityData,
-  deriveProjectSlug,
 } from './project-identity';
+import { derivedSlugWarning, readDashboardSlug, slugReadFailure } from './dashboard-slug';
 import { ProjectGraphRegistry } from '../../intelligence/project-graph-registry';
 import { SERVER_INSTALL_ROOT } from '../../intelligence/sender-context';
 import {
@@ -1709,14 +1709,19 @@ async function fetchSyncHealth(
   try {
     const client = clientResult.data.client;
 
-    // Resolve project slug from metadata. s87-m03: through the SHARED `deriveProjectSlug`, which
-    // this function used to spell by hand — three hand-copies of one rule is how the four
-    // getSyncStatus call sites came to disagree about what "this project" means.
+    // s110-m01: the slug the dashboard stored (metadata.dashboard_slug), derived from the name only
+    // when none is stored; a failed read of it is never taken for an absent one.
     const nameResult = db.getOne<{ value: string }>(
       `SELECT value FROM metadata WHERE key = 'project_name'`
     );
     const projectName = nameResult.success && nameResult.data ? nameResult.data.value : null;
-    const slug = projectName ? deriveProjectSlug(projectName) : null;
+    const slugRead = readDashboardSlug(db, projectName);
+    if (slugRead.error) {
+      warnings.push(`Sync health unavailable: ${slugReadFailure(slugRead.error)}`);
+      return null;
+    }
+    if (slugRead.derived && slugRead.slug) warnings.push(derivedSlugWarning(slugRead.slug));
+    const slug = slugRead.slug;
 
     // Try project-scoped endpoint first
     if (slug) {

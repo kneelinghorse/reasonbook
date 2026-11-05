@@ -14,6 +14,10 @@ import { cutoverSeams, JOURNAL, PENDING } from '../../src/cli/migrate-store';
 import { LEGACY } from '../../src/intelligence/legacy-compat';
 import { seedLegacyMigrationStore } from '../helpers/legacyMigrationStore';
 
+/** s110-m02 (#944): a migrate answer's pending steps, read so this file also compiles at 7d7a3c28. */
+const pendingOf = (result: { data?: unknown }): readonly string[] | undefined =>
+  (result.data as { pending?: readonly string[] } | undefined)?.pending;
+
 const OLD = LEGACY.recordDirectory;
 const STORE = LEGACY.databaseFile;
 /** The record .gitignore the old seed wrote, which 6 of this Mac's 8 git repositories still hold. */
@@ -940,8 +944,11 @@ describe('the index step waits, and a retry finishes it', () => {
     } as any);
     const result = await move(r.root);
     jest.restoreAllMocks();
-    expect(result.success).toBe(false);
-    expect(result.error?.message).toContain('Dashboard path update remains pending');
+    // s110-m02 (#944): the record moved, so the answer is a success naming the two steps left; at
+    // 7d7a3c28 it was success false, MIGRATION_REFUSED.
+    expect(result.success).toBe(true);
+    expect(pendingOf(result)).toEqual(['the git index', 'the dashboard path update']);
+    expect(result.data?.left.join('\n')).toContain('Dashboard path update pending');
     expect(pendingSteps(r).folder).toBe(OLD);
     fs.rmSync(path.join(r.top, '.git/index.lock'));
     const store = new Database(path.join(r.root, 'rbook/db/rbook.sqlite'));

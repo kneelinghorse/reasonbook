@@ -155,10 +155,12 @@ it('gets a message older than 100, preserves actual sender ids, and strips both 
       },
     },
   });
+  // s110-m02 (feedback #53): then one directory read, for the parties' addresses by project id.
   expect(requests).toEqual([
     `/api/messages/${MESSAGE_ID}`,
     '/api/messages?tab=inbox&limit=100',
     '/api/messages?tab=inbox&limit=100&offset=100',
+    '/api/projects/directory/public',
   ]);
   for (const email of EMAILS) expect(JSON.stringify(answer)).not.toContain(email);
   const rendered = answer.content
@@ -194,7 +196,8 @@ it('does not page when read-one already supplies all identity fields', async () 
   directIds = true;
   const answer = await dispatch('get');
   expect(answer.structuredContent).toMatchObject({ success: true, data: { message: IDENTITY } });
-  expect(requests).toEqual([`/api/messages/${MESSAGE_ID}`]);
+  // No list page; the one directory read is for the parties' addresses (s110-m02, feedback #53).
+  expect(requests).toEqual([`/api/messages/${MESSAGE_ID}`, '/api/projects/directory/public']);
 });
 
 it.each(['failed', 'repeated'] as const)(

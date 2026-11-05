@@ -18,6 +18,40 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
+const USAGE =
+  'Usage: node scripts/generate-build-manifest.js [--root <project>] [--dist <dir>] [--help|-h]';
+const options = {};
+let help = false;
+const args = process.argv.slice(2);
+for (let index = 0; index < args.length; index++) {
+  const flag = args[index];
+  if (flag === '--help' || flag === '-h') {
+    if (help) {
+      console.error(USAGE);
+      process.exit(2);
+    }
+    help = true;
+    continue;
+  }
+  if (
+    !['--root', '--dist'].includes(flag) ||
+    options[flag] !== undefined ||
+    !args[index + 1] ||
+    args[index + 1].startsWith('-')
+  ) {
+    console.error(USAGE);
+    process.exit(2);
+  }
+  options[flag] = args[++index];
+}
+if (help) {
+  console.log(USAGE);
+  process.exit(0);
+}
+const PROJECT_ROOT = path.resolve(options['--root'] ?? path.join(__dirname, '..'));
+const DIST_DIR = path.resolve(options['--dist'] ?? path.join(PROJECT_ROOT, 'dist'));
+const MANIFEST_PATH = path.join(DIST_DIR, '.build-manifest.json');
+
 const ts = require('typescript');
 
 // Load the shared source walk without relying on a previous build. This build-only process
@@ -30,17 +64,6 @@ require.extensions['.ts'] = (mod, file) => {
   mod._compile(outputText, file);
 };
 const { collectSrcMtimes, hashSrcFiles } = require('../src/utils/build-source.ts');
-const rootFlag = process.argv.indexOf('--root');
-const PROJECT_ROOT =
-  rootFlag !== -1 && process.argv[rootFlag + 1]
-    ? path.resolve(process.argv[rootFlag + 1])
-    : path.resolve(__dirname, '..');
-const distFlag = process.argv.indexOf('--dist');
-const DIST_DIR =
-  distFlag !== -1 && process.argv[distFlag + 1]
-    ? path.resolve(process.argv[distFlag + 1])
-    : path.join(PROJECT_ROOT, 'dist');
-const MANIFEST_PATH = path.join(DIST_DIR, '.build-manifest.json');
 
 /**
  * Recursively collect all .js files in a directory, sorted for determinism.

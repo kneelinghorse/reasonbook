@@ -1312,6 +1312,19 @@ describe('rbook_agent_onboard', () => {
   });
 
   describe('sync health integration', () => {
+    // s110-m01: sync health names the slug the dashboard stored. The suite's fixture has no metadata
+    // table, a read that fails, and a failed read is never taken for an absent slug, so these tests
+    // give the store the slug a registered store keeps.
+    beforeEach(() => {
+      const db = new Database(dbPath);
+      try {
+        db.exec(`CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+          INSERT OR REPLACE INTO metadata (key, value) VALUES ('dashboard_slug', 'onboard-test');`);
+      } finally {
+        db.close();
+      }
+    });
+
     it('should return syncHealth: null when dashboard is not configured', async () => {
       // Dashboard env vars not set by default in test
       const originalUrl = process.env.RBOOK_DASHBOARD_URL;

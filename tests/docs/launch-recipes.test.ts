@@ -280,6 +280,7 @@ describe('s92-m07 — launch recipes', () => {
       ...DOCS,
       'docs/harnesses.md',
       'docs/trust.md',
+      'docs/sharing.md',
       'SECURITY.md',
       'plugins/reasonbook/README.md',
       'rbook-seed/README.md',

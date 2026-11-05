@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // ABOUTME: Reconciles checkpoint ownership and registers a project only for an explicit close.
-// ABOUTME: Registration uploads a consistent snapshot while preserving the original local store path.
+// ABOUTME: An owned dashboard id never registers twice, including after a local rename or archive.
 
 import { withClientAsync } from './client';
 import { DashboardClient } from './dashboard-client';
@@ -237,6 +237,41 @@ export async function checkAndRegister(
           };
           log(captured.error.message);
           return createSuccess(undefined);
+        }
+
+        // s110-m03: the create-only route rejects duplicate names, but a local rename can pass
+        // that check. /mine includes archived records, whose ids /me leaves out. Only a stored
+        // id needs this guard; a first registration must not depend on another listing.
+        const priorId = client.getOne<{ value: string }>(
+          "SELECT value FROM metadata WHERE key = 'dashboard_project_id'"
+        );
+        if (!priorId.success)
+          throw new Error(priorId.error?.message ?? 'Could not read the dashboard project id.');
+        if (priorId.data?.value) {
+          const owned = await dashClient.listOwnedProjects();
+          if (!owned.success || !owned.data) {
+            captured.error =
+              owned.error ?? RbookErrors.dashboardError('The owned-project listing had no data.');
+            return createSuccess(undefined);
+          }
+          const existing = owned.data.projects.find(
+            (project) => project.id === priorId.data!.value
+          );
+          if (existing) {
+            const folder = projectRoot ?? '<project folder>';
+            const heal = `Close again with this folder's project key for "${existing.name}".`;
+            captured.error = {
+              code: 'DASHBOARD_PROJECT_ALREADY_EXISTS',
+              message: `Registration refused: reasonbook.ai already lists this store's dashboard id as "${existing.name}" (${existing.slug}). Creating another project would duplicate its record. Nothing was uploaded.`,
+              suggestion:
+                (listedAsOwned && listedName === existing.name.trim()
+                  ? heal
+                  : `If this store is "${existing.name}", restore that name with rbook_project(action="init", projectRoot="${folder}", projectName="${existing.name}"), or use reasonbook rename with --slug ${existing.slug}. ${heal}`) +
+                ' If the record is archived, restore it on reasonbook.ai first, or delete it there to register anew.',
+            };
+            log(captured.error.message);
+            return createSuccess(undefined);
+          }
         }
 
         const sqlitePath = client.path;

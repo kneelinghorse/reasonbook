@@ -32,8 +32,8 @@ export interface OwnerResolutionResult {
   ownerConfirmed?: boolean;
   /**
    * s109-m04 (#907; settled item 12): the listing names this store's dashboard id with
-   * `isOwner === true`, under the store's own name, and the owner is confirmed, so the store is
-   * registered whatever its flag says.
+   * `isOwner === true`, under the store's own or saved dashboard name, and the owner is confirmed,
+   * so the store is registered whatever its flag says.
    */
   listedAsOwned?: boolean;
   /** The listed name of that owned project, when its owner is confirmed, whatever the store's name. */
@@ -180,13 +180,16 @@ export async function resolveAndPersistOwner(
   // s109-m04 (critic A, F1): the listed project is this store's only when its name is the store's
   // name too. The matcher that ran until 3f913561 wrote another project's id and slug into a store,
   // and healing that store would upload it over that project's record; the dashboard keeps names
-  // unique per account, so a matching name ties the listed id to this store.
+  // unique per account, so a matching name ties the listed id to this store. A rename keeps the
+  // confirmed dashboard name too, while its local display name may differ (s110-m03).
   const storeName = readMetadata(client, 'project_name');
+  const dashboardName = readMetadata(client, 'dashboard_project_name');
   const listedName =
     matchedProject?.isOwner === true && ownerConfirmed
       ? (matchedProject.name ?? '').trim()
       : undefined;
-  const listedAsOwned = listedName !== undefined && storeName !== null && listedName === storeName;
+  const listedAsOwned =
+    listedName !== undefined && (listedName === storeName || listedName === dashboardName);
   if (localProjectId && ownerConfirmed && !confirmed) {
     const slug = readMetadata(client, 'dashboard_slug');
     const name = readMetadata(client, 'project_name');

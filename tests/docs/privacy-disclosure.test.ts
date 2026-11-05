@@ -130,7 +130,7 @@ describe('public privacy disclosure', () => {
     );
     expect(text).toContain('opens the link, signs in and chooses Join');
     expect(text).not.toContain('Whoever opens it while signed in joins');
-    const guide = read('docs/getting-started.md').replace(/\s+/g, ' ');
+    const guide = read('docs/sharing.md').replace(/\s+/g, ' ');
     expect(guide).toContain(
       'accept the invitation on their home page at reasonbook.ai before joining'
     );
@@ -160,11 +160,26 @@ describe('public privacy disclosure', () => {
     expect(text).toContain('https://github.com/kneelinghorse/reasonbook/issues');
   });
 
+  it('keeps the recovery retention summary and backup limits consistent with disabled expiry', () => {
+    const text = privacy();
+    const dashboard = text.split('## The dashboard (optional)')[1];
+    expect(dashboard).toContain('recovery records stay until the project is deleted');
+    expect(dashboard).toContain('recovery files currently stay that long too');
+    expect(dashboard).toContain('planned expiry described above is not yet active');
+    expect(dashboard).toContain(
+      "Render's daily disk snapshots can retain deleted recovery files for at least seven days afterwards"
+    );
+    expect(dashboard).toContain(
+      'Deleting a live record does not remove it from an existing backup'
+    );
+  });
+
   it('makes privacy reachable from the landing page, docs, trust page and plugin listing', () => {
     for (const file of [
       'README.md',
       'docs/README.md',
       'docs/trust.md',
+      'docs/sharing.md',
       'plugins/reasonbook/README.md',
     ]) {
       expect(read(file)).toMatch(/\[Privacy\]\([^\n)]*privacy\.md\)/);

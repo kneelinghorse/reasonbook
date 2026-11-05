@@ -66,8 +66,9 @@ const ALLOWLIST = new Set<string>([
   'rbook-db-restore.ts',
   // s92-m01: whoami diagnoses RESOLUTION, and resolution's last step is the registry default.
   // It reads that one registry_meta key (plus its row) to say whether a contextless call could
-  // use it — "registry default: X — not applied". It opens no other project's store and never
-  // fans out.
+  // use it — "registry default: X — not applied". It never fans out a query; its heal preview
+  // checks the address it predicts against the other registered projects' addresses, read-only,
+  // as the send's write would (s110-m01, critic round 3, N2).
   'rbook-message.ts',
 ]);
 
@@ -101,6 +102,14 @@ const SINGLE_PROJECT_REPLICA = new Set([
   'record-recovery-core.ts',
 ]);
 
+// s110-m01: the address rule's duplicate check and the path tie. The rule reads each registered store's
+// address, read-only, only where an address is set (an identity update, a stored seed, the heal) and in
+// the heal preview whoami reports, so no two stores hold one address; the identity a pin-only read
+// derives in memory skips it (address-rule.test.ts). The path tie uses only the static
+// ProjectGraphRegistry.isSameFolder, which compares two paths and opens no registry. Like the sets
+// above, the exception permits the registry import and never the cross-store queries.
+const ADDRESS_AND_PATH_IDENTITY = new Set(['address-rule.ts', 'dashboard-path-tie.ts']);
+
 // Matches an import from the cross-store fan-out modules OR the project-graph registry —
 // the machinery a pin-only read would use to escape its sender scope.
 const CROSS_STORE_IMPORT =
@@ -109,7 +118,11 @@ const CROSS_STORE_QUERY_IMPORT = /from\s+['"][^'"]*\/(cross-store-query|cross-st
 
 function violatesScope(name: string, content: string): boolean {
   if (ALLOWLIST.has(name)) return false;
-  if (SINGLE_PROJECT_UPLOAD_STATE.has(name) || SINGLE_PROJECT_REPLICA.has(name))
+  if (
+    SINGLE_PROJECT_UPLOAD_STATE.has(name) ||
+    SINGLE_PROJECT_REPLICA.has(name) ||
+    ADDRESS_AND_PATH_IDENTITY.has(name)
+  )
     return CROSS_STORE_QUERY_IMPORT.test(content);
   return CROSS_STORE_IMPORT.test(content);
 }

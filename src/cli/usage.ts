@@ -43,6 +43,8 @@ const OPTIONS: Readonly<
   feedback: { values: [...ROOT, 'content', 'format', 'rule'], switches: ['dry-run', 'apply'] },
   drafts: { values: [...ROOT, 'format'], switches: ['all'] },
   migrate: { values: [...ROOT, 'project'], switches: ['apply', 'docs-only', 'config'] },
+  rename: { values: [...ROOT, 'name', 'slug'], switches: ['apply'] },
+  registry: { values: [...ROOT, 'format'], switches: ['apply'] },
   sync: {
     values: [...ROOT, ...ROUTE, 'bundle-out', 'bundle-in', 'for'],
     switches: ['serve', 'confirm-owner', 'join', 'auto'],
@@ -110,6 +112,7 @@ const POSITIONAL_LIMIT: Readonly<Record<string, number>> = {
   ambient: 1,
   profile: 1,
   drafts: 1,
+  registry: 1,
 };
 const LIKELY_FLAG: Readonly<Record<string, string>> = {
   init: 'name',
@@ -192,7 +195,11 @@ export const USAGE =
   '  spin-out --from <root> --to <folder> (--sprint <id>|--missions <ids>) [--apply]\n' +
   '                                 preview or copy selected work into its own project\n' +
   '  migrate [--apply] [--docs-only] [--project <root>] [--config]\n' +
-  '                                 preview or apply the Reasonbook rename\n' +
+  '                                 move a CMOS-era record to rbook/, or update its instructions\n' +
+  '  rename --name <name> --slug <slug> [--project-root <root>] [--apply]\n' +
+  '                                 preview or rename an owned project and its dashboard record\n' +
+  '  registry archive|restore --project-root <root> [--apply] [--format json]\n' +
+  '                                 preview or change a registered folder’s archive state\n' +
   '  doctor [--offline] [--format json] [--project-root <root>]\n' +
   '                                 list setup drift and the fix for each; writes nothing\n' +
   '  profile show                   the operator profile every project reads\n' +

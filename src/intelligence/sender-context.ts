@@ -265,13 +265,22 @@ export async function validateProject(
         // s93-m11: only a call that may heal may seed a missing identity row; a read, a preview and
         // an explicit heal:false derive it in memory and write nothing, even outside a dispatched
         // call (whoami from the CLI, the startup lines).
-        let identity = heal === true ? getProjectIdentity(db) : readProjectIdentity(db);
+        // s110-m01 (critic round 3, W1): a preview predicts what a send will store, so its address is
+        // checked against the other registered projects as the send's write checks it.
+        let identity =
+          heal === true
+            ? getProjectIdentity(db)
+            : readProjectIdentity(db, { checkTaken: heal === 'preview' });
         let rbookAddress = identity?.rbook_address?.trim() ?? '';
         const initialStale = !rbookAddress || rbookAddress.startsWith('rbook://unknown/');
 
         let healed: AddressHeal | undefined;
+        // s110-m01: when the address a heal would build breaks the address rule, nothing is healed,
+        // and the rejection says why.
+        let healRefused: string | undefined;
         if (initialStale && heal === 'preview') {
           const preview = previewUnknownRbookAddressHeal(db);
+          healRefused = preview.refused;
           if (preview.next) {
             healed = { previous: preview.previous ?? '', next: preview.next, preview: true };
             rbookAddress = preview.next;
@@ -279,6 +288,7 @@ export async function validateProject(
         } else if (initialStale && heal) {
           // A lazy repair, not the caller's write: it never starts first-write upkeep.
           const outcome = asLazyRepair(() => backfillUnknownRbookAddress(db));
+          healRefused = outcome.refused;
           if (outcome.rewritten && outcome.next && outcome.next !== outcome.previous) {
             healed = {
               previous: outcome.previous ?? '',
@@ -298,7 +308,9 @@ export async function validateProject(
         if (!hasValidUuid) {
           rejectReason = 'dashboard_project_id missing or not a UUID';
         } else if (!hasCanonicalAddress) {
-          rejectReason = 'project_identity.rbook_address is empty or rbook://unknown/*';
+          rejectReason = healRefused
+            ? `project_identity.rbook_address is empty or rbook://unknown/*. ${healRefused}`
+            : 'project_identity.rbook_address is empty or rbook://unknown/*';
         }
 
         const payload: ValidateProjectResult = {

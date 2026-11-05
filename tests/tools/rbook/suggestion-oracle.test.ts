@@ -109,6 +109,15 @@
  *      in-process dispatcher tests grant this matrix no examined-site or wire credit; the
  *      offline owner-copy refusal remains a named STATE residual.
  *
+ *  13. s110-m03's rename is CLI-only. Its refusal and the client's 400/409 refusals remain named
+ *      STATE residuals; its malformed-receipt remedy spreads its error code and stays UNTYPED.
+ *      The owned-id registration guard is a detached-close EXTERNAL residual. The focused rename,
+ *      recovery and registration suites grant this router oracle no examined-site or wire credit.
+ *
+ *  14. s110-m05's registry maintenance is CLI-only. Its STATE refusal remains a named router
+ *      residual. The portable CLI arm below checks three trigger-to-preview remedies against a
+ *      scratch registry, separately from router provenance; it grants no examined-site or wire credit.
+ *
  * THE MIRROR IS NOT A BUILD. Provenance comes from an AST source transform into a gitignored
  * CommonJS mirror under `node_modules/.cache/` — ZERO `src/` edits — and it proves itself faithful
  * run. See `tests/helpers/suggestion-mirror.ts` for why a structured `remedy` field was rejected.
@@ -126,6 +135,7 @@ import { RbookDetector } from '../../../src/intelligence/rbook-detector';
 import { writeUserAuthor } from '../../../src/intelligence/user-author';
 import { CredentialStore } from '../../../src/intelligence/credential-store';
 import { ProjectGraphRegistry } from '../../../src/intelligence/project-graph-registry';
+import { runCli } from '../../../src/cli';
 import { RBOOK_TOOL_DEFINITIONS } from '../../../src/tools/rbook';
 import { RBOOK_ACTION_PARAMS } from '../../../src/tools/rbook/action-params';
 import { findWrongTypedStringParam } from '../../../src/tools/rbook/param-type-guard';
@@ -322,7 +332,7 @@ const SITES_BY_MISSION = {
   // call mid-move is a refusal, and so is --project-root's check).
   's95-m13': [
     'src/index.ts:1390',
-    'src/tools/rbook/rbook-message.ts:798',
+    'src/tools/rbook/rbook-message.ts:809',
     'src/tools/rbook/sender-refusal.ts:90',
   ],
   's94-m08': [
@@ -342,7 +352,7 @@ const SITES_BY_MISSION = {
     // and five in round 3 (the import of mayHaveSynced). s109-m01: down 83 lines in migrate.ts (the
     // dry run's git refusals and twins, the retry's twins and their wait, the index step) and 62 and
     // 65 in migrate-config.ts (the registries' WAL restore and the notes naming those left out of it).
-    'src/cli/migrate.ts:314',
+    'src/cli/migrate.ts:321',
     'src/cli/migrate-config.ts:218',
     'src/cli/migrate-config.ts:231',
   ],
@@ -396,8 +406,8 @@ const SITES_BY_MISSION = {
   // restore; and the CLI's bundle for a member (nine of the 72 added at the build-time critics' folds).
   's96-m13': [
     'src/cli/sync.ts:162',
-    'src/tools/rbook/rbook-db-backfill.ts:861',
-    'src/tools/rbook/rbook-db-backfill.ts:163',
+    'src/tools/rbook/rbook-db-backfill.ts:895',
+    'src/tools/rbook/rbook-db-backfill.ts:170',
     'src/tools/rbook/rbook-db-restore.ts:226',
     'src/tools/rbook/rbook-project-shared.ts:146',
     'src/tools/rbook/rbook-project-shared.ts:175',
@@ -493,8 +503,8 @@ const SITES_BY_MISSION = {
   // s99-m10: scoped and global reconciliation refuse an unrecognized table-count payload.
   // Both inherit DASHBOARD_ERROR, are driven by the portable HTTP arm, and prescribe no tool call.
   's99-m10': [
-    'src/tools/rbook/rbook-db-backfill.ts:518',
-    'src/tools/rbook/rbook-db-backfill.ts:600',
+    'src/tools/rbook/rbook-db-backfill.ts:529',
+    'src/tools/rbook/rbook-db-backfill.ts:628',
   ],
   // s96-m08: one common retirement remedy, a local hook-read fault, and owner-key gates.
   // The message-get remedy changes text at its existing site; it is not an added site.
@@ -625,7 +635,7 @@ const SITES_BY_MISSION = {
     'src/tools/rbook/record-move-routes.ts:60',
     'src/tools/rbook/record-move-routes.ts:54',
     'src/tools/rbook/record-sync.ts:196',
-    'src/tools/rbook/rbook-db-backfill.ts:479',
+    'src/tools/rbook/rbook-db-backfill.ts:487',
   ],
   // s100-m02: a share of a project the dashboard does not hold yet, refused signed out or with
   // uploads off, where a session close would upload nothing (the s97 review's finding 7).
@@ -644,17 +654,17 @@ const SITES_BY_MISSION = {
   // sibling-code rule classifies its site UNTYPED; its separate unit/dispatch tests grant this
   // router matrix no examined-site or wire credit. The two handler sites have reasons below.
   's98-m09': [
-    'src/tools/rbook/rbook-context-project-identity.ts:122',
+    'src/tools/rbook/rbook-context-project-identity.ts:126',
     'src/tools/rbook/rbook-db-snapshot.ts:169',
     'src/tools/rbook/tool-validation.ts:55',
   ],
   // s98-m10: manual backfill refuses before any upload when checkpoint sync is explicitly off.
-  's98-m10': ['src/tools/rbook/rbook-db-backfill.ts:151'],
+  's98-m10': ['src/tools/rbook/rbook-db-backfill.ts:158'],
   // s98-m11: reject unreadable expiry before a capture opens or writes a store.
   's98-m11': ['src/tools/rbook/rbook-session-capture.ts:428'],
   // s98-m12: an already-answered message refuses another response with a read-current-message
   // remedy. The portable HTTP arm drives its 409 and executes that exact message's get remedy.
-  's98-m12': ['src/tools/rbook/dashboard-client.ts:1497'],
+  's98-m12': ['src/tools/rbook/dashboard-client.ts:1523'],
   // s98-m13: two failed session-schema/query reads refuse closeout (FAULT; injected in
   // sprint-close-audit-receipt.test.ts). The peer remedy translator spreads an arbitrary engine
   // code, so it is UNTYPED by this gate's sibling-code rule. member-remedies.test.ts covers its
@@ -719,27 +729,27 @@ const SITES_BY_MISSION = {
   // Keep their trigger classes
   // under the existing sibling-code rule; focused lifecycle tests confer no router-site credit.
   's101-m01': [
-    'src/tools/rbook/rbook-db-backfill.ts:137',
-    'src/tools/rbook/rbook-db-backfill.ts:224',
-    'src/tools/rbook/rbook-db-backfill.ts:234',
+    'src/tools/rbook/rbook-db-backfill.ts:144',
+    'src/tools/rbook/rbook-db-backfill.ts:231',
+    'src/tools/rbook/rbook-db-backfill.ts:241',
     'src/tools/rbook/dashboard-http-error.ts:46',
     'src/tools/rbook/dashboard-upload-auth.ts:87',
     'src/tools/rbook/owner-resolution.ts:166',
-    'src/tools/rbook/owner-resolution.ts:209',
-    'src/tools/rbook/owner-resolution.ts:234',
-    'src/tools/rbook/owner-resolution.ts:252',
+    'src/tools/rbook/owner-resolution.ts:212',
+    'src/tools/rbook/owner-resolution.ts:237',
+    'src/tools/rbook/owner-resolution.ts:255',
   ],
   // s101-m04: actionable unshared-record, never-uploaded and concurrent init refusals.
   's101-m04': [
     'src/tools/rbook/record-context.ts:52',
-    'src/tools/rbook/rbook-db-backfill.ts:175',
+    'src/tools/rbook/rbook-db-backfill.ts:182',
     'src/tools/rbook/rbook-project-init.ts:827',
   ],
   // s101-m10: create-only registration collision, old-server and unsafe-response refusals.
   's101-m10': [
     'src/tools/rbook/registration-error.ts:29',
     'src/tools/rbook/registration-error.ts:48',
-    'src/tools/rbook/dashboard-client.ts:2437',
+    'src/tools/rbook/dashboard-client.ts:2566',
   ],
   // s101-m02: one common delivery notice and three admission/exchange refusals. The helper
   // and readmit spread have no sibling code and remain UNTYPED; this matrix reaches neither.
@@ -855,6 +865,44 @@ const SITES_BY_MISSION = {
     'src/tools/rbook/checkpoint-registration.ts:226',
     'src/tools/rbook/checkpoint-registration.ts:236',
   ],
+  // s110-m01 (#920, #808): a request that names this project's slug refuses when the stored slug
+  // cannot be read (reconcile, orphans and purge), purge refuses a derived slug /mine does not tie to
+  // this store, or a /mine it cannot read, and an identity update refuses an address that would
+  // break lookups. Its moves: rbook-db-backfill.ts's sites down seven lines (the slug imports), then
+  // eight, eleven and twenty-eight around reconcile, and thirty-four from purge on;
+  // dashboard-client.ts's down eleven (OwnedProject) and forty-five (listOwnedProjects);
+  // rbook-context-project-identity.ts's down two (the imports) and seventeen (the pre-check), then
+  // two more and, from the pre-check's refusal on, nine (critic round 2, V1's held address), and one
+  // more for round 3's N3 comment.
+  // s110-m02 adds no authored site. Its moves: rbook-message.ts's sites down eleven from the send
+  // advisory's memo comment on (the directory memo's per-account note), and sixty-eight from the
+  // address helpers on (loadDirectory, addressesById, the side and carried addresses);
+  // migrate.ts's suggestion down seven (the path step's import and #944's marker), its condition now
+  // `moved || following`; dashboard-client.ts's down six (archivedAt) and fifteen (the local-path
+  // update's forbidden code for a redirect).
+  's110-m01': [
+    'src/tools/rbook/rbook-db-backfill.ts:563',
+    'src/tools/rbook/rbook-db-backfill.ts:951',
+    // Critic round 1, F3: the refusal that names the slug /mine lists for this store's file.
+    'src/tools/rbook/rbook-db-backfill.ts:972',
+    'src/tools/rbook/rbook-db-backfill.ts:981',
+    'src/tools/rbook/rbook-context-project-identity.ts:157',
+  ],
+  // s110-m03: one CLI refusal, three combined-rename client remedies, and the owned-id
+  // registration guard. The unchanged sibling-code rule keeps the spread-code client remedy
+  // UNTYPED; the other client refusals and CLI refusal are STATE, and registration is EXTERNAL.
+  // Its moves: dashboard-client.ts's earlier sites down nine (RenameProjectResult), and the
+  // registration receipt down sixty more (renameProject); owner-resolution.ts's later sites
+  // down three (the saved dashboard display-name tie).
+  's110-m03': [
+    'src/cli/rename.ts:110',
+    'src/tools/rbook/dashboard-client.ts:1644',
+    'src/tools/rbook/dashboard-client.ts:1651',
+    'src/tools/rbook/dashboard-client.ts:1670',
+    'src/tools/rbook/checkpoint-registration.ts:267',
+  ],
+  // One direct CLI refusal; REGISTRY_REFUSED is STATE under the unchanged sibling-code rule.
+  's110-m05': ['src/cli/registry.ts:89'],
 } as const satisfies Readonly<Record<string, readonly string[]>>;
 const RATIFIED_SITE_ADDS = Object.values(SITES_BY_MISSION).flat();
 
@@ -955,8 +1003,8 @@ const CONSUMER_RESOLVED_CODES: Readonly<Record<string, string>> = {
   'src/tools/rbook/rbook-context-update.ts:818': 'INVALID_PARAMETER',
   'src/tools/rbook/errors.ts:383': '<expr>',
   // These objects spread dashboardError before overriding its suggestion; proven below.
-  'src/tools/rbook/rbook-db-backfill.ts:518': 'DASHBOARD_ERROR',
-  'src/tools/rbook/rbook-db-backfill.ts:600': 'DASHBOARD_ERROR',
+  'src/tools/rbook/rbook-db-backfill.ts:529': 'DASHBOARD_ERROR',
+  'src/tools/rbook/rbook-db-backfill.ts:628': 'DASHBOARD_ERROR',
 };
 
 type TriggerClass = 'VALIDATION' | 'STATE' | 'FAULT' | 'EXTERNAL' | 'UNTYPED';
@@ -3066,6 +3114,8 @@ const FIRST_RUN_SITES = new Set(FIRST_RUN.map((row) => row.site));
  * fired/non-universe site is stale bookkeeping.
  */
 const EXTERNAL_RESIDUAL_REASONS: Readonly<Record<string, string>> = {
+  'src/tools/rbook/checkpoint-registration.ts:267':
+    'An owned dashboard id blocks a user-key registration during a detached close upload, including locally renamed and archived records. This synchronous router-refusal matrix does not await close uploads; registration-create-only.test.ts and registration-heal-real-store.test.ts drive the guard and retained remedy separately, granting no oracle-site or wire credit.',
   // s109-m04 (verifier A, N2): a detached close upload's refusal, like the 404 below.
   'src/tools/rbook/checkpoint-registration.ts:226':
     'A store the listing names as owned under another name, closed with its project-scoped key, is refused by name instead of as an unregistered store, during a detached close upload. This synchronous router-refusal matrix does not await close uploads; registration-create-only.test.ts drives it with the names differing in case. No oracle-site credit is claimed.',
@@ -3079,7 +3129,7 @@ const EXTERNAL_RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     '`validateProjectId()` has zero production callers; only direct unit tests invoke the method.',
   'src/tools/rbook/client.ts:961':
     'The second PROJECT_ID_MISMATCH arm is in the same production-unreachable `validateProjectId()` method.',
-  'src/tools/rbook/owner-resolution.ts:234':
+  'src/tools/rbook/owner-resolution.ts:237':
     'With a dashboard project id and stored owner, the earlier latest-listing guard at :166 ' +
     'already refuses a different username. Without a dashboard id, unavailable() intentionally ' +
     'omits the error property, so this constructed suggestion cannot reach a router refusal. ' +
@@ -3089,16 +3139,16 @@ const EXTERNAL_RESIDUAL_REASONS: Readonly<Record<string, string>> = {
 const HTTP_EXTERNAL_SITES = new Set([
   'src/tools/rbook/dashboard-upload-auth.ts:87',
   'src/tools/rbook/owner-resolution.ts:166',
-  'src/tools/rbook/owner-resolution.ts:252',
-  'src/tools/rbook/rbook-db-backfill.ts:234',
-  'src/tools/rbook/dashboard-client.ts:1497',
-  'src/tools/rbook/rbook-db-backfill.ts:518',
-  'src/tools/rbook/rbook-db-backfill.ts:600',
+  'src/tools/rbook/owner-resolution.ts:255',
+  'src/tools/rbook/rbook-db-backfill.ts:241',
+  'src/tools/rbook/dashboard-client.ts:1523',
+  'src/tools/rbook/rbook-db-backfill.ts:529',
+  'src/tools/rbook/rbook-db-backfill.ts:628',
   'src/tools/rbook/rbook-auth.ts:636',
   'src/tools/rbook/rbook-auth.ts:1225',
   'src/tools/rbook/rbook-auth.ts:1234',
   'src/tools/rbook/rbook-auth.ts:1242',
-  'src/tools/rbook/rbook-message.ts:1097',
+  'src/tools/rbook/rbook-message.ts:1168',
   'src/tools/rbook/errors.ts:427',
   'src/tools/rbook/errors.ts:443',
   'src/tools/rbook/errors.ts:462',
@@ -3107,7 +3157,7 @@ const HTTP_EXTERNAL_SITES = new Set([
   'src/tools/rbook/errors.ts:502',
 ]);
 const SYNTHETIC_EXTERNAL_SITES = new Set([
-  'src/tools/rbook/rbook-db-backfill.ts:175',
+  'src/tools/rbook/rbook-db-backfill.ts:182',
   'src/auth/dashboard-owner.ts:19',
   'src/tools/rbook/rbook-auth.ts:598',
   'src/tools/rbook/rbook-auth.ts:607',
@@ -3142,6 +3192,21 @@ describe('s89-m08 CENSUS — the universe re-derives at build time, never from a
       RATIFIED_AUTHORED_BASE + RATIFIED_SITE_ADDS.length - RATIFIED_SITE_REMOVALS.length
     );
     expect(SITES_BY_MISSION['s90-m07']).toEqual([]);
+    expect(
+      SITES_BY_MISSION['s110-m03'].map(
+        (site) => CENSUS.find((row) => row.site === site)?.triggerClass
+      )
+    ).toEqual(['STATE', 'STATE', 'STATE', 'UNTYPED', 'EXTERNAL']);
+    expect(
+      SITES_BY_MISSION['s110-m05'].map((site) => CENSUS.find((row) => row.site === site))
+    ).toEqual([
+      expect.objectContaining({
+        site: 'src/cli/registry.ts:89',
+        code: 'REGISTRY_REFUSED',
+        triggerClass: 'STATE',
+        callBearing: false,
+      }),
+    ]);
     expect(
       SITES_BY_MISSION['s101-m02'].map(
         (site) => CENSUS.find((row) => row.site === site)?.triggerClass
@@ -3491,7 +3556,7 @@ describe('s89-m08 T5 — every authored suggestion naming a shipped tool yields 
     expect(narrowOffenders).toEqual([
       'src/tools/rbook/errors.ts:399',
       'src/tools/rbook/errors.ts:408',
-      'src/tools/rbook/rbook-db-backfill.ts:234',
+      'src/tools/rbook/rbook-db-backfill.ts:241',
       'src/tools/rbook/rbook-decisions-update.ts:81',
       'src/tools/rbook/rbook-feedback.ts:608',
       'src/tools/rbook/rbook-learnings-reaffirm.ts:91',
@@ -3515,6 +3580,95 @@ describe('s89-m08 T5 — every authored suggestion naming a shipped tool yields 
       expect(bySyntax.get(syntax)?.length ?? 0).toBeGreaterThan(0);
     }
   });
+});
+
+// ────────────────────────────────────────────────────────────────────────────────────────────────
+// s110-m05 — DIRECT CLI REMEDIES, WITH NO ROUTER PROVENANCE CREDIT
+// ────────────────────────────────────────────────────────────────────────────────────────────────
+
+describe('s110-m05 registry CLI remedy — separate from router coverage', () => {
+  it.each(['unregistered folder', 'wrong configuration', 'review-role apply'])(
+    'executes the suggested preview after %s refuses',
+    async (trigger) => {
+      const scratch = mkTmp('rbook-registry-remedy-');
+      const configDir = path.join(scratch, 'config');
+      const projectRoot = path.join(scratch, 'registered project');
+      fs.mkdirSync(configDir);
+      fs.mkdirSync(projectRoot);
+      const registryFile = path.join(configDir, 'project-graph.sqlite');
+      withDb(registryFile, (db) => {
+        db.exec(`CREATE TABLE projects (
+          project_id TEXT PRIMARY KEY, store_path TEXT, name TEXT, archived_at INTEGER
+        )`);
+        db.prepare('INSERT INTO projects VALUES (?, ?, ?, NULL)').run(
+          'registry-remedy',
+          projectRoot,
+          'Registry remedy'
+        );
+      });
+      const rows = () => withDb(registryFile, (db) => db.prepare('SELECT * FROM projects').all());
+      const before = rows();
+      const env = {
+        HOME: scratch,
+        RBOOK_CONFIG_DIR: configDir,
+        ...(trigger === 'review-role apply' ? { RBOOK_AGENT_ROLE: 'review' } : {}),
+      };
+      const call = async (argv: string[], config = configDir) => {
+        const output: string[] = [];
+        const code = await runCli([...argv, '--format=json'], {
+          env: { ...env, RBOOK_CONFIG_DIR: config },
+          cwd: scratch,
+          readStdin: async () => {
+            throw new Error('Registry remedies must not read a conversation');
+          },
+          stdout: (text) => output.push(text),
+          stderr: (text) => {
+            throw new Error(`Unexpected CLI stderr: ${text}`);
+          },
+        });
+        return { code, result: JSON.parse(output.join('')) };
+      };
+      ProjectGraphRegistry.resetInstance();
+      try {
+        const refused = await call(
+          [
+            'registry',
+            'archive',
+            '--project-root',
+            trigger === 'unregistered folder' ? path.join(scratch, 'unknown') : projectRoot,
+            '--apply',
+          ],
+          trigger === 'wrong configuration' ? path.join(scratch, 'absent-config') : configDir
+        );
+        expect(refused).toMatchObject({
+          code: 1,
+          result: { success: false, error: { code: 'REGISTRY_REFUSED' } },
+        });
+        expect(rows()).toEqual(before);
+        const suggestion = refused.result.error.suggestion as string;
+        expect(suggestion).toContain('omit --apply to preview');
+        const command = /reasonbook (registry) (archive)\|restore (--project-root) <root>/.exec(
+          suggestion
+        );
+        expect(command).not.toBeNull();
+        // Execute the advertised command, binding its root placeholder to the registered folder
+        // and selecting the existing configuration. Keep the review role on its preview retry.
+        const remedied = await call([...command!.slice(1), projectRoot]);
+        expect(remedied).toMatchObject({
+          code: 0,
+          result: {
+            success: true,
+            data: { dryRun: true, changed: false, projectId: 'registry-remedy' },
+          },
+        });
+        expect(rows()).toEqual(before);
+        expect(fs.existsSync(path.join(scratch, 'absent-config'))).toBe(false);
+        expect(fs.existsSync(path.join(projectRoot, 'rbook'))).toBe(false);
+      } finally {
+        ProjectGraphRegistry.resetInstance();
+      }
+    }
+  );
 });
 
 // ────────────────────────────────────────────────────────────────────────────────────────────────
@@ -3857,27 +4011,52 @@ function externalReplayScenario(prescription: PrescribedCall): DashboardScenario
     };
   }
   if (prescription.tool === 'rbook_message' && prescription.action === 'get') {
+    // s110-m02 (feedback #53): get then reads the directory for the parties' addresses by project id.
     return {
-      kind: 'http',
-      expected: {
-        method: 'GET',
-        path: `/api/messages/${CONFLICT_MESSAGE_ID}`,
-        authorization: 'Bearer cmk_project_fixture',
-      },
-      status: 200,
-      body: {
-        type: 'json',
-        value: {
-          id: CONFLICT_MESSAGE_ID,
-          type: 'question',
-          status: 'accepted',
-          summary: 'A response is already recorded',
-          senderUserId: 'sender-user',
-          senderProjectId: 'sender-project',
-          targetUserId: 'target-user',
-          targetProjectId: 'target-project',
+      kind: 'http-sequence',
+      steps: [
+        {
+          kind: 'http',
+          expected: {
+            method: 'GET',
+            path: `/api/messages/${CONFLICT_MESSAGE_ID}`,
+            authorization: 'Bearer cmk_project_fixture',
+          },
+          status: 200,
+          body: {
+            type: 'json',
+            value: {
+              id: CONFLICT_MESSAGE_ID,
+              type: 'question',
+              status: 'accepted',
+              summary: 'A response is already recorded',
+              senderUserId: 'sender-user',
+              senderProjectId: 'sender-project',
+              targetUserId: 'target-user',
+              targetProjectId: 'target-project',
+            },
+          },
         },
-      },
+        {
+          kind: 'http',
+          expected: {
+            method: 'GET',
+            path: '/api/projects/directory/public',
+            authorization: 'Bearer cmk_project_fixture',
+          },
+          status: 200,
+          body: {
+            type: 'json',
+            value: {
+              projects: [
+                { id: 'sender-project', name: 'Sender', address: 'rbook://alice/sender' },
+                { id: 'target-project', name: 'Target', address: 'rbook://bob/target' },
+              ],
+              totalCount: 2,
+            },
+          },
+        },
+      ],
     };
   }
   if (['login', 'login_init', 'login_complete'].includes(prescription.action ?? '')) {
@@ -4476,13 +4655,13 @@ describe('s90-m07 PORTABLE EXTERNAL + FIRST-RUN LEDGER — loopback, never live 
           ownerListing('fixture-owner', incumbentId),
           ownerListing('fixture-owner', 'replacement-id'),
         ],
-        site: 'src/tools/rbook/owner-resolution.ts:209',
+        site: 'src/tools/rbook/owner-resolution.ts:212',
       },
       {
         name: 'backfill reports an initial terminal hold through its status remedy',
         code: 'DASHBOARD_UPLOAD_FAILED',
         steps: [ownerListing('fixture-owner', 'replacement-id')],
-        site: 'src/tools/rbook/rbook-db-backfill.ts:234',
+        site: 'src/tools/rbook/rbook-db-backfill.ts:241',
       },
       {
         name: 'backfill preserves the dashboard tombstone refusal',
@@ -4546,7 +4725,7 @@ describe('s90-m07 PORTABLE EXTERNAL + FIRST-RUN LEDGER — loopback, never live 
       params: ({ projectRoot }) => ({ action: 'backfill', projectRoot }),
     });
     const unsavedDestination = portableEvidence[portableEvidence.length - 1];
-    expect(unsavedDestination.fired).toContain('src/tools/rbook/owner-resolution.ts:252');
+    expect(unsavedDestination.fired).toContain('src/tools/rbook/owner-resolution.ts:255');
     expect(unsavedDestination.requests.map(({ method, url }) => `${method} ${url}`)).toEqual([
       'GET /api/projects/me',
       'GET /api/projects/me',
@@ -4913,8 +5092,9 @@ describe('s90-m07 PORTABLE EXTERNAL + FIRST-RUN LEDGER — loopback, never live 
       action: 'get',
       outcome: 'SUCCEEDS',
     });
-    expect(conflictReplay[0].requests).toHaveLength(1);
+    expect(conflictReplay[0].requests).toHaveLength(2);
     expect(conflictReplay[0].requests[0].url).toBe(`/api/messages/${CONFLICT_MESSAGE_ID}`);
+    expect(conflictReplay[0].requests[1].url).toBe('/api/projects/directory/public');
 
     let mismatchedAdvertisedRoot = '';
     await runPortableCase({
@@ -6049,6 +6229,14 @@ interface Replay {
  * The shape is `migration-warning-reachability.test.ts`'s.
  */
 const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
+  'src/cli/registry.ts:89':
+    'Registry maintenance is dispatched directly by the CLI, outside every MCP router in this matrix. The portable registry CLI arm here refuses an unknown folder, wrong configuration and review-role apply, then executes the advertised preview with the registered root/configuration and no apply; tests/cli/registry.test.ts covers apply and other refusals. No router examined-site or wire credit is claimed.',
+  'src/cli/rename.ts:110':
+    'The direct CLI rename reports preflight, remote-outcome, local-transaction and upload refusals. No MCP router calls runRename; tests/cli/rename.test.ts and rename-recovery.test.ts drive the refusals and converging retries separately, granting no oracle-site or wire credit.',
+  'src/tools/rbook/dashboard-client.ts:1644':
+    'The combined rename endpoint returns HTTP 400. Its only production caller is the direct CLI, outside this MCP router matrix; dashboard-client-rename.test.ts verifies its typed refusal and rename.test.ts verifies no local or lease write, granting no oracle-site credit.',
+  'src/tools/rbook/dashboard-client.ts:1651':
+    'The combined rename endpoint returns HTTP 409 for a conflicting name or slug. Its only production caller is the direct CLI; dashboard-client-rename.test.ts verifies its typed refusal and rename.test.ts verifies no local or lease write, granting no oracle-site credit.',
   // s108-m02: the matrix sends no key outside its action's applicability and has no date axis. The
   // named suites drive each refusal at the dispatch boundary or in its handler and run its remedy;
   // they grant no examined-site or remedy-replay credit here.
@@ -6072,7 +6260,7 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     'A registration a project-scoped key would send is refused before it is sent, during a detached close upload. This synchronous router-refusal matrix does not await close uploads; registration-create-only.test.ts drives it directly and through an MCP close with a stored project key, and checks the stored outcome keeps the remedy. No oracle-site credit is claimed.',
   'src/tools/rbook/registration-error.ts:29':
     'An exact owner/name collision refuses detached first registration, including archived names and concurrent stores. This synchronous router-refusal matrix does not await close uploads; the separate real-store loopback and MCP-close suite grants no oracle-site credit.',
-  'src/tools/rbook/dashboard-client.ts:2437':
+  'src/tools/rbook/dashboard-client.ts:2566':
     'The create-only server incorrectly returns a re-registration success. The router matrix does not drive background first registration or synthesize that unsafe response; the focused client test verifies refusal without granting oracle-site credit.',
   'src/tools/rbook/rbook-project-init.ts:827':
     'A second initializer wins the id claim after the first read, with an id that conflicts with this caller explicit projectId. This single-call router matrix has no competing connection at that boundary; deterministic real-SQLite claim tests and two-process probes confer no oracle-site credit.',
@@ -6170,7 +6358,7 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     'the refusal and held-review message before apply; its focused coverage gives this matrix ' +
     'no examined-site or wire credit.',
   // ── s98-m09: focused handler fixtures outside this router matrix ──
-  'src/tools/rbook/rbook-context-project-identity.ts:122':
+  'src/tools/rbook/rbook-context-project-identity.ts:126':
     'A project_identity update with null project_name or project_id. This is an ordinary reachable ' +
     'input that the current matrix does not send, not an unreachable branch. project-identity.test.ts ' +
     'drives both protected fields and checks that an earlier batch entry cannot partially write; ' +
@@ -6203,7 +6391,7 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     "A handover over SSH from a copy behind the far copy's move, which a fork of the owner copy's moves makes. reasonbook handover only, never routed; no test constructs the fork, and the far copy's own check refuses it first in every one that does.",
   'src/tools/rbook/record-sync.ts:196':
     "A sync from a copy told its member was removed whose route ended. rbook_project reaches it; dashboard-sharing.test.ts syncs such a copy after the dashboard's 404.",
-  'src/tools/rbook/rbook-db-backfill.ts:479':
+  'src/tools/rbook/rbook-db-backfill.ts:487':
     "A reconcile on a member's copy of a shared record, which has no dashboard mirror of its own. rbook_db reaches it with a dashboard credential; dashboard-sharing.test.ts reconciles a member's copy.",
   // ── s97-m11: sharing, joining and moving back through the dashboard ──
   'src/referee/handover.ts:291':
@@ -6351,7 +6539,7 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
   // The CLI's offline migration is outside the router matrix; its refusal/retry cases run
   // against real SQLite stores and child processes in tests/cli/migrate*.test.ts.
   // s108-m05: down 55 lines. s109-m01: down 83 more in migrate.ts, and 62 and 65 in migrate-config.ts.
-  'src/cli/migrate.ts:314':
+  'src/cli/migrate.ts:321':
     'CLI-only migration refusal and deferred-follow-up retry, outside MCP routers; covered by migrate and recovery suites.',
   'src/cli/migrate-config.ts:218':
     'CLI-only failed-rollback recovery requires conflicting filesystem state; migrate-config.test.ts retains the guard and proves retry.',
@@ -6479,7 +6667,7 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
   'src/tools/rbook/session-owner.ts:189':
     "A write to, or a close of, a session another copy started. A peer's session arrives only by a merge from another copy; record-derived.test.ts completes and captures into a peer's session on the owner's copy.",
   // ── s96-m13: the sync, sharing and joining refusals a single store cannot reach ──────────────
-  'src/tools/rbook/rbook-db-backfill.ts:163':
+  'src/tools/rbook/rbook-db-backfill.ts:170':
     "The old backfill on a member's copy of a shared record, which never uploads. The healthy-store matrix drives routed calls on one store, and builds no member's copy; record-gates.test.ts joins one and drives the backfill to this refusal.",
   'src/tools/rbook/record-bundle.ts:120':
     'A bundle file that is not JSON. Bundles travel through reasonbook sync --bundle-in, no routed tool; record-refusals.test.ts reads one.',
@@ -6569,7 +6757,17 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     'A successor taken by a store that is no copy of a shared record. Successors are taken inside a direct exchange; record-refusals.test.ts tries one.',
   'src/cli/sync.ts:162':
     'A bundle --for a removed member, a member with no copy, or a name that is none. Bundles travel through reasonbook sync --bundle-out, no routed tool; record-bundle.test.ts asks for each.',
-  'src/tools/rbook/rbook-db-backfill.ts:861':
+  'src/tools/rbook/rbook-context-project-identity.ts:157':
+    'A project_identity update that sets an address breaking the address rule (s110-m01). The ' +
+    'healthy-store matrix sends no address update; address-rule.test.ts drives each refused shape ' +
+    'and checks that a refused call writes none of its fields, which gives this matrix no credit.',
+  'src/tools/rbook/rbook-db-backfill.ts:951':
+    "A purge of a store with no stored dashboard slug while reasonbook.ai's list of the account's projects cannot be read (s110-m01). The healthy-store matrix's store keeps its slug; stored-slug-readers.test.ts drives the unreadable list.",
+  'src/tools/rbook/rbook-db-backfill.ts:972':
+    "A purge of a store with no stored dashboard slug whose file reasonbook.ai lists under another slug (s110-m01, critic round 1, F3). The healthy-store matrix's store keeps its slug; stored-slug-readers.test.ts drives both remedies.",
+  'src/tools/rbook/rbook-db-backfill.ts:981':
+    "A purge of a store with no stored dashboard slug whose derived slug reasonbook.ai does not tie to this store's file (s110-m01). The healthy-store matrix's store keeps its slug; stored-slug-readers.test.ts and stored-slug-real-store.test.ts drive the refusal.",
+  'src/tools/rbook/rbook-db-backfill.ts:895':
     "A purge of the dashboard mirror from a member's copy. The healthy-store matrix drives routed calls on one store, and only a member's copy reaches this; record-gates.test.ts purges from one.",
   'src/tools/rbook/record-admit-successor.ts:136':
     'A join a recovery never saw, for an invite it never saw either. The healthy-store matrix builds no recovery; record-recovery.test.ts drives it, invites the member again, and the copy then re-identifies.',
@@ -6637,12 +6835,12 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
   'src/tools/rbook/client.ts:887':
     'FOREIGN-KEY-constraint mapping inside RbookDatabaseClient. Same shape as :679 — no supported call ' +
     'sequence against a healthy store reaches an FK violation. Needs the fault-injection instrument.',
-  'src/tools/rbook/rbook-context-project-identity.ts:73':
+  'src/tools/rbook/rbook-context-project-identity.ts:77':
     'MEASURED: unreachable by deleting the row. On a write `ensureProjectIdentityRow(client)` runs ' +
     'first and RECREATES it, and on a read (s93-m11) the identity is derived in memory, so the ' +
     'null-identity branch needs the row to be both uncreatable and unreadable — a database fault, ' +
     'not a state this matrix can establish.',
-  'src/tools/rbook/rbook-context-project-identity.ts:160':
+  'src/tools/rbook/rbook-context-project-identity.ts:185':
     'Same fault-shaped precondition as :72, one frame later: `getProjectIdentity` returning null ' +
     'AFTER a write that already succeeded.',
 
@@ -6656,7 +6854,7 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
   // ── CONSTRUCTION-MASKED PRECONDITIONS inside a VALIDATION/STATE-coded site ───────────────────
   // Driveable by CODE, but dispatcher and collab gates mask the triggers from every supported
   // construction the portable m07 instrument can establish. Four former entries moved to E.
-  'src/tools/rbook/rbook-message.ts:1074':
+  'src/tools/rbook/rbook-message.ts:1145':
     'A defensive branch whose own message says the dispatcher should have caught the condition via ' +
     'resolveSenderContext. Reaching it means reaching a state the dispatcher forbids.',
   // ── MASKED BY AN EARLIER REFUSAL ON EVERY PATH THIS MATRIX CAN DRIVE ─────────────────────────
@@ -6694,8 +6892,8 @@ const FAULT_SHAPED_DRIVEABLE_RESIDUALS = new Set([
 
   'src/tools/rbook/client.ts:876',
   'src/tools/rbook/client.ts:887',
-  'src/tools/rbook/rbook-context-project-identity.ts:73',
-  'src/tools/rbook/rbook-context-project-identity.ts:160',
+  'src/tools/rbook/rbook-context-project-identity.ts:77',
+  'src/tools/rbook/rbook-context-project-identity.ts:185',
 ]);
 const INTERNAL_FAULT_RESUME_TRIGGER =
   'any one of these codes reported from the field by an external adopter, or any in-repo incident that reaches one on a healthy store.';

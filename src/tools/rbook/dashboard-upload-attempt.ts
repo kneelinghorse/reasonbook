@@ -32,6 +32,7 @@ const KEEPS_REMEDY = new Set([
   'PROJECT_NAME_CONFLICT',
   'REGISTRATION_NEEDS_USER_KEY',
   'DASHBOARD_NAME_MISMATCH',
+  'DASHBOARD_PROJECT_ALREADY_EXISTS',
 ]);
 
 export async function uploadFailure(

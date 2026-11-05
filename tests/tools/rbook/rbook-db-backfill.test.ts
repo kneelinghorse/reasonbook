@@ -1035,6 +1035,9 @@ describe('rbookDbPurge', () => {
       CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       INSERT INTO metadata (key, value) VALUES ('project_id', 'proj-test');
       INSERT INTO metadata (key, value) VALUES ('project_name', 'Test Project');
+      -- s110-m01: a registered store keeps the slug the dashboard stored, and purge sends it; one
+      -- with none purges a derived slug only under /mine's path tie (stored-slug-readers.test.ts).
+      INSERT INTO metadata (key, value) VALUES ('dashboard_slug', 'test-project');
     `);
     db.close();
   }

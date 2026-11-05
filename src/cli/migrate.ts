@@ -31,6 +31,7 @@ import { exposureRefusal, planIgnores, shown, writeTwins, type IgnorePlan } from
 import { dryBackstop } from './migrate-dry-run';
 import { recordMoveInIndex } from './migrate-index';
 import { ProjectGraphRegistry } from '../intelligence/project-graph-registry';
+import { finishDashboardPath, type PathStep } from './migrate-dashboard-path';
 
 export interface MigrationOptions {
   readonly projectRoot: string;
@@ -46,6 +47,11 @@ export interface MigrationResult {
   readonly changed: string[];
   readonly left: string[];
   readonly backup?: string;
+  /**
+   * s110-m02 (#944): the follow-ups a committed move has not finished, as the marker lists them, when
+   * one is the dashboard path update; the answer is still a success, since the record moved.
+   */
+  readonly pending?: readonly string[];
   /**
    * s108-m05, a dry run only: what the apply's checks would refuse now, from the project's server
    * entries, the clients' configuration, runtimes from before 4.0 and the record's open files.
@@ -66,8 +72,11 @@ function wouldRefuse(check: () => void): string[] {
   }
 }
 
-/** Only a pre-existing registration is touched; migration never adds another project. */
-async function finishRegistration(root: string, env: NodeJS.ProcessEnv): Promise<void> {
+/**
+ * Only a pre-existing registration is touched; migration never adds another project. s110-m02
+ * (#944): the dashboard path step's outcome is returned, and only a registry error throws.
+ */
+async function finishRegistration(root: string, env: NodeJS.ProcessEnv): Promise<PathStep> {
   const config = resolveConfigDirectory(env, env.HOME ?? os.homedir());
   const registryPath = path.join(config, 'project-graph.sqlite');
   if (fs.existsSync(registryPath)) {
@@ -98,7 +107,7 @@ async function finishRegistration(root: string, env: NodeJS.ProcessEnv): Promise
     const rows = table
       ? (db
           .prepare(
-            "SELECT key, value FROM metadata WHERE key IN ('dashboard_project_id', 'dashboard_slug', 'dashboard_registered')"
+            "SELECT key, value FROM metadata WHERE key IN ('dashboard_project_id', 'dashboard_slug', 'dashboard_registered', 'owner', 'dashboard_username')"
           )
           .all() as Array<{ key: string; value: string | null }>)
       : [];
@@ -106,35 +115,20 @@ async function finishRegistration(root: string, env: NodeJS.ProcessEnv): Promise
   } finally {
     db.close();
   }
-  if (!metadata.dashboard_project_id && metadata.dashboard_registered !== 'true') return;
   const { DashboardClient } = await import('../tools/rbook/dashboard-client');
-  const resolved = await DashboardClient.fromEnvForProject(root);
-  if (!resolved.success || !resolved.data)
-    throw new Error(
-      `Dashboard path update remains pending: ${resolved.error?.message ?? 'client unavailable'}`
-    );
-  const projects = await resolved.data.client.getMyProjects();
-  if (!projects.success || !projects.data)
-    throw new Error(
-      `Dashboard path update remains pending: cannot verify incumbent: ${projects.error?.message ?? 'directory unavailable'}`
-    );
-  const incumbent = projects.data.projects.find(
-    (project) => project.id === metadata.dashboard_project_id
+  const text = (key: string): string | null => metadata[key]?.trim() || null;
+  return finishDashboardPath(
+    {
+      root,
+      dbPath,
+      projectId: text('dashboard_project_id'),
+      registered: metadata.dashboard_registered === 'true',
+      slug: text('dashboard_slug'),
+      owner: text('owner') ?? text('dashboard_username'),
+      retry: `retry reasonbook migrate --apply --project ${JSON.stringify(root)}`,
+    },
+    (projectRoot) => DashboardClient.fromEnvForProject(projectRoot)
   );
-  if (
-    !incumbent ||
-    incumbent.isOwner !== true ||
-    !metadata.dashboard_slug ||
-    incumbent.slug !== metadata.dashboard_slug
-  )
-    throw new Error(
-      'Dashboard path update remains pending: the stored incumbent id, slug and ownership could not be confirmed. No dashboard project was changed or created.'
-    );
-  const result = await resolved.data.client.updateLocalProjectPath(incumbent.id, dbPath);
-  if (!result.success)
-    throw new Error(
-      `Dashboard path update remains pending: ${result.error?.message ?? 'path update failed'}`
-    );
 }
 
 export async function migrateProject(
@@ -142,6 +136,7 @@ export async function migrateProject(
 ): Promise<RbookToolResult<MigrationResult>> {
   const root = path.resolve(options.projectRoot);
   let moved = false;
+  let following = false;
   let backup: string | undefined;
   let release: (() => void) | undefined;
   const left: string[] = [];
@@ -239,7 +234,7 @@ export async function migrateProject(
       left.push(...record.left);
       moved = true;
     }
-    const following = !options.docsOnly && (moved || fs.existsSync(path.join(root, PENDING)));
+    following = !options.docsOnly && (moved || fs.existsSync(path.join(root, PENDING)));
     const folder = readPending(root)?.folder ?? LEGACY.recordDirectory;
     // A retry writes the twins too, comparing before it writes: a move an older release made left
     // the root's rules naming the old folder, and its index blob alone would hold them (build critic
@@ -276,20 +271,28 @@ export async function migrateProject(
       configDirectory
     );
     const changed = applyDocumentEdits(documents.edits);
+    let unfinished: string[] = [];
     if (following) {
-      await finishRegistration(root, options.env);
-      // The marker goes only once every follow-up is done, the git index among them.
-      if (index.done && !twinsWaiting) fs.rmSync(path.join(root, PENDING), { force: true });
+      // s110-m02 (#944): the path step answers its outcome; only a registry error throws.
+      const pathStep = await finishRegistration(root, options.env);
+      if (pathStep.status !== 'done') left.push(pathStep.left);
+      left.push(...pathStep.notes);
+      const pathWaiting = pathStep.status === 'pending' ? pathStep.left : undefined;
+      unfinished = [
+        ...(twinsWaiting ? ['the ignore rules'] : []),
+        ...(index.done ? [] : ['the git index']),
+        ...(pathWaiting ? ['the dashboard path update'] : []),
+      ];
+      // The marker goes only once every follow-up is done, and then names exactly those left.
+      if (!unfinished.length) fs.rmSync(path.join(root, PENDING), { force: true });
       else
         writePending(root, {
           remaining: [
             ...(twinsWaiting ? [`the ignore rules: ${twinsWaiting}`] : []),
             ...(index.done ? [] : [`the git index: ${index.pending.join('; ')}`]),
+            ...(pathWaiting ? [`the dashboard path update: ${pathWaiting}`] : []),
           ].join('; '),
-          steps: [
-            ...(twinsWaiting ? ['the ignore rules'] : []),
-            ...(index.done ? [] : ['the git index']),
-          ],
+          steps: unfinished,
         });
     }
     return {
@@ -299,21 +302,25 @@ export async function migrateProject(
         moved,
         changed,
         left: [...left, ...documents.left],
+        ...(unfinished.includes('the dashboard path update') ? { pending: unfinished } : {}),
         ...(backup ? { backup } : {}),
       },
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    // The marker keeps what the move recorded, the old folder's spelling among it.
-    if (moved) writePending(root, { backup, remaining: message });
+    // The marker keeps what the move recorded, the old folder's spelling among it, and a retry that
+    // fails keeps the backup an earlier run recorded (s110-m02, #944).
+    if (moved || following)
+      writePending(root, { ...(backup ? { backup } : {}), remaining: message });
     return {
       success: false,
       error: {
         code: 'MIGRATION_REFUSED',
         message,
-        suggestion: moved
-          ? `The new store is intact. Retry reasonbook migrate --apply --project ${JSON.stringify(root)} to finish the recorded follow-ups.`
-          : 'Use Reasonbook 4.x in every client, close clients holding this record, and retry reasonbook migrate --apply; --docs-only updates instructions without moving the store.',
+        suggestion:
+          moved || following
+            ? `The new store is intact. Retry reasonbook migrate --apply --project ${JSON.stringify(root)} to finish the recorded follow-ups.`
+            : 'Use Reasonbook 4.x in every client, close clients holding this record, and retry reasonbook migrate --apply; --docs-only updates instructions without moving the store.',
       },
     };
   } finally {

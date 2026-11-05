@@ -26,7 +26,7 @@ import { gzipSync } from 'zlib';
 import type { RbookToolError, RbookToolResult } from './types';
 import { dashboardHttpError } from './dashboard-http-error';
 import { registrationError } from './registration-error';
-import { createError, createSuccess, RbookErrors } from './errors';
+import { createError, createSuccess, RBOOK_ERROR_CODES, RbookErrors } from './errors';
 import { compareStoredTimes } from './stored-time';
 import {
   CredentialStore,
@@ -381,11 +381,11 @@ export interface ResolveAddressResult {
  * written from a measurement of the payload as it stood in August and hardened into a claim about
  * what the route can never do.
  *
- * THE JOIN STAYS, AND THAT IS A DELIBERATE CALL, NOT AN OVERSIGHT. `rbook_message(directory)` still
- * calls GET /api/projects/me and merges. s87-m05 called dropping it a latency optimisation, the
- * join being correct and its degraded path warning honestly. s109-m05 found both false: /me
- * omitted 10 of the account's 30 projects, and with /me failing, rows keep this route's isOwner
- * under a warning that claims none. Rule 3: touch only what is wrong.
+ * s110-m02 (#938, design B): this route's own boolean `isOwner` is the ownership signal, measured
+ * on every row of the deployed directory (33 rows, 2026-11-03), archived projects included, with
+ * `archivedAt` on the archived ones. /api/projects/me leaves every archived project out (10 of the
+ * account's 30), so `rbook_message(directory)` asks it only for a row that lacks a boolean, and it
+ * fills only those rows. The rows are per account: each credential sees its own account's projects.
  */
 export interface DirectoryProject {
   id: string;
@@ -396,6 +396,8 @@ export interface DirectoryProject {
   isOwner?: boolean;
   createdAt?: string;
   ownerDisplayName?: string;
+  /** s110-m02: when the project was archived on the dashboard; absent for an active one. */
+  archivedAt?: string;
 }
 
 export interface ListDirectoryResult {
@@ -408,6 +410,29 @@ export interface GetMyProjectsResult {
   totalCount: number;
   /** s96-m02: the caller's identity, which the dashboard returns since its sprint 61 (H3). */
   user?: { id: string; username: string | null };
+}
+
+/** s110-m01: a project from GET /api/projects/mine, one the signed-in account owns. */
+export interface OwnedProject {
+  readonly id: string;
+  readonly slug: string;
+  readonly name: string;
+  /** The file the record's Local Database Path names; null when it names none. */
+  readonly localDbPath: string | null;
+  readonly lastSyncAt: string | null;
+}
+
+export interface ListOwnedProjectsResult {
+  readonly projects: readonly OwnedProject[];
+}
+
+/** The combined name-and-slug route confirms unchanged requests with equal old/new fields. */
+export interface RenameProjectResult {
+  readonly id: string;
+  readonly oldName: string;
+  readonly newName: string;
+  readonly oldSlug: string;
+  readonly newSlug: string;
 }
 
 type RawDirectoryProject = Partial<DirectoryProject> & {
@@ -497,6 +522,10 @@ function normalizeDirectoryProject(project: RawDirectoryProject): DirectoryProje
     // Conditional-include (not `?? null`) so a lean row stays byte-identical — no null-wall.
     ...(project.createdAt ? { createdAt: project.createdAt } : {}),
     ...(project.ownerDisplayName ? { ownerDisplayName: project.ownerDisplayName } : {}),
+    // s110-m02: conditional, like createdAt: an active project's null stays absent.
+    ...(typeof project.archivedAt === 'string' && project.archivedAt
+      ? { archivedAt: project.archivedAt }
+      : {}),
   };
 }
 
@@ -1267,6 +1296,9 @@ export class DashboardClient {
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    // s110-m01: /mine is a project listing like /me: bounded, and a redirect is an answer, not a
+    // page to follow and mistake for the list.
+    const projectsListing = path === '/api/projects/me' || path === '/api/projects/mine';
 
     try {
       let response = await fetch(url, {
@@ -1274,10 +1306,10 @@ export class DashboardClient {
         headers,
         body: body ? JSON.stringify(body) : undefined,
         signal: controller.signal,
-        ...(path === '/api/projects/me' ? { redirect: 'manual' as const } : {}),
+        ...(projectsListing ? { redirect: 'manual' as const } : {}),
       });
 
-      if (path === '/api/projects/me') {
+      if (projectsListing) {
         // Keep the deadline alive through the body, including error bodies. Reusing a bounded
         // response preserves the existing status-specific error envelopes below.
         const raw = await boundedText(response, PROJECTS_MAX_RESPONSE_BYTES);
@@ -1311,13 +1343,7 @@ export class DashboardClient {
 
       if (!response.ok) {
         return createError(
-          await dashboardHttpError(
-            response,
-            this.baseUrl,
-            path,
-            undefined,
-            path === '/api/projects/me'
-          )
+          await dashboardHttpError(response, this.baseUrl, path, undefined, projectsListing)
         );
       }
 
@@ -1526,7 +1552,8 @@ export class DashboardClient {
   }
 
   /**
-   * List projects the authenticated account owns or that are shared with it.
+   * List projects the authenticated account owns or that are shared with it, archived ones included,
+   * each with its own boolean isOwner and, when archived, archivedAt (s110-m02).
    */
   async listDirectory(): Promise<RbookToolResult<ListDirectoryResult>> {
     const result = await this.request<ListDirectoryResult>('GET', '/api/projects/directory/public');
@@ -1537,7 +1564,9 @@ export class DashboardClient {
   }
 
   /**
-   * The projects the authenticated user owns or that are shared with them; isOwner tells which.
+   * The projects the authenticated user owns or that are shared with them, isOwner telling which; it
+   * leaves archived projects out (s110-m02: 10 of the account's 30 on 2026-11-03), which
+   * listOwnedProjects() and listDirectory() include.
    */
   async getMyProjects(): Promise<RbookToolResult<GetMyProjectsResult>> {
     const result = await this.request<GetMyProjectsResult>('GET', '/api/projects/me');
@@ -1552,6 +1581,100 @@ export class DashboardClient {
     return createSuccess({
       ...normalizeProjectListResult(result.data),
       ...(identity ? { user: identity } : {}),
+    });
+  }
+
+  /**
+   * s110-m01: GET /api/projects/mine, the projects the signed-in account owns, archived ones included
+   * (/me leaves archived ones out), each with its record's Local Database Path. An answer that is not
+   * a list of projects with ids is an error, never an empty list: a caller deciding whether a record
+   * is this store's must not read a malformed answer as "none of them".
+   */
+  async listOwnedProjects(): Promise<RbookToolResult<ListOwnedProjectsResult>> {
+    const result = await this.request<{ projects?: unknown }>('GET', '/api/projects/mine');
+    if (!result.success || !result.data) return createError(result.error!);
+    const rows = result.data.projects;
+    const malformed = (why: string) =>
+      createError<ListOwnedProjectsResult>(
+        RbookErrors.dashboardError(
+          `The dashboard's list of this account's projects (/api/projects/mine) ${why}.`
+        )
+      );
+    if (!Array.isArray(rows)) return malformed('was not a list');
+    const projects: OwnedProject[] = [];
+    for (const row of rows as unknown[]) {
+      const project = row && typeof row === 'object' ? (row as Record<string, unknown>) : null;
+      if (!project || typeof project.id !== 'string' || !project.id)
+        return malformed('named a project without an id');
+      const text = (value: unknown): string => (typeof value === 'string' ? value : '');
+      projects.push({
+        id: project.id,
+        slug: text(project.slug),
+        name: text(project.name),
+        localDbPath: text(project.localDbPath) || null,
+        lastSyncAt: text(project.lastSyncAt) || null,
+      });
+    }
+    return createSuccess({ projects });
+  }
+
+  /**
+   * Rename the dashboard record before the caller writes its local identity. HTTP refusals keep
+   * their status; a transport failure, server error or invalid receipt needs a /mine read-back.
+   * Never retry this mutation here: an unknown outcome may already have committed.
+   */
+  async renameProject(
+    projectId: string,
+    name: string,
+    slug: string
+  ): Promise<RbookToolResult<RenameProjectResult>> {
+    const result = await this.request<{
+      success?: boolean;
+      updated?: Partial<RenameProjectResult>;
+    }>('PATCH', `/api/projects/${encodeURIComponent(projectId)}`, { name, slug });
+    if (!result.success) {
+      const error = result.error!;
+      const status =
+        typeof error.currentState === 'object' ? error.currentState.httpStatus : undefined;
+      if (status === 400)
+        return createError({
+          ...error,
+          code: 'PROJECT_RENAME_INVALID',
+          suggestion:
+            'Check the requested project name and slug against the dashboard refusal, then rerun reasonbook rename with corrected values.',
+        });
+      if (status === 409)
+        return createError({
+          ...error,
+          code: 'PROJECT_RENAME_CONFLICT',
+          suggestion:
+            'Choose a project name and slug not already used by another project on your account, then rerun reasonbook rename.',
+        });
+      return createError(error);
+    }
+    const updated = result.data?.updated;
+    if (
+      result.data?.success !== true ||
+      !updated ||
+      updated.id !== projectId ||
+      updated.newName !== name ||
+      updated.newSlug !== slug ||
+      typeof updated.oldName !== 'string' ||
+      typeof updated.oldSlug !== 'string'
+    )
+      return createError({
+        ...RbookErrors.dashboardError(
+          'The rename response did not confirm the requested project, name and slug. The rename outcome is unknown.'
+        ),
+        suggestion:
+          'Read the owned-project list to check both the requested name and slug before rerunning reasonbook rename.',
+      });
+    return createSuccess({
+      id: updated.id,
+      oldName: updated.oldName,
+      newName: updated.newName,
+      oldSlug: updated.oldSlug,
+      newSlug: updated.newSlug,
     });
   }
 
@@ -1614,11 +1737,17 @@ export class DashboardClient {
       if (response.status === 401)
         return createError(RbookErrors.dashboardAuthFailed(this.baseUrl));
       if (response.status !== 302 || location !== `/projects/${id}/shares?status=path_updated`)
-        return createError(
-          RbookErrors.dashboardError(
+        return createError({
+          ...RbookErrors.dashboardError(
             `Local-path update returned HTTP ${response.status} without its expected confirmation redirect.`
-          )
-        );
+          ),
+          // s110-m02: a redirect in place of the confirmation is the owner-only form refusing this
+          // credential (routes/projects.ts:683-690 in the dashboard's source); migrate tells it from
+          // a failure by this code.
+          ...(response.status >= 300 && response.status < 400
+            ? { code: RBOOK_ERROR_CODES.DASHBOARD_FORBIDDEN }
+            : {}),
+        });
       return createSuccess(undefined);
     } catch (error) {
       return createError(

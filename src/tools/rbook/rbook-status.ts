@@ -30,7 +30,9 @@ import { COPY_KEYS, readCopyKey } from './replica-copy-keys';
 import type { RbookToolResult } from './types';
 import { createError, createSuccess } from './errors';
 import { findWrongTypedStringParam } from './param-type-guard';
-import { getProjectIdentity, deriveProjectSlug } from './project-identity';
+import { getProjectIdentity } from './project-identity';
+import { derivedSlugWarning, readDashboardSlug, slugReadFailure } from './dashboard-slug';
+import type { DashboardSlugRead } from './dashboard-slug';
 import { DashboardClient, resolveDashboardBaseUrl } from './dashboard-client';
 import { computeAuthState } from '../../auth/auth-state';
 import type { AuthTier } from '../../auth/auth-state';
@@ -136,8 +138,9 @@ function normalizeRbookAddress(raw: string | undefined | null): string {
  * this project's true `2026-06-09`. One argument, and the field starts describing its own row.
  */
 async function resolveLastSyncAt(
-  projectSlug: string | null,
-  projectRoot?: string
+  slugRead: DashboardSlugRead,
+  projectRoot: string | undefined,
+  warnings: string[]
 ): Promise<string | null> {
   // Build a dashboard client opportunistically. If we can't authenticate
   // (no credentials / unreachable / 4xx), the status payload returns null
@@ -146,13 +149,24 @@ async function resolveLastSyncAt(
   if (!clientResult.success || !clientResult.data) {
     return null;
   }
+  // s110-m01: a failed read of the stored slug is never taken for an absent one, which would ask
+  // for a derived slug; the payload keeps its always-success contract and says why it has no time.
+  if (slugRead.error) {
+    warnings.push(`last_sync_at is null: ${slugReadFailure(slugRead.error)}`);
+    return null;
+  }
+  // s110-m01 (critic round 1, F1): with no slug to name, an unscoped /api/sync/status answers with
+  // every project's latest sync, which this field would report as this project's (s87-m03's defect).
+  if (!slugRead.slug) {
+    warnings.push(
+      "last_sync_at is null: this store has neither a stored dashboard slug nor a project name to derive one from, so no sync time can be asked for as this project's."
+    );
+    return null;
+  }
+  if (slugRead.derived) warnings.push(derivedSlugWarning(slugRead.slug));
 
   try {
-    // `?? undefined` rather than `?? ''`: an empty slug would be sent as `?projectSlug=` and ask
-    // the dashboard to scope to nothing. An identity-less store falls back to the unscoped call
-    // deliberately — the honest degradation — rather than to a scoped call for a project that
-    // has no name.
-    const statusResult = await clientResult.data.client.getSyncStatus(projectSlug ?? undefined);
+    const statusResult = await clientResult.data.client.getSyncStatus(slugRead.slug);
     if (statusResult.success && statusResult.data) {
       return statusResult.data.lastSyncAt ?? null;
     }
@@ -224,12 +238,16 @@ export async function rbookStatus(
 
       const authState = await computeAuthState({ projectRoot: params.projectRoot });
 
-      // s87-m03: the slug is derived the same way every other caller derives it — from the
-      // project name — so the four getSyncStatus sites agree about what "this project" means.
-      const projectSlug = identity?.project_name ? deriveProjectSlug(identity.project_name) : null;
+      // s110-m01: the slug the dashboard stored (metadata.dashboard_slug), as every request that
+      // names this project sends it; derived from the identity's name only when none is stored.
+      const warnings: string[] = [];
       const last_sync_at = membersCopy
         ? null
-        : await resolveLastSyncAt(projectSlug, params.projectRoot);
+        : await resolveLastSyncAt(
+            readDashboardSlug(client, identity?.project_name),
+            params.projectRoot,
+            warnings
+          );
 
       const result: RbookStatusResult = {
         rbook_address,
@@ -241,7 +259,8 @@ export async function rbookStatus(
       };
 
       const upload = await readDashboardUploadStatus(path.resolve(client.path, '..', '..', '..'));
-      return createSuccess(result, upload ? [upload] : undefined);
+      if (upload) warnings.push(upload);
+      return createSuccess(result, warnings.length ? warnings : undefined);
     },
     { projectRoot: params.projectRoot }
   );

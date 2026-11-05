@@ -109,6 +109,7 @@ const PUBLIC_TARGETS = [
   'README.md',
   'SECURITY.md',
   'docs/getting-started.md',
+  'docs/sharing.md',
   'docs/harnesses.md',
   'TOOL_REFERENCE.md',
   // Ships inside the `rbook-seed` files[] entry and is the seed's own front page — every claim in
@@ -706,8 +707,10 @@ const ROLE_COMPLEMENT: ReadonlyArray<{ role: string; reason: string }> = [
 /**
  * Authored per-target regression floors. Summing only TARGETS makes mirror scope explicit:
  * The per-file predicate is the call-like `rbook_tool(action="value")` regex in sweepToolActionRoles.
- * 271 shared claims + 0 agents.md + 46 architecture.md + 63 private build-session claims = 380 in
- * this checkout, while the staged public mirror derives 271 because the private targets are absent.
+ * Authored floors total 313 shared claims + 0 agents.md + 46 architecture.md + 63 private build-session
+ * claims = 422 in this checkout; the public mirror derives 313 because the private targets are absent.
+ * s110-m05 moves the sharing recipes into docs/sharing.md and the Codex recipe into docs/harnesses.md:
+ * the current call-like counts are README 18, getting-started 19, sharing 25 and harnesses 1.
  * s99-m08 replaces eight demo call recipes with sealed receipt excerpts, without callable examples.
  * s93-m12 moved agents.md's architecture reference (and its claims) to rbook/docs/architecture.md,
  * and the seed's AGENTS.md now names no Reasonbook call (its hook-less block, a separate template, does).
@@ -715,10 +718,11 @@ const ROLE_COMPLEMENT: ReadonlyArray<{ role: string; reason: string }> = [
  * the release checklist and runtime carrier. Its zero/63 floors follow those actual scoped texts.
  */
 const TOOL_ACTION_CLAIM_FLOORS: Readonly<Record<string, number>> = {
-  'README.md': 13,
+  'README.md': 18,
   'SECURITY.md': 13,
-  'docs/getting-started.md': 22,
-  'docs/harnesses.md': 0,
+  'docs/getting-started.md': 19,
+  'docs/sharing.md': 25,
+  'docs/harnesses.md': 1,
   'TOOL_REFERENCE.md': 85,
   'rbook-seed/README.md': 5,
   'docs/trust.md': 3,
@@ -1513,6 +1517,20 @@ describePrivate(
             }
           : entry
       );
+    // s110-m05 moves only the notes-only explanation to architecture.md. Its four repository-root
+    // links gain ../../; the sealed ledger and every other protected line stay unchanged.
+    const notesOnlyHome = (entries: ProtectedLine[]): ProtectedLine[] =>
+      entries.map((entry) =>
+        entry.home === PRIVATE.relativePaths.agents &&
+        createHash('sha256').update(entry.text).digest('hex') ===
+          '6e7a5712ad8f85405310d03a2aeb14ad7166a6dc3e03ea4e64ae067e4e51f59a'
+          ? {
+              ...entry,
+              home: PRIVATE.relativePaths.architecture,
+              text: entry.text.replace(/\]\((tests|src)\//g, '](../../$1/'),
+            }
+          : entry
+      );
     // s99-m07 translates names and m09 follows the moved record while retaining every obligation
     // and the original sealed ledger. Operator-owned repository names retain their identity.
     const currentRuleNames = (text: string): string => {
@@ -1551,7 +1569,7 @@ describePrivate(
       return current;
     };
     const currentPreservationLines = (entries: ProtectedLine[]): ProtectedLine[] =>
-      localGateLines(practice8Lines(entries)).map((entry) => ({
+      notesOnlyHome(localGateLines(practice8Lines(entries))).map((entry) => ({
         ...entry,
         home:
           entry.home === `${LEGACY.recordDirectory}/docs/build-session-prompt.md`
@@ -1567,6 +1585,7 @@ describePrivate(
     const homes = () =>
       new Map<string, string>([
         [PRIVATE.relativePaths.agents, fs.readFileSync(PRIVATE.paths.agents, 'utf8')],
+        [PRIVATE.relativePaths.architecture, fs.readFileSync(PRIVATE.paths.architecture, 'utf8')],
         [
           PRIVATE.relativePaths.buildSessionPrompt,
           fs.readFileSync(PRIVATE.paths.buildSessionPrompt, 'utf8'),
@@ -1592,6 +1611,21 @@ describePrivate(
       // The already-moved architecture text was unchanged at this migration boundary. Keep
       // that receipt without freezing the entire architecture document against future edits.
       expect(ledger.migrationReceipt.architectureAfterSha256).toBe(architecture.sha256);
+    });
+
+    it('re-homes only the sealed notes-only paragraph and its four relative links', () => {
+      const original = readLedger().protected;
+      const current = notesOnlyHome(original);
+      const changed = current.filter((entry, index) => entry !== original[index]);
+      expect(changed).toHaveLength(1);
+      const previous = original[current.indexOf(changed[0])];
+      expect(previous.line).toBe(333);
+      expect(changed[0].home).toBe(PRIVATE.relativePaths.architecture);
+      expect(changed[0].text.match(/\]\(\.\.\/\.\.\//g)).toHaveLength(4);
+      expect(changed[0].text.replace(/\]\(\.\.\/\.\.\//g, '](')).toBe(previous.text);
+      const altered = { ...previous, text: `${previous.text} changed original` };
+      expect(notesOnlyHome([altered])).toEqual([altered]);
+      expect(missingLines(currentPreservationLines(original), homes())).toEqual([]);
     });
 
     it('limits the m09 replacement to its exact historical practice-8 claim', () => {

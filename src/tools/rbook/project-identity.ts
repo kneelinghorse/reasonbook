@@ -1,7 +1,13 @@
 // ABOUTME: Project Identity (Layer 0) — stable, machine-readable project description.
 // Stored as a `project_identity` row in the contexts table. Seeded from existing blob on first access.
 
-import { identityFromStorage, identityForStorage } from '../../intelligence/legacy-compat';
+import {
+  identityFromStorage,
+  identityForStorage,
+  LEGACY,
+  normalizeAddressScheme,
+} from '../../intelligence/legacy-compat';
+import { checkAddressWrite } from './address-rule';
 import type { RbookDatabaseClient } from './client';
 import type { MigrationResult } from './schema-migrations';
 import { asLazyRepair, callMayWrite } from './tool-call-context';
@@ -136,11 +142,90 @@ function resolveLocalOwner(client: RbookDatabaseClient): string | null {
 /**
  * Build the canonical rbook_address or return an empty string when the owner is unknown.
  * Exposed for tests and reuse by the backfill path.
+ *
+ * s110-m01: the built address meets the address rule (address-rule.ts) or is not built: a seed and a
+ * heal store or keep '' with the reason in `warnings`, and never throw. Of the answers, a send's
+ * identity check reports it (critic rounds 1 and 2, F4 and V2). A seeded dotted name used to
+ * store `rbook://derek/aquex.ai`, which the local reader rejects, so every rbook:// lookup on the
+ * machine refused. The heal preview whoami reports goes through here too, so whoami never predicts
+ * an address the heal would refuse (critic A2, N1).
  */
-function buildRbookAddress(owner: string | null, slug: string): string {
+function buildRbookAddress(
+  client: RbookDatabaseClient,
+  owner: string | null,
+  slug: string,
+  warnings: string[],
+  checkTaken = true
+): string {
   if (!owner) return '';
   if (!slug) return '';
-  return `rbook://${owner}/${slug}`;
+  const address = `rbook://${owner}/${slug}`;
+  const verdict = checkAddressWrite(client.path, address, owner, { checkTaken });
+  warnings.push(...verdict.warnings);
+  if (!verdict.refused) return address;
+  warnings.push(addressNotStored(address, verdict.refused));
+  return '';
+}
+
+/** What a seed or heal says when the address it would have written breaks the rule. */
+function addressNotStored(address: string, why: string): string {
+  return (
+    `The project address ${address} was not stored: ${why}. The project keeps an empty address ` +
+    'until one that passes is set: rbook_context(action="update", contextType="project_identity", ' +
+    'fieldUpdates=[{path: "rbook_address", value: "rbook://<owner>/<project>"}]).'
+  );
+}
+
+/**
+ * s110-m01: why a field update may not set this path to this value, or null when it may. The address
+ * paths are keyed on their first segment, as the handler keys project_name: `cmos_address` is the
+ * storage key, which a write overwrites from rbook_address (a silent no-op at 4.11.0), and a
+ * two-level `rbook_address.x` would store an object the reader rejects, refusing every lookup on
+ * the machine. `warnings` takes the duplicate check's notes on stores it could not read.
+ */
+export function addressUpdateRefusal(
+  client: RbookDatabaseClient,
+  fieldPath: unknown,
+  value: unknown,
+  warnings: string[] = [],
+  /**
+   * The address the store holds when this entry applies: a call's earlier rbook_address entries
+   * change it (critic round 2, V1). Defaults to the stored one.
+   */
+  held: string | null = heldAddress(client)
+): string | null {
+  const field = typeof fieldPath === 'string' ? fieldPath.split('.')[0] : undefined;
+  if (field === LEGACY.identityAddressKey)
+    return `"${LEGACY.identityAddressKey}" is where the address is stored, and a write sets it from rbook_address; set path "rbook_address" instead.`;
+  if (field !== 'rbook_address') return null;
+  if (fieldPath !== 'rbook_address')
+    return `The address is one value; set path "rbook_address", not "${String(fieldPath)}".`;
+  // Critic round 1 (a note): re-sending the address the store holds sets nothing, as in
+  // patchProjectIdentity, so a call that repeats a user-set address keeps working.
+  if (typeof value === 'string' && held && normalizeAddressScheme(value) === held) return null;
+  const verdict = checkAddressWrite(client.path, value, resolveLocalOwner(client));
+  warnings.push(...verdict.warnings);
+  return verdict.refused
+    ? `The address ${JSON.stringify(value)} was not set: ${verdict.refused}.`
+    : null;
+}
+
+/**
+ * The address the stored identity row holds, in rbook:// form, or null with none stored. Only a stored
+ * address counts as held: the identity a read derives for a store with no row was never checked as
+ * taken.
+ */
+export function heldAddress(client: RbookDatabaseClient): string | null {
+  const address = readStoredIdentity(client)?.rbook_address;
+  return typeof address === 'string' && address ? address : null;
+}
+
+/** The remedy for a refused address: the form, with this project's owner when one is known. */
+export function addressRemedy(client: RbookDatabaseClient): string {
+  const owner = resolveLocalOwner(client);
+  return owner
+    ? `Use path "rbook_address" with an address of the form rbook://${owner}/<project>, <project> in lower-case letters, digits and single hyphens, or "" for none.`
+    : 'Use path "rbook_address" with an address of the form rbook://<owner>/<project>, each part in lower-case letters, digits and single hyphens, or "" for none.';
 }
 
 function getMasterContextSection(
@@ -199,14 +284,15 @@ export function ensureProjectIdentityRow(client: RbookDatabaseClient): Migration
       alreadyCurrent: false,
       deferred: [
         'No project_identity row is stored yet. This is the identity derived from the master ' +
-          "context and metadata; the project's next Reasonbook write stores it.",
+          "context and metadata; the project's next Reasonbook write stores it, keeping no " +
+          'address that another registered project holds.',
       ],
     };
   }
 
-  const identity = seedIdentityFor(client, new Date().toISOString());
-
   const warnings: string[] = [];
+  const identity = seedIdentityFor(client, new Date().toISOString(), warnings);
+
   const insertResult = client.execute(
     `INSERT OR IGNORE INTO contexts (id, source_path, content, updated_at)
      VALUES ('project_identity', 'rbook/contexts/project-identity.json', ?, ?)`,
@@ -228,8 +314,18 @@ export function ensureProjectIdentityRow(client: RbookDatabaseClient): Migration
   };
 }
 
-/** The identity a missing row is seeded with, from the master_context blob and metadata. */
-function seedIdentityFor(client: RbookDatabaseClient, now: string): ProjectIdentityData {
+/**
+ * The identity a missing row is seeded with, from the master_context blob and metadata. `stored` is
+ * false for the identity a pin-only read derives, whose address skips the check that no other store
+ * holds it: such a read opens no other project's store, and the write that stores it checks. A
+ * preview of a write (whoami's) passes true, as the write would (critic round 4, X4).
+ */
+function seedIdentityFor(
+  client: RbookDatabaseClient,
+  now: string,
+  warnings: string[],
+  stored = true
+): ProjectIdentityData {
   // Seed from existing blob
   const projectSection =
     getMasterContextSection(client, 'project_identity') ??
@@ -278,7 +374,7 @@ function seedIdentityFor(client: RbookDatabaseClient, now: string): ProjectIdent
     ...IDENTITY_TEMPLATE,
     project_id: projectId,
     project_name: projectName,
-    rbook_address: buildRbookAddress(owner, slugOrName),
+    rbook_address: buildRbookAddress(client, owner, slugOrName, warnings, stored),
     tier,
     status: extractStr(projectSection, 'status') || 'active_development',
     description: seededDescription,
@@ -307,10 +403,20 @@ export function getProjectIdentity(client: RbookDatabaseClient): ProjectIdentity
  * would store, derived in memory. For a diagnostic that must not write even outside a dispatched
  * call (whoami, the startup lines, a heal preview), where callMayWrite() is true.
  */
-export function readProjectIdentity(client: RbookDatabaseClient): ProjectIdentityData | null {
+export function readProjectIdentity(
+  client: RbookDatabaseClient,
+  /**
+   * s110-m01 (critic round 3, W1): true for a prediction of what a write will store (whoami's heal
+   * preview and the startup lines, through validateProject's preview), so its address is checked as
+   * the write checks it; a pin-only read leaves it false and opens no other project's store.
+   */
+  options: { readonly checkTaken?: boolean } = {}
+): ProjectIdentityData | null {
   const stored = readStoredIdentity(client);
   if (stored !== undefined) return stored;
-  return seedIdentityFor(client, new Date().toISOString());
+  // A read stores nothing, so the seed's notes go nowhere; the write that later stores the seed keeps
+  // '' for an address the rule refuses, and a send's identity check says why (critic round 2, V2).
+  return seedIdentityFor(client, new Date().toISOString(), [], options.checkTaken === true);
 }
 
 /** The stored identity row: undefined when there is none, null when it cannot be read. */
@@ -353,6 +459,23 @@ export function patchProjectIdentity(
   const current = getProjectIdentity(client);
   if (!current) return false;
 
+  // s110-m01: an address this patch sets meets the address rule, or the current one is kept and the
+  // reason joins the warnings; the other fields are written as before.
+  if (updates.rbook_address !== undefined && updates.rbook_address !== current.rbook_address) {
+    const verdict = checkAddressWrite(
+      client.path,
+      updates.rbook_address,
+      resolveLocalOwner(client)
+    );
+    warnings.push(...verdict.warnings);
+    if (verdict.refused) {
+      warnings.push(addressNotStored(String(updates.rbook_address), verdict.refused));
+      const { rbook_address: _refused, ...rest } = updates;
+      if (Object.keys(rest).length === 0) return false;
+      updates = rest;
+    }
+  }
+
   const merged: ProjectIdentityData = {
     ...current,
     ...updates,
@@ -387,12 +510,20 @@ export function backfillUnknownRbookAddress(client: RbookDatabaseClient): {
   rewritten: boolean;
   previous: string | null;
   next: string | null;
+  /** s110-m01: why the address the heal built was not written, when the address rule refused it. */
+  refused?: string;
 } {
   const preview = previewUnknownRbookAddressHeal(client);
   if (!preview.next || preview.next === preview.previous) {
-    return { rewritten: false, previous: preview.previous, next: preview.previous };
+    return {
+      rewritten: false,
+      previous: preview.previous,
+      next: preview.previous,
+      ...(preview.refused ? { refused: preview.refused } : {}),
+    };
   }
-  const ok = patchProjectIdentity(client, { rbook_address: preview.next });
+  const warnings: string[] = [];
+  const ok = patchProjectIdentity(client, { rbook_address: preview.next }, warnings);
   return { rewritten: ok, previous: preview.previous, next: ok ? preview.next : preview.previous };
 }
 
@@ -405,9 +536,11 @@ export function backfillUnknownRbookAddress(client: RbookDatabaseClient): {
 export function previewUnknownRbookAddressHeal(client: RbookDatabaseClient): {
   previous: string | null;
   next: string | null;
+  /** s110-m01: why no heal is predicted when the address the heal would build breaks the rule. */
+  refused?: string;
 } {
   // Never seeds: a preview writes nothing, whatever the call may do.
-  const current = readProjectIdentity(client);
+  const current = readProjectIdentity(client, { checkTaken: true });
   if (!current) return { previous: null, next: null };
 
   const existing = current.rbook_address ?? '';
@@ -426,8 +559,15 @@ export function previewUnknownRbookAddressHeal(client: RbookDatabaseClient): {
   const slugSource =
     getMetadataValue(client, 'dashboard_slug') ?? current.project_name ?? current.project_id ?? '';
   const slug = slugSource.toLowerCase().replace(/\s+/g, '-');
-  const next = buildRbookAddress(owner, slug);
-  return { previous: existing, next: next && next !== existing ? next : null };
+  const notes: string[] = [];
+  const next = buildRbookAddress(client, owner, slug, notes);
+  // With an owner and a slug, an empty address means the rule refused it, the last note saying why.
+  const refused = !next && slug ? notes[notes.length - 1] : undefined;
+  return {
+    previous: existing,
+    next: next && next !== existing ? next : null,
+    ...(refused ? { refused } : {}),
+  };
 }
 
 /**
@@ -463,6 +603,11 @@ export function applyProjectIdentityFieldUpdate(
   if (parts.length === 0 || parts.some((p) => !p)) {
     return { success: false, message: `Invalid field path: "${path}"` };
   }
+
+  // s110-m01: the handler checks every entry before its first write; this keeps the function's
+  // own callers to the same rule.
+  const refusal = addressUpdateRefusal(client, path, value);
+  if (refusal) return { success: false, message: refusal };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const obj = current as any;

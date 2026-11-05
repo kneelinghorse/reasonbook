@@ -10,7 +10,7 @@ The Codex plugin below installs its own pinned runtime. For the other adapters,
 install the CLI before enabling hooks:
 
 ```sh
-npm install -g @aquex/reasonbook@4.11.0
+npm install -g @aquex/reasonbook@4.12.0
 reasonbook --version
 npm root -g
 ```
@@ -54,6 +54,12 @@ MCP. Stop, compaction and end hooks never request an extra model turn.
 
 ## Codex
 
+The developer plugin `reasonbook` supplies the server, seven skills and five lifecycle hooks.
+The local directory edition `reasonbook-chat` supplies the same server in directory mode and six
+distinct skills, with no hooks, profile/draft access, sharing or runtime network calls. Plugin loading,
+installation and project calls are verified in the bundled Codex CLI and app-server.
+**ChatGPT Work remains unverified**; this is not a hosted plugin for ChatGPT web or phone.
+
 Install the developer plugin from the Reasonbook marketplace:
 
 ```sh
@@ -65,10 +71,20 @@ If the plugin is installed under its former name, remove it first, because both 
 same server: `codex plugin remove cmos@cmos`, and `codex plugin remove cmos-chat@cmos` for the chat
 plugin.
 
-It includes the MCP server, skills and five lifecycle hooks. Node 20 or newer is
-required. The server launcher checks PATH, the login shell and the usual Homebrew
+For chat workflows, install `reasonbook-chat@reasonbook` instead:
+
+```sh
+codex plugin add reasonbook-chat@reasonbook
+```
+
+For local development, replace the marketplace repository with this checkout's absolute path.
+Enable one Reasonbook edition in a conversation. Choose the full developer plugin for hooks, drafts
+and sharing; choose the [directory edition](../plugins/reasonbook-chat/README.md) for local setup,
+catch-up, recall, requested decisions, notes and next steps. Both use the same package and version.
+
+Node.js 20 or newer is required. The server launcher checks PATH, the login shell and the usual Homebrew
 folders. The plugin installs its exact Reasonbook version in
-`~/.config/rbook/plugins`, or the selected legacy config folder for an existing installation.
+`~/.config/rbook/plugins`, with [legacy config fallback](migrating-from-cmos.md) for an existing installation.
 Both Codex plugins and the developer hooks share that installation; no package is installed
 in Codex's private plugin data directory. The developer plugin requests forwarding of
 `RBOOK_CONFIG_DIR` and the other supported settings. The portable chat plugin uses the
@@ -89,18 +105,21 @@ original session remains unverified.
 In the Codex CLI, use `/hooks` to inspect and review the five commands from
 [`hooks/codex.json`](../plugins/reasonbook/hooks/codex.json). For the desktop app, use its
 bundled Codex CLI with the same Codex home if the app does not expose hook review.
+Restart the app after installation if it has not loaded the plugin. The chat plugin has no hook review step.
 Trust applies to the exact definition. The commands contain no release version,
 and an isolated version-update probe preserved their trust. Changed definitions
 require review again. Do not bypass review or write trust records on the
 operator's behalf. [Codex hooks](https://learn.chatgpt.com/docs/hooks)
 
 If you enabled the CMOS 3.3.0 adapter, remove its five CMOS entries from
-`.codex/hooks.json` before enabling the plugin. Preserve unrelated entries. Also
+the project's `.codex/hooks.json` and any user-level `~/.codex/hooks.json` before enabling the plugin.
+Preserve unrelated entries. Also
 remove any other imported CMOS hook registration: the adapter and plugin can both
 run, and duplicate delivery is not prevented without verified process identity.
 The plugin supplies its own MCP server; remove a duplicate manual Reasonbook server or
 set `pluginServer` to `off` in the Reasonbook user config when deliberately retaining the
-manual server. `reasonbook doctor` finds such a duplicate in Claude Code and in Codex.
+manual server. The file is `config.json` in `~/.config/rbook`, `~/.config/cmos-mcp` before its move,
+or your custom config root. `reasonbook doctor` names the file and finds such a duplicate in Claude Code and in Codex.
 
 The hooks map `session_id`, `cwd`, `turn_id` and `last_assistant_message` into the
 shared CLI. They wire SessionStart, UserPromptSubmit, Stop, PreCompact and SessionEnd;
@@ -126,8 +145,14 @@ not restore that evidence. Re-propose the draft and approve it in one continuous
 conversation, such as two turns in the same running Codex app-server thread. The refusal names
 this remedy. Session-end cleanup remains in force; approval words are not retained across it.
 
-For an ordinary call without `projectRoot`, Codex supplies the client folder and
-Reasonbook reports `resolvedBy=client-cwd`. Approval linkage additionally requires hook
+Reasonbook uses the working folder supplied on each supported Codex call, so a conversation in a
+project can call `rbook_review()` without naming a path. Outside that folder, choose a registered
+address from `rbook_project(action="list")` and pass it as `projectRoot`, for example
+`rbook_review(projectRoot="rbook://you/project")`. Unknown or ambiguous addresses refuse;
+local-only projects need their folder. Tool hints conservatively include telemetry deletion,
+so Codex Auto mode can still ask for approval for any Reasonbook tool.
+
+For an ordinary call without `projectRoot`, Reasonbook reports `resolvedBy=client-cwd`. Approval linkage additionally requires hook
 evidence for that conversation in the same physical project store. A call naming
 a different project or lacking that evidence keeps process ownership; a decision
 may be agent-attested, while constraint, rule and profile drafts still require

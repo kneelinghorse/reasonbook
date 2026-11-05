@@ -285,10 +285,14 @@ const EXPECTED_TOTALS = {
   // draft-settle-grammar.ts, draft-settle.ts and draft-runtime-unkept.ts add six files, no answer type.
   // s109-m03: draft-reply.ts (the reply grammar, moved out of draft-grammar.ts) adds one file, no
   // answer type.
-  files: 345,
-  roots: 151,
-  declarations: 352,
-  compositions: 352,
+  // s110-m01: dashboard-slug.ts, address-rule.ts and dashboard-path-tie.ts add three files; the
+  // client's listOwnedProjects() adds one root and two declarations (OwnedProject and
+  // ListOwnedProjectsResult), an internal result no answer carries.
+  files: 348,
+  // s110-m03: the internal RenameProjectResult adds one root/declaration and five string fields.
+  roots: 153,
+  declarations: 355,
+  compositions: 355,
   // s98-m11: bulk feedback receipts name the project and list already resolved skips.
   // s98-m12: ProjectTypeFields gains optional build_freshness_check, disclosed in CHANGELOG.
   // s98-m13: sprint-close adds implicitSessionsAtClose beside the direct-membership list.
@@ -315,7 +319,13 @@ const EXPECTED_TOTALS = {
   // internal result the analyzed root reaches through owner resolution; no answer carries it, so the
   // CHANGELOG names the behaviour (a store listed as owned uploads instead of registering), not the
   // fields.
-  rows: 2067,
+  // s110-m01: six additive rows, OwnedProject's five fields and ListOwnedProjectsResult.projects, the
+  // client's reading of GET /api/projects/mine; no answer carries them, so the CHANGELOG names the
+  // behaviour (purge's path tie), not the fields.
+  // s110-m02: three additive rows, disclosed in the CHANGELOG: a directory row's archivedAt and a
+  // message summary's senderAddress and targetAddress; get's message gains targetAddress, a member
+  // of the intersection it already counted.
+  rows: 2081,
 } as const;
 const EXPLICIT_OPAQUE_LEDGER = [
   'RbookToolError.providedValue = ANY',

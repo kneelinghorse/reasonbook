@@ -9,6 +9,8 @@ import type { CliIo } from '../../src/cli/core';
 import { CliTelemetry } from '../../src/cli/telemetry';
 import { runCommand } from '../../src/cli/commands';
 import { runMigrate } from '../../src/cli/migrate';
+import { runRename } from '../../src/cli/rename';
+import { runRegistry } from '../../src/cli/registry';
 import { runSpinOut } from '../../src/cli/spin-out';
 import { runFeedback } from '../../src/cli/feedback';
 import { runStats } from '../../src/cli/stats';
@@ -29,6 +31,8 @@ jest.mock('../../src/cli/telemetry', () => ({
 }));
 jest.mock('../../src/cli/commands', () => ({ runCommand: jest.fn(async () => 0) }));
 jest.mock('../../src/cli/migrate', () => ({ runMigrate: jest.fn(async () => 0) }));
+jest.mock('../../src/cli/rename', () => ({ runRename: jest.fn(async () => 0) }));
+jest.mock('../../src/cli/registry', () => ({ runRegistry: jest.fn(async () => 0) }));
 jest.mock('../../src/cli/spin-out', () => ({ runSpinOut: jest.fn(async () => 0) }));
 jest.mock('../../src/cli/feedback', () => ({ runFeedback: jest.fn(async () => 0) }));
 jest.mock('../../src/cli/stats', () => ({ runStats: jest.fn(async () => 0) }));
@@ -111,6 +115,8 @@ const routes = [
   ['feedback', runFeedback, ['--content=feedback', '--dry-run', '--format=json']],
   ['drafts', runDrafts, ['list', '--all', '--format=json']],
   ['migrate', runMigrate, ['--apply', '--docs-only', '--project=/a', '--config']],
+  ['rename', runRename, ['--apply', '--name=After', '--slug=after']],
+  ['registry', runRegistry, ['archive', '--apply', '--format=json']],
   [
     'sync',
     runSync,
@@ -213,7 +219,7 @@ beforeEach(() => {
 describe('F9 public option boundary', () => {
   it('accounts for every routed CLI verb, including the hook exemption', () => {
     expect([...CLI_VERBS].sort()).toEqual([...routes.map(([verb]) => verb), 'hook'].sort());
-    expect(routes).toHaveLength(27);
+    expect(routes).toHaveLength(29);
   });
 
   it.each(routes.map(([verb]) => verb))(

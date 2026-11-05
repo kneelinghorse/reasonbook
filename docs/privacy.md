@@ -181,11 +181,21 @@ Choosing not to wait for a copy does not remove its member from the frozen censu
   (each one's account, username and whether they were removed) until the project is deleted. A
   same-record re-share carries these bindings forward.
 - Recovery records: the frozen member census, the attempt's current stored plan and summary,
-  contribution receipts and final result. Accepted recovery contributions and whatever remained at
-  the lost store's path, including sidecars and account bindings, are kept until the project is deleted.
-  After successful recovery, earlier snapshots move into the retained lost-store folder and no
-  longer follow ordinary seven-day snapshot pruning. Refused contributions are removed;
+  contribution receipts and final result. These records stay until the project is deleted;
   replanning replaces the stored plan rather than keeping every revision.
+- Recovery files: accepted recovery contributions, whatever remained at the lost store's path,
+  including sidecars and account bindings, and a store published by an interrupted finalization.
+  After successful recovery, earlier snapshots move into the retained lost-store folder and no
+  longer follow ordinary seven-day snapshot pruning. Automatic expiry of recovery files is
+  currently disabled, so these files are currently kept until the project is deleted. Refused
+  contributions are removed.
+
+  The planned 30-day policy is not yet active. Once enabled, it will delete these files 30 days
+  after the loss is resolved. The loss is resolved when the attempt becomes hosted or, for a
+  cancelled attempt, when a later attempt becomes hosted or the store is handed in again. No
+  recovery files are deleted while any recovery for the project is collecting. A cancelled attempt
+  whose loss is never resolved keeps its files until the project is deleted.
+
 - A member's first copy is built each time they ask for it, sent, and deleted.
 
 **The activity feed** shows what was created (sprints, missions, sessions, decisions, learnings,
@@ -282,8 +292,8 @@ request. `--offline` skips it.
   including decision reasons, recorded approval words and each record's author name and account
   id, and synced events;
 - for a project shared through it, its referee copy, ordinary snapshots for 7 days and, after a
-  move back, its archive for 7 days; recovery records, accepted contributions and retained lost-store
-  artifacts (including earlier snapshots) stay until the project is deleted, as described above;
+  move back, its archive for 7 days; recovery records stay until the project is deleted, and recovery
+  files currently stay that long too; the planned expiry described above is not yet active;
 - for projects owned by configured operator accounts, one current signals report: the project's
   name and id, counts, row ids, timestamps, rule sentences, read-failure reasons and the Reasonbook
   library version, without record prose;
@@ -375,7 +385,8 @@ receive connection information under their own policies.
 - Project-deletion tombstones remain until their slug is deliberately taken again or the owning
   account is deleted. Deleting a project leaves its messages, with their project links removed.
 - Render keeps seven days of database point-in-time recovery and takes a snapshot of the service
-  disk every 24 hours, keeping each snapshot at least seven days. Nightly offsite copies to a private
+  disk every 24 hours, keeping each snapshot at least seven days. Render's daily disk snapshots can
+  retain deleted recovery files for at least seven days afterwards. Nightly offsite copies to a private
   Cloudflare R2 bucket are running, with 30-day retention: the database dump, hosted referee
   snapshots and archives, and the volume mark. R2 encrypts them at rest; the service adds no separate
   encryption layer. Deleting a live record does not remove it from an existing backup; it can remain

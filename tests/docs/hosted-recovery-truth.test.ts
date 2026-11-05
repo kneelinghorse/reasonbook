@@ -6,7 +6,13 @@ import path from 'path';
 
 const read = (file: string) =>
   fs.readFileSync(path.resolve(__dirname, '../..', file), 'utf8').replace(/\s+/g, ' ');
-const recoveryDocs = ['README.md', 'docs/privacy.md', 'docs/trust.md', 'docs/getting-started.md'];
+const recoveryDocs = [
+  'README.md',
+  'docs/privacy.md',
+  'docs/trust.md',
+  'docs/getting-started.md',
+  'docs/sharing.md',
+];
 
 describe('hosted recovery disclosure', () => {
   it.each(recoveryDocs)('%s no longer says deployed hosted recovery is unavailable', (file) => {
@@ -39,6 +45,44 @@ describe('hosted recovery disclosure', () => {
     }
   });
 
+  it.each(['docs/privacy.md', 'docs/trust.md'])(
+    '%s distinguishes disabled recovery expiry from the planned 30-day policy',
+    (file) => {
+      const text = read(file);
+      expect(text).toContain('Automatic expiry of recovery files is currently disabled');
+      expect(text).toContain('currently kept until the project is deleted');
+      expect(text).toContain('planned 30-day policy is not yet active');
+      expect(text).toContain('30 days after the loss is resolved');
+    }
+  );
+
+  it('starts planned expiry at resolution, protects collecting and unresolved attempts, and keeps records', () => {
+    const text = read('docs/privacy.md');
+    const files = text.split('- Recovery files:')[1]?.split("- A member's first copy")[0] ?? '';
+    expect(files).toContain('accepted recovery contributions');
+    expect(files).toContain('sidecars and account bindings');
+    expect(files).toContain('a store published by an interrupted finalization');
+    expect(files).toContain('earlier snapshots');
+    expect(files).toContain('the attempt becomes hosted');
+    expect(files).toContain('for a cancelled attempt, when a later attempt becomes hosted');
+    expect(files).toContain('the store is handed in again');
+    expect(files).toContain(
+      'No recovery files are deleted while any recovery for the project is collecting'
+    );
+    expect(files).toContain(
+      'A cancelled attempt whose loss is never resolved keeps its files until the project is deleted'
+    );
+    const records = text.split('- Recovery records:')[1]?.split('- Recovery files:')[0] ?? '';
+    for (const material of [
+      'frozen member census',
+      'current stored plan and summary',
+      'contribution receipts and final result',
+    ]) {
+      expect(records).toContain(material);
+    }
+    expect(records).toContain('These records stay until the project is deleted');
+  });
+
   it('explains retained member identities on same-record re-share and the deployed set-aside control', () => {
     const privacy = read('docs/privacy.md');
     expect(privacy).not.toContain('refuses their usernames');
@@ -63,6 +107,12 @@ describe('hosted recovery disclosure', () => {
     expect(contribution).toContain('RBOOK_SHARED_SYNC=off');
     expect(contribution).toContain('RBOOK_DASHBOARD_SHARING=off');
     expect(contribution).toContain('RBOOK_CHECKPOINT_SYNC=off');
+    const sharing = read('docs/sharing.md');
+    expect(sharing).toContain('Hosted recovery contributions use separate controls');
+    expect(sharing).toContain('RBOOK_SHARED_SYNC=off');
+    expect(sharing).toContain('RBOOK_DASHBOARD_SHARING=off');
+    expect(sharing).toContain('even during explicit sync');
+    expect(sharing).toContain('owner reviews and confirms the plan');
   });
 
   it('describes deployed membership reconciliation while retaining its safety conditions', () => {

@@ -17,8 +17,8 @@ import * as fs from 'fs';
 
 import { requiresPrivateEvidence } from '../helpers/public-mirror';
 
-/** A margin under Codex's 32 KiB (32,768 bytes). */
-const AGENTS_MD_LIMIT_BYTES = 30 * 1024;
+/** s110-m05 leaves at least 1 KiB below the former 30 KiB gate for later rule changes. */
+const AGENTS_MD_LIMIT_BYTES = 29 * 1024;
 
 const PRIVATE = requiresPrivateEvidence({
   reason: "this repository's private rules files",

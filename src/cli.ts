@@ -308,6 +308,7 @@ export async function runCli(argv: readonly string[], io: CliIo = processIo()): 
       'brief',
       'stats',
       'migrate',
+      'rename',
       'doctor',
       'spin-out',
       'ambient',
@@ -337,6 +338,8 @@ export async function runCli(argv: readonly string[], io: CliIo = processIo()): 
   }
   if (verb === 'hook') return runHook(rest, io);
   if (verb === 'migrate') return (await import('./cli/migrate')).runMigrate(rest, io);
+  if (verb === 'rename') return (await import('./cli/rename')).runRename(rest, io);
+  if (verb === 'registry') return (await import('./cli/registry')).runRegistry(rest, io);
   if (verb === 'doctor') return (await import('./cli/doctor')).runDoctor(rest, io);
   if (verb === 'spin-out') return (await import('./cli/spin-out')).runSpinOut(rest, io);
   const telemetry = new CliTelemetry(io, verb ?? 'unknown', rest);

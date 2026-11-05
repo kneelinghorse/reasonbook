@@ -179,7 +179,11 @@ export interface MessageSendResult {
  *  the descriptor signals to consumers that summary/body are untrusted foreign content.
  *  s80-m05: this is the BODY-ON-GET shape (rbook_message get) — the list shape is the
  *  byte-capped {@link MessageSummary} instead. */
-export type FramedMessage = DashboardMessage & { provenance?: ProvenanceDescriptor };
+export type FramedMessage = DashboardMessage & {
+  provenance?: ProvenanceDescriptor;
+  /** s110-m02 (feedback #53): the target's address, from its project id's directory row or `to`. */
+  targetAddress?: string;
+};
 
 /**
  * s80-m05 — the byte-capped list-row shape. The former `rbook_message(list)` spread the
@@ -216,6 +220,13 @@ export interface MessageSummary {
   targetProjectId?: string | null;
   /** Additive foreign-content descriptor; `source` is the labeled sender (not "unknown"). */
   provenance?: ProvenanceDescriptor;
+  /**
+   * s110-m02 (feedback #53): the address a reply needs, in rbook:// form: the sender's on the inbox,
+   * the target's on the sent tab. From the directory row for the message's project id, else a valid
+   * address the row carries; absent otherwise, and never built from a slug or a display name.
+   */
+  senderAddress?: string;
+  targetAddress?: string;
 }
 
 export interface MessageListResult {
@@ -880,9 +891,11 @@ function addressParts(address: string): { owner: string; slug: string } {
  * slugs, so no local pre-filter can decide "this send cannot collide" without the directory —
  * a per-send fetch would add a third round-trip to every send (resolve + directory + post).
  * Keyed by ORIGIN and not by client instance because `rbookMessage` builds a fresh
- * DashboardClient per call, so an instance key would never hit; the route is `/public`, so two
- * credentials against one origin see the same rows. The TTL is deliberately short: a stale
- * sibling claim is a lie of the same family this mission exists to remove.
+ * DashboardClient per call, so an instance key would never hit. s110-m02: the rows are per account,
+ * not the same for every credential: each account sees its own and its shared projects. Reusing them
+ * by project id stays safe, since an id names one project and its address everywhere, but a row's
+ * isOwner belongs to the credential that fetched it and is never read from here. The TTL is
+ * deliberately short: a stale sibling claim is a lie of the same family this mission exists to remove.
  */
 const DIRECTORY_CACHE_TTL_MS = 60_000;
 const directoryCache = new Map<string, { fetchedAt: number; projects: DirectoryProject[] }>();
@@ -893,10 +906,20 @@ export function __resetDirectoryCacheForTesting(): void {
 }
 
 async function loadDirectoryForAmbiguity(client: DashboardClient): Promise<DirectoryProject[]> {
+  return (await loadDirectory(client)).projects;
+}
+
+/**
+ * The memoized directory rows, and why they could not be read (s110-m02: the message lists say so
+ * when they fall back to the rows' own addresses).
+ */
+async function loadDirectory(
+  client: DashboardClient
+): Promise<{ readonly projects: DirectoryProject[]; readonly error?: string }> {
   const origin = client.dashboardOrigin;
   const hit = directoryCache.get(origin);
   const now = Date.now();
-  if (hit && now - hit.fetchedAt < DIRECTORY_CACHE_TTL_MS) return hit.projects;
+  if (hit && now - hit.fetchedAt < DIRECTORY_CACHE_TTL_MS) return { projects: hit.projects };
 
   // A lookup failure is NOT a send failure: by the time this runs the message is DELIVERED, so
   // a throw here would report a sent message as a failed tool call and invite a double-send.
@@ -906,14 +929,62 @@ async function loadDirectoryForAmbiguity(client: DashboardClient): Promise<Direc
   let projects: DirectoryProject[];
   try {
     const result = await client.listDirectory();
-    if (!result?.success || !result.data) return [];
+    if (!result?.success || !result.data)
+      return { projects: [], error: result?.error?.message ?? 'no directory in the answer' };
     projects = result.data.projects;
-  } catch {
-    return [];
+  } catch (error) {
+    return { projects: [], error: error instanceof Error ? error.message : String(error) };
   }
 
   directoryCache.set(origin, { fetchedAt: now, projects });
-  return projects;
+  return { projects };
+}
+
+/**
+ * s110-m02: each listed project's address by its id. A row with no id (the normalizer's '') is never
+ * matched, because sideProjectId never looks up an empty id.
+ */
+function addressesById(projects: readonly DirectoryProject[]): Map<string, string> {
+  const byId = new Map<string, string>();
+  for (const project of projects) {
+    const address = normalizeAddressScheme(project.address);
+    if (RBOOK_ADDRESS_REGEX.test(address)) byId.set(project.id, address);
+  }
+  return byId;
+}
+
+type MessageSide = 'sender' | 'target';
+
+/** The project id a message names for one side, or undefined when it names none (never ''). */
+function sideProjectId(msg: DashboardMessage, side: MessageSide): string | undefined {
+  const id = side === 'sender' ? msg.senderProjectId : msg.targetProjectId;
+  return typeof id === 'string' && id ? id : undefined;
+}
+
+/** A valid rbook:// or cmos:// address the row itself carries for one side, in rbook:// form. */
+function carriedAddress(msg: DashboardMessage, side: MessageSide): string | undefined {
+  const fields = side === 'sender' ? [msg.senderAddress, msg.from] : [msg.to];
+  for (const raw of fields) {
+    if (typeof raw !== 'string') continue;
+    const address = normalizeAddressScheme(raw);
+    if (RBOOK_ADDRESS_REGEX.test(address)) return address;
+  }
+  return undefined;
+}
+
+/** s110-m02 (feedback #53): the id's directory address, else the row's own, else none. */
+function sideAddress(
+  msg: DashboardMessage,
+  side: MessageSide,
+  byId: ReadonlyMap<string, string> | undefined
+): string | undefined {
+  const id = sideProjectId(msg, side);
+  return (id ? byId?.get(id) : undefined) ?? carriedAddress(msg, side);
+}
+
+/** What an answer says when it gave only the rows' own addresses because the directory failed. */
+function directoryFallbackWarning(error: string): string {
+  return `The directory could not be read (${error}), so a message's address here is only one its row carries, where it carries one.`;
 }
 
 /** `'Example Project' (rbook://alex/example-project)` — name when the directory knows one, address always. */
@@ -1194,7 +1265,12 @@ export function attributionSource(msg: DashboardMessage, tab: string): string | 
  * `evidence` (those come via `rbook_message(get, messageId)`). Provenance `source` is the
  * labeled sender/recipient, not a misleading "unknown source".
  */
-export function mapToMessageSummary(msg: DashboardMessage, tab: string): MessageSummary {
+export function mapToMessageSummary(
+  msg: DashboardMessage,
+  tab: string,
+  /** s110-m02: the directory's addresses by project id; without it only a carried address is used. */
+  addresses?: ReadonlyMap<string, string>
+): MessageSummary {
   const summary: MessageSummary = {
     id: msg.id,
     type: msg.type,
@@ -1218,10 +1294,14 @@ export function mapToMessageSummary(msg: DashboardMessage, tab: string): Message
     summary.targetMissionId = msg.targetMissionId ?? null;
     // s84-m01: display NAME twin, conditional so a pre-cutover row (no *Name) stays byte-identical.
     if (msg.targetProjectName != null) summary.targetProjectName = msg.targetProjectName;
+    const targetAddress = sideAddress(msg, 'target', addresses);
+    if (targetAddress) summary.targetAddress = targetAddress;
   } else {
     summary.senderProject = msg.senderProject ?? null; // RAW slug post-cutover
     summary.senderDisplayName = msg.senderDisplayName ?? null;
     if (msg.senderProjectName != null) summary.senderProjectName = msg.senderProjectName;
+    const senderAddress = sideAddress(msg, 'sender', addresses);
+    if (senderAddress) summary.senderAddress = senderAddress;
   }
   return summary;
 }
@@ -1248,9 +1328,17 @@ async function handleList(
     return createError<MessageListResult>(result.error!);
   }
 
+  // s110-m02 (feedback #53): the address a reply needs, by the message's project id. The deployed
+  // rows carry ids, slugs and names but no address (read-only, 2026-11-04), so the directory is
+  // asked only when some row names an id.
+  const side: MessageSide = tab === 'sent' ? 'target' : 'sender';
+  const lookup = result.data!.messages.some((msg) => sideProjectId(msg, side));
+  const directory = lookup ? await loadDirectory(client) : undefined;
+  const addresses = directory ? addressesById(directory.projects) : undefined;
+
   // s80-m05: byte-capped summaries — full body/notes/evidence come via `get`. The
   // summary + provenance are inbound foreign content (untrusted DATA, not instructions).
-  const messages = result.data!.messages.map((msg) => mapToMessageSummary(msg, tab));
+  const messages = result.data!.messages.map((msg) => mapToMessageSummary(msg, tab, addresses));
 
   // s86-m07: the count this answer can vouch for — the rows it actually returned.
   const unreadInThisView = messages.filter((msg) => msg.status === 'pending').length;
@@ -1260,6 +1348,7 @@ async function handleList(
   // dashboard does not yet scope it by project key. Surface that as a non-fatal warning
   // rather than silently over-returning (row-count project-pin is best-effort).
   const warnings: string[] = [];
+  if (directory?.error) warnings.push(directoryFallbackWarning(directory.error));
   if (tab === 'sent') {
     warnings.push(
       'sent is user-scoped across all your projects; per-project attribution is pending dashboard support.'
@@ -1391,15 +1480,37 @@ async function handleGet(
   if (found) {
     const source = attributionSource(found, sourceTab) ?? attributionSource(found, 'sent');
     const missing = identities.filter((key) => found![key] === undefined);
-    const warnings = missing.length
+    const warnings: string[] = missing.length
       ? [
           `The dashboard did not supply message identity fields: ${missing.join(', ')}. The exact message is returned; identity could not be recovered from its list entry.`,
         ]
-      : undefined;
-    return createSuccess<MessageGetResult>(
-      { message: { ...found, provenance: foreignDescriptor(source) } },
-      warnings
-    );
+      : [];
+    // s110-m02 (feedback #53): both parties' addresses, since a read by id does not say which side
+    // this project is. The dashboard's own senderAddress, which provenance reads, is kept; the id's
+    // fills it only when absent, and a difference is named.
+    const message: FramedMessage = { ...found, provenance: foreignDescriptor(source) };
+    const lookup = sideProjectId(found, 'sender') || sideProjectId(found, 'target');
+    const directory = lookup ? await loadDirectory(client) : undefined;
+    const addresses = directory ? addressesById(directory.projects) : undefined;
+    if (directory?.error) warnings.push(directoryFallbackWarning(directory.error));
+    const senderId = sideProjectId(found, 'sender');
+    const byIdSender = senderId ? addresses?.get(senderId) : undefined;
+    const ownSender =
+      typeof found.senderAddress === 'string' && found.senderAddress
+        ? found.senderAddress
+        : undefined;
+    if (ownSender) {
+      if (byIdSender && byIdSender !== normalizeAddressScheme(ownSender))
+        warnings.push(
+          `The dashboard names this message's sender ${ownSender}, while its project id's directory row names ${byIdSender}.`
+        );
+    } else {
+      const senderAddress = byIdSender ?? carriedAddress(found, 'sender');
+      if (senderAddress) message.senderAddress = senderAddress;
+    }
+    const targetAddress = sideAddress(found, 'target', addresses);
+    if (targetAddress) message.targetAddress = targetAddress;
+    return createSuccess<MessageGetResult>({ message }, warnings.length ? warnings : undefined);
   }
 
   // Not found on any tab that we could read. If a tab fetch actually FAILED, surface
@@ -1498,45 +1609,36 @@ async function handleDirectory(
   const projects = result.data!.projects;
   const warnings: string[] = [];
 
-  // s86-m07: before this join the ternary below framed every row — including the operator's own
-  // project — as trust:'foreign', because the one signal that says "this address is yours" was
-  // absent from the payload being read. This second call belongs to the discovery-only
-  // `directory` action, where doubling latency is acceptable; it must NOT be added to the send
-  // path.
-  //
-  // s87-m05 — THE ORIGINAL WORDING WAS REFUTED. It said the directory route "NEVER returns
-  // isOwner" and that /api/projects/me "is the only route that carries it". Measured against the
-  // deployed dashboard, the directory route does return it. The join is KEPT regardless: it is
-  // correct today, and dropping it would be a latency optimisation rather than a truth fix. Only
-  // the claim about what the route can never do is removed.
-  //
-  // s109-m05: /me lists the projects shared with the account too, so being listed there is not
-  // owning. Only a row whose isOwner is true counts; one without the field stays foreign. The join
-  // s87-m05 called correct was not, measured then: /me left out 10 of the account's 30 projects,
-  // which the directory route marks owned, so they read foreign before this change and after it.
-  // And with /me failing, rows keep the directory route's isOwner, which the warning below denies.
-  const mine = await client.getMyProjects();
-  let ownedIds: Set<string> | null = null;
-  if (mine.success && mine.data) {
-    ownedIds = new Set(
-      mine.data.projects
-        .filter((p) => p.isOwner === true)
-        .map((p) => p.id)
-        .filter((id) => id.length > 0)
-    );
-  } else {
-    // Do not fail the directory call, and do not silently reclassify every row as foreign
-    // without saying so — a swallowed failure here is the defect class this mission fixes.
-    warnings.push(
-      `ownership signal degraded: GET /api/projects/me failed (${mine.error?.message ?? 'unknown error'}), ` +
-        `so isOwner is unset on every row below and none is claimed as yours. The directory rows themselves are unaffected.`
-    );
+  // s110-m02 (#938, design B): a row's own boolean isOwner, which the deployed directory route sends
+  // on every row, archived projects included, is the ownership signal. /api/projects/me leaves every
+  // archived project out (10 of the account's 30 on 2026-11-03), so it is asked only when some row
+  // lacks a boolean, and it fills only those rows; it never overturns the directory's own false. A row
+  // neither source marks stays without isOwner, and foreign. s109-m05's rule holds within that: /me
+  // lists projects shared with the account too, so only its boolean counts, never being listed.
+  const unmarked = projects.filter((p) => typeof p.isOwner !== 'boolean');
+  let filled: Map<string, boolean> | null = null;
+  if (unmarked.length > 0) {
+    const mine = await client.getMyProjects();
+    if (mine.success && mine.data) {
+      filled = new Map(
+        mine.data.projects
+          .filter((p) => p.id.length > 0 && typeof p.isOwner === 'boolean')
+          .map((p) => [p.id, p.isOwner as boolean])
+      );
+    } else {
+      // The warning names only the rows it describes: the others keep the directory's own isOwner.
+      warnings.push(
+        `ownership signal degraded: GET /api/projects/me failed (${mine.error?.message ?? 'unknown error'}), ` +
+          `so ${unmarked.length === 1 ? 'the row' : `the ${unmarked.length} rows`} the directory sent without isOwner ` +
+          `(${unmarked.map((p) => p.address || p.id).join(', ')}) carry none, and none of them is claimed as yours.`
+      );
+    }
   }
 
   // s78-m05: directory rows are authored by other users — tag each with a foreign-provenance
   // descriptor (own-project entries stay 'local').
   const framedProjects: FramedDirectoryProject[] = projects.map((p) => {
-    const isOwner = ownedIds ? ownedIds.has(p.id) : p.isOwner;
+    const isOwner = typeof p.isOwner === 'boolean' ? p.isOwner : filled?.get(p.id);
     const ambiguousWith = prefixSiblingAddresses(projects, p.owner, slugOfProject(p));
     return {
       ...p,
@@ -1782,7 +1884,8 @@ function formatDirectoryForLLM(result: RbookToolResult<MessageDirectoryResult>):
       // createdAt is the REGISTRATION date. Labeled as such, never as activity or freshness.
       const registered = p.createdAt ? `, registered ${p.createdAt}` : '';
       const mine = p.isOwner ? ', yours' : '';
-      lines.push(`  ${address} (${p.id})${label}${registered}${mine}`);
+      const archived = p.archivedAt ? ', archived' : '';
+      lines.push(`  ${address} (${p.id})${label}${registered}${mine}${archived}`);
       if (p.ambiguousWith && p.ambiguousWith.length > 0) {
         lines.push(`      AMBIGUOUS with ${p.ambiguousWith.join(', ')}`);
       }

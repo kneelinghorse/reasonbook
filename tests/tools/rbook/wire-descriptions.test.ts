@@ -374,7 +374,7 @@ describe('s92-m08 — server instructions', () => {
  * jargon check above.
  *
  * SCOPE AND WHAT IT CANNOT SEE (one contract). Scope: every string literal in src/ (the text the
- * server can send), the shipped seed, README.md, docs/getting-started.md, TOOL_REFERENCE.md and
+ * server can send), the shipped seed, README.md, docs/getting-started.md, docs/sharing.md, TOOL_REFERENCE.md and
  * SECURITY.md, matched on the word "memory" in any case. Rendered onboard text is composed at run
  * time, so it is checked by sampling: a fresh general-tier and build-tier onboard, not every state.
  * Not seen: CHANGELOG.md (a release record), code comments and module paths in imports (never
@@ -445,9 +445,13 @@ describe('s93-m11 — no shipped self-description calls Reasonbook memory', () =
   it('no shipped document or seed file says it', () => {
     const shipped = [
       ...walk(path.join(ROOT, 'rbook-seed'), () => true),
-      ...['README.md', 'docs/getting-started.md', 'TOOL_REFERENCE.md', 'SECURITY.md'].map((f) =>
-        path.join(ROOT, f)
-      ),
+      ...[
+        'README.md',
+        'docs/getting-started.md',
+        'docs/sharing.md',
+        'TOOL_REFERENCE.md',
+        'SECURITY.md',
+      ].map((f) => path.join(ROOT, f)),
     ];
     const hits: string[] = [];
     for (const file of shipped) {

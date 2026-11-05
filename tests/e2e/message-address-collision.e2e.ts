@@ -124,7 +124,7 @@ function scratchConfigDir(
 
 // ─── The stub dashboard: verbatim recorded bodies ────────────────────────────
 
-/** GET /api/projects/directory/public — the live shape: no isOwner, no description. */
+/** GET /api/projects/directory/public in its August 2026 shape: no isOwner, no description. */
 const DIRECTORY_BODY = {
   projects: [
     {
@@ -158,7 +158,7 @@ const DIRECTORY_BODY = {
   totalCount: 3,
 };
 
-/** GET /api/projects/me — the only route that reports isOwner. */
+/** GET /api/projects/me — asked only for a directory row that carries no isOwner (s110-m02). */
 const MY_PROJECTS_BODY = {
   projects: [
     {

@@ -13,7 +13,7 @@
  */
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from '@jest/globals';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -74,6 +74,46 @@ function expectedHash(files: Record<string, string>): string {
 }
 
 describe('generate-build-manifest', () => {
+  it.each([
+    { args: ['--help'], status: 0, stream: 'stdout' },
+    { args: ['-h'], status: 0, stream: 'stdout' },
+    { args: ['--bogus'], status: 2, stream: 'stderr' },
+    { args: ['extra'], status: 2, stream: 'stderr' },
+    { args: ['--dist'], status: 2, stream: 'stderr' },
+    { args: ['--dist', '--help'], status: 2, stream: 'stderr' },
+    { args: ['--root', '.'], status: 2, stream: 'stderr' },
+    { args: ['--dist', 'dist', '--dist', 'dist'], status: 2, stream: 'stderr' },
+    { args: ['--help', '--help'], status: 2, stream: 'stderr' },
+    { args: ['-h', '--help'], status: 2, stream: 'stderr' },
+  ])('prints usage without stamping a build for $args', ({ args, status, stream }) => {
+    // A real JS artifact makes ignored arguments dangerous: the old parser stamps it as fresh.
+    write('dist/index.js', 'exports.fixture = true;');
+    const result = spawnSync(process.execPath, [SCRIPT, '--root', distDir, ...args], {
+      cwd: distDir,
+      encoding: 'utf8',
+    });
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(status);
+    expect(stream === 'stdout' ? result.stdout : result.stderr).toContain('Usage:');
+    expect(fs.readdirSync(path.join(distDir, 'dist'))).toEqual(['index.js']);
+    expect(fs.existsSync(path.join(distDir, '.build-manifest.json'))).toBe(false);
+  });
+
+  it('accepts the output option before the project option', () => {
+    write('output/index.js', 'exports.fixture = true;');
+    execFileSync(process.execPath, [
+      SCRIPT,
+      '--dist',
+      path.join(distDir, 'output'),
+      '--root',
+      distDir,
+    ]);
+    expect(
+      JSON.parse(fs.readFileSync(path.join(distDir, 'output/.build-manifest.json'), 'utf8'))
+        .fileCount
+    ).toBe(1);
+  });
+
   it('hashes every .js file under the given dist, by path and content, and counts them', () => {
     const files = { 'index.js': 'console.log(1);', [path.join('tools', 'a.js')]: 'exports.a = 1;' };
     for (const [rel, content] of Object.entries(files)) write(rel, content);

@@ -147,7 +147,11 @@ export async function run(
     if (shared && args[0] === 'serve') {
       return (await serveInstalling(ctx, { env, startInstaller: install })) ?? 0;
     }
+    const prefix = path.join(ctx.dataRoot, 'npx-prefix');
+    fs.mkdirSync(prefix, { recursive: true, mode: 0o700 });
     const npx = packageManager('npx', [
+      '--prefix',
+      prefix,
       '-y',
       '--prefer-offline',
       `${ctx.packageName}@${ctx.version}`,

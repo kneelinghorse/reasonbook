@@ -5,8 +5,12 @@ import { formatToolFailure } from './format-failure';
 import { withClient, withClientValidated } from './client';
 import type { RbookToolResult } from './types';
 import { createError, createSuccess, RBOOK_ERROR_CODES } from './errors';
+import { normalizeAddressScheme } from '../../intelligence/legacy-compat';
 import {
   getProjectIdentity,
+  addressRemedy,
+  addressUpdateRefusal,
+  heldAddress,
   applyProjectIdentityFieldUpdate,
   ensureProjectIdentityRow,
   type ProjectIdentityData,
@@ -133,6 +137,27 @@ export async function rbookContextUpdateProjectIdentity(
         });
       }
 
+      // s110-m01: every entry is checked before the first write, since the loop below writes field
+      // by field, so a call refused for its address writes none of its fields (critic round 3, N3:
+      // a path the loop refuses still follows earlier writes, as at 4.11.0).
+      // Critic round 2, V1: each entry is judged against the address the store will hold when it
+      // applies, so a re-send after another rbook_address entry in the same call is checked.
+      const notes: string[] = [];
+      let held = heldAddress(client);
+      for (const update of fieldUpdates) {
+        const refusal = addressUpdateRefusal(client, update.path, update.value, notes, held);
+        if (update.path === 'rbook_address' && typeof update.value === 'string')
+          held = update.value ? normalizeAddressScheme(update.value) : null;
+        if (refusal)
+          return createError<ProjectIdentityUpdateResult>({
+            code: RBOOK_ERROR_CODES.INVALID_PARAMETER,
+            field: update.path,
+            providedValue: update.value,
+            message: refusal,
+            suggestion: addressRemedy(client),
+          });
+      }
+
       const updatedPaths: string[] = [];
 
       for (const update of fieldUpdates) {
@@ -161,11 +186,14 @@ export async function rbookContextUpdateProjectIdentity(
         });
       }
 
-      return createSuccess<ProjectIdentityUpdateResult>({
-        fieldsUpdated: updatedPaths,
-        projectIdentity: identity,
-        message: `Updated ${updatedPaths.length} field(s) in project_identity.`,
-      });
+      return createSuccess<ProjectIdentityUpdateResult>(
+        {
+          fieldsUpdated: updatedPaths,
+          projectIdentity: identity,
+          message: `Updated ${updatedPaths.length} field(s) in project_identity.`,
+        },
+        notes.length ? notes : undefined
+      );
     },
     { projectRoot: params.projectRoot }
   );
@@ -189,7 +217,8 @@ export function formatProjectIdentityViewForLLM(
   } else if (stored === false) {
     lines.push(
       'ℹ️ No project_identity row is stored yet. This is the identity derived from the master ' +
-        "context and metadata; the project's next Reasonbook write stores it."
+        "context and metadata; the project's next Reasonbook write stores it, keeping no " +
+        'address that another registered project holds.'
     );
     lines.push('');
   }

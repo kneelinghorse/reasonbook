@@ -193,4 +193,73 @@ describe('plugin shim routing', () => {
     expect(value.calls[1].args.slice(-3)).toEqual(['init', '--name', 'fixture']);
     expect(value.calls[0].shell).toBe(false);
   });
+
+  test.each(['plugin data', 'shared config', 'config fallback'])(
+    'cold npx uses an empty %s prefix without losing the session project',
+    (kind) => {
+      const plugin = copiedPlugin(root);
+      const session = path.join(root, 'session');
+      fs.mkdirSync(session);
+      fs.writeFileSync(
+        path.join(session, 'package.json'),
+        JSON.stringify({ name: '@aquex/reasonbook', version })
+      );
+      const configDir = path.join(root, 'config');
+      const pluginData = path.join(root, 'plugin data');
+      const dataRoot =
+        kind === 'shared config'
+          ? path.join(configDir, 'plugins')
+          : kind === 'plugin data'
+            ? pluginData
+            : configDir;
+      const environment = {
+        RBOOK_CONFIG_DIR: configDir,
+        ...(kind !== 'config fallback' ? { CLAUDE_PLUGIN_DATA: pluginData } : {}),
+        PATH: '',
+      };
+      const commandArgs = kind === 'shared config' ? ['init', '--name', 'fixture'] : ['serve'];
+      const args =
+        kind === 'shared config' ? [...commandArgs, '--install-root', 'shared'] : commandArgs;
+      const result = spawnSync(
+        process.execPath,
+        [
+          '--input-type=module',
+          '-e',
+          `import fs from 'node:fs';import {run} from ${JSON.stringify(pathToFileURL(path.join(plugin, 'hooks/run.mjs')).href)};
+          const calls=[];const errors=[];
+          const code=await run(${JSON.stringify(args)},{env:${JSON.stringify(environment)},writeError:text=>errors.push(text),launch:async(command,args,options)=>{
+            const index=args.indexOf('--prefix');const prefix=index===-1?undefined:args[index+1];
+            const exists=Boolean(prefix&&fs.existsSync(prefix));
+            calls.push({command,args,cwd:options.cwd,shell:options.shell,sessionCwd:process.cwd(),prefix,exists,files:exists?fs.readdirSync(prefix):null,mode:exists?fs.statSync(prefix).mode&0o777:null});
+            return 9;
+          }});console.log(JSON.stringify({code,calls,errors}));`,
+        ],
+        { cwd: session, env: process.env, encoding: 'utf8', timeout: 15000 }
+      );
+      expect(result.status).toBe(0);
+      const value = JSON.parse(result.stdout);
+      expect(value.errors).toEqual([]);
+      expect(value.code).toBe(9);
+      expect(value.calls).toHaveLength(1);
+      const call = value.calls[0];
+      const prefix = path.join(dataRoot, 'npx-prefix');
+      expect(call.args).toContain('--prefix');
+      expect(
+        call.args.slice(call.args.indexOf('--prefix'), call.args.indexOf('--prefix') + 2)
+      ).toEqual(['--prefix', prefix]);
+      expect(call.prefix).toBe(prefix);
+      expect(path.relative(session, prefix).startsWith(`..${path.sep}`)).toBe(true);
+      expect(call.exists).toBe(true);
+      expect(call.files).toEqual([]);
+      if (process.platform !== 'win32') expect(call.mode).toBe(0o700);
+      expect(call.cwd).toBeUndefined();
+      expect(call.sessionCwd).toBe(fs.realpathSync(session));
+      expect(call.command).toBe(process.execPath);
+      expect(call.args).toContain(`@aquex/reasonbook@${version}`);
+      expect(call.args).toContain('--prefer-offline');
+      expect(call.args.slice(-commandArgs.length)).toEqual(commandArgs);
+      expect(call.shell).toBe(false);
+      expect(fs.readdirSync(session)).toEqual(['package.json']);
+    }
+  );
 });

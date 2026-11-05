@@ -28,8 +28,11 @@ Match the plan to the project's chosen level:
 - **Builder:** write the scoped design in the project's tracked Reasonbook planning documents. State the
   outcome, non-goals, interfaces, alternatives, dependencies, measurable success criteria and
   validation plan. Link the document in each mission's `referenceDocs`. Before ratification, obtain
-  an independent blocking critic that tries both to confirm and refute the design. A
-  NEEDS-REVISION verdict must be resolved and re-reviewed; an advisory review is not a substitute.
+  an independent blocking critic that tries both to confirm and refute the design; an advisory
+  review is not a substitute. Plan-time review gets at most four blocking rounds and one verification
+  round, five in all. Anything found after the last round is carried forward as a next step on the
+  mission it touches, for that mission's build-time critics, and the plan is ratified. After round
+  five, the feasibility rule gives way to the cap.
 
 Ground designs in the code, tool contracts and data that will actually be used. For cross-store,
 migration or concurrency work, probe the facts the design depends on and explicitly label any

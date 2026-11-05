@@ -37,7 +37,7 @@ Requires Node.js 20 or newer.
 1. Install the pinned CLI:
 
    ```sh
-   npm install -g @aquex/reasonbook@4.11.0
+   npm install -g @aquex/reasonbook@4.12.0
    ```
 
    Ensure the global npm bin directory is on your PATH. If the former package is installed globally, run `npm uninstall -g @aquex/cmos-mcp` first. Version 4 provides only the `reasonbook` command; update scripts and MCP configurations that use the old command.
@@ -64,86 +64,25 @@ of Git. Init preserves an existing ignore file. Shared records require the store
 untracked; exchange those records through Reasonbook's sharing commands.
 
 A plugin installation does not put `reasonbook` on your terminal PATH. Plugin-only users can
-replace `reasonbook` in these commands with `npx --prefer-offline -y @aquex/reasonbook@4.11.0`,
-for example `npx --prefer-offline -y @aquex/reasonbook@4.11.0 review --format=context`.
+replace `reasonbook` in these commands with `npx --prefer-offline -y @aquex/reasonbook@4.12.0`,
+for example `npx --prefer-offline -y @aquex/reasonbook@4.12.0 review --format=context`.
 
 ## Codex plugins
-
-The developer plugin `reasonbook` supplies the server, seven skills and five lifecycle hooks.
-The local directory edition `reasonbook-chat` supplies the same server in directory mode and six
-distinct skills, with no hooks, profile/draft access, sharing or runtime network calls. Plugin loading, installation and project calls are verified in the bundled
-Codex CLI and app-server. **ChatGPT Work remains unverified**; this is not a hosted plugin
-for ChatGPT web or phone.
-
-Install the developer plugin:
 
 ```sh
 codex plugin marketplace add kneelinghorse/reasonbook
 codex plugin add reasonbook@reasonbook
 ```
 
-If the plugin is installed under its former name, remove it first, because both plugins answer as the
-same server: `codex plugin remove cmos@cmos`, and `codex plugin remove cmos-chat@cmos` for the chat
-plugin.
+For chat workflows, use `codex plugin add reasonbook-chat@reasonbook` instead.
+See [Codex setup and verification limits](docs/harnesses.md#codex).
 
-For chat workflows, install `reasonbook-chat@reasonbook` instead:
+<a id="existing-installations-and-candidate-testing"></a>
 
-```sh
-codex plugin add reasonbook-chat@reasonbook
-```
+## Upgrading from CMOS
 
-For local development, replace the marketplace repository with this checkout's absolute path.
-Enable one Reasonbook edition in a conversation. Choose the full developer plugin for hooks, drafts
-and sharing; choose the [directory edition](plugins/reasonbook-chat/README.md) for local setup,
-catch-up, recall, requested decisions, notes and next steps. Both use the same package and version.
-
-Node.js 20 or newer is required. The plugins install their exact Reasonbook version into
-`~/.config/rbook/plugins`, with [legacy config fallback](docs/migrating-from-cmos.md) for existing
-installations. On a first install, Reasonbook connects with an installing message; start a new
-session when installation finishes to load the project tools. The developer hooks share that runtime.
-The developer plugin requests forwarding of supported settings, including `RBOOK_CONFIG_DIR`;
-the portable chat plugin uses the environment inherited from its host. Use an **absolute** path,
-because empty or relative shared roots are refused. Environment forwarding depends on the
-client's plugin loader. If your loader does not forward a setting,
-use the default root or configure a manual server. See [the harness guide](docs/harnesses.md#codex).
-
-In the Codex CLI, run `/hooks` and review the five developer-plugin commands once. If the desktop
-app does not expose that review, use its bundled Codex CLI with the same Codex home. Restart the
-app after installation if it has not loaded the plugin. A changed hook definition needs review
-again. The chat plugin has no hook review step.
-
-Before replacing a CMOS 3.3.0 adapter, remove only its CMOS entries from project
-`.codex/hooks.json` and any user-level `~/.codex/hooks.json`; keep unrelated hooks. Remove any
-other imported CMOS hook registration too. Keep one answering MCP server: remove a duplicate
-manual entry, or deliberately retain it and set `"pluginServer": "off"` in `config.json` in
-Reasonbook's config folder: `~/.config/rbook`, `~/.config/cmos-mcp` before its move, or your
-custom config root. `reasonbook doctor` names the file.
-
-Reasonbook uses the working folder supplied on each supported Codex call, so a conversation in a
-project can call `rbook_review()` without naming a path. Outside that folder, choose a registered
-address from `rbook_project(action="list")` and pass it as `projectRoot`, for example
-`rbook_review(projectRoot="rbook://you/project")`. Unknown or ambiguous addresses refuse;
-local-only projects need their folder. Tool hints conservatively include telemetry deletion,
-so Codex Auto mode can still ask for approval for any Reasonbook tool.
-
-## Existing installations and candidate testing
-
-Reasonbook was formerly named CMOS. Upgrading from `cmos@cmos`? Uninstall it before refreshing the marketplace, using
-`claude plugin uninstall cmos@cmos --scope user` (or its original `project` or `local` scope),
-then install `reasonbook@reasonbook`. For a local installation, run the command from that
-project. If the marketplace already refreshed and uninstall says “not found”, use the
-[tested recovery steps](docs/migrating-from-cmos.md#recover-an-already-refreshed-claude-marketplace).
-Upgrade every client before moving an existing record. `reasonbook doctor` lists what still needs
-changing on this machine, such as an old install, a manual server beside the plugin, the old config
-folder or record layout and stale permissions, with the fix for each in order; it writes nothing.
-
-For candidate testing, replace `kneelinghorse/reasonbook` with this checkout's absolute
-path. Start a new Claude Code session after installation. The plugin supplies the
-MCP server, hooks and commands; its first cold session may report that Reasonbook is
-installing and load the record from the next session. Use `/reasonbook:init` for a new
-record, `/reasonbook:start` to read it, `/reasonbook:close-out` to finish work, `/reasonbook:plan` to plan,
-and `/reasonbook:build` to execute. [Plugin installation](https://code.claude.com/docs/en/discover-plugins).
-Other tools use the [harness adapters and coverage guide](docs/harnesses.md).
+Use `reasonbook doctor` to inspect what needs changing and `reasonbook migrate` to preview a record move.
+Follow the [migration guide](docs/migrating-from-cmos.md) to upgrade clients before moving their records.
 
 ## Propose a decision, then approve it
 
@@ -217,7 +156,7 @@ Recommended: a global install of this release. The server then starts from disk,
 lookup on launch:
 
 ```bash
-npm install -g @aquex/reasonbook@4.11.0
+npm install -g @aquex/reasonbook@4.12.0
 ```
 
 If the former package is installed globally, run `npm uninstall -g @aquex/cmos-mcp` first. Version 4 provides only the `reasonbook` command; update scripts and MCP configurations that use the old command.
@@ -226,7 +165,7 @@ Or run it on demand with `npx`. Pin the version and prefer the local cache: an u
 can look the package up again on every launch.
 
 ```bash
-npx --prefer-offline -y @aquex/reasonbook@4.11.0
+npx --prefer-offline -y @aquex/reasonbook@4.12.0
 ```
 
 Semantic (vector) search is optional. Without it, retrieval is keyword-only, and the install is
@@ -245,7 +184,7 @@ arguments (keep `--project-root` where an example has it).
 ### Claude Code
 
 ```bash
-claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.11.0"]}'
+claude mcp add-json rbook '{"command":"npx","args":["--prefer-offline","-y","@aquex/reasonbook@4.12.0"]}'
 ```
 
 ### Claude Desktop
@@ -260,7 +199,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
       "args": [
         "--prefer-offline",
         "-y",
-        "@aquex/reasonbook@4.11.0",
+        "@aquex/reasonbook@4.12.0",
         "--project-root",
         "/absolute/path/to/your/project"
       ]
@@ -284,7 +223,7 @@ Add to `~/.cursor/mcp.json`:
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.11.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.12.0"]
     }
   }
 }
@@ -297,7 +236,7 @@ Add to `~/.cursor/mcp.json`:
   "context_servers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.11.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.12.0"]
     }
   }
 }
@@ -318,7 +257,7 @@ your terminal PATH, so the terminal route needs the standalone Claude CLI.
   "mcpServers": {
     "rbook": {
       "command": "npx",
-      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.11.0"]
+      "args": ["--prefer-offline", "-y", "@aquex/reasonbook@4.12.0"]
     }
   }
 }
@@ -373,53 +312,12 @@ See **[TOOL_REFERENCE.md](TOOL_REFERENCE.md)** for the exact per-action paramete
 
 ## Share a project's record
 
-The owner can share a project with editors. Each keeps a full local copy, works locally, and
-exchanges changes either through reasonbook.ai, which keeps the project's referee copy and shows it
-on the dashboard, or directly through the owner's copy over SSH or with bundles carried by hand.
-Conflicting field values stay visible until someone settles them.
-
-Sharing is supported in the measured setup: two accounts operated by one person, on two machines,
-either through reasonbook.ai or in an owner/member star over SSH. A second person's collaboration and
-privacy experience remain unvalidated. Editors' rows become local project content for the owner's
-agents, without a foreign-source fence; invite people whose record content you trust.
-
-Through reasonbook.ai, each person signs in on their machine. The owner's agent shares the project,
-the owner shares it with the editor on the dashboard, and the editor gives their agent the join
-sentence from the project's page. The owner's copy can move the project back with
-`rbook_project(action="move", to="owner")` or `reasonbook move --to owner`, then catch a member's
-copy up over SSH, and the member confirms the move with `reasonbook sync --confirm-owner`. That was
-measured live with one member present, the move made through `rbook_project`. One machine keeps one
-live copy of a shared project.
-
-Start with the [sharing steps](docs/getting-started.md#share-a-projects-record) and
-[trust boundary](docs/trust.md#shared-copies). Sharing over SSH needs no dashboard account. Automatic exchanges
-run at session start and end where hooks run, and every five minutes for shared projects the server
-has opened with a saved route. `RBOOK_SHARED_SYNC=off` stops those automatic exchanges; explicit
-sync and bundle commands remain available.
+The [sharing guide](docs/sharing.md#share-a-projects-record) covers the dashboard, SSH and bundles.
+Read the [trust boundary](docs/trust.md#shared-copies) before sharing a full record with another person.
 
 ## Optional: hosted dashboard
 
-The dashboard is a separate service. Sign up at [reasonbook.ai](https://reasonbook.ai) to unlock:
-
-- **Dashboard mirror** — uploads a snapshot of your whole SQLite file for the dashboard to display.
-- **Project registry** — addressable `rbook://you/project-name` URIs across machines.
-- **Messaging** — `rbook_message(action="send")` between your own projects.
-- **Sharing** — share a project's record with editors, who join from its page; the dashboard keeps
-  the referee copy and shows the record, its members and a feed of what each created and moved. See [Share a project's record](#share-a-projects-record).
-
-To connect:
-
-```bash
-export RBOOK_DASHBOARD_URL=https://reasonbook.ai
-```
-
-Then run `rbook_auth(action="login_init")` from your agent. It returns a one-time `userCode` and `verificationUri` — paste the code at the URL in your browser, then run `rbook_auth(action="login_complete", deviceCode=...)` to finish. Credentials persist atomically to `~/.config/rbook/credentials.json` (mode 0600).
-
-`RBOOK_DASHBOARD_URL` defaults to `https://reasonbook.ai`. Without a dashboard credential, dashboard operations return a structured `DASHBOARD_NOT_CONFIGURED` error that names `rbook_auth(action="login_init")`. Local tools and direct shared-record exchanges work without the dashboard.
-
-With a stored user-scoped dashboard key or legacy environment credentials, explicit `rbook_session(action="complete")` and `rbook_sprint(action="complete")` calls attempt a background upload and may register the project first. For a registered project, an MCP tool call that actually writes its store also schedules an upload. It becomes due after 5 quiet minutes or 30 minutes of continuous writes, and starts within the next 60 seconds when no upload lease or failure backoff blocks it. A running server must have opened the project; work owed by a short-lived process survives for the next server. Each upload sends a consistent snapshot of the whole SQLite file, including pending, declined and expired proposals. Transfer time is additional, and concurrent servers share one upload lease per project.
-
-Upload results and failures appear in `rbook_status` and `rbook_review`. Transient failures back off for 1, 5, 15 and then 60 minutes, never earlier than Retry-After. Authentication failures are rechecked before pausing; hourly probes can resume uploads when the key works again. Confirmed deletion or replacement holds this project’s automatic uploads, closes and manual backfill. Other projects keep uploading. Tier and confirmed forbidden responses remain paused until a successful explicit attempt. Close receipts name the upload status and any hold. A server ending after an explicit close drains its accepted upload within a bound; an interrupted upload remains owed for the next server. A failed upload does not fail the local write or close. Implicit process-exit closes do not upload. Set `RBOOK_CHECKPOINT_SYNC=off` in the server environment to disable automatic uploads and manual backfill; it does not disable explicit sync, messaging, sign-in or shared-record exchanges. Logging out revokes a user-scoped key, leaving project keys valid for requested dashboard calls. See [SECURITY.md](SECURITY.md#outbound-network).
+See [connecting the hosted dashboard](docs/sharing.md#optional-connect-the-hosted-dashboard) for sign-in, uploads and their controls.
 
 ## Project resolution
 
@@ -576,11 +474,20 @@ Every tool returns a uniform envelope:
 - [Privacy](docs/privacy.md) — collection, dashboard visibility, retention and removal.
 - [The method](docs/method.md) — the five lines, the three levels and how to move up.
 - [Getting started](docs/getting-started.md) — client configuration and an optional Builder walkthrough.
+- [Sharing and the hosted dashboard](docs/sharing.md) — sharing routes, sign-in and upload controls.
 - [Harness coverage](docs/harnesses.md) — native adapters, MCP prompts and the fallback without hooks.
 - [Tool reference](TOOL_REFERENCE.md) — every tool, action, and parameter (generated from the tool definitions).
 - [Changelog](CHANGELOG.md) — release notes and tool-surface changes.
 
 ## Development
+
+For candidate testing, replace `kneelinghorse/reasonbook` with this checkout's absolute
+path. Start a new Claude Code session after installation. The plugin supplies the
+MCP server, hooks and commands; its first cold session may report that Reasonbook is
+installing and load the record from the next session. Use `/reasonbook:init` for a new
+record, `/reasonbook:start` to read it, `/reasonbook:close-out` to finish work, `/reasonbook:plan` to plan,
+and `/reasonbook:build` to execute. [Plugin installation](https://code.claude.com/docs/en/discover-plugins).
+Other tools use the [harness adapters and coverage guide](docs/harnesses.md).
 
 ```bash
 git clone https://github.com/kneelinghorse/reasonbook

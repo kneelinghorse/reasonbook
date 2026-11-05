@@ -75,6 +75,58 @@ export function readStoredProjectAddress(projectRoot: string): StoredAddressResu
   }
 }
 
+/**
+ * s110-m01: a store's earlier addresses as a rename records them (metadata.previous_rbook_addresses, a
+ * JSON array of addresses), normalized to rbook://; or why they cannot be read.
+ */
+export function readPreviousAddresses(
+  projectRoot: string
+): { readonly addresses: readonly string[] } | { readonly error: string } {
+  let db: Database.Database | undefined;
+  try {
+    db = new Database(resolveRecordPaths(projectRoot).dbPath, {
+      readonly: true,
+      fileMustExist: true,
+      timeout: processBusyTimeout() ?? 5000,
+    });
+    const row = db
+      .prepare("SELECT value FROM metadata WHERE key = 'previous_rbook_addresses'")
+      .get() as { value: unknown } | undefined;
+    if (row === undefined) return { addresses: [] };
+    const list: unknown = typeof row.value === 'string' ? JSON.parse(row.value) : null;
+    if (!Array.isArray(list) || list.some((entry) => typeof entry !== 'string'))
+      throw new Error('it is not a list of addresses');
+    return { addresses: (list as string[]).map((entry) => normalizeAddressScheme(entry)) };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  } finally {
+    db?.close();
+  }
+}
+
+/**
+ * s110-m01 (R, task 4): when no store holds `address`, the stores that held it before a rename, by
+ * the address each holds now; and a note for each store whose list could not be read, which is
+ * skipped, never counted as an unreadable identity (that refuses every lookup on the machine).
+ */
+function renamedFrom(
+  address: string,
+  stores: ReadonlyArray<{ readonly storePath: string; readonly address: string | null }>
+): { readonly now: string[]; readonly notes: string[] } {
+  const now: string[] = [];
+  const notes: string[] = [];
+  for (const store of stores) {
+    const previous = readPreviousAddresses(store.storePath);
+    if ('error' in previous)
+      notes.push(
+        `the previous addresses of the project at ${store.storePath} could not be read (${previous.error}), so it was skipped`
+      );
+    else if (previous.addresses.includes(address))
+      now.push(store.address ?? `the project at ${store.storePath}`);
+  }
+  return { now, notes };
+}
+
 /** Returns a path only after every active store was readable and exactly one address matched. */
 export function resolveRegisteredAddress(
   address: string,
@@ -88,19 +140,34 @@ export function resolveRegisteredAddress(
   }
   const matches: string[] = [];
   const unreadable: string[] = [];
+  const readable: Array<{ storePath: string; address: string | null }> = [];
   for (const row of registry.list()) {
     const result = readStoredProjectAddress(row.store_path);
     if (!result.identity) unreadable.push(`${row.store_path}: ${result.error}`);
-    else if (result.identity.address === address) matches.push(row.store_path);
+    else {
+      readable.push({ storePath: row.store_path, address: result.identity.address });
+      if (result.identity.address === address) matches.push(row.store_path);
+    }
   }
   if (unreadable.length) {
     return {
       error: `Cannot resolve '${address}': unreadable registered identity could hide a duplicate. ${unreadable.join('; ')}`,
     };
   }
+  // A previous address is read only when no store holds the address now, and still refused: a call
+  // that names an old address is told the new one rather than routed to it.
+  const renamed = matches.length === 0 ? renamedFrom(address, readable) : { now: [], notes: [] };
+  const notes = renamed.notes.length ? ` Note: ${renamed.notes.join('; ')}.` : '';
+  if (renamed.now.length) {
+    return {
+      error:
+        `Project address '${address}' is a previous address: the project is now ${renamed.now.join(' and ')}. ` +
+        `Pass ${renamed.now.length === 1 ? 'that address' : 'one of those addresses'}, or the project folder.${notes}`,
+    };
+  }
   if (matches.length !== 1) {
     return {
-      error: `Project address '${address}' has ${matches.length} matching active registered stores. Exactly one is required.`,
+      error: `Project address '${address}' has ${matches.length} matching active registered stores. Exactly one is required.${notes}`,
     };
   }
   return { projectRoot: matches[0] };

@@ -12,6 +12,13 @@ import type { RbookToolResult } from './types';
 import { appendWarnings, attachWarnings } from './format-warnings';
 import { checkWrite } from './write-guard';
 import { deriveProjectSlug } from './project-identity';
+import {
+  derivedSlugWarning,
+  readDashboardSlug,
+  slugReadFailure,
+  type DashboardSlugRead,
+} from './dashboard-slug';
+import { storeRecordedAt } from './dashboard-path-tie';
 import { registerResolvedProjectStore } from '../../intelligence/project-resolution';
 import { legacySyncRefusal } from './legacy-sync-refusal';
 import { settingIsOff } from '../../intelligence/legacy-compat';
@@ -466,7 +473,8 @@ export async function rbookDbReconcile(params: {
   }
   const dashboardClient = clientResult.data;
 
-  return withClientAsync(
+  const slugWarnings: string[] = [];
+  const result = await withClientAsync<ReconciliationResult>(
     async (db) => {
       // s100-m01 (the build's critics): the dashboard mirror is the owner's, so a member's copy has
       // none of its own to compare with, and asks the dashboard nothing about the project.
@@ -478,9 +486,12 @@ export async function rbookDbReconcile(params: {
           suggestion:
             "Shared directly, reconcile from the owner's copy; this copy's work reaches it at the next sync. Shared through the dashboard, the dashboard refreshes its mirror from its own copy, and no copy reconciles.",
         });
-      // Resolve project slug from metadata
+      // s110-m01: the slug the dashboard stored, derived from the name only when none is stored.
       const identity = getProjectIdentity(db);
-      const slug = deriveProjectSlug(identity.projectName);
+      const slugRead = readDashboardSlug(db, identity.projectName);
+      if (!slugRead.slug) return slugUnavailable<ReconciliationResult>('Reconciliation', slugRead);
+      const slug = slugRead.slug;
+      if (slugRead.derived) slugWarnings.push(derivedSlugWarning(slug));
 
       // Use project-scoped status endpoint for accurate table counts
       // (project-state endpoint caps entity arrays, e.g. sessions LIMIT 50)
@@ -536,6 +547,23 @@ export async function rbookDbReconcile(params: {
     },
     { projectRoot: params.projectRoot }
   );
+  return attachWarnings(result, slugWarnings);
+}
+
+/**
+ * s110-m01: a request that names this project's slug refuses when it has none to name. A failed read
+ * of the stored slug is never taken for an absent one, which would send a derived slug.
+ */
+function slugUnavailable<T>(what: string, read: DashboardSlugRead): RbookToolResult<T> {
+  return createError<T>({
+    code: 'DB_QUERY_FAILED',
+    message: read.error
+      ? `${what} needs this project's dashboard slug. ${slugReadFailure(read.error)} Nothing was sent to the dashboard.`
+      : `${what} needs this project's dashboard slug, and this store has neither a stored slug nor a project name to derive one from. Nothing was sent to the dashboard.`,
+    suggestion: read.error
+      ? 'Retry once the store reads normally; reasonbook doctor checks that it opens.'
+      : 'Name the project: rbook_project(action="init", projectRoot="<project folder>", projectName="<project name>"), then retry.',
+  });
 }
 
 /**
@@ -685,10 +713,15 @@ export async function identifyPgOrphans(params: {
   }
   const dashboardClient = clientResult.data;
 
-  return withClientAsync(
+  const slugWarnings: string[] = [];
+  const result = await withClientAsync<PgOrphanReport>(
     async (db) => {
+      // s110-m01: the slug the dashboard stored, derived from the name only when none is stored.
       const identity = getProjectIdentity(db);
-      const slug = deriveProjectSlug(identity.projectName);
+      const slugRead = readDashboardSlug(db, identity.projectName);
+      if (!slugRead.slug) return slugUnavailable<PgOrphanReport>('Orphan detection', slugRead);
+      const slug = slugRead.slug;
+      if (slugRead.derived) slugWarnings.push(derivedSlugWarning(slug));
 
       // Get full PG state
       const stateResult = await dashboardClient.getSyncProjectState(slug);
@@ -754,6 +787,7 @@ export async function identifyPgOrphans(params: {
     },
     { projectRoot: params.projectRoot }
   );
+  return attachWarnings(result, slugWarnings);
 }
 
 /** Get all entity IDs from a SQLite table as a Set */
@@ -860,8 +894,22 @@ export async function rbookDbPurge(params: {
           suggestion:
             "Shared directly, purge from the owner's copy, if the owner means to. Shared through the dashboard, no copy purges while it holds the record, the owner's included: the owner moves the project back first (reasonbook move --to owner), then purges from that copy.",
         });
+      // s110-m01, settled item 1: the slug the dashboard stored. A derived one can name another
+      // project's mirror, so it is taken only when this account's own listing (/mine) names it with
+      // this store's file as its Local Database Path; a store the dashboard's upload page created
+      // has a mirror and no local slug, and its derived slug can be right.
       const identity = getProjectIdentity(db);
-      const slug = deriveProjectSlug(identity.projectName);
+      const slugRead = readDashboardSlug(db, identity.projectName);
+      if (!slugRead.slug) return slugUnavailable<PurgeResult>('Purge', slugRead);
+      const slug = slugRead.slug;
+      const warnings: string[] = [];
+      if (slugRead.derived) {
+        const refusal = await derivedSlugRefusal(dashboardClient, db, slug);
+        if (refusal) return refusal;
+        warnings.push(
+          `${derivedSlugWarning(slug)} reasonbook.ai lists a project of this account with that slug and this store's file as its Local Database Path, so its mirror was purged.`
+        );
+      }
 
       const purgeResult = await dashboardClient.purgeMirror(slug, params.expectedSlug ?? undefined);
       if (!purgeResult.success || !purgeResult.data) {
@@ -871,17 +919,67 @@ export async function rbookDbPurge(params: {
       }
 
       // s95-m08: the client's warnings (an answer that named no tables) reach the answer.
+      warnings.push(...(purgeResult.warnings ?? []));
       return createSuccess<PurgeResult>(
         {
           purgedProject: purgeResult.data.purgedProject,
           tablesCleared: purgeResult.data.tablesCleared,
           rowsDeleted: purgeResult.data.rowsDeleted,
         },
-        purgeResult.warnings
+        warnings.length ? warnings : undefined
       );
     },
     { projectRoot: params.projectRoot }
   );
+}
+
+/**
+ * s110-m01: why purge will not take a derived slug, or null when this account's own listing ties it
+ * to this store: a project with that slug whose Local Database Path is this store's file, by the
+ * exact path tie (dashboard-path-tie.ts). A listing that cannot be read refuses; purge never guesses.
+ */
+async function derivedSlugRefusal(
+  client: DashboardClient,
+  db: RbookDatabaseClient,
+  slug: string
+): Promise<RbookToolResult<PurgeResult> | null> {
+  const owned = await client.listOwnedProjects();
+  if (!owned.success || !owned.data)
+    return createError<PurgeResult>({
+      code: owned.error?.code ?? 'DASHBOARD_ERROR',
+      message: `This store has no stored dashboard slug, and purge takes the one derived from its name ('${slug}') only once reasonbook.ai lists it as this account's project with this store's file. The list could not be read: ${owned.error?.message ?? 'unknown error'}. Nothing was purged.`,
+      suggestion: owned.error?.suggestion ?? 'Retry once reasonbook.ai answers.',
+    });
+  const here = owned.data.projects.filter((project) =>
+    storeRecordedAt(project.localDbPath, db.path)
+  );
+  if (here.some((project) => project.slug === slug)) return null;
+  // Critic round 1, F3: a record that names this store's file under another slug is this store's
+  // mirror, so the remedy names that slug and the step that stores it, not the path it already has.
+  // /mine lists archived projects too, so of two such records the one whose id the store holds is
+  // the one it uploads to (critic round 2, V3).
+  const idRow = db.getOne<MetadataRow>(
+    "SELECT value FROM metadata WHERE key = 'dashboard_project_id'"
+  );
+  const heldId = idRow.success ? idRow.data?.value : undefined;
+  const listed = here.find((project) => project.id === heldId) ?? here[0];
+  if (listed) {
+    const holdsId = listed.id === heldId;
+    const folder = path.resolve(db.path, '..', '..', '..');
+    return createError<PurgeResult>({
+      code: 'PURGE_SLUG_UNCONFIRMED',
+      message: `This store has no stored dashboard slug, and the one derived from its name ('${slug}') is not the slug reasonbook.ai lists for this store's file, '${listed.slug}'. Nothing was purged.`,
+      suggestion: holdsId
+        ? `Store '${listed.slug}' first: this store's next upload stores it, so close a session (rbook_session(action="start", type="custom", title="Store the dashboard slug", projectRoot="${folder}"), then rbook_session(action="complete", summary="Stored the dashboard slug", projectRoot="${folder}")), then retry the purge.`
+        : `Store '${listed.slug}' first: give the project a name that derives it, rbook_project(action="init", projectRoot="${folder}", projectName="${listed.slug}"), then retry the purge.`,
+    });
+  }
+  return createError<PurgeResult>({
+    code: 'PURGE_SLUG_UNCONFIRMED',
+    message: `This store has no stored dashboard slug, and the one derived from its name ('${slug}') may name another project's mirror: reasonbook.ai lists no project of this account with that slug whose Local Database Path is this store's file. Nothing was purged.`,
+    suggestion:
+      "If this store's mirror is the one to purge, set this store's file as that project's Local Database Path on its reasonbook.ai sharing page, then retry.",
+  });
 }
 
 export function formatPurgeForLLM(result: RbookToolResult<PurgeResult>): string {

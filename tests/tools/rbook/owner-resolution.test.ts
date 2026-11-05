@@ -1,5 +1,5 @@
-// ABOUTME: Tests for resolveAndPersistOwner — async seed of metadata.owner from the
-// authenticated dashboard identity. Guards Sprint 52 m01: no more rbook://unknown/*.
+// ABOUTME: Tests owner reconciliation against the authenticated account and the stored dashboard id.
+// ABOUTME: A renamed store's saved dashboard name preserves its name tie without trusting another name.
 
 import Database from 'better-sqlite3';
 import { LEGACY, toDashboardAddress } from '../../../src/intelligence/legacy-compat';
@@ -86,6 +86,35 @@ function stubDashboardClient(opts: {
 }
 
 describe('resolveAndPersistOwner', () => {
+  it.each([undefined, 'Old Name', 'Wrong Name'])(
+    'a renamed store heals only when its saved dashboard name ties to the owned listing (%s)',
+    async (dashboardName) => {
+      const { tempDir, client } = await makeTempClient();
+      try {
+        for (const [key, value] of Object.entries({
+          owner: 'derek',
+          dashboard_project_id: 'same-id',
+          dashboard_slug: 'new-name',
+          project_name: 'New Name',
+          ...(dashboardName ? { dashboard_project_name: dashboardName } : {}),
+        }))
+          client.execute('INSERT INTO metadata (key, value) VALUES (?, ?)', [key, value]);
+        const result = await resolveAndPersistOwner(
+          client,
+          stubDashboardClient({
+            username: 'derek',
+            projects: [{ id: 'same-id', name: 'Old Name', slug: 'new-name', isOwner: true }],
+          })
+        );
+        expect(result.ownerConfirmed).toBe(true);
+        expect(result.listedAsOwned).toBe(dashboardName === 'Old Name');
+        expect(result.listedName).toBe('Old Name');
+      } finally {
+        cleanup(tempDir, client);
+      }
+    }
+  );
+
   it('uses the authenticated account identity before a new store has a dashboard id', async () => {
     const { tempDir, client } = await makeTempClient();
     try {

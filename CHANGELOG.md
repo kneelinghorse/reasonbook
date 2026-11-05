@@ -2,6 +2,104 @@
 
 All notable changes to Reasonbook (published as `@aquex/cmos-mcp` before 4.0.0) are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.12.0] — 2026-11-04
+
+A changed project name no longer breaks its dashboard lookups; `reasonbook rename` changes its name and address.
+The directory recognizes your archived projects, and plugin updates avoid the checkout startup failure.
+
+### Added
+
+- `reasonbook registry archive|restore --project-root <root>` previews a registered folder's
+  archive state; `--apply` changes it and `--format json` returns the receipt. It keeps the row
+  and project data, and the project's next write-open restores an archived row.
+
+- `reasonbook rename --name <name> --slug <slug> [--project-root <root>]` previews an owned
+  project's rename; `--apply` updates its dashboard display name and slug, local identity and
+  registry, then uploads under the project's upload lease. It keeps project ids and the folder,
+  refuses shared records, and checks ownership, the exact store path and the new address before
+  changing anything. A rerun finishes a rename whose dashboard change succeeded but local write
+  failed. Run it while no other session is working in that project.
+
+### Changed
+
+- Recovery-file retention is explicit: automatic expiry is currently disabled; the planned policy
+  removes resolved recovery files after 30 days, protects collecting and unresolved attempts,
+  and keeps recovery records until project deletion. Backup copies have their own retention.
+
+- Plan-time review stops after four blocking rounds and one verification round. Later findings
+  become next steps for build-time review, and the plan is ratified; after round five this cap
+  takes precedence over the plan skill's feasibility rule.
+
+- An identity update (`rbook_context(action="update", contextType="project_identity")`) refuses an
+  address that would break lookups, and writes none of the call's fields: a scheme other than
+  `rbook://` or `cmos://` in lower case, spaces around the value, a third segment, a project part
+  outside the dashboard's slug grammar (lower-case letters and digits, with single hyphens), an owner
+  part other than the project's owner, or, with no owner known, outside the username grammar, and an
+  address another readable registered project already holds. A stored `rbook://derek/reasonbook.pro`
+  made every `rbook://` lookup on the machine refuse. The empty address stays writable. A path of
+  `rbook_address.x` is refused, and `cmos_address`, the storage key a write overwrote (a silent
+  no-op), is refused, naming `rbook_address`. Re-sending the address a project already holds is not
+  checked. When the address a new project's identity or the address heal would write breaks the rule,
+  the project keeps an empty address, and a send's identity check says why.
+- A lookup of a renamed project's previous address (`projectRoot: "rbook://<owner>/<old>"`) is
+  refused, naming the address the project has now, from the `previous_rbook_addresses` list a
+  rename records.
+- `rbook_message(action="list")` carries the address a reply needs, in `rbook://` form:
+  `senderAddress` on the inbox, `targetAddress` on the sent tab. It comes from the directory row for
+  the message's project id, else from an address the row carries, and is never built from a slug or
+  a name; the dashboard's message rows carry none themselves. `get` carries both, keeping the
+  dashboard's own `senderAddress` when it sends one and naming a differing one in a warning.
+- `reasonbook migrate --apply` finds a moved record's dashboard project through
+  `/api/projects/mine`, which lists archived projects too, and repoints its Local Database Path only
+  when the record names this store's file, on either layout and by folder identity. Each reason it
+  cannot has its own outcome and remedy: retry, sign in as the record's owner, the form on the
+  project's sharing page, or an end to the step when there is no record to repoint or no project id
+  to find it by. When the folder's own project key is refused, or does not list the project, it asks
+  again as the signed-in account.
+
+### Deprecated
+
+- `rbook_context`'s `searchTypes` keeps `"session"` until 5.0.0 for compatibility.
+  Context search does not read sessions; use `rbook_session(action="search")` instead.
+
+### Fixed
+
+- The build-manifest script prints help without rewriting the build's freshness receipt, and
+  rejects unknown arguments, missing values and repeated options before writing anything.
+
+- A cold plugin start in a checkout whose package name and version match the plugin now starts
+  the real server and keeps the session folder as its project. The npx fallback uses the plugin's
+  private data folder and no longer reads the project's `.npmrc`.
+- A locally renamed store whose dashboard id is still owned cannot register a second dashboard
+  project on close. A renamed store keeps the confirmed dashboard name for project-key healing;
+  refusals name the existing project and how to restore the tie.
+
+- `rbook_message(action="directory")` takes ownership from each row's own `isOwner`, which the
+  directory route sends on every row, archived projects included; `/api/projects/me`, which leaves
+  archived projects out, is asked only when a row lacks one and never overturns a `false`. The
+  account's archived projects (10 of its 30 when measured) read as its own and local, marked
+  ", archived". With `/me` failing, the warning names only the rows it leaves unmarked.
+- A move whose only unfinished step is the dashboard path update answers success, with
+  `pending: ["the dashboard path update"]`, where it answered `MIGRATION_REFUSED` after the record had
+  moved; its pending marker, and `reasonbook doctor`, name only the steps still owed. A retry that
+  fails keeps the move's backup in the marker.
+
+- The five dashboard requests that name a project's slug, onboarding's sync health,
+  `rbook_status`'s `last_sync_at`, and `rbook_db`'s reconcile, orphan check and purge, send the slug
+  the dashboard stored at registration (`metadata.dashboard_slug`), not one derived from the
+  project's name. A name with a dot or an em dash asked for a slug the dashboard does not hold: on
+  the machine that measured it, five of sixteen projects did, reasonbook.ai answered 404 to each, and
+  their `last_sync_at` read as null. A project with no stored slug still derives one, and the answer
+  says it was derived. A stored slug that cannot be read is never taken for a missing one: status and
+  onboarding answer without the time or the sync health and say why, and reconcile, the orphan check
+  and purge refuse. Purge takes a derived slug only when reasonbook.ai lists a project of the account
+  with that slug whose Local Database Path is the project's own file; when it lists the file under
+  another slug, the refusal names that slug and how to store it. With no slug to name at all,
+  `rbook_status` answers `last_sync_at: null` and says why, where it reported every project's latest
+  sync as this project's.
+- `rbook_status` answers for a project whose stored name is a number; it failed with
+  "projectName.toLowerCase is not a function".
+
 ## [4.11.0] — 2026-11-03
 
 An agent can settle a draft that a recorded decision already answered with one reply line,
@@ -138,6 +236,14 @@ the dashboard refused on every close. No MCP tool definition changed.
   and the directory reads those as not owned, as 4.10.0 did. When `/me` fails, the directory's
   warning says no row is claimed as the account's own, although each row keeps the directory
   route's own `isOwner`.
+- `reasonbook migrate` refuses some projects whose git works, and writes nothing:
+  - one whose git config has an `includeIf` with a false condition and a path naming a user this
+    machine lacks;
+  - one moved with `HOME` unset, or with the legacy `GIT_CONFIG` variable exported.
+
+  The refusal reads `git -c failed in <folder>: … failed to expand user dir …`, or ends in `exit 1`.
+  Until a later release removes it, fix or remove that `includeIf`, set `HOME`, or unset
+  `GIT_CONFIG`, then run the move again.
 
 ## [4.10.0] — 2026-11-01
 

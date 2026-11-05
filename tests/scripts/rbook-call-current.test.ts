@@ -111,11 +111,8 @@ function startUpload() {
       });
     });
   } else if (MODE === 'upload-late-mark') {
-    later(700, () => {
-      upload.mark(true);
-      const lease = upload.claim(true);
-      later(400, () => upload.finish(lease, { success: true }));
-    });
+    // This case advances at actual registry reads, so load cannot hide a short-lived mark.
+    log({ event: 'late-upload-ready' });
   } else if (MODE === 'upload-exit-before-mark') {
     later(300, () => process.exit(0));
   } else if (MODE === 'upload-busy') {
@@ -179,6 +176,7 @@ server.setRequestHandler('tools/call', async ({ params }) => {
   }
   if (upload) {
     startUpload();
+    log({ event: 'upload-response', at: Date.now() });
     return { content: [], structuredContent: { success: true, data: { dashboardUpload: { started: true } } } };
   }
   if (process.env.CURRENT_CALL_MODE === 'transport-error') process.exit(0);
@@ -209,12 +207,51 @@ beforeEach(() => {
   fs.writeFileSync(path.join(checkout, 'dist', 'index.js'), SERVER);
   // The helper reads the registry with the server's own modules, which the built dist holds.
   fs.mkdirSync(path.join(checkout, 'dist', 'intelligence'));
-  for (const name of ['legacy-compat', 'project-upload-reader'])
+  for (const name of ['legacy-compat', 'project-upload-reader']) {
+    const target = path.join(checkout, 'dist', 'intelligence', `${name}.js`);
     fs.writeFileSync(
-      path.join(checkout, 'dist', 'intelligence', `${name}.js`),
+      target,
       `require(${JSON.stringify(path.join(ROOT, 'tests/helpers/ts-register.js'))});\n` +
         `module.exports = require(${JSON.stringify(path.join(ROOT, `src/intelligence/${name}.ts`))});\n`
     );
+    if (name === 'project-upload-reader')
+      fs.appendFileSync(
+        target,
+        String.raw`
+if (process.env.CURRENT_CALL_MODE === 'upload-late-mark') {
+  const fs = require('fs');
+  const reader = module.exports;
+  const upload = require(${JSON.stringify(path.join(ROOT, 'src/intelligence/project-upload-state.ts'))});
+  const Database = require('better-sqlite3');
+  const log = (event) => fs.appendFileSync(process.env.CURRENT_CALL_LOG, JSON.stringify(event) + '\n');
+  const write = (step) => {
+    const registry = new Database(process.env.CURRENT_CALL_REGISTRY);
+    try { step(registry); } finally { registry.close(); }
+  };
+  let phase = 0;
+  let lease;
+  module.exports = { ...reader, readUploadState(db, id) {
+    const observed = reader.readUploadState(db, id);
+    if (phase === 0 && fs.readFileSync(process.env.CURRENT_CALL_LOG, 'utf8').includes('"event":"late-upload-ready"')) {
+      log({ event: 'late-mark-first-poll', explicitGeneration: observed?.explicitGeneration });
+      write((registry) => {
+        upload.markUploadOwed(registry, id, Date.now(), true);
+        lease = upload.claimUpload(registry, id, Date.now(), true);
+      });
+      phase = 1;
+      log({ event: 'late-mark-created' });
+    } else if (phase === 1 && observed?.explicitGeneration != null) {
+      log({ event: 'late-mark-observed' });
+      write((registry) => upload.finishUpload(registry, id, lease, Date.now(), { success: true }));
+      phase = 2;
+      log({ event: 'late-mark-delivered' });
+    }
+    return observed;
+  } };
+}
+`
+      );
+  }
   fs.symlinkSync(path.join(ROOT, 'node_modules'), path.join(checkout, 'node_modules'), 'dir');
 });
 
@@ -224,6 +261,7 @@ interface Report {
   status: number | null;
   stdout: string;
   stderr: string;
+  finishedAt: number;
 }
 
 function run(request: unknown, mode = 'fresh', env: NodeJS.ProcessEnv = {}): Promise<Report> {
@@ -246,13 +284,14 @@ function run(request: unknown, mode = 'fresh', env: NodeJS.ProcessEnv = {}): Pro
     child.stdout.on('data', (chunk) => (stdout += String(chunk)));
     child.stderr.on('data', (chunk) => (stderr += String(chunk)));
     child.on('error', reject);
-    child.on('close', (status) => resolve({ status, stdout, stderr }));
+    child.on('close', (status) => resolve({ status, stdout, stderr, finishedAt: Date.now() }));
     child.stdin.end(typeof request === 'string' ? request : JSON.stringify(request));
   });
 }
 
 function events(): Array<{
   event: string;
+  at?: number;
   name?: string;
   pid?: number;
   args?: unknown;
@@ -265,6 +304,17 @@ function events(): Array<{
         .split('\n')
         .map((line) => JSON.parse(line))
     : [];
+}
+
+function uploadElapsed(report: Report): number {
+  const receipts = events().filter((event) => event.event === 'upload-response');
+  expect(receipts).toHaveLength(1);
+  expect(Number.isFinite(receipts[0].at)).toBe(true);
+  // Exclude process startup, module loading and preflight, but retain response delivery,
+  // the upload observation window and child shutdown in the same real-clock budget.
+  const duration = report.finishedAt - receipts[0].at!;
+  expect(duration).toBeGreaterThanOrEqual(0);
+  return duration;
 }
 
 function request(): { name: string; arguments: { projectRoot: string; notes: string } } {
@@ -593,13 +643,23 @@ describe('s109-m04 (#799): a close’s upload is reported by the generation it m
       'upload-late-mark',
       await registered(path.join(checkout, 'config'))
     );
+    expect(report.status).toBe(0);
     expect(reported(report)).toMatch(/^Dashboard upload: delivered/);
+    // The fixture must prove the ordering this case names, even when CPU pressure delays a poll.
+    expect(order().filter((event) => event.startsWith('late-mark-'))).toEqual([
+      'late-mark-first-poll',
+      'late-mark-created',
+      'late-mark-observed',
+      'late-mark-delivered',
+    ]);
+    expect(events().find((event) => event.event === 'late-mark-first-poll')).toMatchObject({
+      explicitGeneration: null,
+    });
     expectClosed();
   });
 
   it('the server exiting before any mark stops the wait at once: no upload observed', async () => {
     const env = await registered(path.join(checkout, 'config'));
-    const started = Date.now();
     const report = await run(request(), 'upload-exit-before-mark', {
       ...env,
       RBOOK_CALL_UPLOAD_MARK_MS: '8000',
@@ -607,19 +667,20 @@ describe('s109-m04 (#799): a close’s upload is reported by the generation it m
     expect(reported(report)).toMatch(
       /^Dashboard upload: no upload observed — .* before the server exited/
     );
-    expect(Date.now() - started).toBeLessThan(6000);
+    const elapsed = uploadElapsed(report);
+    expect(elapsed).toBeLessThan(6000);
     expectClosed();
   });
 
   it('no mark ends the wait at the mark window, not at the cap', async () => {
     const env = await registered(path.join(checkout, 'config'));
-    const started = Date.now();
     const report = await run(request(), 'upload-no-mark', {
       ...env,
       RBOOK_CALL_UPLOAD_CAP_MS: '20000',
     });
     expect(reported(report)).toMatch(/^Dashboard upload: no upload observed — .* within 1\.5 s/);
-    expect(Date.now() - started).toBeLessThan(10_000);
+    const elapsed = uploadElapsed(report);
+    expect(elapsed).toBeLessThan(10_000);
     expectClosed();
   });
 

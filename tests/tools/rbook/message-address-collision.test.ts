@@ -12,11 +12,12 @@
  * for exactly that reason, hidden behind an `unreadCount` that is USER-WIDE while the rows
  * beside it are key-scoped ("0 total, 7 unread" was a header this tool really printed).
  *
- * THE FIXTURES ARE THE LIVE SHAPES, not idealized ones. `/api/projects/directory/public` returns
- * `{id, name, slug, owner, ownerDisplayName, [LEGACY.wireAddressKey], createdAt}` and NO `isOwner` and NO
- * `description` (measured 2026-08-10 against https://reasonbook.ai, 37 rows). `/api/projects/me`
- * is the only route that returns `isOwner`. A fixture that added `isOwner` to the directory row
- * would test a dashboard that does not exist and would hide the very defect below.
+ * THE DIRECTORY FIXTURE IS ITS AUGUST 2026 SHAPE. Measured 2026-08-10 against https://reasonbook.ai
+ * (37 rows), `/api/projects/directory/public` returned `{id, name, slug, owner, ownerDisplayName,
+ * [LEGACY.wireAddressKey], createdAt}` and no `isOwner` or `description`. Measured 2026-11-03
+ * (s110-m02, probe O), it sends a boolean `isOwner` on every row and `archivedAt` on archived ones,
+ * which tests/tools/rbook/directory-ownership.test.ts holds. A row without `isOwner` is kept here
+ * because it exercises `/api/projects/me` filling such a row, the only case it is asked for.
  *
  * WHAT THIS SUITE DOES NOT COVER. The send path and the credential-arm selection are asserted
  * over MCP stdio against the BUILT dist/ in tests/e2e/message-address-collision.e2e.ts — a
@@ -56,7 +57,7 @@ const PRO_ID = 'c02ea1cb-3db7-40b0-a263-7d17ef2a656f';
 const MCP_ID = 'ec2b4987-dbc1-4f16-946e-9843c4080ac1';
 const TWIN_ID = '00000000-0000-4000-8000-000000000001';
 
-/** A row copied verbatim in SHAPE from the live directory body — note: no isOwner, no description. */
+/** A row in the August 2026 SHAPE of the directory body: no isOwner, no description. */
 const DIRECTORY_BODY = {
   projects: [
     {
@@ -92,7 +93,7 @@ const DIRECTORY_BODY = {
   totalCount: 3,
 };
 
-/** GET /api/projects/me — the ONLY route that returns isOwner. */
+/** GET /api/projects/me — asked only for a directory row that carries no isOwner (s110-m02). */
 const MY_PROJECTS_BODY = {
   projects: [
     {
@@ -306,7 +307,7 @@ describe('rbook_message(directory) — ambiguity + ownership (s86-m07 C2)', () =
     }
   });
 
-  it("marks the operator's own project local using /api/projects/me, which the directory route never reports", async () => {
+  it("marks the operator's own project local using /api/projects/me when its directory row carries no isOwner", async () => {
     const client = mockClient();
     client.listDirectory.mockResolvedValue(
       createSuccess(await normalizedDirectory(DIRECTORY_BODY))

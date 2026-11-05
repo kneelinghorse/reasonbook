@@ -156,6 +156,36 @@ describe('s92-m06 — tool definitions say what the code does', () => {
 // ─── Claims a reader could act on ────────────────────────────────────────────
 
 describe('s92-m06 — the shipped documents agree with the code and with each other', () => {
+  it('keeps installation before the first decision short and sends detailed setup to its guide', () => {
+    const intro = read('README.md').split('## Propose a decision, then approve it')[0];
+    expect(intro).not.toContain('/hooks');
+    expect(intro).not.toContain('pluginServer');
+    expect(intro).not.toContain('## Existing installations and candidate testing');
+    expect(intro).toContain('codex plugin marketplace add kneelinghorse/reasonbook');
+    expect(intro).toContain('codex plugin add reasonbook@reasonbook');
+    expect(intro).toContain('reasonbook-chat@reasonbook');
+    expect(intro).toContain('docs/harnesses.md#codex');
+    expect(intro).toContain('`reasonbook doctor`');
+    expect(intro).toContain('`reasonbook migrate`');
+    expect(intro).toContain('docs/migrating-from-cmos.md');
+  });
+
+  it('ships the sharing guide and keeps existing entry links and the rename guide reachable', () => {
+    const pkg = JSON.parse(read('package.json')) as { files: string[] };
+    expect(pkg.files).toContain('docs/sharing.md');
+    expect(read('README.md')).toContain('docs/sharing.md');
+    const guide = read('docs/getting-started.md');
+    expect(guide).toContain("## Share a project's record");
+    expect(guide).toContain('sharing.md');
+    expect(guide).not.toContain('### Through reasonbook.ai');
+    expect(guide).toContain('## Rename an owned project');
+    expect(guide).toContain('reasonbook rename --name "My Project" --slug my-project');
+    const sharing = read('docs/sharing.md');
+    expect(sharing).toContain('### Through reasonbook.ai');
+    expect(sharing).toContain('### Directly over SSH');
+    expect(sharing).toContain('## Optional: connect the hosted dashboard');
+  });
+
   it('Node 20: engines and every doc that states a Node version', () => {
     const pkg = JSON.parse(read('package.json')) as { engines: { node: string } };
     expect(pkg.engines.node).toBe('>=20');
@@ -169,7 +199,7 @@ describe('s92-m06 — the shipped documents agree with the code and with each ot
   });
 
   it('no shipped document says backups are manual only, or that nothing snapshots before destruction', () => {
-    for (const rel of ['README.md', 'SECURITY.md', 'docs/getting-started.md']) {
+    for (const rel of ['README.md', 'SECURITY.md', 'docs/getting-started.md', 'docs/sharing.md']) {
       const text = read(rel);
       expect({
         rel,
@@ -190,8 +220,23 @@ describe('s92-m06 — the shipped documents agree with the code and with each ot
     expect(read('README.md')).toContain('RBOOK_CHECKPOINT_SYNC');
   });
 
-  it('all three network disclosures name automatic writes, due times and the local-only opt-out', () => {
-    for (const rel of ['README.md', 'SECURITY.md', 'docs/getting-started.md']) {
+  it('the landing disclosure keeps the upload trigger, timing and opt-out before the detailed guide', () => {
+    const text = read('README.md')
+      .split('## What leaves your machine')[1]
+      .split('## What it is')[0]
+      .replace(/\s+/g, ' ');
+    expect(text).toMatch(/registered project.*MCP tool writes/);
+    expect(text).toContain('whole file');
+    expect(text).toContain('5 quiet minutes');
+    expect(text).toContain('30 minutes');
+    expect(text).toContain('60 seconds');
+    expect(text).toContain('RBOOK_CHECKPOINT_SYNC=off');
+    expect(text).toContain('Implicit process-exit closes do not upload');
+    expect(text).toContain('#optional-hosted-dashboard');
+  });
+
+  it('the detailed network disclosures name automatic writes, due times and the local-only opt-out', () => {
+    for (const rel of ['SECURITY.md', 'docs/sharing.md']) {
       const text = read(rel).replace(/\s+/g, ' ');
       // A reader must be able to decide whether background uploads fit their project before
       // enabling credentials. Completion-only wording would hide m10's new network trigger.
@@ -217,8 +262,10 @@ describe('s92-m06 — the shipped documents agree with the code and with each ot
 
   it('getting-started no longer says register issues a key or that an empty URL breaks sign-in', () => {
     const guide = read('docs/getting-started.md');
-    expect(guide).not.toMatch(/auto-issued on first registration/);
-    expect(guide).not.toMatch(/`RBOOK_DASHBOARD_URL` is empty/);
+    for (const text of [guide, read('docs/sharing.md')]) {
+      expect(text).not.toMatch(/auto-issued on first registration/);
+      expect(text).not.toMatch(/`RBOOK_DASHBOARD_URL` is empty/);
+    }
     expect(guide).toContain('No Reasonbook project in');
   });
 

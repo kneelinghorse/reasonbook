@@ -8,6 +8,7 @@ import { execFileSync, spawn, type ChildProcess } from 'child_process';
 
 const script = path.resolve(__dirname, '../../scripts/check-test-load.js');
 const { selectTests, summarizeReport, runGate, HISTORICAL_FAILURES, BUDGET_MS } = require(script);
+const { ELAPSED_BOUND } = require('../../scripts/test-load-contract');
 let scratch: string;
 let root: string;
 let files: string[];
@@ -97,10 +98,119 @@ it('unites both tracked lexical predicates with historical failures, respecting 
   expect(result.predicates.B).toContain('tests/new-budget.test.ts');
   expect(result.predicates.C).toContain('tests/tools/rbook/reads-never-write.test.ts');
   expect(result.predicates.C).toContain('tests/signals/feedback-regex.test.ts');
+  // s110-m05: C retains these files even when all their lexical triggers disappear.
+  for (const file of [
+    'tests/intelligence/registered-stores-readonly.test.ts',
+    'tests/tools/rbook/draft-grammar.test.ts',
+    'tests/tools/rbook/identity-registration-split.test.ts',
+    'tests/scripts/rbook-call-current.test.ts',
+  ]) {
+    expect(result.predicates.C).toContain(file);
+    expect(result.files).toContain(file);
+    expect(result.predicates.B).not.toContain(file);
+  }
   expect(result.excluded).toEqual([
     'tests/e2e/not-default.e2e.ts',
     'tests/private/not-default.test.ts',
   ]);
+});
+
+// s110-m05 (#941/#953): twelve retained B sites, ten unchanged and two reanchored
+// from process startup to upload receipt. Each suffix identifies one assertion, not a file exemption.
+const RETAINED_B = [
+  ['tests/cli/hook-cli.test.ts', '2000', 'Prompt hook deadline/race'],
+  ['tests/cli/hook-cli.test.ts', '4000', 'Session-start hook deadline/race'],
+  ['tests/cli/hook-cli.test.ts', '3000', 'Exclusive cross-process lock beats the hook deadline'],
+  ['tests/e2e/hook-cli.e2e.ts', '3000', 'Spawn budget; outside the default Jest population'],
+  [
+    'tests/helpers/upload-server-source.test.ts',
+    'OrEqual(Date.now() - start)',
+    'B false positive: compares receipt time with observed elapsed time, not a speed budget',
+  ],
+  ['tests/plugin/install-state.test.ts', '1500', 'PATH probe must respect its deadline'],
+  ['tests/referee/fresh-copy.test.ts', '5000', 'Finite runaway guard for recursive view refusal'],
+  ['tests/scripts/rbook-call-current.test.ts', '15_000', 'Exit after a mark beats the 20s cap'],
+  [
+    'tests/scripts/rbook-call-current.test.ts',
+    '6000',
+    'Receipt-to-close exit beats the 8s mark window',
+  ],
+  [
+    'tests/scripts/rbook-call-current.test.ts',
+    '10_000',
+    'Receipt-to-close no-mark beats the 20s cap',
+  ],
+  [
+    'tests/tools/rbook/e2e-lifecycle.test.ts',
+    '200',
+    'Opt-in RUN_PERF_ASSERTS performance assertion',
+  ],
+  ['tests/tools/rbook/upload-shutdown.test.ts', '4_000', 'Child shutdown/signal budget'],
+];
+const ALREADY_FAST_B = [
+  ['tests/signals/feedback-fixes.test.ts', '50', 'Already takes the fastest of five rule calls'],
+  [
+    'tests/signals/feedback-regex.test.ts',
+    '50',
+    'Already takes the fastest of five classifier calls',
+  ],
+];
+
+it('classifies every remaining tracked B site and rejects stale exceptions in both directions', () => {
+  const repository = path.resolve(__dirname, '../..');
+  const tracked = execFileSync('git', ['ls-files', '-z', '--', 'tests'], {
+    cwd: repository,
+    encoding: 'utf8',
+  })
+    .split('\0')
+    .filter(Boolean);
+  const actual: string[] = [];
+  for (const file of tracked) {
+    const bytes = fs.readFileSync(path.join(repository, file));
+    if (bytes.includes(0)) continue;
+    let source: string;
+    try {
+      source = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ERR_ENCODING_INVALID_ENCODED_DATA') continue;
+      throw error;
+    }
+    for (const line of source.split(/\r?\n/)) {
+      if (ELAPSED_BOUND.test(line))
+        actual.push(`${file}:${line.slice(line.indexOf('.toBeLessThan')).trim()}`);
+    }
+  }
+  const expected = [...RETAINED_B, ...ALREADY_FAST_B].map(([file, bound, reason]) => {
+    expect(reason.length).toBeGreaterThan(0);
+    const suffix = bound.startsWith('OrEqual') ? `${bound};` : `(${bound});`;
+    return `${file}:.toBeLessThan${suffix}`;
+  });
+  expect(RETAINED_B).toHaveLength(12);
+  expect(ALREADY_FAST_B).toHaveLength(2);
+  expect(actual.sort()).toEqual(expected.sort());
+
+  for (const [file] of ALREADY_FAST_B) {
+    const source = fs.readFileSync(path.join(repository, file), 'utf8');
+    const lines = source.split('\n');
+    const boundAt = lines.findIndex((line) => ELAPSED_BOUND.test(line));
+    const sampleBlock = lines.slice(Math.max(0, boundAt - 12), boundAt).join('\n');
+    expect(sampleBlock).toMatch(/for \(let sample = 0; sample < 5; sample \+= 1\)/);
+    expect(sampleBlock).toContain('elapsed = Math.min(elapsed, performance.now() - started)');
+  }
+
+  // Scope/complement: B is a spelling predicate, not all timing assertions. It misses
+  // differently named variables and timing hidden in helpers, assert or conditional throws.
+  // Name this default-suite exception explicitly: lookup time must exclude a 300ms pause.
+  const telemetry = fs.readFileSync(
+    path.join(repository, 'tests/helpers/telemetry-observation.test.ts'),
+    'utf8'
+  );
+  const outsideB = telemetry
+    .split('\n')
+    .find((line) => line.includes('expect(row.lookupMs).toBeLessThan(250)'));
+  expect(outsideB).toBeDefined();
+  expect(ELAPSED_BOUND.test(outsideB!)).toBe(false);
+  expect(telemetry).toContain('pauseCapMs: 300');
 });
 it('fails loudly when a historical file vanishes instead of shrinking the gate silently', () => {
   git('rm', files[0]);

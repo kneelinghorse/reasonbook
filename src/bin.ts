@@ -28,6 +28,8 @@ export const CLI_VERBS: ReadonlySet<string> = new Set([
   'feedback',
   'drafts',
   'migrate',
+  'rename',
+  'registry',
   'sync',
   'join',
   'copy',

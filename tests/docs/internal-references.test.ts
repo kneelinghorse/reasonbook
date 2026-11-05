@@ -18,7 +18,7 @@
  *
  * WHAT IS CHECKED: every string value and property name in the tool definitions the server publishes, both
  * the full definitions (which generate TOOL_REFERENCE.md) and the tools/list definitions, and the
- * shipped prose: README.md, SECURITY.md, docs/getting-started.md, docs/harnesses.md,
+ * shipped prose: README.md, SECURITY.md, docs/getting-started.md, docs/sharing.md, docs/harnesses.md,
  * TOOL_REFERENCE.md, and the seed's README and schema plus Markdown/JSON at every depth of docs,
  * templates, tiers, context and foundational-docs; the marketplace and plugin manifests, skills,
  * adapter Markdown/JSON and static string/template spans in every plugin hook module and root-level
@@ -102,6 +102,7 @@ const SHIPPED_FILES = [
   'README.md',
   'SECURITY.md',
   'docs/getting-started.md',
+  'docs/sharing.md',
   'docs/harnesses.md',
   // s95-m08: public, though not in the npm package; the plugin README links to it on GitHub.
   'docs/trust.md',
@@ -306,6 +307,7 @@ describe('s92-m06 — no internal sprint, mission, decision or issue references 
   it('includes the seed context and foundational documents in the published surface', () => {
     expect(SHIPPED_FILES).toEqual(
       expect.arrayContaining([
+        'docs/sharing.md',
         'docs/harnesses.md',
         'adapters/codex/hooks.json',
         'rbook-seed/context/master_context.json',

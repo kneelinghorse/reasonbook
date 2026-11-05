@@ -5,6 +5,8 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const sorted = (values) => [...new Set(values)].sort();
+const ELAPSED_BOUND =
+  /expect\((Date\.now\(\) - [a-zA-Z]+|[a-zA-Z.]*elapsed[a-zA-Z.]*)\)\.toBeLessThan/;
 const HISTORICAL_FAILURES = [
   'tests/cli/hook-adapter-isolation.test.ts',
   'tests/cli/hook-cli.test.ts',
@@ -17,6 +19,7 @@ const HISTORICAL_FAILURES = [
   'tests/index.runtime.test.ts',
   'tests/integration/codex-request-dispatch.test.ts',
   'tests/intelligence/cross-store-query.test.ts',
+  'tests/intelligence/registered-stores-readonly.test.ts',
   'tests/plugin/detached-install.test.ts',
   'tests/plugin/install-state.test.ts',
   'tests/plugin/install-worker.test.ts',
@@ -25,13 +28,16 @@ const HISTORICAL_FAILURES = [
   'tests/referee/dashboard-transport.test.ts',
   'tests/referee/reference-server.test.ts',
   'tests/scripts/restart-session-server.test.ts',
+  'tests/scripts/rbook-call-current.test.ts',
   'tests/server-dual-era.test.ts',
   'tests/signals/feedback-regex.test.ts',
   'tests/tools/rbook/author-names.test.ts',
   'tests/tools/rbook/dashboard-upload-auth.test.ts',
+  'tests/tools/rbook/draft-grammar.test.ts',
   'tests/tools/rbook/draft-real-store.test.ts',
   'tests/tools/rbook/draft-reply-questions.test.ts',
   'tests/tools/rbook/feedback-fleet.test.ts',
+  'tests/tools/rbook/identity-registration-split.test.ts',
   'tests/tools/rbook/lifecycle-decoupling.test.ts',
   'tests/tools/rbook/rbook-agent-onboard.test.ts',
   'tests/tools/rbook/rbook-sprint-carry-forward.test.ts',
@@ -68,7 +74,6 @@ function selectTests(root, eligiblePaths) {
     );
   const A = [],
     B = [];
-  const bound = /expect\((Date\.now\(\) - [a-zA-Z]+|[a-zA-Z.]*elapsed[a-zA-Z.]*)\)\.toBeLessThan/;
   for (const file of tracked) {
     const bytes = fs.readFileSync(path.join(root, file));
     if (bytes.includes(0)) continue;
@@ -80,7 +85,7 @@ function selectTests(root, eligiblePaths) {
       throw error;
     }
     if (source.includes('runCli(') && source.includes("'hook'")) A.push(file);
-    if (source.split(/\r?\n/).some((line) => bound.test(line))) B.push(file);
+    if (source.split(/\r?\n/).some((line) => ELAPSED_BOUND.test(line))) B.push(file);
   }
   const union = sorted([...A, ...B, ...HISTORICAL_FAILURES]);
   const files = union.filter((file) => eligible.has(file) && !file.startsWith('tests/private/'));
@@ -150,4 +155,4 @@ function summarizeReport(report, files, root) {
   };
 }
 
-module.exports = { HISTORICAL_FAILURES, selectTests, summarizeReport, git };
+module.exports = { HISTORICAL_FAILURES, ELAPSED_BOUND, selectTests, summarizeReport, git };
