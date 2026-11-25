@@ -25,18 +25,17 @@ export { draftStoreKey };
  * ONE FILE PER STORE, `<configDir>/runtime/drafts/<store key>.sqlite`, the key hashing the project
  * id and the store's NATIVE real path ({@link draftStoreKey}): a hook handed `cwd` and a server
  * handed a project root typed in another letter case must find the same file on a
- * case-insensitive disk, or every approval would silently read agent-attested (the plan critic,
+ * case-insensitive disk, or the approval would be unavailable to the recording process (the plan critic,
  * N14). Every row is keyed by the 16-hex harness session hash; no raw harness id, transcript path
  * or prompt reaches it beyond the operator's message itself.
  *
  * WHAT A REPLY SHOWED (the plan critic, B1). Stop records the drafts the reply just put to the
  * operator: the ones its Would record lines created or repeated, and pending ones it named by id.
- * The next message binds only to those, so an operator's "proceed" or "no" never lands on a draft
- * they were not shown.
+ * The next message can discuss or decline those drafts. Approval identifies a single named choice.
  *
  * THE SESSION MATCH IS THE LOOKUP. Words stored under one session can only be found by a lookup
  * under that session, so a recording server linked to another conversation (or to none) finds
- * nothing and records `agent-attested`.
+ * no approval and cannot record from the draft.
  */
 
 export const STARTS_KEPT = 200;
@@ -99,10 +98,14 @@ function requireSafe(file: string, target: TelemetryTarget): boolean {
 export function openDraftRuntime(
   dbPath: string,
   env: NodeJS.ProcessEnv = process.env,
-  options: { readonly readonly?: boolean; readonly timeoutMs?: number } = {}
+  options: {
+    readonly readonly?: boolean;
+    readonly existingOnly?: boolean;
+    readonly timeoutMs?: number;
+  } = {}
 ): DraftRuntime | null {
   let directory: string | undefined;
-  if (options.readonly) {
+  if (options.readonly || options.existingOnly) {
     try {
       directory = draftRuntimeDir(env);
       fs.statSync(directory);
@@ -123,9 +126,9 @@ export function openDraftRuntime(
   if (!requireSafe(file, target)) return null;
   const timeout = options.timeoutMs ?? 100;
   let db: Database.Database;
-  if (options.readonly) {
+  if (options.readonly || options.existingOnly) {
     if (!fs.existsSync(file)) return null;
-    db = new Database(file, { readonly: true, fileMustExist: true, timeout });
+    db = new Database(file, { readonly: options.readonly === true, fileMustExist: true, timeout });
   } else {
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
     if (!requireSafe(file, target)) return null;
@@ -300,6 +303,8 @@ export function saveScan(
 
 export {
   carryShown,
+  clearCurrentQuestion,
+  forgetShownAnswers,
   dropKept,
   peekShown,
   readShown,

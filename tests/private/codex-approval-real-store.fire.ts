@@ -59,7 +59,7 @@ it('a real-store copy binds the hook approval to the Codex request once', async 
     };
     await hook('session-start', { source: 'startup' });
     await hook('stop', { last_assistant_message: `Would record: ${content}` });
-    await hook('prompt', { prompt: 'approved' });
+    await hook('prompt', { prompt: `I approve this decision: ${content}` });
     const read = new Database(destination, { readonly: true });
     let draft: number;
     try {
@@ -100,7 +100,9 @@ it('a real-store copy binds the hook approval to the Codex request once', async 
             'SELECT approval_mode, approval_words FROM strategic_decisions WHERE decision_text = ?'
           )
           .all(content)
-      ).toEqual([{ approval_mode: 'approved', approval_words: 'approved' }]);
+      ).toEqual([
+        { approval_mode: 'approved', approval_words: `I approve this decision: ${content}` },
+      ]);
     } finally {
       verified.close();
     }

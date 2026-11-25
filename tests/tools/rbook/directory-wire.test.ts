@@ -135,7 +135,10 @@ it('changes only the four resolved instruction clauses and the edition disclosur
         'Record choices in your own remit directly.',
         'Record a decision when the user asks for it or approves it.'
       )
-      .replace('record it, with fromDraft when Reasonbook gave it an id.', 'record it.') +
+      .replace(
+        'Record their choice, with fromDraft for a linked approval.',
+        'Record their choice.'
+      ) +
       " This edition keeps this project's record on this machine only; sharing, the dashboard and messages need the full plugin."
   );
   // s106-m05 round 3: the edition deletes fromDraft, so its instructions never name it.

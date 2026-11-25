@@ -6,6 +6,8 @@ import { gunzipSync } from 'zlib';
 export const json = (response: http.ServerResponse, status: number, body: unknown): void => {
   const text = JSON.stringify(body);
   response.writeHead(status, {
+    // Avoid reusing an idle socket for short replies when the client is starved under load.
+    connection: 'close',
     'content-type': 'application/json',
     'content-length': Buffer.byteLength(text),
   });

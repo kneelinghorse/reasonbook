@@ -3,6 +3,7 @@
 // ABOUTME: Late evidence remains conservative across old runtime schemas and old hook writers.
 import type Database from 'better-sqlite3';
 import type { DraftRuntime } from './draft-runtime';
+import { classifyReply } from './draft-reply';
 
 export const EXCERPT_TTL_MS = 2 * 60 * 60 * 1000;
 export const EXCERPT_MAX = 1000;
@@ -27,6 +28,13 @@ export function ensureLateColumn(db: Database.Database): void {
 function has(runtime: DraftRuntime, table: string): boolean {
   return Boolean(
     runtime.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table)
+  );
+}
+
+/** Old hooks kept an unqualified yes as approval, or as other for late/carried drafts. */
+function usableWords(message: string): boolean {
+  return (
+    typeof message === 'string' && message.trim() !== '' && classifyReply(message) !== 'approval'
   );
 }
 
@@ -88,9 +96,14 @@ export function bindWindow(
   })();
 }
 
-/** The turn ended (Stop): the window no longer takes records without fromDraft as answers. */
-export function closeWindow(runtime: DraftRuntime, session: string): void {
-  runtime.db.prepare('UPDATE windows SET open = 0 WHERE session = ?').run(session);
+/** Retire any direct-record window. An empty closed row remembers only hook presence. */
+export function closeWindow(runtime: DraftRuntime, session: string, now = Date.now()): void {
+  runtime.db
+    .prepare(
+      `INSERT INTO windows (session, draft_ids, open, at) VALUES (?, '[]', 0, ?)
+     ON CONFLICT(session) DO UPDATE SET draft_ids = '[]', open = 0, at = excluded.at`
+    )
+    .run(session, now);
 }
 
 /** The drafts the session's latest message was bound to, while its turn runs and within the TTL. */
@@ -100,17 +113,28 @@ export function openWindow(runtime: DraftRuntime, session: string, now: number):
     .prepare('SELECT draft_ids, open, at FROM windows WHERE session = ?')
     .get(session) as { draft_ids: string; open: number; at: number } | undefined;
   if (!row || row.open !== 1 || row.at <= now - EXCERPT_TTL_MS) return [];
+  let ids: unknown;
   try {
-    const ids = JSON.parse(row.draft_ids) as unknown;
-    return Array.isArray(ids) ? ids.filter((id): id is number => Number.isInteger(id)) : [];
+    ids = JSON.parse(row.draft_ids);
   } catch {
     return [];
   }
+  if (!Array.isArray(ids) || !has(runtime, 'excerpts')) return [];
+  // A window written by an older hook is usable only with its own surviving words.
+  const evidence = runtime.db
+    .prepare('SELECT draft_id, message FROM excerpts WHERE session = ? AND at = ?')
+    .all(session, row.at) as Array<{ draft_id: number; message: string }>;
+  const answered = new Set(
+    evidence.filter((item) => usableWords(item.message)).map((item) => item.draft_id)
+  );
+  return ids.filter((id): id is number => Number.isInteger(id) && answered.has(id));
 }
 
 export interface StoredExcerpt {
   readonly message: string;
   readonly reply: string;
+  /** Set only by a writer that checked a single, timely, current standing proposal. */
+  readonly standingSetting?: true;
   readonly windowSize: number;
   readonly at: number;
   readonly late: boolean;
@@ -129,5 +153,10 @@ export function readExcerpt(
       `SELECT message, reply, window_size AS windowSize, at, ${hasLate(runtime.db) ? 'late' : '0'} AS late FROM excerpts WHERE session = ? AND draft_id = ?`
     )
     .get(session, draftId) as (Omit<StoredExcerpt, 'late'> & { late: number }) | undefined;
-  return row && row.at > now - EXCERPT_TTL_MS ? { ...row, late: row.late === 1 } : null;
+  if (!row || row.at <= now - EXCERPT_TTL_MS || !usableWords(row.message)) return null;
+  if (row.reply === 'standing-setting')
+    return row.at <= now
+      ? { ...row, reply: 'approval', late: row.late === 1, standingSetting: true }
+      : null;
+  return { ...row, late: row.late === 1 };
 }

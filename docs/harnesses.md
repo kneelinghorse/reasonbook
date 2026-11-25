@@ -10,7 +10,7 @@ The Codex plugin below installs its own pinned runtime. For the other adapters,
 install the CLI before enabling hooks:
 
 ```sh
-npm install -g @aquex/reasonbook@4.12.0
+npm install -g @aquex/reasonbook@4.13.0
 reasonbook --version
 npm root -g
 ```
@@ -37,16 +37,16 @@ contract, subject to the live-verification limitation above.
 | -------------------------------------------- | ------------- | -------------------------------------------------------- | -------------------------------- | ------------------------------ | --------------------------------------------------------------------- |
 | Claude Code plugin                           | Yes           | Yes                                                      | Yes                              | SessionEnd                     | Hook evidence when the MCP server shares the verified harness session |
 | Codex developer plugin                       | Yes           | Yes; Stop captures a draft from `last_assistant_message` | Yes                              | SessionEnd                     | Hook evidence bound to the MCP conversation and enclosing project     |
-| Cursor IDE / CLI adapter                     | Yes           | No                                                       | No                               | Manual                         | Agent-attested                                                        |
-| Devin CLI / Devin Local adapter              | Yes           | Yes for existing drafts; no automatic Stop draft capture | Observed; no named-draft binding | Hook cleanup; manual MCP close | Agent-attested; MCP session linkage is unverified                     |
-| Copilot CLI / cloud adapter                  | Yes           | No                                                       | No                               | Manual                         | Agent-attested                                                        |
-| VS Code Local adapter                        | Yes           | No                                                       | No                               | Manual                         | Agent-attested                                                        |
-| Zed / Warp / goose, using the fallback below | Agent-invoked | Agent-invoked                                            | Agent judgment                   | Agent-invoked                  | Agent-attested                                                        |
+| Cursor IDE / CLI adapter                     | Yes           | No                                                       | No                               | Manual                         | Direct decision record                                                |
+| Devin CLI / Devin Local adapter              | Yes           | Yes for existing drafts; no automatic Stop draft capture | Observed; no named-draft binding | Hook cleanup; manual MCP close | Direct decision record; no linked draft approval                      |
+| Copilot CLI / cloud adapter                  | Yes           | No                                                       | No                               | Manual                         | Direct decision record                                                |
+| VS Code Local adapter                        | Yes           | No                                                       | No                               | Manual                         | Direct decision record                                                |
+| Zed / Warp / goose, using the fallback below | Agent-invoked | Agent-invoked                                            | Agent judgment                   | Agent-invoked                  | Direct decision record                                                |
 
-Agent-attested decisions mean the agent states that the operator approved the text.
-Constraint, rule and profile drafts require verified hook approval and cannot use
-agent-attested capture. A stable ID in hook stdin alone does not establish a
-connection to the MCP server process. Non-Claude
+Recording from a draft requires a named approval bound to the MCP session.
+With a hookless or unlinked client, ask the operator to name the choice and
+record the agreed decision directly by its content. A stable ID in hook stdin
+alone does not establish a connection to the MCP server process. Non-Claude
 transcripts are not scanned as Claude transcripts; their outside-content provenance
 remains unknown. Without MCP session linkage, SessionEnd cleans up hook-owned
 state but cannot close the MCP process's separate session; close that session through
@@ -127,23 +127,24 @@ start and prompt use the nested `hookSpecificOutput.additionalContext` envelope.
 Use the plugin's skills for the guided workflows. Bootstrap, hook-trust updates and
 tool refresh were probed with `codex-cli 0.159.0-alpha.12.1`.
 
-The live two-turn acceptance separately verified a project digest, a trailing
-`Would record:` draft captured by Stop, and a literal `yes` on the next turn. The
-model recorded that draft through MCP with `approval_mode=approved` and
-`approval_words=yes`. Its author session belonged to the hash of that Codex
-conversation, and SessionEnd completed it. The run used actual plugin hooks, with
-no manually supplied hook events. This establishes the tested Codex boundary;
-VS Code extension-host and Claude Desktop linkage remain unverified.
+Earlier live two-turn tests verified that Stop captured a `Would record:` draft and
+linked its author session to the Codex conversation. SessionEnd completed that session.
+Those releases accepted a literal `yes` as approval. VS Code extension-host and
+Claude Desktop linkage remain unverified.
 
-Keep the conversation running while proposing and approving a draft. A live two-turn Codex
-app-server probe on `codex-cli 0.164.0` again stored the literal `yes` as verified approval.
+The current Claude and Codex prompt hooks identify the new message but cannot verify which
+question immediately preceded it. Name the choice in your approval, even during an uninterrupted
+chat. Copy its text exactly, including spaces and punctuation. For example, to approve “Use a
+weekly review.”, reply “I approve this decision: Use a weekly review.” For a single, freshly shown
+numeric profile setting, rule or constraint with a recognized label, such as “Retention period: 3
+days.”, you can also reply “Yes. 3 days.” when the setting appears on its own or in its confirmation
+question.
+Keep the conversation running while proposing and approving a draft.
 Separate `codex exec` and `codex exec resume` invocations have a different lifecycle: the first
 emits SessionEnd and the resumed invocation emits SessionStart, even with the same thread ID.
-Reasonbook clears transient approval evidence at those boundaries. An approval in the resumed
-invocation therefore receives `APPROVAL_REQUIRED`; repeating separate exec/resume calls does
-not restore that evidence. Re-propose the draft and approve it in one continuously running
-conversation, such as two turns in the same running Codex app-server thread. The refusal names
-this remedy. Session-end cleanup remains in force; approval words are not retained across it.
+Reasonbook clears transient approval evidence at those boundaries. A record request that
+relies on the previous session’s answer receives `APPROVAL_REQUIRED`. To approve a pending
+choice in the resumed conversation, name the kind and full choice in a new reply.
 
 Reasonbook uses the working folder supplied on each supported Codex call, so a conversation in a
 project can call `rbook_review()` without naming a path. Outside that folder, choose a registered
@@ -154,9 +155,8 @@ so Codex Auto mode can still ask for approval for any Reasonbook tool.
 
 For an ordinary call without `projectRoot`, Reasonbook reports `resolvedBy=client-cwd`. Approval linkage additionally requires hook
 evidence for that conversation in the same physical project store. A call naming
-a different project or lacking that evidence keeps process ownership; a decision
-may be agent-attested, while constraint, rule and profile drafts still require
-hook-bound approval. The [boundary fixtures](https://github.com/kneelinghorse/reasonbook/blob/main/tests/integration/codex-request-dispatch.test.ts)
+a different project or lacking that evidence keeps process ownership. Recording
+from a draft requires a fresh named approval in the linked project. The [boundary fixtures](https://github.com/kneelinghorse/reasonbook/blob/main/tests/integration/codex-request-dispatch.test.ts)
 cover missing metadata, first drafts, other projects and SessionEnd cleanup.
 
 ## Cursor IDE and CLI
@@ -195,8 +195,8 @@ and AGENTS.md. Do not install the Reasonbook plugin's hooks alongside this adapt
 The documented Stop payload has no assistant reply, and PostCompaction is a different
 boundary from Reasonbook's pre-compact hook. Neither event is wired. Prompt hooks observe
 replies, but without Stop they cannot establish which named draft the assistant
-showed for approval. Record agreed decisions
-through MCP; without verified session linkage, their draft approval is agent-attested.
+showed for approval. Ask the operator to name the choice, then record the agreed
+decision directly by its content through MCP.
 [Devin lifecycle](https://docs.devin.ai/cli/extensibility/hooks/lifecycle-hooks)
 
 ## GitHub Copilot and VS Code Local

@@ -30,14 +30,58 @@ export function setShown(
   runtime: DraftRuntime,
   session: string,
   ids: readonly number[],
-  now: number
+  now: number,
+  currentQuestion = false,
+  standingSetting = false
 ): void {
+  if (currentQuestion || standingSetting) forgetShownAnswers(runtime, session, ids);
   runtime.db
     .prepare(
       `INSERT INTO shown (session, draft_ids, at) VALUES (?, ?, ?)
        ON CONFLICT(session) DO UPDATE SET draft_ids = excluded.draft_ids, at = excluded.at`
     )
-    .run(session, JSON.stringify(ids), now);
+    .run(
+      session,
+      JSON.stringify(
+        currentQuestion ? { question: ids[0] } : standingSetting ? { standing: ids[0] } : ids
+      ),
+      now
+    );
+}
+
+/** A re-asked or unconfirmed choice cannot borrow an earlier answer in this session. */
+export function forgetShownAnswers(
+  runtime: DraftRuntime,
+  session: string,
+  ids: readonly number[]
+): void {
+  if (!ids.length) return;
+  const encoded = JSON.stringify(ids);
+  runtime.db
+    .prepare(
+      `DELETE FROM excerpts WHERE session = ? AND reply <> 'decline'
+    AND draft_id IN (SELECT value FROM json_each(?))`
+    )
+    .run(session, encoded);
+  runtime.db
+    .prepare(
+      `UPDATE windows SET open = 0 WHERE session = ? AND open = 1
+    AND EXISTS (SELECT 1 FROM json_each(windows.draft_ids)
+      WHERE value IN (SELECT value FROM json_each(?)))`
+    )
+    .run(session, encoded);
+}
+
+/** Consume shorthand authority even on failure. A legacy standing showing can still receive a decline. */
+export function clearCurrentQuestion(runtime: DraftRuntime, session: string): void {
+  runtime.db
+    .prepare(
+      `UPDATE shown SET draft_ids = CASE WHEN json_type(draft_ids, '$.standing') = 'integer'
+           THEN json_array(json_extract(draft_ids, '$.standing')) ELSE '[]' END
+       WHERE session = ? AND CASE WHEN json_valid(draft_ids) THEN
+         json_type(draft_ids, '$.question') = 'integer' OR json_type(draft_ids, '$.standing') = 'integer' END`
+    )
+    .run(session);
 }
 
 /** Restore an unanswered decline only if no newer Stop supplied another shown set. */
@@ -47,7 +91,11 @@ export function restoreShown(runtime: DraftRuntime, session: string, shown: Show
       `INSERT INTO shown (session, draft_ids, at) VALUES (?, ?, ?)
     ON CONFLICT(session) DO NOTHING`
     )
-    .run(session, JSON.stringify(shown.ids), shown.at);
+    .run(
+      session,
+      JSON.stringify(shown.currentQuestion ? { question: shown.ids[0] } : shown.ids),
+      shown.at
+    );
 }
 
 /** Take (read and clear) what the latest reply showed: one message answers one reply. */
@@ -65,15 +113,14 @@ export function takeShown(runtime: DraftRuntime, session: string, now: number): 
  */
 export function carryShown(runtime: DraftRuntime, session: string, now: number): void {
   if (!has(runtime.db, 'shown') || !has(runtime.db, 'kept')) return;
-  const row = runtime.db.prepare('SELECT at FROM shown WHERE session = ?').get(session) as
-    | { at: number }
-    | undefined;
   const keep = runtime.db.prepare(
     'INSERT INTO kept (session, draft_id, at) VALUES (?, ?, ?) ON CONFLICT(session, draft_id) DO NOTHING'
   );
   runtime.db.transaction(() => {
     runtime.db.prepare(`DELETE FROM kept WHERE ${expired(runtime.db, 'kept')}`).run(cutoff(now));
-    if (row) for (const id of peekShown(runtime, session, now)) keep.run(session, id, row.at);
+    const showing = readShown(runtime, session, now);
+    if (showing && !showing.currentQuestion)
+      for (const id of showing.ids) keep.run(session, id, showing.at);
   })();
 }
 
@@ -116,6 +163,10 @@ export function takeKept(runtime: DraftRuntime, session: string, now: number): n
 }
 
 export interface ShownDrafts {
+  /** Only the next timely reply can answer an ordinary question. Legacy arrays can be carried. */
+  readonly currentQuestion?: true;
+  /** This Stop received one complete standing proposal in the current assistant message. */
+  readonly standingSetting?: true;
   readonly ids: number[];
   readonly at: number;
 }
@@ -131,8 +182,27 @@ export function readShown(runtime: DraftRuntime, session: string, now: number): 
   if (!row) return null;
   try {
     const ids: unknown = JSON.parse(row.draft_ids);
-    return Array.isArray(ids)
-      ? { ids: ids.filter((id): id is number => Number.isInteger(id)), at: row.at }
+    if (Array.isArray(ids))
+      return { ids: ids.filter((id): id is number => Number.isInteger(id)), at: row.at };
+    // Older clients already leave unknown shown values unbound. A current-only question cannot
+    // become a carried or late excerpt and later be mistaken for an answer in another turn.
+    const tagged = ids as { question?: unknown; standing?: unknown } | null;
+    const standing = tagged?.standing;
+    if (typeof standing === 'number' && Number.isSafeInteger(standing) && standing > 0)
+      return row.at <= now && row.at > now - EXCERPT_TTL_MS
+        ? { ids: [standing], at: row.at, standingSetting: true }
+        : { ids: [standing], at: row.at };
+    const id = tagged?.question;
+    return typeof id === 'number' &&
+      Number.isSafeInteger(id) &&
+      id > 0 &&
+      row.at <= now &&
+      row.at > now - EXCERPT_TTL_MS
+      ? {
+          ids: [id],
+          at: row.at,
+          currentQuestion: true,
+        }
       : null;
   } catch {
     return null;

@@ -5,7 +5,7 @@
 /**
  * What a harness does, simulated as tests/cli/hook-cli.test.ts does: each hook is a CLI run with
  * the harness's stdin. The operator's experience is the contract (#1186): the agent ends a proposal
- * with one "Would record:" line, the operator's next "approved" binds to it, a question keeps it
+ * with one "Would record:" line, the operator can name the choice to approve it, a question keeps it
  * open, "no" declines it, and nothing reappears forever.
  */
 
@@ -105,9 +105,12 @@ async function hook(
 const context = (ran: Ran): string =>
   ran.stdout ? (JSON.parse(ran.stdout).hookSpecificOutput.additionalContext as string) : '';
 
+const CHOICE =
+  'Store project decisions as one JSON file per decision, because diffs stay readable.';
+const APPROVE = `I approve this decision: ${CHOICE}`;
 const PROPOSAL =
   'I would keep one JSON file per decision: readable diffs, no database to ship.\n\n' +
-  'Would record: Store project decisions as one JSON file per decision, because diffs stay readable.';
+  `Would record: ${CHOICE}`;
 
 const start = (session: string, source = 'startup') =>
   hook('session-start', { session_id: session, cwd: projectRoot, source });
@@ -339,7 +342,7 @@ describe('the offer rides on the operator’s next messages', () => {
       markOffered(...args);
     });
     try {
-      expect(context(await prompt('s-one', 'approved'))).toContain('Reasonbook draft P1');
+      expect(context(await prompt('s-one', APPROVE))).toContain('Reasonbook draft P1');
       expect(modes).toEqual(['write']);
       expect(drafts()[0].offered_at).not.toBeNull();
     } finally {
@@ -351,10 +354,9 @@ describe('the offer rides on the operator’s next messages', () => {
     await start('s-one');
     await stop('s-one', PROPOSAL);
     const first = context(await prompt('s-one', 'Let us also look at the export command next'));
-    expect(first).toContain(
-      'Reasonbook draft P1 (decision), which your last reply put to the operator'
-    );
-    expect(first).toContain('fromDraft="P1"');
+    expect(first).toContain('Reasonbook draft P1 (decision):');
+    expect(first).toContain('name the choice they approve');
+    expect(first).not.toContain('fromDraft="P1"');
     expect(context(await prompt('s-one', 'Now the import command, same idea'))).toContain(
       'Still pending: P1'
     );
@@ -369,7 +371,7 @@ describe('the offer rides on the operator’s next messages', () => {
   it('tells the agent a plain approval is one, and keeps the operator’s words outside the store', async () => {
     await start('s-one');
     await stop('s-one', PROPOSAL);
-    const offer = context(await prompt('s-one', 'approved'));
+    const offer = context(await prompt('s-one', APPROVE));
     expect(offer).toContain('plain approval of P1: record it now');
     // s107-m02 (#877): fromDraft alone records the draft's own words; restating it adds nothing.
     expect(offer).toContain('rbook_decisions(action="record", fromDraft="P1")');
@@ -377,7 +379,7 @@ describe('the offer rides on the operator’s next messages', () => {
     const runtime = openDraftRuntime(dbPath, process.env, { readonly: true })!;
     try {
       expect(readExcerpt(runtime, harnessSessionHash('s-one'), 1, Date.now())).toMatchObject({
-        message: 'approved',
+        message: APPROVE,
         reply: 'approval',
         windowSize: 1,
       });
@@ -385,27 +387,30 @@ describe('the offer rides on the operator’s next messages', () => {
       runtime.close();
     }
     const store = fs.readFileSync(dbPath);
-    expect(store.includes(Buffer.from('approved\u0000'))).toBe(false);
+    expect(store.includes(Buffer.from(APPROVE))).toBe(false);
   });
 
-  it('teaches fromDraft alone for several drafts approved at once, and content only for nuance', async () => {
+  it('a bare approval cannot select multiple drafts and a named answer selects only its choice', async () => {
     await start('s-one');
     await stop(
       's-one',
       `${PROPOSAL}\nWould record: Keep the decision folder under rbook/decisions, never at the root.`
     );
-    const offer = context(await prompt('s-one', 'approved'));
-    expect(offer).toContain('approves P1, P2 together');
-    expect(offer).toContain('rbook_decisions(action="record", fromDraft="P<n>")');
-    expect(offer).not.toContain('content=');
+    const unspecified = context(await prompt('s-one', 'approved'));
+    expect(unspecified).not.toContain('approves P1, P2 together');
+    expect(drafts().map((row) => row.outcome)).toEqual(['pending', 'pending']);
+    await stop('s-one', PROPOSAL);
+    const selected = context(await prompt('s-one', APPROVE));
+    expect(selected).toContain('rbook_decisions(action="record", fromDraft="P1")');
+    expect(selected).not.toContain('fromDraft="P2"');
     await start('s-two');
     await stop(
       's-two',
       'Here is the plan.\n\nWould record: Run the importer nightly, because the source files change once a day.'
     );
     const nuance = context(await prompt('s-two', 'yes, but run it at two in the morning'));
-    expect(nuance).toContain('content=<P3 with the operator');
-    expect(nuance).toContain('fromDraft="P3"');
+    expect(nuance).toContain('Leave P3 pending');
+    expect(nuance).not.toContain('rbook_decisions(action="record"');
   });
 
   it('declines on a plain decline, and the draft never comes back', async () => {
@@ -420,7 +425,7 @@ describe('the offer rides on the operator’s next messages', () => {
     await start('s-one');
     await stop('s-one', PROPOSAL);
     expect(context(await prompt('s-one', 'hmm, what about merge conflicts?'))).toContain(
-      'asks about P1'
+      'Leave P1 pending'
     );
     expect(drafts()[0].outcome).toBe('pending');
     await stop(
@@ -430,8 +435,8 @@ describe('the offer rides on the operator’s next messages', () => {
     const [old, revised] = drafts();
     expect(old).toMatchObject({ outcome: 'replaced', replaced_by: revised.id });
     expect(revised.outcome).toBe('pending');
-    expect(context(await prompt('s-one', 'approved'))).toContain(
-      `Reasonbook draft P${revised.id} (decision), which your last reply put to the operator`
+    expect(context(await prompt('s-one', `I approve this decision: ${revised.text}`))).toContain(
+      `Reasonbook draft P${revised.id} (decision):`
     );
   });
 
@@ -468,9 +473,9 @@ describe('the operator answers only what the reply before showed (plan critic B1
       's-next',
       'Before the parser: draft P1 still awaits your call (store decisions as JSON files).'
     );
-    const answer = context(await prompt('s-next', 'approved'));
+    const answer = context(await prompt('s-next', APPROVE));
     expect(answer).toContain('plain approval of P1: record it now');
-    expect(words('s-next')).toMatchObject({ message: 'approved', reply: 'approval' });
+    expect(words('s-next')).toMatchObject({ message: APPROVE, reply: 'approval' });
   });
 
   it('a "no" to an unrelated question two messages later declines nothing', async () => {
@@ -485,7 +490,7 @@ describe('the operator answers only what the reply before showed (plan critic B1
   it('a decline supersedes earlier approval words even when the main store cannot persist it', async () => {
     await start('s-one');
     await stop('s-one', PROPOSAL);
-    await prompt('s-one', 'approved');
+    await prompt('s-one', APPROVE);
     expect(words('s-one')?.reply).toBe('approval');
     await stop('s-one', PROPOSAL);
     const holder = new Database(dbPath);
@@ -585,7 +590,7 @@ describe('the operator answers only what the reply before showed (plan critic B1
     await prompt('s-one', 'hmm, what about merge conflicts?');
     await stop('s-one', `Rare with one file each.\n\n${PROPOSAL.split('\n\n')[1]}`);
     expect(drafts()).toHaveLength(1);
-    expect(context(await prompt('s-one', 'approved'))).toContain('plain approval');
+    expect(context(await prompt('s-one', APPROVE))).toContain('plain approval');
     expect(words('s-one')).toMatchObject({ reply: 'approval', windowSize: 1 });
   });
 
@@ -671,13 +676,13 @@ describe('sessions', () => {
     } finally {
       runtime.close();
     }
-    expect(context(await prompt('s-one', 'approved'))).toContain('plain approval of P1');
+    expect(context(await prompt('s-one', APPROVE))).toContain('plain approval of P1');
   });
 
   it('forgets the operator’s words when the session ends', async () => {
     await start('s-one');
     await stop('s-one', PROPOSAL);
-    await prompt('s-one', 'approved');
+    await prompt('s-one', APPROVE);
     await hook('session-end', { session_id: 's-one', cwd: projectRoot, reason: 'other' });
     const runtime = openDraftRuntime(dbPath, process.env, { readonly: true })!;
     try {
@@ -762,7 +767,7 @@ describe('outside content', () => {
     await start('s-one');
     await stop('s-one', PROPOSAL, { transcript_path: transcript });
     expect(drafts()[0].outside_content).toBe(1);
-    expect(context(await prompt('s-one', 'approved'))).toContain('outside content');
+    expect(context(await prompt('s-one', APPROVE))).toContain('outside content');
   });
 
   it('reads subagent transcripts, where web research usually runs', async () => {

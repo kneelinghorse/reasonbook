@@ -7,12 +7,23 @@ import { isExpired, type DraftRow } from '../tools/rbook/proposals';
 import { processBusyTimeout } from '../tools/rbook/sqlite-busy';
 import { storedTimeMs } from '../tools/rbook/stored-time';
 
-export function storeTimeout(): number {
-  return processBusyTimeout() ?? 250;
+export function storeTimeout(deadlineAtMs?: number): number {
+  const timeout = processBusyTimeout() ?? 250;
+  return deadlineAtMs === undefined
+    ? timeout
+    : Math.max(0, Math.min(timeout, Math.floor(deadlineAtMs - Date.now())));
 }
 
-export function openStore(dbPath: string, readonly: boolean): Database.Database {
-  return new Database(dbPath, { readonly, fileMustExist: true, timeout: storeTimeout() });
+export function openStore(
+  dbPath: string,
+  readonly: boolean,
+  deadlineAtMs?: number
+): Database.Database {
+  return new Database(dbPath, {
+    readonly,
+    fileMustExist: true,
+    timeout: storeTimeout(deadlineAtMs),
+  });
 }
 
 export function checkDeadline(deadlineAtMs: number): void {

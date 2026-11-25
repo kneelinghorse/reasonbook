@@ -49,9 +49,23 @@ ASCII letter or digit, such as `Array<T>`) is not counted: beside placeholders t
 text needs three words and 15 characters, and two more words and ten more characters for each
 placeholder after the first, where a word is a run of letters or digits, or one Han, Hiragana or
 Katakana character. Text over 1,000 characters is cut at a word.
-Where Reasonbook hooks run, the line becomes a draft with an id (`P<n>`) and the operator's next
-message is bound to it. The line is a proposal, not a claim that a hook saved or approved it.
-Continue independent authorized work while the choice is open.
+Where Reasonbook hooks run, the line becomes a draft with an id (`P<n>`). The operator's current
+message must identify the choice they approve unless the client verifies the immediately preceding
+question. The current Claude and Codex hook inputs require a named choice even in an uninterrupted chat.
+Copy the entire choice exactly after the confirmation prefix, including its spaces and punctuation.
+A question mark inside a named URL is part of the choice. Continue independent authorized work while the choice is open.
+
+For one freshly shown profile, rule or constraint with a numeric setting after a single colon,
+show its proposal on its own or ask its exact confirmation question. Shorthand works for these
+labels, optionally numbered: Plan critics, Review budget, Review rounds, Critic rounds, Review
+passes, Test budget, Meeting budget, Stop checks, Retry limit, Retry delay, Timeout and Retention
+period. The operator can approve by repeating the value and its complete recognized unit. For example,
+`Yes. 3 days.` approves a single setting that ends in `3 days.`. The affirmative and setting
+must fit on one line within 60 UTF-16 units, including spaces. A different value, an added condition,
+a question or more than one matching draft leaves the setting pending. Recognized units are rounds
+(including critic or review rounds), passes (including review passes), attempts, retries, seconds,
+minutes, hours, days, weeks, months and years, in singular or plural. For other labels or units, and for qualified
+settings, ask the operator to name the full choice.
 
 **Published reply grammar** ([source](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/draft-reply.ts)): a plain reply
 is at most 60 normalized characters and consists entirely of phrases below, joined by whitespace,
@@ -83,59 +97,54 @@ or decline.
 
 **When the operator answers:**
 
-- A plain approval: record it now with
+- When the hook binds the operator’s approval to the choice, record it with
   `rbook_decisions(action="record", fromDraft="P<n>")`, which records the draft's own words; send
   nothing else. Content about something else is refused. Constraint, rule and profile drafts are
   written as drafted; different content passed to the call is not used and produces a warning,
   except for whitespace changes.
-- Nuance or call-outs approving a decision: fold them in; ask first when the nuance is unclear or
-  conflicts with an existing record. For a constraint, rule or profile line, propose the revised
-  text again and wait for a plain approval; these kinds refuse nuance and questions.
-- A question about the draft, or an amendment: answer, and end with the line again, revised if the
-  answer changes it. The revised line replaces the draft. An approval of a decision whose every
-  question is about something else is recorded agent-judged, and the questions answered.
+- If the operator adds a condition, asks a question or suggests an amendment, answer it. Show the
+  revised choice when it changes and ask the operator to name the choice they approve. A question
+  about another subject can be answered independently while the draft stays pending.
 - A plain decline ("no", "don't record that", "skip it"…): do not record it.
 - No answer: never record it. A draft expires unanswered after 7 days or 3 session starts.
-- A pending draft from an earlier session: name it to the operator in a prose line as `draft P<n>`
-  or `proposal P<n>`, with its subject. A bare id, or an id in code, a link target, a URL or a file
-  path, does not show the draft for approval. This instruction's backticks mark examples; the
-  actual naming must be prose outside inline code.
+- When a pending choice still needs an answer, look up its full text privately with
+  `reasonbook drafts list --project-root DIR`. Send the full proposal as written, a blank line, and
+  the instruction and question for its kind. For a decision, use the exact second paragraph
+  `Reply “I approve this decision:” followed by the full choice. Should I record this decision?`
+  Use the same instruction with
+  `constraint`, `rule`, or `profile`, and finish with “Should I record this constraint?”, “Should I
+  make this a standing rule?”, or “Should I add this to your operator profile?” Keep identifiers in
+  your own tool calls. A bare yes leaves the choice pending unless the client verifies which question
+  immediately preceded it. If binding is unavailable, ask the operator to name what they approve.
+  Record a decision without `fromDraft` only once the operator explicitly names the choice. The
+  whole named reply, including its prefix, must fit in 1,000 UTF-16 units for hook approval. If the
+  proposal is too long to repeat within that limit, offer a shorter decision for confirmation.
 
-**When a recorded decision already answered a draft** (a compaction lost the operator's approval, or
-the choice was recorded directly), settle the draft with one plain line among the reply's last lines:
-
-    Settled: P<n> by decision <N>
-
-Put it above any Would record lines, and name the draft only in that line: explain the settle in
-prose without writing `draft P<n>` or `proposal P<n>`, which shows the draft for approval again. An
-older Reasonbook hook stops reading at the Settled line and keeps the Would record lines below it.
-Where hooks run, the Stop hook marks the draft answered by that decision, with the mode `settled`,
-which is a draft's mode and never a decision's. It refuses a decision recorded with
-`mode="autonomous"`, a superseded decision (naming the end of its chain), a decision not yet in
-this copy of a shared record (sync first), a constraint, rule or profile draft (those need the
-operator's plain approval), a draft the same reply's Would record lines create, repeat or revise,
-and an expired or no longer pending draft. A decision recorded after the draft must state at least
-30% of the draft's subject, an older one 85%. A quoted, listed, bold, code or link-text Settled line
-is not read as a settle. Where the hooks run, the operator's next message names the lines of your
-reply that took no effect, such as a fourth Would record line; tell the operator about each.
+**When a recorded decision already answers a pending decision draft**, read the existing
+decision and draft privately. With the full edition installed, run
+`reasonbook drafts settle --draft P<n> --decision N --project-root DIR` with their identifiers
+and project directory. Add `--dry-run` to preview. Check the returned outcome and recorded target.
+A successful link marks the draft `settled`, which is a draft's mode and never a decision's.
+The command checks the identities, timing and wording. It may decline a link whose meaning is
+clear to a person. If the CLI is unavailable or refuses the pair, report a settlement only if a
+receipt confirms one. Resolve any open choice with the operator in ordinary words. For a clear
+answer, use the normal recording workflow. Where hooks run, the next prompt also reports draft
+lines that took no effect. Explain any choice the operator still needs to make. When the prompt
+reports omitted entries, rely only on the individual drafts and reasons it actually shows.
 
 A draft ends approved (recorded with `fromDraft`), declined, replaced by a revision, expired, or
 answered, by a record that covered it automatically or by a settle that named it. Only a Would
 record line makes a draft: Reasonbook never detects decision-shaped statements in a reply.
 
-The record says how the approval was known: `approved` requires a plain approval of that draft
-alone in this session and, for a decision, content that stays within the draft's wording check.
-That check requires the same text after trimming and collapsing whitespace; case, word order and
-punctuation remain significant. `agent-judged` means the operator's words were nuance, covered
-several drafts, arrived more than two hours after the showing, or the decision changed any wording
-beyond whitespace; the words are attached. Late answers open no direct-record window: use fromDraft
-only when those words approve that decision. A late decline persists after its excerpt expires.
-`agent-attested` is available only for decisions from a server without a harness session.
-A linked server refuses a draft when no words younger than two hours
-exist for this draft in this conversation, including when words exist only in another session.
-Constraint, rule and profile drafts require a timely plain approval and never record as agent-attested.
-After a late answer, propose them again for approval.
-Without a draft id, record the operator's approved choice directly.
+A decision records as `approved` when the named approval is bound to that draft in this
+conversation and the submitted decision text matches the draft verbatim.
+A change in wording, case, word order or punctuation can make the decision `agent-judged`;
+the record keeps the operator’s named approval. An answer that depends on a lost or expired
+showing supplies no approval. The operator can give fresh approval of an eligible pending draft
+by naming its kind and full choice. That approval is usable for two hours. A late decline persists
+after its excerpt expires. Every kind requires session-bound approval to record from its draft.
+If the client cannot bind the approval, a decision can be recorded directly with its full content
+once the operator explicitly names and approves that choice.
 
 Write a one- or two-sentence headline in `content`. Put the reasons and constraints in `context`,
 other options in `alternatives` (an array of strings), effects in `consequences`, and people or agents

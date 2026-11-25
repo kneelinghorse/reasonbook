@@ -101,7 +101,7 @@ function stateOf(draft: DraftRow): string {
 }
 
 /** Added to a proposals table that predates the column; the guard makes it idempotent. */
-function ensureSettledBy(run: SqlRunner): void {
+export function ensureSettledBy(run: SqlRunner): void {
   const columns = run.all<{ name: string }>('PRAGMA table_info(proposals)');
   if (!columns.some((column) => column.name === 'settled_by'))
     run.exec('ALTER TABLE proposals ADD COLUMN settled_by TEXT');

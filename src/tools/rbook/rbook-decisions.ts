@@ -248,10 +248,10 @@ export const rbookDecisionsToolDefinition = {
     'are optional string arrays. mode=autonomous declares work with no operator. Direct headlines ' +
     'over 600 UTF-16 units succeed with a length warning. Decision text is never amended in ' +
     'place: correct a decision by recording a new one with supersedes=[<old id>]. ' +
-    'When the operator answers a Reasonbook draft (a "Would record:" line Reasonbook gave an id, P<n>), ' +
-    'record it with fromDraft="P<n>": the record then says how the approval was known ' +
-    '(approved, agent-judged or agent-attested), and a constraint, rule or profile draft is ' +
-    'written as that kind. A subagent shares its parent session and binds as the parent.',
+    'When the operator names a pending choice in a linked conversation, record it with ' +
+    'fromDraft="P<n>". The record retains the approval words. A constraint, rule or profile ' +
+    'draft is written as that kind. Without linked evidence, ask the operator to name the choice ' +
+    'and record an agreed decision by content. A subagent shares its parent session and binds as the parent.',
   inputSchema: {
     type: 'object',
     properties: {

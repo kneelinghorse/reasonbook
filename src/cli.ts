@@ -320,6 +320,15 @@ export async function runCli(argv: readonly string[], io: CliIo = processIo()): 
     return 1;
   }
   const { USAGE, firstUnknownOption, unexpectedArgument } = await import('./cli/usage');
+  // A paired settlement validates its original arguments. Its preview and refusals leave
+  // no durable record, including the normal CLI telemetry file.
+  if (
+    verb === 'drafts' &&
+    rest[0] === 'settle' &&
+    !(rest.length === 2 && ['--help', '-h'].includes(rest[1]))
+  ) {
+    return (await import('./cli/private-settle')).runPrivateSettle(rest.slice(1), io);
+  }
   if (argv.includes('--help') || argv.includes('-h')) {
     io.stdout(USAGE);
     return 0;

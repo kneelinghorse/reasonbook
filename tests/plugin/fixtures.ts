@@ -17,10 +17,8 @@ export function fixture(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'rbook-plugin-test-'));
 }
 
-export function fixtureNode(root: string): string {
-  const file = path.join(root, process.platform === 'win32' ? 'node.exe' : 'node');
-  // These fixtures install a cold package, not a new Node binary. Keep execPath local so
-  // adjacent-npm resolution is still exercised; never chmod the shared executable inode.
+// On runtimes without a fixture-local loader dependency, a hardlink avoids copying Node.
+export function linkOrCopyFixtureNode(file: string): void {
   try {
     fs.linkSync(process.execPath, file);
   } catch (error) {
@@ -31,8 +29,26 @@ export function fixtureNode(root: string): string {
       )
     )
       throw error;
-    fs.copyFileSync(process.execPath, file);
+    fs.copyFileSync(process.execPath, file, fs.constants.COPYFILE_EXCL);
     fs.chmodSync(file, 0o755);
+  }
+}
+
+export function fixtureNode(root: string): string {
+  const file = path.join(root, process.platform === 'win32' ? 'node.exe' : 'node');
+  const config = process.config.variables;
+  if (process.platform === 'darwin' && 'node_shared' in config && config.node_shared === true) {
+    // Homebrew's Node looks for @rpath/libnode next to the relocated executable.
+    const name = `libnode.${process.versions.modules}.dylib`;
+    const report = process.report.getReport() as { sharedObjects: string[] };
+    const library = report.sharedObjects.find((entry) => path.basename(entry) === name);
+    if (!library || !fs.existsSync(library))
+      throw new Error(`Cannot locate loaded ${name} for fixture Node ${process.execPath}`);
+    // dyld can resolve a hardlinked executable through another fixture while it is being removed.
+    fs.copyFileSync(process.execPath, file, fs.constants.COPYFILE_EXCL);
+    fs.symlinkSync(library, path.join(root, name));
+  } else {
+    linkOrCopyFixtureNode(file);
   }
   return file;
 }

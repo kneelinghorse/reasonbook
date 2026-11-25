@@ -128,6 +128,7 @@ import { createHash } from 'crypto';
 import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as os from 'os';
+import { pathToFileURL } from 'url';
 import * as path from 'path';
 import * as ts from 'typescript';
 
@@ -284,15 +285,15 @@ const SITES_BY_MISSION = {
   // constraint draft with no operator words in this session); four need a harness session or a
   // race and are named residuals, each driven in tests/tools/rbook/draft-approval.test.ts.
   's93-m06': [
-    'src/tools/rbook/draft-evaluation.ts:88',
-    'src/tools/rbook/draft-evaluation.ts:165',
-    'src/tools/rbook/draft-evaluation.ts:177',
-    'src/tools/rbook/draft-evaluation.ts:203',
-    'src/tools/rbook/draft-evaluation.ts:246',
-    'src/tools/rbook/draft-evaluation.ts:259',
-    'src/tools/rbook/draft-evaluation.ts:128',
-    'src/tools/rbook/draft-approval.ts:181',
-    'src/tools/rbook/draft-approval.ts:252',
+    'src/tools/rbook/draft-evaluation.ts:106',
+    'src/tools/rbook/draft-evaluation.ts:174',
+    'src/tools/rbook/draft-evaluation.ts:186',
+    'src/tools/rbook/draft-evaluation.ts:212',
+    'src/tools/rbook/draft-evaluation.ts:255',
+    'src/tools/rbook/draft-evaluation.ts:268',
+    'src/tools/rbook/draft-evaluation.ts:137',
+    'src/tools/rbook/draft-approval.ts:196',
+    'src/tools/rbook/draft-approval.ts:267',
     'src/tools/rbook/rbook-decisions-record.ts:373',
   ],
   // s94-m04: shape preflight at six writer boundaries, immutable retry comparison and draft-field conflict.
@@ -331,7 +332,7 @@ const SITES_BY_MISSION = {
   // s108-m05: down seven lines (a server that starts mid-move starts), then 13 more in round 1 (a
   // call mid-move is a refusal, and so is --project-root's check).
   's95-m13': [
-    'src/index.ts:1390',
+    'src/index.ts:1401',
     'src/tools/rbook/rbook-message.ts:809',
     'src/tools/rbook/sender-refusal.ts:90',
   ],
@@ -361,11 +362,11 @@ const SITES_BY_MISSION = {
   // a shared copy. Each was a shorthand or new site; all are named residuals or FAULT below, since
   // no supported call makes a store shared before s96-m03.
   's96-m01': [
-    'src/tools/rbook/replica-check.ts:45',
-    'src/tools/rbook/replica-check.ts:57',
+    'src/tools/rbook/replica-check.ts:55',
     'src/tools/rbook/replica-check.ts:67',
-    'src/tools/rbook/replica-check.ts:76',
-    'src/tools/rbook/replica-check.ts:85',
+    'src/tools/rbook/replica-check.ts:77',
+    'src/tools/rbook/replica-check.ts:86',
+    'src/tools/rbook/replica-check.ts:95',
     'src/tools/rbook/replica-identity.ts:311',
     'src/tools/rbook/rbook-project-init.ts:706',
   ],
@@ -373,7 +374,7 @@ const SITES_BY_MISSION = {
   // stable id, and a recorded write that ends its own transaction. Named residuals below: each is
   // damage or a write no tool makes, on a shared store or not.
   's96-m03': [
-    'src/tools/rbook/replica-check.ts:112',
+    'src/tools/rbook/replica-check.ts:122',
     'src/tools/rbook/record-capture.ts:59',
     'src/tools/rbook/record-capture.ts:93',
     'src/tools/rbook/record-recording.ts:88',
@@ -621,7 +622,7 @@ const SITES_BY_MISSION = {
     'src/tools/rbook/record-membership.ts:291',
     'src/tools/rbook/record-membership.ts:277',
   ],
-  's97-m12': ['src/tools/rbook/draft-evaluation.ts:226'],
+  's97-m12': ['src/tools/rbook/draft-evaluation.ts:235'],
   // s100-m01: the sharing fixes' refusals: the owner's other copies at a share, a removed member's
   // route the dashboard ended, a re-judge off the owner's copy, a join and a recovery of a newer
   // protocol, a handover to a copy behind a move or from one, a removed copy's sync, and a member's
@@ -784,7 +785,7 @@ const SITES_BY_MISSION = {
   ],
   // s102-m05: an operator decline awaiting its store write blocks records across sessions.
   // The marker is identifier-only, and the existing row-presence axis drives this refusal.
-  's102-m05': ['src/tools/rbook/draft-evaluation.ts:193'],
+  's102-m05': ['src/tools/rbook/draft-evaluation.ts:202'],
   // s102-m06: unreadable next-step provenance refuses instead of silently counting foreign use.
   // DB_QUERY_FAILED is FAULT; the real-store API suite injects the schema-inspection failure.
   's102-m06': ['src/tools/rbook/next-steps-read.ts:111'],
@@ -808,13 +809,13 @@ const SITES_BY_MISSION = {
   's106-m03': ['src/tools/rbook/next-steps-read.ts:138', 'src/tools/rbook/rbook-feedback.ts:537'],
   // s107-m02 (#876): a draft the content sanitizer cuts is refused before anything is written,
   // with the propose-it-quoted remedy; driven in axis 2 (decision kind, fromDraft alone).
-  's107-m02': ['src/tools/rbook/draft-evaluation.ts:274'],
+  's107-m02': ['src/tools/rbook/draft-evaluation.ts:283'],
   // s108-m02: dates and reasons on next steps. A key given to an action that would ignore it; the
   // three readings of a date; a reason over 500 characters, for a row with no stable id, or a date on
   // a broad carry or a capture that is not a next step; the three failures to prepare the reasons
   // (one a foreign object holding the table's name), and the list's refusal when it cannot read them.
   's108-m02': [
-    'src/tools/rbook/inapplicable-param.ts:54',
+    'src/tools/rbook/inapplicable-param.ts:57',
     'src/tools/rbook/next-step-dates.ts:109',
     'src/tools/rbook/next-step-dates.ts:119',
     'src/tools/rbook/next-step-dates.ts:128',
@@ -847,7 +848,7 @@ const SITES_BY_MISSION = {
   // s108-m05 (round 1): a call that meets a record mid-move is refused, with when to retry. Its
   // code is the client's for a record it may not open, so the census reads it as a fault; no router
   // call makes the guard, and migrate-cutover.test.ts checks the answer during a real move.
-  's108-m05': ['src/index.ts:815'],
+  's108-m05': ['src/index.ts:816'],
   // s109-m02 (#893): fromDraft refuses a field a constraint, rule or profile draft's writer would
   // ignore, with the resend without it. Its moves: draft-evaluation.ts's sites down one line for an
   // import, and from the approval refusal on down eighteen, for the settle clause and the
@@ -903,6 +904,10 @@ const SITES_BY_MISSION = {
   ],
   // One direct CLI refusal; REGISTRY_REFUSED is STATE under the unchanged sibling-code rule.
   's110-m05': ['src/cli/registry.ts:89'],
+  // s111-m02: the same ten draft-evaluation and six replica-check suggestion initializers moved.
+  // The approval remedy changed wording through its existing helper.
+  // The session's feedback validation preserves the issue and gives the standalone filing route.
+  's111-m04': ['src/tools/rbook/rbook-session.ts:382'],
 } as const satisfies Readonly<Record<string, readonly string[]>>;
 const RATIFIED_SITE_ADDS = Object.values(SITES_BY_MISSION).flat();
 
@@ -2451,6 +2456,22 @@ const MATRIX: MatrixCase[] = [
   },
 
   // ── AXIS 6 — parameter VALUE violations ───────────────────────────────────────────────────────
+  {
+    axis: '6 parameter-value',
+    name: 's111-m04: a session list call carries feedback',
+    reachable: 'A client uses the session tool’s published feedback field on a list call.',
+    calls: ({ projectRoot }) =>
+      ['Please keep the session open.', { body: 'Please keep the session open.' }].map(
+        (agentFeedback) => ({
+          tool: 'rbook_session',
+          params: { action: 'list', projectRoot, agentFeedback },
+        })
+      ),
+    remedyParams: async (_tool, _action, { projectRoot }) => ({
+      projectRoot,
+      agentFeedback: 'Please keep the session open.',
+    }),
+  },
   // s106-m02: one refusal for a supplied value the content sanitizer emptied, at each of its three
   // callers. Each check runs before any store read, so no mission state is needed.
   {
@@ -6237,11 +6258,10 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     'The combined rename endpoint returns HTTP 400. Its only production caller is the direct CLI, outside this MCP router matrix; dashboard-client-rename.test.ts verifies its typed refusal and rename.test.ts verifies no local or lease write, granting no oracle-site credit.',
   'src/tools/rbook/dashboard-client.ts:1651':
     'The combined rename endpoint returns HTTP 409 for a conflicting name or slug. Its only production caller is the direct CLI; dashboard-client-rename.test.ts verifies its typed refusal and rename.test.ts verifies no local or lease write, granting no oracle-site credit.',
-  // s108-m02: the matrix sends no key outside its action's applicability and has no date axis. The
+  // s108-m02: the matrix has no date axis. The s111-m04 feedback cases exercise the shared
+  // applicability refusal. The date-specific cases below keep their separate coverage. The
   // named suites drive each refusal at the dispatch boundary or in its handler and run its remedy;
   // they grant no examined-site or remedy-replay credit here.
-  'src/tools/rbook/inapplicable-param.ts:54':
-    'A published key given to an action that would ignore it (checkAfter, reason, or since and until on next_steps). next-step-param-refusals.test.ts drives all 29 pairs at dispatch, derived from the applicability tables; next-step-dated-lifecycle.test.ts runs the dated capture and carry, and the reasoned complete and drop, that the remedy names.',
   'src/tools/rbook/rbook-next-steps.ts:229':
     'A reason over 500 characters. next-step-dated-lifecycle.test.ts refuses a 501-character reason and completes rows with shorter ones; the cap is enforced in the handler so that zod publishes no maxLength.',
   'src/tools/rbook/rbook-next-steps.ts:242':
@@ -6597,17 +6617,17 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
   // s102-m05 extracted evaluation; these are current locations, unlike the mission history above.
   // The matrix drives routers in process with no harness link, so the server writes as a process
   // and no operator words can be bound to it; these are driven by name in draft-approval.test.ts.
-  'src/tools/rbook/draft-evaluation.ts:226':
+  'src/tools/rbook/draft-evaluation.ts:235':
     "A fromDraft record, in other words than the draft's, of a draft revised after the operator approved it. The record path only; draft-approval.test.ts records a declined revision's text under the earlier approval, and the s106-m02 chain test replays it after this ledger is computed, for no examined-site credit.",
-  'src/tools/rbook/draft-evaluation.ts:259':
+  'src/tools/rbook/draft-evaluation.ts:268':
     'The operator plainly declined but the prompt hook could not write the decline, so only the ' +
     'runtime words say so. Needs a harness-linked server and hook runtime words; driven in ' +
     'draft-approval.test.ts ("refuses a decline the hook could not write to the store").',
-  'src/tools/rbook/draft-approval.ts:181':
+  'src/tools/rbook/draft-approval.ts:196':
     'Two records of one constraint, rule or profile draft at once: the guarded claim lets one ' +
     'through. A race needs the operator words bound in a harness session; driven in ' +
     'draft-approval.test.ts ("claims a constraint draft once when two records race").',
-  'src/tools/rbook/draft-approval.ts:252':
+  'src/tools/rbook/draft-approval.ts:267':
     'An approved profile draft whose line cannot be written (past the profile cap) releases its ' +
     'claim. Needs the operator words bound in a harness session; driven in draft-approval.test.ts ' +
     '("releases the claim when an approved profile line cannot be written").',
@@ -6620,13 +6640,13 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
     'Two records of one decision draft at once: the in-transaction guard approves it once and ' +
     'rolls the other back. Driven in draft-approval.test.ts ("records a draft once").',
   // ── s96-m01: the shared record's refusals of a copy, which need a second copy or a restore ─────
-  'src/tools/rbook/replica-check.ts:45':
+  'src/tools/rbook/replica-check.ts:55':
     'A second live copy of a shared project on one machine. The healthy-store matrix drives routed calls on one store, and makes no second copy; replica-check.test.ts and replica-identity.test.ts drive it, and record-join.test.ts refuses a second copy its join.',
-  'src/tools/rbook/replica-check.ts:57':
-    "A restored backup or a replaced folder, its sequence behind this machine's mark. The healthy-store matrix drives routed calls on one store, and restores none; replica-check.test.ts drives the refusal, and record-reidentify.test.ts syncs such a copy, which then re-identifies and reports what it lost.",
   'src/tools/rbook/replica-check.ts:67':
+    "A restored backup or a replaced folder, its sequence behind this machine's mark. The healthy-store matrix drives routed calls on one store, and restores none; replica-check.test.ts drives the refusal, and record-reidentify.test.ts syncs such a copy, which then re-identifies and reports what it lost.",
+  'src/tools/rbook/replica-check.ts:77':
     'A copy of a shared project this machine has not joined, such as a zip carried here. The healthy-store matrix drives routed calls on one store, and carries none; replica-check.test.ts drives it, and record-join.test.ts joins such a copy.',
-  'src/tools/rbook/replica-check.ts:76':
+  'src/tools/rbook/replica-check.ts:86':
     'A copy whose check could not run, such as a binding of another project. The healthy-store matrix drives routed calls on one store, and builds no such binding; replica-check.test.ts drives it.',
   // s96-m03 (fold): down four lines; s96-m12: eight more (two refusal codes, and the open sessions a
   // joining copy brings, marked as their creator's at its first identity only). s96-m13: nine more
@@ -6634,7 +6654,7 @@ const RESIDUAL_REASONS: Readonly<Record<string, string>> = {
   'src/tools/rbook/replica-identity.ts:311':
     'A copy whose number block is full: a million rows of one table in its block. The healthy-store matrix drives routed calls on one store, far below that; replica-check.test.ts and replica-identity.test.ts fill a block and drive it.',
   // ── s96-m03: the change log's refusals, which need damage or a write no tool makes ─────────────
-  'src/tools/rbook/replica-check.ts:112':
+  'src/tools/rbook/replica-check.ts:122':
     'A copy whose write guard is broken (a dropped or changed trigger, a lost guard table, a leftover token or stage, a lost table or recorded column, a column this version does not know) refuses writes and names its remedy: the repair, a restore or an upgrade. It is damage no routed call makes; record-guards.test.ts breaks the guard each way on a shared store, drives the routed tools to the refusal, and runs reasonbook repair --guard.',
   'src/tools/rbook/record-capture.ts:59':
     'A delete of a shared row, which no tool path makes: the guard aborts any delete outside the ' +
@@ -7137,13 +7157,14 @@ PRIVATE.describe(
     // from the refusal's own fresh store; it must succeed.
     it("s106-m02 CHAINS — each repaired refusal's remedy, sent as its suggestion words it, succeeds", async () => {
       type Call = [string, Record<string, unknown>];
+      type Store = ReturnType<typeof freshStore>;
       interface Chain {
         name: string;
-        setup?: (ctx: { projectRoot: string; dbPath: string }) => void;
-        trigger: (ctx: { projectRoot: string; dbPath: string }) => Call;
+        setup?: (ctx: Store) => void | Promise<void>;
+        trigger: (ctx: Store) => Call;
         code: string;
         words: RegExp;
-        remedy: (ctx: { projectRoot: string; dbPath: string }) => Call;
+        remedy: (ctx: Store) => Call | Promise<Call>;
         /** The newest decision's text once the remedy has run, where the chain checks it. */
         stored?: string;
       }
@@ -7160,8 +7181,36 @@ PRIVATE.describe(
       const TAG_FIRST = `${TAG} tags stay out of imported notes, the s107-m02 chain says, before recording.`;
       const QUOTED_FIRST = `\`${TAG}\` tags stay out of imported notes, the s107-m02 chain says, before recording.`;
       const draft = (ctx: { dbPath: string }, text = DRAFT) => `P${draftIdOf(ctx.dbPath, text)}`;
-      const seed = (ctx: { dbPath: string }) =>
-        seedDraft(ctx.dbPath, DRAFT, 'decision', 0, 'pending');
+      const sessionId = 's106-chain-operator';
+      const { withCodexRequest } = require(
+        `${mirror.root}/codex-request-context.js`
+      ) as typeof import('../../../src/codex-request-context');
+      const seedApproved = async (ctx: Store, text = DRAFT) => {
+        seedDraft(ctx.dbPath, text, 'decision', 0, 'pending');
+        const code = await runCli(['hook', 'prompt', '--harness', 'codex'], {
+          cwd: ctx.projectRoot,
+          env: process.env,
+          startedAtMs: Date.now() + 20_000,
+          readStdin: async () =>
+            JSON.stringify({
+              cwd: ctx.projectRoot,
+              session_id: sessionId,
+              prompt: `I approve this decision: ${text}`,
+            }),
+          stdout: () => {},
+          stderr: () => {},
+        });
+        expect(code).toBe(0);
+      };
+      const drive = (ctx: Store, name: string, [tool, params]: Call) =>
+        withCodexRequest(
+          {
+            'x-codex-turn-metadata': {},
+            sessionId,
+            'codex/sandbox-state-meta': { sandboxCwd: pathToFileURL(ctx.projectRoot).href },
+          },
+          () => driveMirrored(name, 's106-m02 chain', tool, params)
+        );
       const record = (projectRoot: string, extra: Record<string, unknown>): Call => [
         'rbook_decisions',
         { action: 'record', projectRoot, ...extra },
@@ -7170,16 +7219,17 @@ PRIVATE.describe(
       const chains: Chain[] = [
         {
           name: '#870: fromDraft with a field the draft did not hold',
-          setup: seed,
+          setup: seedApproved,
           trigger: (ctx) =>
             record(ctx.projectRoot, { fromDraft: draft(ctx), context: 'Unapproved addition.' }),
           code: 'INVALID_PARAMETER',
           words: /fromDraft without content/,
           remedy: (ctx) => record(ctx.projectRoot, { fromDraft: draft(ctx) }),
+          stored: DRAFT,
         },
         {
           name: '#870: content that does not state the draft',
-          setup: seed,
+          setup: seedApproved,
           trigger: (ctx) =>
             record(ctx.projectRoot, {
               fromDraft: draft(ctx),
@@ -7188,10 +7238,11 @@ PRIVATE.describe(
           code: 'INVALID_PARAMETER',
           words: /fromDraft without content/,
           remedy: (ctx) => record(ctx.projectRoot, { fromDraft: draft(ctx) }),
+          stored: DRAFT,
         },
         {
           name: '#870: a draft whose own text the sanitizer cuts, sent with other content',
-          setup: (ctx) => seedDraft(ctx.dbPath, TAGGED, 'decision', 0, 'pending'),
+          setup: (ctx) => seedApproved(ctx, TAGGED),
           trigger: (ctx) =>
             record(ctx.projectRoot, {
               fromDraft: draft(ctx, TAGGED),
@@ -7200,10 +7251,11 @@ PRIVATE.describe(
           code: 'INVALID_PARAMETER',
           words: /quotes the tag in backticks/,
           // The remedy it names: the line proposed again with the tag in backticks, then recorded.
-          remedy: (ctx) => {
-            seedDraft(ctx.dbPath, QUOTED, 'decision', 0, 'pending');
+          remedy: async (ctx) => {
+            await seedApproved(ctx, QUOTED);
             return record(ctx.projectRoot, { fromDraft: draft(ctx, QUOTED) });
           },
+          stored: QUOTED,
         },
         {
           // s107-m02 (#875): the remedy as an agent follows it. The line proposed again with the
@@ -7214,17 +7266,17 @@ PRIVATE.describe(
           trigger: (ctx) => record(ctx.projectRoot, { fromDraft: draft(ctx, TAG_FIRST) }),
           code: 'INVALID_PARAMETER',
           words: /quotes the tag in backticks/,
-          remedy: (ctx) => {
+          remedy: async (ctx) => {
             const [line] = extractDraftLines(`Revised.\n\nWould record: ${QUOTED_FIRST}`);
-            seedDraft(ctx.dbPath, line.text, 'decision', 0, 'pending');
+            await seedApproved(ctx, line.text);
             return record(ctx.projectRoot, { fromDraft: draft(ctx, line.text) });
           },
           stored: QUOTED_FIRST,
         },
         {
           name: '#870: a revised draft recorded in other words',
-          setup: (ctx) => {
-            seed(ctx);
+          setup: async (ctx) => {
+            await seedApproved(ctx);
             seedDraft(ctx.dbPath, REVISION, 'decision', 0, 'pending');
             withDb(ctx.dbPath, (db) =>
               db
@@ -7236,12 +7288,13 @@ PRIVATE.describe(
           code: 'INVALID_PARAMETER',
           words: /fromDraft without content/,
           remedy: (ctx) => record(ctx.projectRoot, { fromDraft: draft(ctx) }),
+          stored: DRAFT,
         },
         {
           name: '#870: a replaced draft, whose refusal names its pending revision',
-          setup: (ctx) => {
+          setup: async (ctx) => {
             seedDraft(ctx.dbPath, DRAFT, 'decision', 0, 'replaced');
-            seedDraft(ctx.dbPath, REVISION, 'decision', 0, 'pending');
+            await seedApproved(ctx, REVISION);
             withDb(ctx.dbPath, (db) =>
               db
                 .prepare('UPDATE proposals SET replaced_by = ? WHERE id = ?')
@@ -7253,6 +7306,7 @@ PRIVATE.describe(
           words: /Record the revision instead, with fromDraft="P\d+"/,
           // Followed as written: the revision's id, and nothing else the refusal did not name.
           remedy: (ctx) => record(ctx.projectRoot, { fromDraft: draft(ctx, REVISION) }),
+          stored: REVISION,
         },
         {
           name: '#870: fromDraft alone with an id that is not a draft id',
@@ -7260,6 +7314,7 @@ PRIVATE.describe(
           code: 'INVALID_PARAMETER',
           words: /without fromDraft, with the decision's text as content/,
           remedy: (ctx) => record(ctx.projectRoot, { content: PLAIN }),
+          stored: PLAIN,
         },
         {
           name: '#870: fromDraft alone naming no draft',
@@ -7267,6 +7322,7 @@ PRIVATE.describe(
           code: 'DRAFT_NOT_FOUND',
           words: /without fromDraft, with the decision's text as content/,
           remedy: (ctx) => record(ctx.projectRoot, { content: PLAIN }),
+          stored: PLAIN,
         },
         {
           name: 'a block reason the content sanitizer emptied',
@@ -7367,25 +7423,16 @@ PRIVATE.describe(
       const results = [];
       for (const chain of chains) {
         const ctx = freshStore();
-        chain.setup?.(ctx);
-        const [tool, params] = chain.trigger(ctx);
-        const refused = await driveMirrored(chain.name, 's106-m02 chain', tool, params);
-        const [remedyTool, remedyParams] = chain.remedy(ctx);
-        const remedied = await driveMirrored(
-          chain.name,
-          's106-m02 chain',
-          remedyTool,
-          remedyParams
-        );
+        await chain.setup?.(ctx);
+        const refused = await drive(ctx, chain.name, chain.trigger(ctx));
+        const remedied = await drive(ctx, chain.name, await chain.remedy(ctx));
         const newest = () =>
-          withDb(
-            ctx.dbPath,
-            (db) =>
-              (
-                db
-                  .prepare('SELECT decision_text FROM strategic_decisions ORDER BY id DESC LIMIT 1')
-                  .get() as { decision_text: string } | undefined
-              )?.decision_text
+          withDb(ctx.dbPath, (db) =>
+            db
+              .prepare(
+                'SELECT decision_text, approval_mode, approval_words FROM strategic_decisions ORDER BY id DESC LIMIT 1'
+              )
+              .get()
           );
         results.push({
           name: chain.name,
@@ -7403,7 +7450,16 @@ PRIVATE.describe(
           code: chain.code,
           worded: true,
           remedy: 'SUCCEEDS',
-          ...(chain.stored === undefined ? {} : { stored: chain.stored }),
+          ...(chain.stored === undefined
+            ? {}
+            : {
+                stored: {
+                  decision_text: chain.stored,
+                  approval_mode: chain.stored === PLAIN ? null : 'approved',
+                  approval_words:
+                    chain.stored === PLAIN ? null : `I approve this decision: ${chain.stored}`,
+                },
+              }),
         }))
       );
     });
@@ -7457,6 +7513,8 @@ PRIVATE.describe(
       expect(examinedDriveable.length + residualDriveable.length).toBe(DRIVEABLE.length);
       expect(residualDriveable.filter((site) => !RESIDUAL_REASONS[site])).toEqual([]);
       expect(examinedDriveable).toContain(SITES_BY_MISSION['s102-m05'][0]);
+      expect(examinedDriveable).toContain(SITES_BY_MISSION['s111-m04'][0]);
+      expect(examinedDriveable).toContain('src/tools/rbook/inapplicable-param.ts:57');
       // Guard the other direction: a reason for a site that is NOT residual is stale bookkeeping.
       expect(
         Object.keys(RESIDUAL_REASONS).filter((site) => !residualDriveable.includes(site))

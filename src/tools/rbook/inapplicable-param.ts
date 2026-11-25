@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // ABOUTME: s108-m02 — a declared parameter given to an action that does not use it, refused instead of
-// ABOUTME: ignored, for the keys whose silent loss would write the wrong thing: dates, reasons and next_steps' bounds.
+// ABOUTME: ignored, for keys whose loss would discard feedback, dates, reasons or next-step bounds.
 
 import { RBOOK_ERROR_CODES } from './errors';
 import type { RbookToolError } from './types';
@@ -18,15 +18,18 @@ import type { RbookToolError } from './types';
  *
  * THE CLASS, AND WHAT IS LEFT. A published key of an action-bearing tool, given to an action whose
  * RBOOK_ACTION_PARAMS entry lacks it, is accepted and ignored: 1,470 such triples at 51de697c. This
- * refuses only the new keys and next_steps' since and until; every other triple answers as 4.9.0 did,
- * a stated limit.
+ * refuses only the keys named by each router, including session feedback from s111-m04.
  */
 export function isGiven(value: unknown): boolean {
   return value !== undefined && value !== null && !(typeof value === 'string' && !value.trim());
 }
 
+export const SESSION_FEEDBACK_REMEDY =
+  'File the feedback in this project with rbook_agent_onboard(projectRoot=…, agentFeedback=…).';
+
 /** What each refused key would have done, said in its refusal. */
 const WHAT_IT_DOES: Readonly<Record<string, string>> = {
+  agentFeedback: SESSION_FEEDBACK_REMEDY,
   checkAfter:
     'Date a next step when it is captured with rbook_session(action="capture", category="next-step", checkAfter=…), or carry it by id with rbook_context(action="next_steps", nextStepAction="carry", nextStepIds=[…], checkAfter=…).',
   reason:
@@ -49,7 +52,7 @@ export function inapplicableParam(
   return {
     code: RBOOK_ERROR_CODES.INVALID_PARAMETER,
     field: key,
-    providedValue: params[key],
+    ...(key === 'agentFeedback' ? {} : { providedValue: params[key] }),
     message: `${call} does not use ${key}, so it would be ignored; nothing was written.`,
     suggestion: WHAT_IT_DOES[key] ?? `Send the call without ${key}.`,
   };

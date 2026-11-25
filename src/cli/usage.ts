@@ -225,6 +225,8 @@ export const USAGE =
   '  stats [--export]               local usage measurements, as counts\n' +
   '  drafts list [--all] [--format json]\n' +
   '                                 drafted records awaiting the operator\n' +
+  '  drafts settle --draft P<n> --decision <n> --project-root <dir> [--dry-run]\n' +
+  '                                 link one draft to its recorded answer\n' +
   '  signals [--project-root <dir>] [--format json]\n' +
   '                                 what needs a person in each project on this machine, as counts\n' +
   '  brief [--days 1..365] [--format md|json]\n' +

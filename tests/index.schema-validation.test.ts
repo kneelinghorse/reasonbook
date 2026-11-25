@@ -91,3 +91,59 @@ it('the no-store witness is live: a valid call reaches sender resolution', async
   ).rejects.toBe(resolutionReached);
   expect(sender.resolveSenderContext).toHaveBeenCalledTimes(1);
 });
+
+describe('session feedback rejected by the schema', () => {
+  const sentinel = 'private-feedback-sentinel';
+  const invalidFeedback = [
+    {
+      label: 'wrong type',
+      value: { details: { body: sentinel } },
+      expectation: /expected string/i,
+    },
+    { label: 'over 2000', value: sentinel.padEnd(2001, 'x'), expectation: /2000/ },
+  ];
+
+  describe.each(['list', 'start', 'capture', 'search', 'complete'])('%s', (action) => {
+    it.each(invalidFeedback)('explains $label without returning the feedback', async (sample) => {
+      const result = await executeMissionProtocolTool(
+        'rbook_session',
+        { action, agentFeedback: sample.value },
+        {} as never
+      );
+      expect(result.isError).toBe(true);
+      expect(result.structuredContent).toMatchObject({
+        success: false,
+        error: { code: 'INVALID_PARAMETER', field: 'agentFeedback' },
+      });
+      for (const answer of [result.content, result.structuredContent]) {
+        const text = JSON.stringify(answer);
+        expect(text).not.toContain(sentinel);
+        expect(text).toMatch(sample.expectation);
+      }
+      const error = (result.structuredContent as { error: { suggestion: string } }).error;
+      if (action === 'complete') {
+        expect(error.suggestion).not.toContain('rbook_agent_onboard');
+      } else {
+        expect(error.suggestion).toContain('rbook_agent_onboard(projectRoot=…, agentFeedback=…)');
+        expect(JSON.stringify(result.structuredContent)).toContain(action);
+      }
+      expect(sender.resolveSenderContext).not.toHaveBeenCalled();
+    });
+  });
+
+  it('keeps action, unknown-key and earlier schema errors ahead of the feedback error', async () => {
+    for (const [args, code, field] of [
+      [{ action: 'unknown' }, 'INVALID_ACTION', 'action'],
+      [{ action: 'capture', unknown: true }, 'INVALID_PARAMETER', 'unknown'],
+      [{ action: 'capture', category: 'typo' }, 'INVALID_PARAMETER', 'category'],
+    ] as const) {
+      const result = await executeMissionProtocolTool(
+        'rbook_session',
+        { ...args, agentFeedback: { body: sentinel } },
+        {} as never
+      );
+      expect(result.structuredContent).toMatchObject({ error: { code, field } });
+      expect(JSON.stringify(result)).not.toContain(sentinel);
+    }
+  });
+});

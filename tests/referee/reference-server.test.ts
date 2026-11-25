@@ -133,7 +133,11 @@ async function joinAs(name: string, token: string, accountId: string): Promise<C
   expect(response.status).toBe(200);
   const root = path.join(fixture.tmp, name);
   fs.mkdirSync(path.dirname(dbOf(root)), { recursive: true });
-  fs.writeFileSync(dbOf(root), Buffer.from(await response.arrayBuffer()));
+  const downloaded = Buffer.from(await response.arrayBuffer());
+  // The client may still be draining a length-delimited database when the server finishes sending.
+  expect(response.headers.get('connection')).toBe('keep-alive');
+  expect(response.headers.get('content-length')).toBe(String(downloaded.length));
+  fs.writeFileSync(dbOf(root), downloaded);
   const place = { name, root, machine: `machine-${name}`, replicaId: '', block: -1 };
   useMachine(fixture.tmp, place.machine);
   writeUserAuthor(name);

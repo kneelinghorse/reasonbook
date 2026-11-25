@@ -288,7 +288,8 @@ const EXPECTED_TOTALS = {
   // s110-m01: dashboard-slug.ts, address-rule.ts and dashboard-path-tie.ts add three files; the
   // client's listOwnedProjects() adds one root and two declarations (OwnedProject and
   // ListOwnedProjectsResult), an internal result no answer carries.
-  files: 348,
+  // s111-m02: draft-question.ts and private-answer-match.ts add two modules to the tool root.
+  files: 350,
   // s110-m03: the internal RenameProjectResult adds one root/declaration and five string fields.
   roots: 153,
   declarations: 355,

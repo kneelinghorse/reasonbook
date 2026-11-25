@@ -9,7 +9,12 @@ import * as os from 'os';
 import * as path from 'path';
 import { onStop, prepareOffer } from '../../../src/cli/drafts-hook';
 import { RbookDetector } from '../../../src/intelligence/rbook-detector';
-import { openDraftRuntime, peekShown, readExcerpt } from '../../../src/tools/rbook/draft-runtime';
+import {
+  bindExcerpt,
+  openDraftRuntime,
+  peekShown,
+  readExcerpt,
+} from '../../../src/tools/rbook/draft-runtime';
 import { harnessSessionHash } from '../../../src/tools/rbook/harness-session';
 import { rbookDecisions } from '../../../src/tools/rbook/rbook-decisions';
 import { setExternalSessionOwner } from '../../../src/tools/rbook/session-owner';
@@ -143,22 +148,15 @@ it.each(['decision', 'constraint', 'rule', 'profile'])(
   'a legacy upsert cannot upgrade a stale late flag for a %s',
   async (kind) => {
     show(now, kind);
-    const offer = prepareOffer({
-      dbPath: file,
-      rawSessionId: SESSION,
-      message: 'approved',
-      env: process.env,
-      deadlineAtMs: Date.now() + 60_000,
-      now,
-    });
-    offer.commit();
     const runtime = openDraftRuntime(file, process.env)!;
     try {
-      const columns = runtime.db.pragma('table_info(excerpts)') as Array<{ name: string }>;
-      if (!columns.some((column) => column.name === 'late'))
-        runtime.db.exec('ALTER TABLE excerpts ADD COLUMN late INTEGER NOT NULL DEFAULT 0');
-      // 4.5.1's upsert updates reply but leaves the new late column intact.
-      runtime.db.prepare("UPDATE excerpts SET late=1, reply='approval' WHERE session=?").run(HASH);
+      // A pre-upgrade hook really stored the bare reply. Its subsequent upsert changed the
+      // class and preserved the late bit. Neither field establishes a named confirmation.
+      bindExcerpt(runtime, HASH, [1], 'approved', 'other', now, { late: true });
+      const updated = runtime.db
+        .prepare("UPDATE excerpts SET reply='approval' WHERE session=?")
+        .run(HASH);
+      expect(updated.changes).toBe(1);
     } finally {
       runtime.close();
     }
@@ -169,12 +167,7 @@ it.each(['decision', 'constraint', 'rule', 'profile'])(
       fromDraft: 'P1',
       content: TEXT,
     });
-    if (kind === 'decision') {
-      expect(result.success).toBe(true);
-      expect(result.data).toMatchObject({ approval: { mode: 'agent-judged' } });
-    } else {
-      expect(result.success).toBe(false);
-      expect(result.error?.code).toBe('APPROVAL_REQUIRED');
-    }
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe('APPROVAL_REQUIRED');
   }
 );

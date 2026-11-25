@@ -82,9 +82,12 @@ PRIVATE.describe('draft approval on a copy of the live store', () => {
         .get(content) as { id: number; outcome: string };
       expect(draft.outcome).toBe('pending');
       const fromDraft = `P${draft.id}`;
-      expect(await hook('prompt', { prompt: 'approved', prompt_id: 'approval-turn' })).toContain(
-        fromDraft
-      );
+      expect(
+        await hook('prompt', {
+          prompt: `I approve this decision: ${content}`,
+          prompt_id: 'approval-turn',
+        })
+      ).toContain(fromDraft);
       const context = await buildMissionProtocolContext();
       setExternalSessionOwner(session);
       const answer = await executeMissionProtocolTool(
@@ -112,7 +115,7 @@ PRIVATE.describe('draft approval on a copy of the live store', () => {
         decision_text: content,
         approval_mode: 'approved',
         approval_draft: fromDraft,
-        approval_words: 'approved',
+        approval_words: `I approve this decision: ${content}`,
       });
       expect(
         read

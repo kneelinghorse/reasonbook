@@ -21,6 +21,7 @@ import { reidentifyRbookTestStore, seedRbookDb } from '../../helpers/seedRbookDb
 const HOUR = 60 * 60 * 1000;
 const SESSION = 'late-answer-conversation';
 const CONTENT = 'Keep the scratch store in SQLite WAL mode so concurrent readers can continue.';
+const NAMED_APPROVAL = `I approve this decision: ${CONTENT}`;
 let tmp: string;
 let projectRoot: string;
 let dbPath: string;
@@ -129,52 +130,40 @@ function destinations() {
 }
 
 describe('a three-hour answer to the same live conversation', () => {
-  it('records a late yes as agent-judged, retaining the actual words but opening no direct-record window', async () => {
+  it('requires the full choice after the showing has aged, then accepts fresh named approval', async () => {
     propose();
-    expect(answer('yes').reply).toBe('other');
-    expect(runtimeState()).toMatchObject({
-      excerpt: { message: 'yes', reply: 'other' },
-      window: [],
-    });
-    const result = await record();
-    expect(result.success).toBe(true);
-    expect(proposal()).toMatchObject({ outcome: 'approved', approval_mode: 'agent-judged' });
+    expect(answer('yes').reply).toBeNull();
+    expect(runtimeState()).toEqual({ excerpt: null, window: [] });
+    const before = destinations();
+    expect((await record()).error?.code).toBe('APPROVAL_REQUIRED');
+    expect(destinations()).toEqual(before);
+
+    expect(answer(NAMED_APPROVAL).reply).toBe('approval');
+    expect((await record()).success).toBe(true);
     expect(
       query(
         'SELECT approval_mode, approval_words FROM strategic_decisions WHERE decision_text = ?',
         CONTENT
       )
-    ).toEqual({ approval_mode: 'agent-judged', approval_words: 'yes' });
+    ).toEqual({ approval_mode: 'approved', approval_words: NAMED_APPROVAL });
   });
 
-  it('keeps the late approval downgrade through the actual MCP dispatch boundary', async () => {
+  it('requires a fresh named choice when the recording process cannot identify the conversation', async () => {
     propose();
-    answer('yes');
-    const context = await buildMissionProtocolContext();
-    setExternalSessionOwner(SESSION);
-    const response = await executeMissionProtocolTool(
-      'rbook_decisions',
-      { action: 'record', content: CONTENT, fromDraft: 'P1', projectRoot },
-      context
-    );
-    expect(response.structuredContent).toMatchObject({ success: true });
-    expect(proposal()).toMatchObject({ outcome: 'approved', approval_mode: 'agent-judged' });
-    expect(
-      query(
-        'SELECT approval_mode, approval_draft, approval_words FROM strategic_decisions WHERE decision_text = ?',
-        CONTENT
-      )
-    ).toEqual({ approval_mode: 'agent-judged', approval_draft: 'P1', approval_words: 'yes' });
+    expect(answer('yes').reply).toBeNull();
+    const before = destinations();
+    expect((await record(true, null)).error?.code).toBe('APPROVAL_REQUIRED');
+    expect(destinations()).toEqual(before);
+    expect(proposal().outcome).toBe('pending');
   });
 
-  // s106-m02 (#870): fromDraft alone takes the draft's own words, so a late yes is judged exactly as
-  // a verbatim restatement is, through the real dispatch; a later kind still needs a plain yes on time.
   it.each([
     ['restated', { content: CONTENT }],
     ['fromDraft alone', {}],
-  ])('records a late yes %s as agent-judged through the dispatch', async (_form, extra) => {
+  ])('refuses a late bare yes %s through the real dispatch', async (_form, extra) => {
     propose();
     answer('yes');
+    const before = destinations();
     const context = await buildMissionProtocolContext();
     setExternalSessionOwner(SESSION);
     const response = await executeMissionProtocolTool(
@@ -182,13 +171,12 @@ describe('a three-hour answer to the same live conversation', () => {
       { action: 'record', fromDraft: 'P1', projectRoot, ...extra },
       context
     );
-    expect(response.structuredContent).toMatchObject({ success: true });
-    expect(
-      query(
-        'SELECT approval_mode, approval_draft, approval_words FROM strategic_decisions WHERE decision_text = ?',
-        CONTENT
-      )
-    ).toEqual({ approval_mode: 'agent-judged', approval_draft: 'P1', approval_words: 'yes' });
+    expect(response.structuredContent).toMatchObject({
+      success: false,
+      error: { code: 'APPROVAL_REQUIRED' },
+    });
+    expect(proposal().outcome).toBe('pending');
+    expect(destinations()).toEqual(before);
   });
 
   it.each([
@@ -216,7 +204,7 @@ describe('a three-hour answer to the same live conversation', () => {
   it('does not let a direct record silently settle the late-answer draft', async () => {
     propose();
     answer('yes');
-    expect(runtimeState().excerpt).toMatchObject({ reply: 'other' });
+    expect(runtimeState().excerpt).toBeNull();
     expect((await record(false)).success).toBe(true);
     expect(proposal()).toEqual({ outcome: 'pending', record_id: null, approval_mode: null });
   });
@@ -267,7 +255,7 @@ describe('a three-hour answer to the same live conversation', () => {
     async (kind) => {
       propose(kind);
       answer('yes');
-      expect(runtimeState().excerpt).toMatchObject({ reply: 'other' });
+      expect(runtimeState().excerpt).toBeNull();
       const before = destinations();
       const result = await record();
       expect(result.success).toBe(false);
@@ -286,9 +274,10 @@ describe('a three-hour answer to the same live conversation', () => {
     expect(onSessionStart(otherDb, 'other-store-session', 'startup', process.env, now - 1)).toBe(
       true
     );
-    expect(answer('yes').reply).toBe('other');
+    expect(answer('yes').reply).toBeNull();
+    expect(answer(NAMED_APPROVAL).reply).toBe('approval');
     expect((await record()).success).toBe(true);
-    expect(proposal().approval_mode).toBe('agent-judged');
+    expect(proposal().approval_mode).toBe('approved');
   });
 });
 
@@ -350,10 +339,11 @@ describe('a long-lived shown set is not approval from another turn or conversati
       expect(runtimeState().excerpt).toBeNull();
       expect((await record()).error?.code).toBe('APPROVAL_REQUIRED');
       expect(proposal().outcome).toBe('pending');
-      // The next human message still answers the proposal, but cannot become plain approval.
-      expect(answer('yes').reply).toBe('other');
+      // A human prompt can still authorize this proposal by naming it.
+      expect(answer('yes').reply).toBeNull();
+      expect(answer(NAMED_APPROVAL).reply).toBe('approval');
       expect((await record()).success).toBe(true);
-      expect(proposal().approval_mode).toBe('agent-judged');
+      expect(proposal().approval_mode).toBe('approved');
     }
   );
 });

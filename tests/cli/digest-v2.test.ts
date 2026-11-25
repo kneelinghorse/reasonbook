@@ -304,7 +304,7 @@ describe('pending drafts in the digest', () => {
       drafts,
     });
 
-  it('lists drafts by id and kind with the ask to name them, inside 4,000 characters', () => {
+  it('lists draft ids and kinds privately and asks the underlying choice, inside 4,000 characters', () => {
     const text = full([
       {
         id: 3,
@@ -316,7 +316,10 @@ describe('pending drafts in the digest', () => {
     expect(text.length).toBeLessThanOrEqual(4000);
     expect(text).toMatch(/Pending drafts:[\s\S]*P3 \[decision\]/);
     expect(text).toContain('P4 [constraint]');
-    expect(text).toContain('Name each as "draft P<n>" with its subject');
+    expect(text).toContain(
+      'Reply “I approve this decision:” followed by the full choice. Should I record this decision?'
+    );
+    expect(text).not.toContain('Name each as "draft P<n>"');
     expect(text.endsWith('end with Would record: <decision>.')).toBe(true);
   });
 

@@ -2,8 +2,18 @@
 // ABOUTME: The check on a copy of a shared record before it writes (ADR s96 §9): an unjoined copy, a restored
 // ABOUTME: backup or replaced folder, and a second live copy on one machine are refused; a move rebinds.
 
+import Database from 'better-sqlite3';
+import path from 'node:path';
+import {
+  assertConfigDirectoryAvailable,
+  resolveConfigDirectory,
+} from '../../intelligence/legacy-compat';
 import { ProjectGraphRegistry, readStoreIdentity } from '../../intelligence/project-graph-registry';
-import type { ReplicaBinding } from '../../intelligence/replica-bindings';
+import {
+  liveReplicas,
+  replicaBinding,
+  type ReplicaBinding,
+} from '../../intelligence/replica-bindings';
 import type { RbookDatabaseClient } from './client';
 import { RBOOK_ERROR_CODES } from './errors';
 import {
@@ -138,7 +148,7 @@ function liveCopyAt(binding: ReplicaBinding, projectId: string): boolean {
 
 /** A live binding of this project on this machine in another folder that still holds it. */
 function liveCopyElsewhere(
-  registry: ProjectGraphRegistry,
+  registry: Pick<ProjectGraphRegistry, 'liveReplicas'>,
   projectId: string,
   folder: string,
   except?: string
@@ -153,8 +163,12 @@ function liveCopyElsewhere(
     );
 }
 
-function judgeCopy(client: RbookDatabaseClient, identity: ReplicaIdentity): RbookToolError | null {
-  const registry = ProjectGraphRegistry.getInstance();
+function judgeCopy(
+  client: RbookDatabaseClient,
+  identity: ReplicaIdentity,
+  registry: Pick<ProjectGraphRegistry, 'liveReplicas' | 'replicaBinding'>,
+  repair?: ProjectGraphRegistry
+): RbookToolError | null {
   // The mark first: it only follows a commit, so on a healthy copy a sequence read after it is
   // never behind it, however other processes interleave.
   const binding = registry.replicaBinding(identity.replicaId);
@@ -183,9 +197,35 @@ function judgeCopy(client: RbookDatabaseClient, identity: ReplicaIdentity): Rboo
   const other = liveCopyElsewhere(registry, projectId, folder, identity.replicaId);
   if (other) return secondCopy(other.store_path);
   if (moved || binding.device !== file.device)
-    registry.rebindReplica(identity.replicaId, folder, file);
-  if (seq > binding.seq_mark) registry.advanceReplicaMark(identity.replicaId, seq);
+    repair?.rebindReplica(identity.replicaId, folder, file);
+  if (seq > binding.seq_mark) repair?.advanceReplicaMark(identity.replicaId, seq);
   return null;
+}
+
+/** A copy-local draft write must pass the same check without registering, rebinding or repairing on preview. */
+export function localDraftCopyRefusal(
+  client: RbookDatabaseClient,
+  env: NodeJS.ProcessEnv
+): RbookToolError | null {
+  const identity = readReplicaIdentity(client, { fresh: true });
+  if (!identity) return unchecked('the change log has no replica identity');
+  const dir = resolveConfigDirectory(env);
+  assertConfigDirectoryAvailable(dir);
+  const db = new Database(path.join(dir, 'project-graph.sqlite'), {
+    readonly: true,
+    fileMustExist: true,
+    timeout: 100,
+  });
+  try {
+    return (
+      judgeCopy(client, identity, {
+        replicaBinding: (id) => replicaBinding(db, id),
+        liveReplicas: (id) => liveReplicas(db, id),
+      }) ?? guardRefusal(client)
+    );
+  } finally {
+    db.close();
+  }
 }
 
 /**
@@ -204,7 +244,8 @@ export function replicaWriteRefusal(client: RbookDatabaseClient): RbookToolError
     replicaId = identity.replicaId;
     const known = verdicts.get(client);
     if (known && known.replicaId === replicaId) return known.verdict;
-    const verdict = judgeCopy(client, identity) ?? guardRefusal(client);
+    const registry = ProjectGraphRegistry.getInstance();
+    const verdict = judgeCopy(client, identity, registry, registry) ?? guardRefusal(client);
     // A deferred transaction may read an old snapshot, so a refusal reached in one is not kept.
     if (!verdict || !client.inTransaction || client.inWriteTransaction)
       verdicts.set(client, { replicaId, verdict });

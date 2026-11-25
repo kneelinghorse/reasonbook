@@ -186,13 +186,11 @@ Choosing not to wait for a copy does not remove its member from the frozen censu
 - Recovery files: accepted recovery contributions, whatever remained at the lost store's path,
   including sidecars and account bindings, and a store published by an interrupted finalization.
   After successful recovery, earlier snapshots move into the retained lost-store folder and no
-  longer follow ordinary seven-day snapshot pruning. Automatic expiry of recovery files is
-  currently disabled, so these files are currently kept until the project is deleted. Refused
-  contributions are removed.
+  longer follow ordinary seven-day snapshot pruning. Refused contributions are removed.
 
-  The planned 30-day policy is not yet active. Once enabled, it will delete these files 30 days
-  after the loss is resolved. The loss is resolved when the attempt becomes hosted or, for a
-  cancelled attempt, when a later attempt becomes hosted or the store is handed in again. No
+  The dashboard deletes these recovery files 30 days after the loss is resolved. The loss is
+  resolved when the attempt becomes hosted or, for a cancelled attempt, when a later attempt
+  becomes hosted or the store is handed in again. No
   recovery files are deleted while any recovery for the project is collecting. A cancelled attempt
   whose loss is never resolved keeps its files until the project is deleted.
 
@@ -292,8 +290,10 @@ request. `--offline` skips it.
   including decision reasons, recorded approval words and each record's author name and account
   id, and synced events;
 - for a project shared through it, its referee copy, ordinary snapshots for 7 days and, after a
-  move back, its archive for 7 days; recovery records stay until the project is deleted, and recovery
-  files currently stay that long too; the planned expiry described above is not yet active;
+  move back, its archive for 7 days. Recovery records stay until the project is deleted. Recovery
+  files expire 30 days after the loss is resolved. The dashboard keeps all recovery files while
+  any recovery for the project is collecting. Files from a loss that is never resolved stay until
+  the project is deleted.
 - for projects owned by configured operator accounts, one current signals report: the project's
   name and id, counts, row ids, timestamps, rule sentences, read-failure reasons and the Reasonbook
   library version, without record prose;

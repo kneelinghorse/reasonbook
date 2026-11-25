@@ -7,8 +7,15 @@ import { currentCodexRequest } from '../../codex-request-context';
 import { formatCliRemedy } from '../../utils/cli-remedy';
 import { sanitizeContentField } from '../../intelligence/content-sanitizer';
 import type { RbookDatabaseClient } from './client';
-import { CONTENT_FLOOR, draftCoverage, recordStatesDraft, type ReplyClass } from './draft-grammar';
-import { openDraftRuntime, readExcerpt, startsSince, pendingDeclines } from './draft-runtime';
+import { CONTENT_FLOOR, draftCoverage, recordStatesDraft } from './draft-grammar';
+import {
+  openDraftRuntime,
+  readExcerpt,
+  startsSince,
+  pendingDeclines,
+  type StoredExcerpt,
+} from './draft-runtime';
+import { DRAFT_QUESTIONS, namedApprovalTarget, restatesStandingSetting } from './draft-question';
 import { ERROR_FIELD_LIMIT } from './error-bounds';
 import { RBOOK_ERROR_CODES } from './errors';
 import {
@@ -32,10 +39,21 @@ export interface DraftEvaluation {
   readonly draft: DraftRow;
   readonly label: string;
   readonly mode: ApprovalMode;
-  /** The operator's message, for approved and agent-judged. */
-  readonly words: string | null;
+  /** The operator's named approval, retained verbatim. */
+  readonly words: string;
   /** s97-m12: the share of the draft's own subject the content holds (draftCoverage). */
   readonly coverage: number;
+}
+
+/** A stored class alone cannot attest an older hook's approval or its target. */
+export function namesApprovedDraft(excerpt: StoredExcerpt | null, draft: DraftRow): boolean {
+  return (
+    excerpt?.reply === 'approval' &&
+    excerpt.windowSize === 1 &&
+    (excerpt.standingSetting
+      ? !excerpt.late && restatesStandingSetting(excerpt.message, draft)
+      : namedApprovalTarget(excerpt.message, [draft]) === draft)
+  );
 }
 
 /** The recording server's harness session hash, or null when it writes as a process. */
@@ -93,25 +111,16 @@ function notPending(
   };
 }
 
-const REPLY_WORDS: Readonly<Record<ReplyClass, string>> = {
-  approval: 'an approval of several drafts at once',
-  decline: 'a decline',
-  question: 'a question',
-  other: 'not a plain approval',
-};
-
 /** The one refusal for a draft the operator has not plainly approved here; its remedy re-proposes. */
 function approvalRequired(draft: DraftRow, label: string, why: string): RbookToolError {
   const codexRemedy = currentCodexRequest()
-    ? ' Keep one Codex conversation running for both proposal and approval; separate codex exec / codex exec resume runs end the hook session. Re-propose and approve there.'
+    ? ' Keep one Codex conversation running. Separate codex exec / codex exec resume runs end the session.'
     : '';
   const again = (text: string) =>
-    `end a reply with "Would record${draft.kind === 'decision' ? '' : ` (${draft.kind})`}: ${text}" (revised if needed), and record it after the operator approves it.${codexRemedy}`;
-  // s109-m02 (critic B2, note 7): a decision draft a recorded decision already answered is settled
-  // by a reply line, both clauses explicit; only otherwise is it put to the operator again.
+    `end a reply with "Would record${draft.kind === 'decision' ? '' : ` (${draft.kind})`}: ${text}" (revised if needed), and ask for “I approve this ${draft.kind}:” followed by the full choice.${codexRemedy}`;
   const suggestion = (text: string): string =>
     draft.kind === 'decision'
-      ? `If decision N already records the operator's answer, end your reply with "Settled: ${label} by decision <N>" above any Would record lines, naming the draft only in that line. Otherwise ${again(text)}`
+      ? `Already answered? Privately use drafts settle --draft ${label} --decision N --project-root DIR. Read the full text with drafts list. Send it, a blank line and "${DRAFT_QUESTIONS.decision}". If unbound, require a named choice before recording without fromDraft. Choice begins "${text}".${codexRemedy}`
       : `${again(text).charAt(0).toUpperCase()}${again(text).slice(1)}`;
   // A suggestion past error-bounds.ts's limit is cut to a short preview, which lost the Codex remedy
   // at the end: the draft's own words give way first, down to none, never the guidance. Control
@@ -212,7 +221,7 @@ export function evaluateDraft(
     const cutRemedy = `${label}'s own text holds a tool-call tag outside backticks, which the content sanitizer cuts, so it cannot be recorded in its own words. End your reply with a revised Would record${draft.kind === 'decision' ? '' : ` (${draft.kind})`} line that quotes the tag in backticks, so the operator approves that text.`;
     // s97-m12: a revision shown after the operator plainly approved this draft leaves that approval
     // with this draft's own words only (learning #481).
-    if (draft.replacedBy !== null && !recordStatesDraft(draft.text, content)) {
+    if (draft.replacedBy !== null && draft.text !== content) {
       // Its revision may itself have been revised: name the newest still pending (critic round 2),
       // and none when the operator declined them all (s100-m02, verification round).
       const newest = newestPending(run, draft.id);
@@ -274,37 +283,29 @@ export function evaluateDraft(
           suggestion: cutRemedy,
         },
       };
-    if (session && !excerpt)
+    if (!excerpt || !namesApprovedDraft(excerpt, draft))
       return {
         ok: false,
         error: approvalRequired(
           draft,
           label,
-          'the operator has not answered it in this conversation within the last two hours, and a draft nobody answered is never recorded.'
+          'this conversation has no current operator approval naming that choice.'
         ),
       };
-    const plain = excerpt?.reply === 'approval' && !excerpt.late;
-    if (draft.kind !== 'decision' && !plain)
+    if (draft.kind !== 'decision' && excerpt.late)
       return {
         ok: false,
         error: approvalRequired(
           draft,
           label,
-          excerpt
-            ? `a ${draft.kind} is written only on the operator's plain approval, and their message was ${REPLY_WORDS[excerpt.reply as ReplyClass] ?? 'not one'}.`
-            : `a ${draft.kind} needs the operator's approval in a conversation with Reasonbook hooks, and this server has none.`
+          `the earlier approval of this ${draft.kind} arrived late.`
         ),
       };
-    const single = plain && excerpt?.windowSize === 1;
-    const mode: ApprovalMode = !excerpt
-      ? 'agent-attested'
-      : single && (draft.kind !== 'decision' || recordStatesDraft(draft.text, content))
+    const mode: ApprovalMode =
+      !excerpt.late && (draft.kind !== 'decision' || draft.text === content)
         ? 'approved'
         : 'agent-judged';
-    return {
-      ok: true,
-      value: { draft, label, mode, words: excerpt ? excerpt.message : null, coverage },
-    };
+    return { ok: true, value: { draft, label, mode, words: excerpt.message, coverage } };
   } finally {
     runtime?.close();
   }

@@ -153,7 +153,7 @@ describe('a taught settle answers the draft at Stop (#1810)', () => {
       approval_mode: 'settled',
     });
     const next = context(await prompt('s-one', 'yes'));
-    expect(next).toContain('Reasonbook draft P2'); // the Would record line below still drafted, and binds
+    expect(next).toContain('Still pending: P2'); // The new choice needs its own named answer.
     expect(next).not.toContain('P1');
     expect(context(await start('s-later'))).not.toContain('P1 [');
     expect(context(await prompt('s-later', 'continue with the parser'))).not.toContain('P1');
@@ -306,12 +306,12 @@ describe('a settle never answers a draft its own reply put to the operator (crit
   async function approvedThenRevised(): Promise<void> {
     await start('s-one');
     await stop('s-one', PROPOSAL);
-    await prompt('s-one', 'yes');
+    await prompt('s-one', `I approve this decision: ${DRAFT_TEXT}`);
     await stop('s-one', `Revised.\n\nWould record: ${T2}`);
     await prompt('s-one', 'why one file per decision?');
   }
 
-  it('refuses a settle whose chain holds the draft the same reply repeats, which the next "yes" approves', async () => {
+  it('refuses a settle whose chain holds the draft the same reply repeats, which the operator then approves by name', async () => {
     await approvedThenRevised();
     const d = decision();
     await stop(
@@ -319,7 +319,7 @@ describe('a settle never answers a draft its own reply put to the operator (crit
       `The earlier approval is decision ${d}.\n\nSettled: P1 by decision ${d}\nWould record: ${T2}`
     );
     expect([draft(1).outcome, draft(2).outcome]).toEqual(['pending', 'pending']);
-    const next = context(await prompt('s-one', 'yes'));
+    const next = context(await prompt('s-one', `I approve this decision: ${T2}`));
     expect(next).toContain('plain approval of P2');
     expect(next).toContain(
       `"Settled: P1 by decision ${d}" (this reply's own Would record line drafts that draft or one on its chain of revisions, which settling it would answer too)`

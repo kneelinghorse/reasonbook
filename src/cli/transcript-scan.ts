@@ -255,14 +255,17 @@ export function lastAssistantText(file: string): string | null {
       .split('\n');
     for (let i = lines.length - 1; i >= 0; i--) {
       const line = lines[i].trim();
-      if (!line.startsWith('{')) continue;
+      if (!line) continue;
+      if (!line.startsWith('{')) return null;
       let entry: unknown;
       try {
         entry = JSON.parse(line);
       } catch {
-        continue;
+        return null;
       }
       const record = entry as { type?: unknown; message?: { content?: unknown } };
+      // A later user or a tool-only assistant turn cannot show an earlier proposal again.
+      if (record.type === 'user') return null;
       if (record.type !== 'assistant') continue;
       const content = record.message?.content;
       const text = Array.isArray(content)
@@ -279,7 +282,7 @@ export function lastAssistantText(file: string): string | null {
         : typeof content === 'string'
           ? content
           : '';
-      if (text.trim()) return text;
+      return text.trim() ? text : null;
     }
     return null;
   } catch {

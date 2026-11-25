@@ -28,8 +28,8 @@ export const SERVER_INSTRUCTIONS_LEVELS =
  */
 export const SERVER_INSTRUCTIONS_PROPOSALS =
   'When a choice is the operator’s to make (scope, cost, outside commitments, their ' +
-  'preferences), end your reply with Would record: <decision and reason>; once they approve, ' +
-  'record it, with fromDraft when Reasonbook gave it an id. Record choices in your own remit directly.';
+  'preferences), ask them to name the choice. End with Would record: <decision and reason>. ' +
+  'Record their choice, with fromDraft for a linked approval. Record choices in your own remit directly.';
 
 export const SERVER_INSTRUCTIONS = `${SERVER_INSTRUCTIONS_LOOP}\n\n${SERVER_INSTRUCTIONS_LEVELS}\n\n${SERVER_INSTRUCTIONS_PROPOSALS}`;
 
@@ -50,7 +50,10 @@ export function getServerInstructions(): string {
         'Record a decision when the user asks for it or approves it.'
       )
       // s106-m05: this edition deletes fromDraft and makes no drafts.
-      .replace('record it, with fromDraft when Reasonbook gave it an id.', 'record it.') +
+      .replace(
+        'Record their choice, with fromDraft for a linked approval.',
+        'Record their choice.'
+      ) +
     " This edition keeps this project's record on this machine only; sharing, the dashboard and messages need the full plugin."
   );
 }

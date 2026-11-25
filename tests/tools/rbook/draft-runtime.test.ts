@@ -117,7 +117,7 @@ describe('session starts', () => {
     const runtime = open();
     const now = Date.now();
     bumpOffers(runtime, S1, [4]);
-    bindWindow(runtime, S1, [4], 'approved', 'approval', now);
+    bindWindow(runtime, S1, [4], 'I approve keeping the report.', 'approval', now);
     recordSessionStart(runtime, S1, now + 1);
     expect(offerCounts(runtime, S1).get(4)).toBeUndefined();
     expect(readExcerpt(runtime, S1, 4, now + 2)).toBeNull();
@@ -177,7 +177,7 @@ describe('the operator words and the window', () => {
   it('forgets the words after two hours, and the window with them', () => {
     const runtime = open();
     const now = Date.now();
-    bindWindow(runtime, S1, [4], 'approved', 'approval', now);
+    bindWindow(runtime, S1, [4], 'I approve keeping the report.', 'approval', now);
     expect(readExcerpt(runtime, S1, 4, now + EXCERPT_TTL_MS - 1)).not.toBeNull();
     expect(readExcerpt(runtime, S1, 4, now + EXCERPT_TTL_MS + 1)).toBeNull();
     expect(openWindow(runtime, S1, now + EXCERPT_TTL_MS + 1)).toEqual([]);
@@ -186,16 +186,16 @@ describe('the operator words and the window', () => {
   it('closes the window at the end of the turn but keeps the words for the record', () => {
     const runtime = open();
     const now = Date.now();
-    bindWindow(runtime, S1, [4], 'approved', 'approval', now);
+    bindWindow(runtime, S1, [4], 'I approve keeping the report.', 'approval', now);
     closeWindow(runtime, S1);
     expect(openWindow(runtime, S1, now)).toEqual([]);
-    expect(readExcerpt(runtime, S1, 4, now)?.message).toBe('approved');
+    expect(readExcerpt(runtime, S1, 4, now)?.message).toBe('I approve keeping the report.');
   });
 
   it('a later message replaces the words: the operator latest word counts', () => {
     const runtime = open();
     const now = Date.now();
-    bindWindow(runtime, S1, [4], 'approved', 'approval', now);
+    bindWindow(runtime, S1, [4], 'I approve keeping the report.', 'approval', now);
     bindWindow(runtime, S1, [4], 'wait, not yet?', 'question', now + 5);
     expect(readExcerpt(runtime, S1, 4, now + 6)).toMatchObject({
       message: 'wait, not yet?',
@@ -206,8 +206,8 @@ describe('the operator words and the window', () => {
   it('is deleted for a session at its end, and only for that session', () => {
     const runtime = open();
     const now = Date.now();
-    bindWindow(runtime, S1, [4], 'approved', 'approval', now);
-    bindWindow(runtime, S2, [4], 'approved', 'approval', now);
+    bindWindow(runtime, S1, [4], 'I approve keeping the report.', 'approval', now);
+    bindWindow(runtime, S2, [4], 'I approve keeping the report.', 'approval', now);
     bumpOffers(runtime, S1, [4]);
     endDraftSession(runtime, S1);
     expect(readExcerpt(runtime, S1, 4, now)).toBeNull();
@@ -217,7 +217,7 @@ describe('the operator words and the window', () => {
 
   it('is readable by the server read-only once a hook has written it', () => {
     const now = Date.now();
-    bindWindow(open(), S1, [7], 'approved', 'approval', now);
+    bindWindow(open(), S1, [7], 'I approve keeping the report.', 'approval', now);
     expect(readExcerpt(open(true), S1, 7, now)?.reply).toBe('approval');
   });
 });
@@ -247,7 +247,7 @@ describe('pruning every store at a session start', () => {
   it('drops stale words from another store whose sessions never came back', () => {
     const runtime = open();
     const old = Date.now() - EXCERPT_TTL_MS - 60_000;
-    bindWindow(runtime, S1, [4], 'approved', 'approval', old);
+    bindWindow(runtime, S1, [4], 'I approve keeping the report.', 'approval', old);
     expect(
       (runtime.db.prepare('SELECT COUNT(*) AS n FROM excerpts').get() as { n: number }).n
     ).toBe(1);
@@ -264,7 +264,7 @@ describe('the store key', () => {
     fs.symlinkSync(path.join(tmp, 'project'), alias, 'dir');
     const original = open();
     const now = Date.now();
-    bindWindow(original, S1, [4], 'approved', 'approval', now);
+    bindWindow(original, S1, [4], 'I approve keeping the report.', 'approval', now);
     const linked = openDraftRuntime(path.join(alias, 'rbook', 'db', 'rbook.sqlite'), env, {
       readonly: true,
     });
@@ -272,7 +272,7 @@ describe('the store key', () => {
       expect(linked).not.toBeNull();
       expect(linked?.storeKey).toBe(original.storeKey);
       expect(linked?.path).toBe(original.path);
-      expect(readExcerpt(linked!, S1, 4, now)?.message).toBe('approved');
+      expect(readExcerpt(linked!, S1, 4, now)?.message).toBe('I approve keeping the report.');
     } finally {
       linked?.close();
     }

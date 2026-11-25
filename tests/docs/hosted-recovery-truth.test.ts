@@ -46,17 +46,36 @@ describe('hosted recovery disclosure', () => {
   });
 
   it.each(['docs/privacy.md', 'docs/trust.md'])(
-    '%s distinguishes disabled recovery expiry from the planned 30-day policy',
+    '%s describes the active recovery-file clock',
     (file) => {
       const text = read(file);
-      expect(text).toContain('Automatic expiry of recovery files is currently disabled');
-      expect(text).toContain('currently kept until the project is deleted');
-      expect(text).toContain('planned 30-day policy is not yet active');
-      expect(text).toContain('30 days after the loss is resolved');
+      expect(text).not.toMatch(
+        /expiry of recovery files is (?:currently )?disabled|planned (?:30-day policy|expiry)[^.]*not yet active|currently kept until the project is deleted|recovery files currently stay that long/i
+      );
+      const files =
+        file === 'docs/privacy.md'
+          ? (text.split('- Recovery files:')[1]?.split("- A member's first copy")[0] ?? '')
+          : (text.split('## Shared copies')[1]?.split('## ')[0] ?? '');
+      expect(files).toMatch(
+        /\b(?:expire[sd]?|deletes|removes|are (?:automatically )?(?:deleted|removed))\b[^.]*?30 days after (?:resolution|(?:the |its )?loss is resolved)/i
+      );
+      expect(files).toMatch(
+        /successful hosted recovery|when the attempt becomes hosted|hosted attempt['’]s (?:own )?finish/i
+      );
+      expect(files).toMatch(/cancelled[^.]*later[^.]*hosted[^.]*\bor\b[^.]*(?:handed in|hand-in)/i);
+      expect(files).toMatch(
+        /(?:no |nothing |protects? |preserves? )[^.]*collecting|collecting[^.]*protects?/i
+      );
+      expect(files).toMatch(
+        /(?:never resolved|unresolved)[^.]*until (?:the )?project (?:is deleted|deletion)/i
+      );
+      expect(text).toMatch(
+        /(?:recovery records|these records)[^.]*until (?:the )?project (?:is deleted|deletion)/i
+      );
     }
   );
 
-  it('starts planned expiry at resolution, protects collecting and unresolved attempts, and keeps records', () => {
+  it('starts expiry at hosted resolution, protects the entire collecting project, and keeps records', () => {
     const text = read('docs/privacy.md');
     const files = text.split('- Recovery files:')[1]?.split("- A member's first copy")[0] ?? '';
     expect(files).toContain('accepted recovery contributions');

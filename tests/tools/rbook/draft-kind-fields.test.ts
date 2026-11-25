@@ -66,7 +66,10 @@ async function approvedDraft(kind: string): Promise<string> {
   await hook('stop', {
     last_assistant_message: `Proposed.\n\nWould record (${kind}): ${TEXT[kind]}`,
   });
-  await hook('prompt', { prompt: 'approved', prompt_id: `${Math.random()}` });
+  await hook('prompt', {
+    prompt: `I approve this ${kind}: ${TEXT[kind]}`,
+    prompt_id: `${Math.random()}`,
+  });
   return 'P1';
 }
 

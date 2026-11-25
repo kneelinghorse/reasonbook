@@ -86,7 +86,11 @@ if (require.main === module) {
       process.stdout.write(`reasonbook ${getServerVersion()}\n`);
       process.exit(0);
     });
-  } else if (target.argv.includes('--help') || target.argv.includes('-h')) {
+  } else if (
+    (target.argv.includes('--help') || target.argv.includes('-h')) &&
+    // Mixed settlement operands must reach the same strict parser as a real write.
+    !(target.argv[0] === 'drafts' && target.argv[1] === 'settle' && target.argv.length > 3)
+  ) {
     void import('./cli/usage').then(({ USAGE }) => {
       process.stdout.write(USAGE);
     });

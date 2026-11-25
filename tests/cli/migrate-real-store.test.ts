@@ -217,7 +217,7 @@ PRIVATE.describe('s108-m05 real-store fire: two real stores move under a live 4.
           });
         expect((await status()).structuredContent).toMatchObject({ success: true });
         const spawnSync = childProcess.spawnSync;
-        const temporary = [os.tmpdir(), fs.realpathSync(os.tmpdir())];
+        let inspectedServer = 0;
         jest.spyOn(childProcess, 'spawnSync').mockImplementation(((
           command: string,
           args: string[],
@@ -225,16 +225,19 @@ PRIVATE.describe('s108-m05 real-store fire: two real stores move under a live 4.
         ) => {
           const result = spawnSync(command, args, opts);
           if (command !== 'ps') return result;
-          const keep = (line: string) =>
-            line.trim().startsWith(`${server.child.pid} `) ||
-            !temporary.some((folder) => line.includes(folder));
-          return { ...result, stdout: String(result.stdout).split('\n').filter(keep).join('\n') };
+          const lines = String(result.stdout)
+            .split('\n')
+            .filter((line) => line.trim().startsWith(`${server.child.pid} `));
+          expect(lines).toHaveLength(1);
+          expect(lines[0]).toContain(entry);
+          inspectedServer += 1;
+          return { ...result, stdout: lines.join('\n') };
         }) as any);
         for (const copy of copies) {
           const before = contents(copy.file);
-          // The real process list, this machine's sessions included: only a runtime older than
-          // 4.0 may refuse the move, and this server must not. Other test files' fixtures, run
-          // from the temporary folder by a parallel run, are left out (round 3).
+          // Keep the owned server's real ps row, as migrate-cutover does. Other clients can
+          // legitimately refuse a move (including an old plugin path removed by an update),
+          // so their ambient state must not decide this live 4.x server's positive fire.
           const result = await migrateProject({ projectRoot: copy.root, env, apply: true });
           expect({ mode: copy.mode, success: result.success, error: result.error }).toEqual({
             mode: copy.mode,
@@ -253,6 +256,7 @@ PRIVATE.describe('s108-m05 real-store fire: two real stores move under a live 4.
           expect(db.pragma('journal_mode', { simple: true })).toBe(copy.mode);
           db.close();
         }
+        expect(inspectedServer).toBeGreaterThanOrEqual(copies.length);
         expect((await status()).structuredContent).toMatchObject({ success: true });
       } finally {
         jest.restoreAllMocks();

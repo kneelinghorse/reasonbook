@@ -116,44 +116,53 @@ export async function run(ctx: HookVerbContext): Promise<string | HookDelivery |
         `drafts unavailable: ${error instanceof Error ? error.message : String(error)}\n`
       );
     }
-  observeDrafts(ctx.io, {
-    draftsOffered: offer.offered,
-    ...(offer.reply ? { draftReply: offer.reply } : {}),
-  });
   const offers = offer.text;
   const room = HOOK_CAPS.prompt! - (offers ? offers.length + 2 : 0);
   return {
     deliver: async (emit) => {
-      let emitted = false;
+      let attempted = false;
+      let deliveredOffers = false;
       const emitRecall = (context: RenderedContext): string => {
-        emitted = true;
+        attempted = true;
         if (!offers) return emit(context);
         // The recall runtime matches its spans against the recall text: hand back that part only.
-        return emit(afterOffers(offers, context)).slice(offers.length + 2);
+        const result = emit(afterOffers(offers, context));
+        deliveredOffers = result.startsWith(offers + '\n\n');
+        return result.slice(offers.length + 2);
       };
       try {
-        deliverPromptRecall(
-          { dbPath: store.dbPath, rawSessionId, env: ctx.io.env, deadlineAtMs },
-          (first, seen) => {
-            if (!first && skipLaterPrompt(query)) return null;
-            if (room < MIN_RECALL_ROOM) return null;
-            const result = first
-              ? recallFirstPrompt(store.dbPath, query, { deadlineAtMs })
-              : recallLaterPrompt(store.dbPath, query, seen, { deadlineAtMs });
-            if (!result.available)
-              throw new CliStoreError(
-                result.warnings.join('; ') || 'first-prompt recall unavailable'
-              );
-            return renderFirstPrompt(result, room);
-          },
-          emitRecall
-        );
-      } catch (error) {
-        // A failed recall must not swallow the offer: the operator's answer depends on it.
-        if (!offers || emitted) throw error;
+        try {
+          deliverPromptRecall(
+            { dbPath: store.dbPath, rawSessionId, env: ctx.io.env, deadlineAtMs },
+            (first, seen) => {
+              if (!first && skipLaterPrompt(query)) return null;
+              if (room < MIN_RECALL_ROOM) return null;
+              const result = first
+                ? recallFirstPrompt(store.dbPath, query, { deadlineAtMs })
+                : recallLaterPrompt(store.dbPath, query, seen, { deadlineAtMs });
+              if (!result.available)
+                throw new CliStoreError(
+                  result.warnings.join('; ') || 'first-prompt recall unavailable'
+                );
+              return renderFirstPrompt(result, room);
+            },
+            emitRecall
+          );
+        } catch (error) {
+          // A failed recall must not swallow the offer: the operator's answer depends on it.
+          if (!offers || attempted) throw error;
+        }
+        if (offers && !attempted) deliveredOffers = emit(offers) === offers;
+      } finally {
+        // Even a recall bookkeeping failure after stdout cannot undo an already delivered offer.
+        if (deliveredOffers) {
+          observeDrafts(ctx.io, {
+            draftsOffered: offer.offered,
+            ...(offer.reply ? { draftReply: offer.reply } : {}),
+          });
+          await captureToolCall('write', async () => offer.commit());
+        }
       }
-      if (offers && !emitted) emit(offers);
-      if (offers) await captureToolCall('write', async () => offer.commit());
     },
   };
 }

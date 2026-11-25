@@ -248,6 +248,8 @@ PRIVATE.describe('s110-m01 on copies of the live store', () => {
 
   it('an address a readable copy holds is refused beside a mid-move copy, which is named and skipped', async () => {
     const holder = await copy('holder');
+    // The collision belongs to this fixture, regardless of the live project's latest rename.
+    setIdentity(holder, { [LEGACY.identityAddressKey]: 'cmos://derek/held-copy' });
     const moving = await copy('moving');
     setIdentity(moving, { [LEGACY.identityAddressKey]: 'cmos://derek/moving-copy' });
     const other = await copy('other');
@@ -258,7 +260,7 @@ PRIVATE.describe('s110-m01 on copies of the live store', () => {
 
     const taken = await rbookContextUpdateProjectIdentity({
       projectRoot: other,
-      fieldUpdates: [{ path: 'rbook_address', value: 'rbook://derek/cmos-mcp-pro' }],
+      fieldUpdates: [{ path: 'rbook_address', value: 'rbook://derek/held-copy' }],
     });
     expect(taken.success).toBe(false);
     expect(taken.error?.message).toContain(holder);
@@ -271,13 +273,14 @@ PRIVATE.describe('s110-m01 on copies of the live store', () => {
   });
 
   it("purge takes a derived slug only under /mine's exact path tie", async () => {
-    const root = await copy('purge', { dashboard_slug: null });
+    // Fix the derived-name input while retaining the live store's schema and other records.
+    const root = await copy('purge', { project_name: 'Purge Fixture', dashboard_slug: null });
     const dbPath = path.join(root, 'rbook', 'db', 'rbook.sqlite');
     mine = [
       {
         id: 'x',
-        slug: 'cmos-mcp-pro',
-        name: 'CMOS-MCP Pro',
+        slug: 'purge-fixture',
+        name: 'Purge Fixture',
         localDbPath: path.join(root, 'cmos', 'db', 'cmos.sqlite'),
       },
     ];
@@ -285,9 +288,9 @@ PRIVATE.describe('s110-m01 on copies of the live store', () => {
     expect(refused.success).toBe(false);
     expect(refused.error?.code).toBe('PURGE_SLUG_UNCONFIRMED');
     expect(asked).toEqual([]);
-    mine = [{ id: 'x', slug: 'cmos-mcp-pro', name: 'CMOS-MCP Pro', localDbPath: dbPath }];
+    mine = [{ id: 'x', slug: 'purge-fixture', name: 'Purge Fixture', localDbPath: dbPath }];
     const purged = await rbookDbPurge({ projectRoot: root, confirm: true });
     expect(purged.success).toBe(true);
-    expect(asked).toEqual(['cmos-mcp-pro']);
+    expect(asked).toEqual(['purge-fixture']);
   }, 120_000);
 });

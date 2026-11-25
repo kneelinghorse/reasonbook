@@ -123,11 +123,13 @@ accepted contribution is sent once per recovery and copy; an unacknowledged requ
 Either `RBOOK_SHARED_SYNC=off` or `RBOOK_DASHBOARD_SHARING=off` stops this upload, even during an
 explicit sync; `RBOOK_CHECKPOINT_SYNC=off` does not. The owner reviews the plan on the Shared record
 page, chooses copies not to wait for, and confirms or cancels; a cancelled attempt can be restarted.
-Automatic expiry of recovery files is currently disabled. Accepted contributions, lost-store
-artifacts, stores published by interrupted finalization and earlier snapshots are currently kept
-until the project is deleted. The planned 30-day policy is not yet active. Once enabled, it will
-delete those files 30 days after the loss is resolved, with protections for collecting and unresolved
-cancelled attempts. Recovery records stay until the project is deleted.
+Accepted contributions, lost-store artifacts, stores published by interrupted finalization and
+earlier snapshots expire 30 days after the loss is resolved. A successful hosted recovery starts
+that clock. For a cancelled attempt, it starts when a later attempt becomes hosted or the store is
+handed in again. No recovery files are deleted while any recovery for the project is collecting.
+If the loss is never resolved, its files stay until the project is deleted. Recovery records,
+including contribution receipts, stay until the project is deleted. Backup copies follow their
+own retention periods.
 [Privacy](privacy.md#sharing-through-reasonbookai) describes the resolution conditions, retention, the deployed
 membership reconciliation and the valid-census requirement.
 
@@ -155,15 +157,15 @@ started: with `ps` on macOS, from `/proc` on Linux.
   changed or untracked (names only), so session end can say what changed. In a Git repository
   without a record, it offers to start one until you decline, which runs `ambient off` there.
 - **Prompt submit** may add up to 1,500 characters: previews of related past decisions, drafts
-  waiting for you, and reminders. When a reply has shown you a draft, Reasonbook keeps your next message,
-  whatever it says, up to 1,000 characters, outside the record with two-hour approval validity.
+  waiting for you, and reminders. The Claude and Codex hooks require your approval message to name
+  the choice. A bare “yes” leaves it pending. The hooks can keep up to 1,000 characters of an answer
+  outside the record with two-hour approval validity.
   Later binding or session cleanup deletes expired excerpt rows; expiry itself does not erase them.
   Their text can remain in SQLite free pages in the user-only runtime file after row deletion;
   cleanup does not guarantee physical erasure.
-  A decision recorded from the draft carries your words. An answer after two hours can still address an
-  unexpired draft in the same conversation: an approval reads agent-judged; a decline remains
-  declined after its words expire. A busy write keeps an id-only refusal for retry; older binaries
-  see it only once saved in the store. Constraint, rule and profile drafts need a new plain approval.
+  A decision recorded from the draft carries your words. A fresh named approval can address an
+  unexpired draft after two hours. A saved decline remains effective after its words expire. A
+  busy write keeps an id-only refusal for retry; older binaries see it once saved in the store.
 - **Stop** keeps up to three `Would record:` lines that close a reply, with up to 600 characters
   before them, as drafts. A draft is never a decision until it is recorded.
 - **Pre-compact** adds nothing. After compaction, session start runs again and adds the digest
@@ -201,7 +203,7 @@ tree and why.
 
 ## Turning parts off
 
-- **The hooks in one project:** `npx --prefer-offline -y @aquex/reasonbook@4.12.0 ambient off`, run in that project,
+- **The hooks in one project:** `npx --prefer-offline -y @aquex/reasonbook@4.13.0 ambient off`, run in that project,
   with the version the plugin installed if it differs. The hooks still start and log their use locally, but add
   nothing. The command also updates the Reasonbook line in that project's `AGENTS.md`. `ambient on` turns
   them back on.

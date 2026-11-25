@@ -134,6 +134,7 @@ import {
 import { RBOOK_CHECKPOINT_SYNC_ENV } from './tools/rbook/checkpoint-backfill';
 import { RBOOK_TOOL_SCHEMAS } from './tools/rbook/tool-schemas';
 import { validateRbookArguments } from './tools/rbook/tool-validation';
+import { invalidSessionFeedback, isSessionAction } from './tools/rbook/rbook-session';
 import {
   RBOOK_TOOL_DEFINITIONS,
   // Consolidated entity tools (Sprint 24)
@@ -1040,7 +1041,17 @@ export async function executeMissionProtocolTool(
   const schema = RBOOK_TOOL_SCHEMAS[name];
   if (!schema) throw new Error(`No input schema for published tool: ${name}`);
   const checked = validateRbookArguments(schema, args);
-  if (!checked.success) return buildKnownToolErrorResult(checked.error!);
+  if (!checked.success) {
+    const error = checked.error!;
+    const action = extractActionArg(args);
+    if (name === 'rbook_session' && error.field === 'agentFeedback' && isSessionAction(action)) {
+      // The validator's expectation is safe to return. Its providedValue can contain private feedback.
+      return buildKnownToolErrorResult(
+        invalidSessionFeedback(action, error.suggestion ?? error.message)
+      );
+    }
+    return buildKnownToolErrorResult(error);
+  }
   args = checked.data!;
 
   // Sprint 78 m04 (FORK-5): read-only review-agent guard. It still runs before the switch and any

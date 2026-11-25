@@ -25,7 +25,15 @@ afterEach(() => {
 
 it('late evidence keeps words for two hours without opening a direct-record window', () => {
   const now = Date.now();
-  runtimeApi.bindExcerpt(runtime, session, [7], 'yes', 'other', now, { late: true });
+  runtimeApi.bindExcerpt(
+    runtime,
+    session,
+    [7],
+    'Keep the report alongside the notes.',
+    'other',
+    now,
+    { late: true }
+  );
   expect(runtimeApi.readExcerpt(runtime, session, 7, now)).toMatchObject({
     reply: 'other',
     late: true,

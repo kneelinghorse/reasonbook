@@ -137,9 +137,62 @@ describe('rbook_session', () => {
   });
 
   it('returns INVALID_ACTION for unknown action', async () => {
-    const result = await rbookSession({ action: 'archive' as any });
+    const result = await rbookSession({ action: 'archive' as any, agentFeedback: 'feedback' });
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe('INVALID_ACTION');
+  });
+
+  describe('feedback sent to a session action', () => {
+    const sentinel = 'private-session-feedback';
+    const remedy = 'rbook_agent_onboard(projectRoot=…, agentFeedback=…)';
+    const handlers = [
+      rbookSessionList,
+      rbookSessionStart,
+      rbookSessionCapture,
+      rbookSessionSearch,
+      rbookSessionComplete,
+    ];
+    const unsupported = ['list', 'start', 'capture', 'search'] as const;
+
+    it.each(unsupported)('%s refuses before it can discard valid feedback', async (action) => {
+      const result = await rbookSession({ action, agentFeedback: sentinel });
+      for (const handler of handlers) expect(handler).not.toHaveBeenCalled();
+      expect(result.error).toMatchObject({
+        code: 'INVALID_PARAMETER',
+        field: 'agentFeedback',
+        message: expect.stringContaining(`action="${action}"`),
+        suggestion: expect.stringContaining(remedy),
+      });
+      expect(result.error).not.toHaveProperty('providedValue');
+      expect(JSON.stringify(result)).not.toContain(sentinel);
+    });
+
+    it.each([...unsupported, 'complete'] as const)(
+      '%s reports malformed feedback without quoting it',
+      async (action) => {
+        for (const [value, expectation] of [
+          [{ nested: sentinel }, /string/i],
+          [sentinel.padEnd(2001, 'x'), /2000/],
+        ] as const) {
+          const result = await rbookSession({ action, agentFeedback: value as string });
+          for (const handler of handlers) expect(handler).not.toHaveBeenCalled();
+          expect(result.error).toMatchObject({ code: 'INVALID_PARAMETER', field: 'agentFeedback' });
+          expect(result.error).not.toHaveProperty('providedValue');
+          expect(JSON.stringify(result)).not.toContain(sentinel);
+          expect(result.error?.message).toContain(`action="${action}"`);
+          expect([result.error?.message, result.error?.suggestion].join(' ')).toMatch(expectation);
+          expect(result.error?.suggestion?.includes(remedy)).toBe(action !== 'complete');
+        }
+      }
+    );
+
+    it.each([undefined, null, '', '  '])(
+      'keeps omitted or blank feedback optional',
+      async (value) => {
+        await rbookSession({ action: 'list', agentFeedback: value as string });
+        expect(rbookSessionList).toHaveBeenCalledTimes(1);
+      }
+    );
   });
 
   describe('tool definition', () => {

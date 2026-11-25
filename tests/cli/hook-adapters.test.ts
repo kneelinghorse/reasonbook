@@ -112,3 +112,22 @@ it('a mistyped harness fails open visibly instead of silently selecting the Clau
   expect(result.stderr.join('')).toMatch(/harness/i);
   expect(verb).not.toHaveBeenCalled();
 });
+
+it.each(['claude', 'codex'])(
+  '%s supplies the current turn ID and words without attesting to a preceding question',
+  async (harness) => {
+    const input = { session_id: path.basename(tmp), cwd: root };
+    const turn = (id: string) => (harness === 'codex' ? { turn_id: id } : { prompt_id: id });
+    await run(harness, 'stop', {
+      ...input,
+      ...turn('draft-question'),
+      last_assistant_message: 'Keep one report per file.\n\nShould I record this decision?',
+    });
+    const receipts = fs.readdirSync(path.join(tmp, 'config', 'runtime', 'hooks'));
+    expect(receipts.some((name) => name.endsWith('.question'))).toBe(false);
+    await run(harness, 'prompt', { ...input, ...turn('operator-answer'), prompt: 'yes' });
+    const prompt = verb.mock.calls[1][0];
+    expect(prompt.input).toMatchObject({ prompt_id: 'operator-answer', prompt: 'yes' });
+    expect(prompt.questionProof).toBeUndefined();
+  }
+);

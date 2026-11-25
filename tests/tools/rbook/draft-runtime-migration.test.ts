@@ -42,12 +42,15 @@ it('reads an old runtime without migrating or changing its bytes', () => {
   const now = Date.now();
   runtime.db
     .prepare('INSERT INTO excerpts VALUES (?, 7, ?, ?, 1, ?)')
-    .run(session, 'yes', 'approval', now);
+    .run(session, 'Keep each report.', 'other', now);
   const hash = () => createHash('sha256').update(fs.readFileSync(runtime.path)).digest('hex');
   const before = hash();
   const reader = openDraftRuntime(dbPath, env, { readonly: true })!;
   try {
-    expect(readExcerpt(reader, session, 7, now)).toMatchObject({ message: 'yes', late: false });
+    expect(readExcerpt(reader, session, 7, now)).toMatchObject({
+      message: 'Keep each report.',
+      late: false,
+    });
     expect(reader.db.prepare('PRAGMA table_info(excerpts)').all()).toHaveLength(6);
   } finally {
     reader.close();
@@ -59,12 +62,15 @@ it('migrates a legacy runtime idempotently and preserves existing evidence', () 
   const now = Date.now();
   runtime.db
     .prepare('INSERT INTO excerpts VALUES (?, 7, ?, ?, 1, ?)')
-    .run(session, 'yes', 'approval', now);
+    .run(session, 'Keep each report.', 'other', now);
   for (let i = 0; i < 2; i++) {
     const writer = openDraftRuntime(dbPath, env)!;
     try {
       expect(writer.db.prepare('PRAGMA table_info(excerpts)').all()).toHaveLength(7);
-      expect(readExcerpt(writer, session, 7, now)).toMatchObject({ message: 'yes', late: false });
+      expect(readExcerpt(writer, session, 7, now)).toMatchObject({
+        message: 'Keep each report.',
+        late: false,
+      });
     } finally {
       writer.close();
     }

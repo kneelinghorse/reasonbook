@@ -25,6 +25,7 @@ import {
   type DraftLine,
 } from '../tools/rbook/draft-grammar';
 import {
+  clearCurrentQuestion,
   closeWindow,
   dropKept,
   endDraftSession,
@@ -37,6 +38,11 @@ import {
   recordSessionStart,
   setShown,
 } from '../tools/rbook/draft-runtime';
+import {
+  uniqueStandingSetting,
+  visibleQuestion,
+  visibleStandingSetting,
+} from '../tools/rbook/draft-question';
 import { replaceUnkept } from '../tools/rbook/draft-runtime-unkept';
 import { readSettles } from '../tools/rbook/draft-settle-grammar';
 import { applySettles, NOTE_REASONS, unkeptEntries } from './drafts-settle';
@@ -67,7 +73,7 @@ import { revisions } from './drafts-revisions';
  *   Stop: the reply's trailing "Would record" lines become pending drafts (a repeated line shows
  *     its draft again; a revised one replaces the draft the operator's last message answered).
  *     Stop then records what the reply SHOWED the operator: those drafts and any pending draft it
- *     named by id. It writes nothing to stdout, ever (#1187).
+ *     named by id or put to the operator in a single exact question. Stop writes nothing to stdout.
  *   Prompt: the operator's message binds ONLY to what the reply before it showed. A plain decline
  *     declines those; anything else keeps the message as their words for two hours, outside the
  *     store. Other eligible drafts are reminders to the agent, never bound: on up to two more
@@ -210,7 +216,10 @@ export function onStop(options: {
   const session = harnessSessionHash(options.rawSessionId);
   const runtime = openDraftRuntime(options.dbPath, options.env, { timeoutMs: storeTimeout() });
   try {
-    if (runtime) retryRetainedDeclines(options.dbPath, runtime);
+    if (runtime) {
+      clearCurrentQuestion(runtime, session);
+      retryRetainedDeclines(options.dbPath, runtime);
+    }
     const declined = new Set(runtime ? pendingDeclines(runtime).map((entry) => entry.id) : []);
     // s109-m02: a settle is applied only from the turn's own reply; the transcript can hold an earlier one.
     const fromReply = options.reply !== undefined;
@@ -222,13 +231,16 @@ export function onStop(options: {
     const settles = readSettles(reply, read);
     const sameReply = new Set<number>();
     const windowIds = runtime ? openWindow(runtime, session, now) : [];
-    if (runtime) closeWindow(runtime, session);
+    if (runtime) closeWindow(runtime, session, now);
     const mentionsId = /\bP[1-9]\d{0,15}\b/.test(reply);
+    const question = visibleQuestion(options.reply);
     const priorOutside = runtime ? sessionOutside(readScans(runtime, session)) : null;
     const shown: number[] = [];
     const createdIds: number[] = [];
+    const standing = visibleStandingSetting(options.reply, read);
+    let standingId: number | undefined;
     let replaced = 0;
-    if (read.lines.length || mentionsId) {
+    if (read.lines.length || mentionsId || question) {
       checkDeadline(options.deadlineAtMs);
       const db = openStore(options.dbPath, false);
       try {
@@ -239,13 +251,21 @@ export function onStop(options: {
           const live = unexpired(runtime, pendingDrafts(run), now).filter(
             (row) => !declined.has(row.id)
           );
+          if (question) {
+            const matches = live.filter(
+              (row) => row.kind === question.kind && row.text === question.statement
+            );
+            if (matches.length === 1 && matches[0].replacedBy === null) shown.push(matches[0].id);
+            return;
+          }
           const window = live.filter((row) => windowIds.includes(row.id));
           const fresh: DraftLine[] = [];
           for (const line of read.lines) {
-            const repeated = live.find(
-              (row) => row.kind === line.kind && same(row.text, line.text)
-            );
+            const unique = standing === line ? uniqueStandingSetting(line, live) : undefined;
+            const repeated =
+              unique ?? live.find((row) => row.kind === line.kind && same(row.text, line.text));
             if (repeated) {
+              if (unique) standingId = unique.id;
               if (!shown.includes(repeated.id)) shown.push(repeated.id);
               sameReply.add(repeated.id);
             } else fresh.push(line);
@@ -279,6 +299,7 @@ export function onStop(options: {
               outsideContent: priorOutside,
               createdAt: at,
             });
+            if (standing === line) standingId = id;
             createdIds.push(id);
             shown.push(id);
             const old = revised.get(position);
@@ -311,16 +332,29 @@ export function onStop(options: {
     // settle that did not take effect never lets the operator's next "yes" record it a second time.
     const named = new Set(settles.named);
     if (runtime) {
-      // s97-m12: drafts an earlier reply showed that no operator message took, as when the harness
-      // opened this turn itself, are kept apart from this reply's (learning #481; critic round 2).
-      carryShown(runtime, session, now);
-      dropKept(runtime, session, settles.named);
-      setShown(
-        runtime,
-        session,
-        shown.filter((id) => !named.has(id)),
-        now
-      );
+      // Earlier legacy showings stay separate from this turn's question.
+      runtime.db
+        .transaction(() => {
+          carryShown(runtime, session, now);
+          const visible = shown.filter((id) => !named.has(id));
+          const currentQuestion = Boolean(question && visible.length === 1);
+          // A fresh ordinary question takes ownership of this ID. It must expire with this showing
+          // even when the same draft previously appeared among unanswered legacy lines.
+          dropKept(
+            runtime,
+            session,
+            currentQuestion ? [...settles.named, ...visible] : settles.named
+          );
+          setShown(
+            runtime,
+            session,
+            visible,
+            now,
+            currentQuestion,
+            visible.length === 1 && visible[0] === standingId
+          );
+        })
+        .immediate();
     }
     const outcomes = fromReply
       ? applySettles({

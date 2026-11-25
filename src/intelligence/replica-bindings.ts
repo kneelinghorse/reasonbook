@@ -53,7 +53,7 @@ export function ensureReplicaTable(db: Database.Database): void {
 }
 
 export function replicaBinding(db: Database.Database, replicaId: string): ReplicaBinding | null {
-  ensureReplicaTable(db);
+  if (!db.readonly) ensureReplicaTable(db);
   return (
     (db.prepare('SELECT * FROM replicas WHERE replica_id = ?').get(replicaId) as
       | ReplicaBinding
@@ -63,7 +63,7 @@ export function replicaBinding(db: Database.Database, replicaId: string): Replic
 
 /** The copies of one project this machine still holds bindings for, in minting order (ULIDs). */
 export function liveReplicas(db: Database.Database, projectId: string): ReplicaBinding[] {
-  ensureReplicaTable(db);
+  if (!db.readonly) ensureReplicaTable(db);
   return db
     .prepare(
       'SELECT * FROM replicas WHERE project_id = ? AND retired_at IS NULL ORDER BY replica_id'

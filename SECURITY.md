@@ -480,14 +480,15 @@ clears this context
 
 The metadata is caller context, not authentication or proof of approval. Reasonbook uses a conversation
 session key only when its folder resolves to the same physical store and that session has actual
-hook state there. Otherwise it uses a process-owned session; merely supplying a session id cannot
-manufacture hook approval. SessionEnd removes that session's hook evidence
+hook state there. Other calls use a process-owned session. Recording from a draft requires
+operator approval bound to that draft in the current conversation. SessionEnd removes that
+session's hook evidence
 ([session-owner.ts](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/session-owner.ts),
 [draft-runtime.ts](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/draft-runtime.ts)).
 A chat-only direct decision can put observed approval words in `context`; Reasonbook cannot verify those
 words and does not label that direct record as hook-approved.
 
-**Hook runtime files.** The hook CLI keeps per-machine state under the config directory, never in a
+**Hook runtime files.** The hook CLI keeps its session links and journals under the config directory, never in a
 project or the store ([src/tools/rbook/harness-session.ts](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/harness-session.ts)):
 `<configDir>/runtime/harness/<pid>.json` links a harness process to its sessions, each by a
 16-character SHA-256 prefix of the session id (`harnessSessionHash`), and holds the path of the
@@ -512,6 +513,16 @@ record: the table is outside search, embeddings and sync events, and nothing in 
 decision, constraint, learning or profile line without a `rbook_decisions(action="record",
 fromDraft=...)` call. The table is in `rbook.sqlite`, so a signed-in checkpoint upload carries it with
 the rest of the store. The operator's reply to a draft is never written to the store by a hook.
+A bare affirmative can approve a draft only when the client verifies which question immediately
+preceded this prompt. The Claude and Codex hook inputs currently lack that evidence. In these
+clients the operator names the choice in the current message, even in an uninterrupted chat.
+For example, `I approve this decision:` followed by the full decision text identifies the kind
+and choice. Reasonbook requires a unique eligible draft and retains the operator's approval words.
+The same requirement applies to a proposal shown with a `Would record:` line or a draft label.
+For a single, freshly shown numeric profile setting, rule or constraint with a recognized label,
+the operator can also approve by affirming and repeating its complete value and recognized unit.
+The hook keeps the exact reply.
+
 The runtime uses one SQLite file per store under `<configDir>/runtime/drafts/`, keyed by a hash of
 the project id and the store's native real path. It keeps:
 
@@ -525,17 +536,21 @@ the project id and the store's native real path. It keeps:
 - transcript scan offsets and outside-content flags, keyed by hashes of transcript paths;
 - the lines of the last reply that took no effect, or took effect with a note: the agent's own text,
   at most 80 characters and five lines a reply (the rest counted), with the reason and no operator
-  words. Each Stop replaces them, and session end deletes them. The next prompt names them and clears
-  them, except with nothing pending, when it opens the runtime read-only and a later prompt can name
-  them again until the next Stop replaces them. They stop being used after two hours.
+  words. Each Stop replaces them, and session end deletes them. After successful prompt delivery,
+  the hook clears only the entries it showed from that Stop. A generation identifier and position
+  distinguish those entries, including when two Stops share a timestamp. An undelivered entry can
+  appear again until the next Stop or the two-hour expiry. An older prompt hook may repeat a
+  delivered entry because it cannot identify the generation it showed. Entries already stored
+  without a generation identifier can also repeat within that period.
 
 Session keys are 16-character hashes; raw session ids and transcript paths are not stored there
 ([src/tools/rbook/draft-runtime.ts](https://github.com/kneelinghorse/reasonbook/blob/main/src/tools/rbook/draft-runtime.ts)).
 Replies and windows stop being usable after two hours. Shown and retained draft ids contain no
 operator words; they expire after three later starts in that store’s runtime or more than seven
-days from their showing. A non-compact start clears that session’s sets. A late answer opens no
-direct-record window: an approval is agent-judged, and a decline is persisted in the store. If a
-decline meets a busy store, its showing is retained and commit retries once after output delivery.
+days from their showing. A non-compact start clears that session’s sets. An answer referring only to a
+lost or expired showing supplies no approval and opens no direct-record window. Naming the kind and full
+choice can give fresh approval for an eligible pending draft. A late decline is persisted in the store.
+If a decline meets a busy store, its showing is retained and commit retries once after output delivery.
 An id-only decline marker survives session cleanup and expiry until the store confirms the draft
 is no longer pending; later prompt and Stop hooks retry it. Record transactions apply retained
 declines before settling related revisions, and leave marker cleanup to a later hook. Current readers refuse that draft
@@ -582,4 +597,4 @@ subagent type (e.g. the `Explore` agent) — that is a mitigation, not the machi
 
 ---
 
-_Last verified against the source for release 4.12.0._
+_Last verified against the source for release 4.13.0._

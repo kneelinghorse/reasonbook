@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-// ABOUTME: s109-m02 — the words the operator's next prompt gives the agent for each line of its last reply that took no
-// ABOUTME: effect (#51, a refused or misformed Settled line) or took effect with a note, telling it to say so.
+// ABOUTME: Gives the prompt a complete reason for each lost or qualified line from the last reply.
+// ABOUTME: Each compact or full note carries the same Stop position for delivery acknowledgement.
 
 import type { DroppedReason } from '../tools/rbook/draft-grammar';
-import type { UnkeptRead } from '../tools/rbook/draft-runtime-unkept';
+import { UNKEPT_MAX, unkeptExcerpt, type UnkeptRead } from '../tools/rbook/draft-runtime-unkept';
 import type { SettleRefusal } from '../tools/rbook/draft-settle';
 import { NOTE_REASONS } from './drafts-settle';
 
@@ -60,23 +60,60 @@ const WORDS: Readonly<Record<UnkeptReason, (detail: string) => string>> = {
     `it took effect, though that decision states only ${detail} of the draft's subject; check that it answers it`,
 };
 
-const item = (entry: { text: string; reason: string; detail: string }): string =>
-  // A reason from a newer or older Stop than this prompt hook is shown as its code.
-  `"${entry.text}" (${(WORDS[entry.reason as UnkeptReason] ?? (() => entry.reason))(entry.detail)})`;
+const SHORT: Readonly<Record<UnkeptReason, (detail: string) => string>> = {
+  kind: () => 'unsupported draft kind',
+  text: () => 'placeholder or too little text',
+  limit: () => 'at most three Would record lines',
+  form: () => 'settle needs a plain Settled line',
+  place: () => 'settle outside the final block',
+  transcript: () => 'transcript may be from an earlier turn',
+  'no-draft': () => 'draft absent from this store',
+  'not-pending': () => 'draft is no longer pending',
+  'not-decision': () => 'only decision drafts settle',
+  'same-reply': () => 'reply also proposes this draft or revision',
+  expired: () => 'draft expired',
+  'no-decision': (detail) => (detail ? 'decision absent here; sync first' : 'decision absent'),
+  superseded: () => 'decision superseded',
+  autonomous: () => 'decision recorded autonomously',
+  'unreadable-time': () => 'draft or decision time unreadable',
+  coverage: (detail) =>
+    detail.endsWith(BEFORE)
+      ? 'older decision covers less than 85% of draft'
+      : 'decision covers less than 30% of draft',
+  raced: () => 'draft already answered by another call',
+  busy: () => 'store busy; draft pending',
+  failed: () => 'settle failed; draft pending',
+  order: () => 'put Settled lines above Would record lines',
+  'low-coverage': () => 'low overlap; check that the decision answers the draft',
+};
 
-/**
- * The notes for the operator's next prompt: the lines that took no effect, which the agent is told
- * to tell the operator about, then the settles applied with a note. Empty when there are none.
- */
-export function unkeptNotes(read: UnkeptRead): string[] {
-  const taken = read.entries.filter((entry) => NOTE_REASONS.has(entry.reason));
-  const lost = read.entries.filter((entry) => !NOTE_REASONS.has(entry.reason));
-  const notes: string[] = [];
-  const parts = lost.map(item);
-  if (read.more) parts.push(`${parts.length ? 'and ' : ''}${read.more} more`);
-  if (parts.length)
-    notes.push(`Lines in your last reply took no effect; tell the operator: ${parts.join('; ')}.`);
-  if (taken.length)
-    notes.push(`Lines in your last reply took effect with a note: ${taken.map(item).join('; ')}.`);
+export interface UnkeptNote {
+  readonly position: number;
+  readonly full: string;
+  readonly compact: string;
+}
+
+/** The two forms describe the same outcome. Neither needs a heading from an earlier entry. */
+export function unkeptNotes(read: UnkeptRead): UnkeptNote[] {
+  const notes = read.entries.map(({ position, text, reason, detail }) => {
+    const taken = NOTE_REASONS.has(reason);
+    const known = Object.prototype.hasOwnProperty.call(WORDS, reason);
+    const key = reason as UnkeptReason;
+    const why = known ? WORDS[key](unkeptExcerpt(detail)) : unkeptExcerpt(reason);
+    const short = known ? SHORT[key](detail) : unkeptExcerpt(reason, 32);
+    const heading = taken
+      ? 'Lines in your last reply took effect with a note'
+      : 'Lines in your last reply took no effect; tell the operator';
+    return {
+      position,
+      full: `${heading}: "${unkeptExcerpt(text)}" (${why}).`,
+      compact: `Tell the operator: "${unkeptExcerpt(text, 28)}" ${taken ? 'applied' : 'had no effect'} (${short}).`,
+    };
+  });
+  if (read.more) {
+    // Stop kept only the count for these positions; they may be refusals or qualified successes.
+    const count = `Tell the operator: ${read.more} more lines had a refusal or note.`;
+    notes.push({ position: UNKEPT_MAX, full: count, compact: count });
+  }
   return notes;
 }

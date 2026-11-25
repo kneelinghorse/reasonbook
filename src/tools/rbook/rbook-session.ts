@@ -10,11 +10,11 @@
 
 import { formatToolFailure } from './format-failure';
 import { z } from 'zod';
-import { createError, RbookErrors, VALID_SESSION_TYPES } from './errors';
+import { createError, RBOOK_ERROR_CODES, RbookErrors, VALID_SESSION_TYPES } from './errors';
 import { findWrongTypedStringParam } from './param-type-guard';
-import { inapplicableParam } from './inapplicable-param';
+import { inapplicableParam, SESSION_FEEDBACK_REMEDY } from './inapplicable-param';
 import { appendWarnings } from './format-warnings';
-import type { ActionParamMap, RbookToolResult } from './types';
+import type { ActionParamMap, RbookToolError, RbookToolResult } from './types';
 import {
   rbookSessionList,
   formatSessionListForLLM,
@@ -366,8 +366,23 @@ export const rbookSessionToolDefinition = {
   },
 } as const;
 
-function isSessionAction(value: string): value is RbookSessionAction {
-  return (RBOOK_SESSION_ACTIONS as readonly string[]).includes(value);
+export function isSessionAction(value: unknown): value is RbookSessionAction {
+  return typeof value === 'string' && (RBOOK_SESSION_ACTIONS as readonly string[]).includes(value);
+}
+
+/** Both validation paths can explain the rejected feedback without returning its contents. */
+export function invalidSessionFeedback(
+  action: RbookSessionAction,
+  expectation: string
+): RbookToolError {
+  return {
+    code: RBOOK_ERROR_CODES.INVALID_PARAMETER,
+    field: 'agentFeedback',
+    message: `Invalid agentFeedback for rbook_session(action="${action}").`,
+    suggestion: RBOOK_SESSION_ACTION_PARAMS[action].includes('agentFeedback')
+      ? expectation
+      : `${expectation} ${SESSION_FEEDBACK_REMEDY}`,
+  };
 }
 
 export async function rbookSession(
@@ -392,7 +407,19 @@ export async function rbookSession(
     RBOOK_SESSION_ACTION_PARAMS[actionValue],
     params
   );
-  if (wrongTypedParam) return createError<RbookSessionResult>(wrongTypedParam);
+  if (wrongTypedParam && wrongTypedParam.field !== 'agentFeedback')
+    return createError<RbookSessionResult>(wrongTypedParam);
+
+  // Direct callers bypass dispatch's whole-schema check. Use the same feedback constraint
+  // before deciding applicability, so neither validation path can echo the body.
+  if (params.agentFeedback != null) {
+    const checked = rbookSessionSchema.shape.agentFeedback.safeParse(params.agentFeedback);
+    if (!checked.success) {
+      const error = invalidSessionFeedback(actionValue, checked.error.issues[0].message);
+      if (wrongTypedParam?.validValues) error.validValues = wrongTypedParam.validValues;
+      return createError<RbookSessionResult>(error);
+    }
+  }
 
   // s108-m02: checkAfter on an action that would ignore it is refused: complete with nextSteps[]
   // would otherwise succeed and write undated rows (inapplicable-param.ts).
@@ -400,7 +427,7 @@ export async function rbookSession(
     `rbook_session(action="${actionValue}")`,
     RBOOK_SESSION_ACTION_PARAMS[actionValue],
     params,
-    ['checkAfter']
+    ['checkAfter', 'agentFeedback']
   );
   if (inapplicable) return createError<RbookSessionResult>(inapplicable);
 

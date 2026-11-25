@@ -2,6 +2,29 @@
 
 All notable changes to Reasonbook (published as `@aquex/cmos-mcp` before 4.0.0) are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.13.0] — 2026-11-25
+
+Claude and Codex now ask you to name the exact choice when they cannot verify which question you answered.
+If you give feedback on a session action that cannot file it, Reasonbook tells you how to file it and keeps the session open.
+
+### Changed
+
+- A full-edition agent can link a pending decision draft to the decision that already answered it.
+  The private command checks both records and their origins. It refuses ambiguous matches and
+  unsupported table layouts, and preserves the original decision and its approval history.
+- An ordinary bare “yes” approves a draft only when the client can verify the preceding question.
+  After a lost turn, or whenever that proof is unavailable, the named choice must match in full,
+  including spaces and punctuation. A direct reply such as “yes, sounds good approved. 5 rounds.”
+  still approves one freshly shown, recognized standing setting with that exact value and unit.
+- Draft reminders keep their recording conditions, targets and reasons together. If delivery fails,
+  the next prompt can retry. An older prompt finishing late preserves reasons from a newer turn.
+- The session actions `list`, `start`, `capture` and `search` refuse supplied feedback before
+  changing the session. The refusal keeps feedback private and directs you to `rbook_agent_onboard`
+  to file it. Session completion continues to accept feedback.
+- The privacy and trust pages describe the deployed 30-day recovery-file policy. The clock starts
+  when the loss is resolved. A project keeps all recovery files while any recovery is collecting,
+  and a loss that is never resolved keeps its files until project deletion.
+
 ## [4.12.0] — 2026-11-04
 
 A changed project name no longer breaks its dashboard lookups; `reasonbook rename` changes its name and address.

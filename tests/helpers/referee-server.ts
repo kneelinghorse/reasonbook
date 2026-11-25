@@ -56,10 +56,6 @@ export function startRefereeServer(config: RefereeServerConfig): Promise<{
     json(response, refereeStatus(result), result);
 
   const server = http.createServer(async (request, response) => {
-    // s98-m08: one request per connection. Under two concurrent full suites a client whose event
-    // loop was starved sent a request on a connection this server had just closed as idle, and read
-    // ECONNRESET ("Unknown network error" to the client under jest).
-    response.setHeader('connection', 'close');
     try {
       const url = new URL(request.url ?? '/', 'http://referee.local');
       const token = /^Bearer (.+)$/.exec(request.headers.authorization ?? '')?.[1];
@@ -269,6 +265,8 @@ export function startRefereeServer(config: RefereeServerConfig): Promise<{
         mkdirSync(path.dirname(file), { recursive: true });
         const made = await serialized(projectId, () => makeFirstCopy(locate(projectId), file));
         if (!made.result.success) return answer(response, made.result);
+        // Node fetch can pause while the client writes this file to disk. Content-Length
+        // delimits the reply, so let the consumer finish reading before closing the connection.
         response.writeHead(200, {
           'content-type': 'application/octet-stream',
           'content-length': statSync(file).size,
@@ -359,6 +357,9 @@ export function startRefereeServer(config: RefereeServerConfig): Promise<{
       );
     }
   });
+  // Only streamed copies allow reuse. Let the client retire their idle sockets; server.close()
+  // closes any remaining idle connections when this disposable server is stopped.
+  server.keepAliveTimeout = 0;
   return new Promise((resolve) => {
     server.listen(config.port ?? 0, '127.0.0.1', () => {
       const address = server.address();

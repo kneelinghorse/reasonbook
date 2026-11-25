@@ -362,7 +362,8 @@ describe('s92-m08 — server instructions', () => {
   it('say which choices wait for the operator, and how to put one to them', () => {
     expect(SERVER_INSTRUCTIONS.endsWith(SERVER_INSTRUCTIONS_PROPOSALS)).toBe(true);
     expect(SERVER_INSTRUCTIONS_PROPOSALS).toContain('Would record: <decision and reason>');
-    expect(SERVER_INSTRUCTIONS_PROPOSALS).toContain('fromDraft when Reasonbook gave it an id');
+    expect(SERVER_INSTRUCTIONS_PROPOSALS).toContain('ask them to name the choice');
+    expect(SERVER_INSTRUCTIONS_PROPOSALS).toContain('with fromDraft for a linked approval');
     expect(SERVER_INSTRUCTIONS_PROPOSALS).toMatch(/scope, cost, outside commitments/);
     expect(SERVER_INSTRUCTIONS_PROPOSALS).toMatch(/your own remit directly/);
   });

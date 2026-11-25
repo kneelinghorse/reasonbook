@@ -160,12 +160,16 @@ describe('public privacy disclosure', () => {
     expect(text).toContain('https://github.com/kneelinghorse/reasonbook/issues');
   });
 
-  it('keeps the recovery retention summary and backup limits consistent with disabled expiry', () => {
+  it('gives the active recovery-file clock in the dashboard summary and keeps backup limits separate', () => {
     const text = privacy();
     const dashboard = text.split('## The dashboard (optional)')[1];
-    expect(dashboard).toContain('recovery records stay until the project is deleted');
-    expect(dashboard).toContain('recovery files currently stay that long too');
-    expect(dashboard).toContain('planned expiry described above is not yet active');
+    const shared = dashboard.split('- for a project shared through it,')[1]?.split(' - ')[0] ?? '';
+    expect(shared).toMatch(/ordinary snapshots for (?:7|seven) days/i);
+    expect(shared).toMatch(/recovery records[^.;]*until (?:the )?project (?:is deleted|deletion)/i);
+    expect(shared).toMatch(
+      /recovery files[^.;]*30 days after (?:resolution|(?:the |its )?loss is resolved)/i
+    );
+    expect(shared).not.toMatch(/currently stay that long|not yet active|currently disabled/i);
     expect(dashboard).toContain(
       "Render's daily disk snapshots can retain deleted recovery files for at least seven days afterwards"
     );

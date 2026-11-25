@@ -212,14 +212,15 @@ it.each([
   ['rule', 'rule', SESSION, false],
   ['profile', 'profile', SESSION, false],
 ] as const)(
-  'recording an approved %s ancestor cannot settle its declined revision',
+  'keeps the declined revision separate when recording its ancestor through %s',
   async (_label, kind, session, direct) => {
     const originalId = kind === 'decision' ? 1 : 2;
     const revisionId = originalId + 1;
     const line = (text: string) =>
       `Would record${kind === 'decision' ? '' : ` (${kind})`}: ${text}`;
     stop(line(TEXT));
-    expect(answer('approved', now + 1).reply).toBe('approval');
+    const approval = `I approve this ${kind}: ${TEXT}`;
+    expect(answer(approval, now + 1).reply).toBe('approval');
     if (direct) {
       // A different live conversation still has its direct-record window on the approved ancestor.
       onStop({
@@ -230,14 +231,16 @@ it.each([
         deadlineAtMs: Date.now() + 60_000,
         now: now + 2,
       });
-      prepareOffer({
+      const offer = prepareOffer({
         dbPath: file,
         rawSessionId: session!,
-        message: 'approved',
+        message: approval,
         env: process.env,
         deadlineAtMs: Date.now() + 60_000,
         now: now + 3,
-      }).commit();
+      });
+      expect(offer.reply).toBe('approval');
+      offer.commit();
     }
     const revised = `${TEXT} Keep checkpoint files local.`;
     expect(stop(line(revised), now + 4).created).toBe(1);
@@ -259,16 +262,24 @@ it.each([
         content: TEXT,
         ...(direct ? { mode: 'autonomous' as const } : { fromDraft: `P${originalId}` }),
       });
-      expect(result.success).toBe(true);
-      const revision = read
-        .prepare('SELECT outcome, record_id FROM proposals WHERE id=?')
-        .get(revisionId) as { outcome: string; record_id: string | null };
-      expect(['declined', 'pending']).toContain(revision.outcome);
-      expect(revision.record_id).toBeNull();
-      if (revision.outcome === 'pending')
+      const state = read.prepare(
+        'SELECT outcome, answered_at, record_id FROM proposals WHERE id=?'
+      );
+      if (session === null) {
+        // An unlinked caller cannot claim the first conversation's named approval.
+        expect(result).toMatchObject({ success: false, error: { code: 'APPROVAL_REQUIRED' } });
+        const pending = { outcome: 'pending', answered_at: null, record_id: null };
+        expect(state.get(originalId)).toEqual(pending);
+        expect(state.get(revisionId)).toEqual(pending);
         expect(runtimeState().pending).toContainEqual({ id: revisionId, at: now + 5 });
-      expect(read.prepare('SELECT outcome FROM proposals WHERE id=?').get(originalId)).toEqual({
-        outcome: direct ? 'answered' : 'approved',
+        return;
+      }
+      expect(result.success).toBe(true);
+      expect(state.get(originalId)).toMatchObject({ outcome: direct ? 'answered' : 'approved' });
+      expect(state.get(revisionId)).toEqual({
+        outcome: 'declined',
+        answered_at: new Date(now + 5).toISOString(),
+        record_id: null,
       });
     } finally {
       read.close();

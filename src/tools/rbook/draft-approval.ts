@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // ABOUTME: s93-m06 — turning an answered draft into a record: which draft, how its approval is known (approved,
-// ABOUTME: agent-judged, agent-attested), and the constraint, rule and profile kinds, claimed before they are written.
+// ABOUTME: agent-judged), and the constraint, rule and profile kinds, claimed before they are written.
 
 import * as path from 'path';
 import { formatCliRemedy } from '../../utils/cli-remedy';
@@ -8,7 +8,13 @@ import type { RbookDatabaseClient } from './client';
 import { withClientAsync } from './client';
 import { rbookSessionCapture } from './rbook-session-capture';
 import { ANSWER_COVERAGE, draftCoverage, recordStatesDraft, type DraftKind } from './draft-grammar';
-import { openDraftRuntime, openWindow, startsSince, pendingDeclines } from './draft-runtime';
+import {
+  openDraftRuntime,
+  openWindow,
+  readExcerpt,
+  startsSince,
+  pendingDeclines,
+} from './draft-runtime';
 import { RBOOK_ERROR_CODES, createError, createSuccess } from './errors';
 import { addProfileLine, readProfile } from './operator-profile';
 import {
@@ -24,7 +30,7 @@ import { storedTimeMs } from './stored-time';
 import type { RbookToolResult } from './types';
 import { sanitizeContentField } from '../../intelligence/content-sanitizer';
 import { computeContentHash, SAME_TEXT_SQL } from './schema-migrations';
-import { harnessSessionOf, type DraftEvaluation } from './draft-evaluation';
+import { harnessSessionOf, namesApprovedDraft, type DraftEvaluation } from './draft-evaluation';
 
 export {
   draftOwnText,
@@ -35,8 +41,8 @@ export {
 
 /**
  * Build plan B9–B12: hooks bind words by store/session/draft for two hours; subagents share that
- * binding. Hook-less servers attest decisions only. Other kinds need plain approval and use draft
- * text. Approved decisions need one draft and recordStatesDraft (only whitespace may differ);
+ * binding. Drafts need named operator approval. Standing kinds need timely approval and use draft
+ * text. Approved decisions retain the exact text of the one draft the operator named;
  * other same-subject wording reads agent-judged, without guessing at equivalent meaning.
  * Decisions approve atomically; other kinds claim first and release on failure.
  */
@@ -93,7 +99,16 @@ export function directRecordAnswers(
     // s97-m12: only a record holding what the draft itself proposed answers it; one that says
     // part of a longer draft leaves it pending, and named.
     const answered = drafts
-      .filter((row) => draftCoverage(row.text, content) >= ANSWER_COVERAGE)
+      .filter((row) => {
+        const excerpt = readExcerpt(runtime, session, row.id, now);
+        return (
+          excerpt &&
+          !excerpt.late &&
+          !excerpt.standingSetting &&
+          namesApprovedDraft(excerpt, row) &&
+          draftCoverage(row.text, content) >= ANSWER_COVERAGE
+        );
+      })
       .map((row) => row.id);
     return {
       answered,
